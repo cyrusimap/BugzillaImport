@@ -1,0 +1,145 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3919</bug_id>
+          
+          <creation_ts>2015-12-08 05:20 EDT</creation_ts>
+          <short_desc>reconstruct crashes</short_desc>
+          <delta_ts>2016-08-22 19:44:34 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan">steffo76@gmx.de</reporter>
+          <assigned_to name="elliefm">ellie@fastmail.com</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2015-12-08 05:20:45 EDT</bug_when>
+            <thetext>While preparing the migration to a new server, I restored the mail spool from backup and ran reconstruct afterwards. Every now and then, reconstruct crashes:
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff7b7f67c in cache_parserecord (cachebase=0x6349f8, cache_offset=4, crec=0x7fffffffa780) at imap/mailbox.c:441
+441             crec-&gt;item[cache_ent].len = CACHE_ITEM_LEN(cacheitem);
+(gdb) bt
+#0  0x00007ffff7b7f67c in cache_parserecord (cachebase=0x6349f8, cache_offset=4, crec=0x7fffffffa780) at imap/mailbox.c:441
+#1  0x00007ffff7b7fe16 in mailbox_cacherecord (mailbox=0x6349d8, record=0x7fffffffa6f0) at imap/mailbox.c:637
+#2  0x00007ffff7b88d45 in mailbox_reconstruct_compare_update (mailbox=0x6349d8, record=0x7fffffffa6f0, valid_user_flags=0x7fffffffa5b0, flags=28, have_file=1, discovered=0x7fffffffa6b0) at imap/mailbox.c:4570
+#3  0x00007ffff7b8a697 in mailbox_reconstruct (name=0x604660 &quot;user.username.Deleted Messages&quot;, flags=28) at imap/mailbox.c:5087
+#4  0x0000000000402d38 in do_reconstruct (name=0x7fffffffcb70 &quot;user.username.Deleted Messages&quot;, matchlen=28, maycreate=1, rock=0x0) at imap/reconstruct.c:465
+#5  0x00007ffff7b93746 in find_cb (rockp=0x7fffffffd8e0, key=0x7ffff7e43db8 &quot;user.username.Deleted Messages&quot;, keylen=28, data=0x7ffff7e43dd8 &quot;0 default username\tlrswipkxtecda\t&quot;, datalen=31)
+    at imap/mboxlist.c:2243
+#6  0x00007ffff7823885 in myforeach (db=0x62a450, prefix=0x7fffffffd0d0 &quot;*&quot;, prefixlen=0, goodp=0x7ffff7b92eef &lt;find_p&gt;, cb=0x7ffff7b933dc &lt;find_cb&gt;, rock=0x7fffffffd8e0, tidptr=0x0)
+    at lib/cyrusdb_skiplist.c:1160
+#7  0x00007ffff781c64f in cyrusdb_foreach (db=0x62a210, prefix=0x7fffffffd0d0 &quot;*&quot;, prefixlen=0, p=0x7ffff7b92eef &lt;find_p&gt;, cb=0x7ffff7b933dc &lt;find_cb&gt;, rock=0x7fffffffd8e0, tid=0x0) at lib/cyrusdb.c:227
+#8  0x00007ffff7b94540 in mboxlist_findall (namespace=0x6045a0, pattern=0x62a270 &quot;&quot;, isadmin=1, userid=0x0, auth_state=0x0, proc=0x402c5a &lt;do_reconstruct&gt;, rock=0x0) at imap/mboxlist.c:2559
+#9  0x000000000040281a in main (argc=4, argv=0x7fffffffebd8) at imap/reconstruct.c:326</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2015-12-19 05:03:24 EDT</bug_when>
+            <thetext>By the way, this was cyrus imap 2.5.7</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-02-28 20:40:11 EDT</bug_when>
+            <thetext>Created an attachment (id=1566)
+better boundary detection for cache_parserecord
+
+I don&apos;t suppose this patch fixes it?  It should cause it to report an IOERROR when this case arises, instead of crashing.
+
+----
+
+I think what&apos;s been happening is that, for whatever reason, the cache record is shorter than NUM_CACHE_FIELDS expects it to be.
+
+The existing bounds check at the end of the loop can&apos;t complain about offset == cachebase-&gt;len, because that&apos;s a valid state after the last iteration (assuming that we&apos;re about to end the loop due to the NUM_CACHE_FIELDS check in the loop condition), but if there&apos;s fewer than NUM_CACHE_FIELDS in the record, then at this point offset will be invalid and the loop will try to do it again and crash.
+
+So instead, we validate offset inside the start of the loop, before we do any work.  And then we remove the pre-loop check too, since it will now always check offset before trying to use it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-02-28 20:42:33 EDT</bug_when>
+            <thetext>Attached patch is against cyrus-imapd-2.5.7, for what that&apos;s worth.  If it does the trick I&apos;ll forward port it to the live branches.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-08-22 19:44:34 EDT</bug_when>
+            <thetext>Hi Stephan,
+
+Any update on this?  Did the patch help?</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1566</attachid>
+            <date>2016-02-28 20:40 EDT</date>
+            <desc>better boundary detection for cache_parserecord</desc>
+            <filename>3919-cache_parserecord-boundary-detection.patch</filename>
+            <type>text/plain</type>
+            <size>1238</size>
+            <attacher>ellie@fastmail.com</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL2ltYXAvbWFpbGJveC5jIGIvaW1hcC9tYWlsYm94LmMKaW5kZXggYWE5MzNi
+OS4uNDhhZDRjYSAxMDA2NDQKLS0tIGEvaW1hcC9tYWlsYm94LmMKKysrIGIvaW1hcC9tYWlsYm94
+LmMKQEAgLTQyOSwxMyArNDI5LDE0IEBAIHN0YXRpYyBpbnQgY2FjaGVfcGFyc2VyZWNvcmQoc3Ry
+dWN0IGJ1ZiAqY2FjaGViYXNlLCBzaXplX3QgY2FjaGVfb2Zmc2V0LAogCiAgICAgb2Zmc2V0ID0g
+Y2FjaGVfb2Zmc2V0OwogCi0gICAgaWYgKG9mZnNldCA+PSBjYWNoZWJhc2UtPmxlbikgewotCXN5
+c2xvZyhMT0dfRVJSLCAiSU9FUlJPUjogb2Zmc2V0IGdyZWF0ZXIgdGhhbiBjYWNoZSBzaXplICVs
+dSAlbHUiLAotCSAgICAgICBvZmZzZXQsIGNhY2hlYmFzZS0+bGVuKTsKLQlyZXR1cm4gSU1BUF9J
+T0VSUk9SOwotICAgIH0KLQogICAgIGZvciAoY2FjaGVfZW50ID0gMDsgY2FjaGVfZW50IDwgTlVN
+X0NBQ0hFX0ZJRUxEUzsgY2FjaGVfZW50KyspIHsKKwlpZiAob2Zmc2V0ID49IGNhY2hlYmFzZS0+
+bGVuKSB7CisJICAgIHN5c2xvZyhMT0dfRVJSLCAiSU9FUlJPUjogb2Zmc2V0IGdyZWF0ZXIgdGhh
+biBjYWNoZSBzaXplICIKKwkJICAgU0laRV9UX0ZNVCAiICIgU0laRV9UX0ZNVCAiKCVkKSIsCisJ
+CSAgIG9mZnNldCwgY2FjaGViYXNlLT5sZW4sIGNhY2hlX2VudCk7CisJICAgIHJldHVybiBJTUFQ
+X0lPRVJST1I7CisJfQorCiAJY2FjaGVpdGVtID0gY2FjaGViYXNlLT5zICsgb2Zmc2V0OwogCS8q
+IGNvcHkgbG9jYXRpb25zICovCiAJY3JlYy0+aXRlbVtjYWNoZV9lbnRdLmxlbiA9IENBQ0hFX0lU
+RU1fTEVOKGNhY2hlaXRlbSk7CkBAIC00NDksMTIgKzQ1MCw2IEBAIHN0YXRpYyBpbnQgY2FjaGVf
+cGFyc2VyZWNvcmQoc3RydWN0IGJ1ZiAqY2FjaGViYXNlLCBzaXplX3QgY2FjaGVfb2Zmc2V0LAog
+CX0KIAogCW9mZnNldCA9IG5leHQgLSBjYWNoZWJhc2UtPnM7Ci0JaWYgKG9mZnNldCA+IGNhY2hl
+YmFzZS0+bGVuKSB7Ci0JICAgIHN5c2xvZyhMT0dfRVJSLCAiSU9FUlJPUjogb2Zmc2V0IGdyZWF0
+ZXIgdGhhbiBjYWNoZSBzaXplICIKLQkJICAgU0laRV9UX0ZNVCAiICIgU0laRV9UX0ZNVCAiKCVk
+KSIsCi0JCSAgIG9mZnNldCwgY2FjaGViYXNlLT5sZW4sIGNhY2hlX2VudCk7Ci0JICAgIHJldHVy
+biBJTUFQX0lPRVJST1I7Ci0JfQogICAgIH0KIAogICAgIC8qIGFsbCBmaXQgd2l0aGluIHRoZSBj
+YWNoZSwgaXQncyBnb2xkIGFzIGZhciBhcyB3ZSBjYW4gdGVsbCAqLwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

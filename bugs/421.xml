@@ -1,0 +1,170 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>421</bug_id>
+          
+          <creation_ts>2001-02-27 19:13 EDT</creation_ts>
+          <short_desc>lmtpd should reject RCPT TO: for overquota users</short_desc>
+          <delta_ts>2010-10-18 12:42:50 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.0.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</reporter>
+          <assigned_to name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</assigned_to>
+          <cc>ken@oceana.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-02-27 19:13:23 EDT</bug_when>
+            <thetext>we can tell whether or not a message is going to be accepted as soon as the 
+RCPT TO comes in, regardless of the size of the message, since we always accept 
+a message if the user is currently under quota and always reject it if the user 
+is currently overquota.
+
+race condition of underquota, RCPT TO, overquota, DATA, ...
+so it still has to be checked at the end, but that should be a minor case.
+(the race the other way doesn&apos;t really matter since the message will be 
+retried.)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-18 11:29:04 EDT</bug_when>
+            <thetext>I was thinking about this again, and I think we should do this.  In fact, we
+can take it one step further and implement the SIZE extension which will 
+prevent users from going over quota (if the LMTP client implements SIZE).
+
+In the past we discussed (mostly at my promtping) that a Sieve script might 
+change the disposition of a message and take a potential quota issue out of 
+play.  I think I have changed my mind on this issue.  We should assume that a 
+message is always destined for the mailbox in the RCPT command and simply use 
+whatever quotaroot governs that mailbox.
+
+I think Walter suggested (I can&apos;t find the email) that the number times that a 
+Sieve script would actually cause a overquota problem to be circumvented would 
+be small.  I tend to agree.
+
+If we agree on this, I&apos;ll go ahead and implement this, along with the SIZE 
+extension.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-08-18 15:23:32 EDT</bug_when>
+            <thetext>i think we definitely want to keep the one message over quota behavior that
+cyrus now implements, since otherwise there can be a pending message that never
+gets delivered that the user never knows about.
+
+implementing the SIZE extension is fine, but i&apos;m not sure it&apos;ll buy us anything.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-18 15:53:48 EDT</bug_when>
+            <thetext>So, you&apos;re worried about message that could take us from below the warning line 
+to over quota?  What if we allow one message over quota, provided that your not 
+already in the warning zone?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-08-18 16:18:00 EDT</bug_when>
+            <thetext>no, that still doesn&apos;t give the user any hint there&apos;s mail out there waiting to
+be delivered, and since small messages still work there&apos;s no real reason for her
+to actually clean up the mailbox.
+
+the current behavior is really doing the right thing.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-18 16:56:39 EDT</bug_when>
+            <thetext>hmm.  i&apos;m confused.  when the user is over quota, she doesn&apos;t get any 
+indication that there are messages pending (even though its somewhat implied). 
+ we could have imapd send an ALERT when there is a message pending delivery.
+
+guess i&apos;m beating a dead horse here, but it seems like the SIZE functionality 
+should have a use somewhere.  or, maybe not.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-20 16:28:49 EDT</bug_when>
+            <thetext>Thinking again... Why stop at just checking quota?  Couldn&apos;t we also check the 
+ACL?  Basically the append_setup() stuff could be called for each RCPT TO.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-08-21 14:43:54 EDT</bug_when>
+            <thetext>yes, that probably makes sense.
+does append_setup grab any long-term locks?  should we worry about that?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-21 14:56:33 EDT</bug_when>
+            <thetext>it calls mailbox_lock_header(), mailbox_lock_index() and mailbox_lock_quota()
+
+are you thinking that we shold actually call append_setup() from within 
+verify_user() and save the appendstate for later use, or just replicate the ACL 
+and quota checks in verify_user() without doing the locking?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-08-21 15:46:34 EDT</bug_when>
+            <thetext>well, since we&apos;re currently holding these locks for the entire length of the
+APPEND (this is really a bad idea but fixing it efficiently is non-trivial) i
+think just calling append_setup there is ok.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-21 15:57:18 EDT</bug_when>
+            <thetext>i took a quick look, and it looks like trying to tote around an appendstate 
+struct might be messy because of all the possible ways to get to 
+deliver_mailbox().  what if we just create a non-locking append_check() 
+function which simply checks ACL and quota, and call this from verify_user()?  
+this seems like it would be the least disruptive way to do this.  thoughts?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-08-21 16:00:23 EDT</bug_when>
+            <thetext>sounds good
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-31 14:43:26 EDT</bug_when>
+            <thetext>committed fix</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

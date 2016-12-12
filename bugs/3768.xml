@@ -1,0 +1,542 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3768</bug_id>
+          
+          <creation_ts>2013-02-11 11:12 EDT</creation_ts>
+          <short_desc>SASL/SSL dependencies for some binaries</short_desc>
+          <delta_ts>2013-03-21 14:00:52 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Deployment</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Dilyan Palauzov">dilyan.palauzov@aegee.org</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>dilyan.palauzov@aegee.org</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="Bugzilla Maintainer">acs-bugzilla@andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-11 11:12:44 EDT</bug_when>
+            <thetext>It may happen when specifying a path for cyrus-sasl (--with-sasl=/path/to/cyrus-sasl), but I have to add SASL/SSL dependencies in Makefile.am for master branch to compile under Ubuntu (12.10).
+
+Not sure if it is the cleanest way to do it (some other targets have such explicit dependencies), but if useful a commit is available here:
+Repository: git://github.com/worldline-messaging/cyrus-imapd.git
+Branch: master-changes
+Commit: 0959ac56b4f7a766d7310c5179d53fbd15482e9e (https://github.com/worldline-messaging/cyrus-imapd/commit/0959ac56b4f7a766d7310c5179d53fbd15482e9e)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-19 14:41:04 EDT</bug_when>
+            <thetext>An updated version against newest master, and adding missing dependency for cunit target too:
+Branch: ticket/3769
+Commit: b216a49c05c0d7fcb07f24d930f797095fe40cc8 (https://github.com/worldline-messaging/cyrus-imapd/commit/b216a49c05c0d7fcb07f24d930f797095fe40cc8)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-02-23 12:45:44 EDT</bug_when>
+            <thetext>In the proposed patch is suggested to replace
+  imtest_imtest_LDADD = $(LD_BASIC_ADD)
+with
+  imtest_imtest_LDADD = $(LD_BASIC_ADD) ${LIB_SASL} $(SSL_LIBS)
+where
+  LD_BASIC_ADD = lib/libcyrus.la lib/libcyrus_min.la ${LIBS}
+and
+  lib_libcyrus_la_LIBADD = $(LIB_RT) ${LIB_SASL} $(SSL_LIBS)
+
+So in theory LIB_SASL and SSL_LIBS are included already in LD_BASIC_ADD.
+
+Can you find out on your system, where does LIB_SASL disappear on the path lib_libcyrus_la_LIBADD -&gt; LD_BASIC_ADD -&gt; imtest_imtest_LDADD ?
+
+What does ./libcyrus.pc contain unter Libs(.private):, after you ./configure?
+
+Does &quot;readelf -d ./lib/.libs/libcyrus.so|grep library&quot; mention 
+  Shared library: [libsasl2.so.3] and
+  Shared library: [libssl.so.1.0.0]
+once you build libcyrus.so ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-23 14:16:47 EDT</bug_when>
+            <thetext>Created an attachment (id=1510)
+configure output</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-23 14:17:36 EDT</bug_when>
+            <thetext>Created an attachment (id=1511)
+libcyrus.pc</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-23 14:26:01 EDT</bug_when>
+            <thetext>Hi,
+
+My proposed commit may be clumsy: I don&apos;t know enough autotools, so I just went for the more obvious way to fix this.
+And maybe you will be able to spot something I do the wrong way :)
+
+So first, I have to remind that it&apos;s a special setup I use for developping.
+For this I use a self-compiled version of cyrus-sasl, which is why I have to specify its (uncommon) path.
+
+Basically I use a do_configure.sh script which (simplified) does:
+autoreconf -v -i
+
+export CFLAGS=&quot;${CFLAGS} -g -O2 -Wall&quot;
+
+./configure \
+    --prefix=/mail/github/cyrus-imapd-master \
+    --with-cyrus-prefix=/mail/github/cyrus-imapd-master \
+    --with-mysql --with-mysql-libdir=/usr/lib/x86_64-linux-gnu --with-mysql-incdir=/usr/include/mysql \
+    --with-openssl \
+    --with-pgsql --with-pgsql-incdir=/usr/include/postgresql \
+    --with-sasl=/mail/me/cyrus-sasl-2.1.23 \
+    --with-sqlite \
+    --without-libwrap \
+    --without-perl \
+    --without-snmp \
+    --disable-event-notification \
+    --disable-gssapi \
+    --enable-idled \
+    --enable-netscapehack \
+    --enable-nntp \
+    --enable-replication
+
+
+If useful, the output is now attached to this ticket.
+Also attached libcyrus.pc. As for what you were asking for in it:
+Libs.private:  -L/mail/me/cyrus-sasl-2.1.23/lib  -Wl,-rpath,/mail/me/cyrus-sasl-2.1.23/lib -lsasl2  -lssl -lcrypto 
+
+Then when I try to make, I get the following error:
+libtool: link: (cd &quot;sieve/.libs&quot; &amp;&amp; rm -f &quot;libcyrus_sieve.so.0&quot; &amp;&amp; ln -s &quot;libcyrus_sieve.so.0.0.0&quot; &quot;libcyrus_sieve.so.0&quot;)
+libtool: link: (cd &quot;sieve/.libs&quot; &amp;&amp; rm -f &quot;libcyrus_sieve.so&quot; &amp;&amp; ln -s &quot;libcyrus_sieve.so.0.0.0&quot; &quot;libcyrus_sieve.so&quot;)
+libtool: link: ( cd &quot;sieve/.libs&quot; &amp;&amp; rm -f &quot;libcyrus_sieve.la&quot; &amp;&amp; ln -s &quot;../libcyrus_sieve.la&quot; &quot;libcyrus_sieve.la&quot; )
+gcc -DHAVE_CONFIG_H -I.   -I. -I./lib -I. -I./lib -DHAVE_CONFIG_H  -I/mail/me/cyrus-sasl-2.1.23/include   -I/usr/include/postgresql -I/usr/include/mysql -DBIG_JOINS=1  -fno-strict-aliasing  -g    -fvisibility=hidden -g -O2 -Wall -MT imtest/imtest_imtest-imtest.o -MD -MP -MF imtest/.deps/imtest_imtest-imtest.Tpo -c -o imtest/imtest_imtest-imtest.o `test -f &apos;imtest/imtest.c&apos; || echo &apos;./&apos;`imtest/imtest.c
+mv -f imtest/.deps/imtest_imtest-imtest.Tpo imtest/.deps/imtest_imtest-imtest.Po
+/bin/bash ./libtool --tag=CC   --mode=link gcc  -fvisibility=hidden -g -O2 -Wall   -o imtest/imtest imtest/imtest_imtest-imtest.o lib/libcyrus.la lib/libcyrus_min.la -ldb -L/usr/lib/x86_64-linux-gnu -lmysqlclient -lpthread -lz -lm -lrt -ldl  -lpq  -lsqlite3 -lpcre -lpcreposix -lz -ldb -L/usr/lib/x86_64-linux-gnu -lmysqlclient -lpthread -lz -lm -lrt -ldl  -lpq  -lsqlite3 -lpcre -lpcreposix -lz
+libtool: link: gcc -fvisibility=hidden -g -O2 -Wall -o imtest/.libs/imtest imtest/imtest_imtest-imtest.o  lib/.libs/libcyrus.so lib/.libs/libcyrus_min.so -L/usr/lib/x86_64-linux-gnu -ldb -lmysqlclient -lpthread -lm -lrt -ldl -lpq /usr/lib/x86_64-linux-gnu/libsqlite3.so -lpcre -lpcreposix -lz -Wl,-rpath -Wl,/mail/github/cyrus-imapd-master/lib
+/usr/bin/ld: imtest/imtest_imtest-imtest.o: undefined reference to symbol &apos;sasl_errstring@@SASL2&apos;
+/usr/bin/ld: note: &apos;sasl_errstring@@SASL2&apos; is defined in DSO /mail/me/cyrus-sasl-2.1.23/lib/libsasl2.so.2 so try adding it to the linker command line
+/mail/me/cyrus-sasl-2.1.23/lib/libsasl2.so.2: could not read symbols: Invalid operation
+collect2: ld returned 1 exit status
+make[2]: *** [imtest/imtest] Error 1
+make[2]: Leaving directory `/home/cyrius/dev/git_projects/github/real/cyrus-imapd&apos;
+make[1]: *** [all-recursive] Error 1
+make[1]: Leaving directory `/home/cyrius/dev/git_projects/github/real/cyrus-imapd&apos;
+make: *** [all] Error 2
+
+
+And for what you are searching for in ./lib/.libs/libcyrus.so:
+(mxa)cyrius@N76-linux:~/dev/git_projects/github/real/cyrus-imapd$ readelf -d ./lib/.libs/libcyrus.so|grep library
+ 0x0000000000000001 (NEEDED)             Shared library: [libsasl2.so.2]
+ 0x0000000000000001 (NEEDED)             Shared library: [libssl.so.1.0.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libcrypto.so.1.0.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libdb-5.1.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libmysqlclient.so.18]
+ 0x0000000000000001 (NEEDED)             Shared library: [libpthread.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libpq.so.5]
+ 0x0000000000000001 (NEEDED)             Shared library: [libsqlite3.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libz.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-02-23 14:52:02 EDT</bug_when>
+            <thetext>A similar issue was discussed on cyrus-devel on 16.07.2012 (On Ubuntu &quot;libtool --config&quot; reports link_all_deps=no).
+
+In the documentation of libtool is written, that the default value of libtool&apos;s link_all_deplibs is &quot;yes&quot;, whereas contrary to the documentation on some system it is &quot;no&quot; for unclear reason.
+
+Which version of libtool are you using, and what does it report for link_all_deps upong &quot;./libtool --config&quot; and does upgrading of libtool help?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-23 16:46:28 EDT</bug_when>
+            <thetext>Discussion here I guess: http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;msg=3719
+
+My version of libtool:
+$ libtool --version
+libtool (GNU libtool) 2.4.2
+
+Seems it is the latest version available.
+
+link_all_deplibs is set to &quot;no&quot; apparently:
+$ libtool --config | grep link_all
+link_all_deplibs=no</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-26 15:57:20 EDT</bug_when>
+            <thetext>This looks like we should deal with this for 2.5.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-03-10 17:03:38 EDT</bug_when>
+            <thetext>I do not understand, why Debian and Ubuntu change link_all_deps in a way, that creates bugs, not available on other systems.
+
+At http://lists.lttng.org/pipermail/lttng-dev/2012-August/018337.html is described, how to patch at ./configure time libtool to work as usual.
+
+I send now this text to submit@bugs.debian.org , Subject: libtool, link_all_deplibs, let&apos;s see what the answer will be.
+
+Package: libtool
+
+Debian patches libtool, so that its link_all_deplibs is set to no.  In the documentation of libtool is written, that link_all_deplibs is set to unknown (which is yes).  A program, that follows what is written in libtool&apos;s documentation, will fail to link under debian, due the link_all_deplibs patch.  I have read many bug reports and discussions, but as long as my build system fails just on Ubuntu and Debian, because of link_all_deplibs, I consider this change as a bug introduced by Debian&apos;s patch.
+
+Cyrus imap (www.cyrusimap.org) consist of several libraries and executables.  One of the library (libcyrus) depends on linking (DT_NEEDED as in ELF) to libsasl and libssl in order to work.  The programs from cyrus imap on their own depend on libcyrus and might use functions from libsasl and libssl.  In Makefile.am for those programs is just listed, that they depend on libcyrus.la .
+
+These programs cannot be linked on Debian, as libtool states there ...
+
+/bin/bash ./libtool --tag=CC --mode=link gcc -o imtest/imtest imtest/imtest_imtest-imtest.o lib/libcyrus.la lib/libcyrus_min.la -ldb -L/usr/lib/x86_64-linux-gnu -lmysqlclient -lpthread -lz -lm -lrt -ldl -lpq  -lsqlite3 -lpcre -lpcreposix -lz -ldb -L/usr/lib/x86_64-linux-gnu -lmysqlclient -lpthread -lz -lm -lrt -ldl  -lpq -lsqlite3 -lpcre -lpcreposix -lz
+libtool: link: gcc -o imtest/.libs/imtest imtest/imtest_imtest-imtest.o  lib/.libs/libcyrus.so lib/.libs/libcyrus_min.so
+-L/usr/lib/x86_64-linux-gnu -ldb -lmysqlclient -lpthread -lm -lrt -ldl -lpq /usr/lib/x86_64-linux-gnu/libsqlite3.so -lpcre -lpcreposix -lz -Wl,-rpath -Wl,/mail/github/cyrus-imapd-master/lib
+/usr/bin/ld: imtest/imtest_imtest-imtest.o: undefined reference to symbol &apos;sasl_errstring@@SASL2&apos;
+/usr/bin/ld: note: &apos;sasl_errstring@@SASL2&apos; is defined in DSO /mail/me/cyrus-sasl-2.1.23/lib/libsasl2.so.2 so try adding it to the linker
+command line
+/mail/me/cyrus-sasl-2.1.23/lib/libsasl2.so.2: could not read symbols: Invalid operation
+collect2: ld returned 1 exit status
+
+... that in effect the program is linked with libcyrus, lincyrus is linked with libsasl, but the program is not linked with libsasl, so the linker will not link.
+
+According to my understanding, and the documentation of libtool for the default of link_all_deplibs, if a program A is linked to library B, and library B depends on library C, then the program A may use functions from library C, without linking explicitly with it.
+
+Now, I do not think, that library C has to be in DT_NEEDED in program A, in order to be able to execute program A (which links with libB, which links with libC).  However the only way to make linking succeed is to explicitly link program A with libC, which in effect is the same as using link_all_deplibs = yes.
+
+While I have understanding, that the intention of switching link_all_deplibs to false is to minimize the DT_NEEDED entries, this does not help in my case.  It just forces me to add libC explicitly as dependency of program A, which is awkward.
+
+I do not find an option in gnu ld how to ask it, when linking program A, to search in all DT_NEEDED of libB for the unknown symbols in program A, without including that additional libraries as DT_NEEDED in program A. The option --copy-dt-needed-entries is a try, but to the extend I understand it, it does add libC in DT_NEEDED of progA, which is effectively the same as link_all_deplibs = yes.  Isn&apos;t it better, to pass --as-needed to the linker and let it shorten the DT_NEEDED entries, rather than stripping the dependency libraries?
+
+I kindly ask you to modify the behaviour of libtool on Debian to be conform with the documentation of libtool (in the part of link_all_deplibs).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-03-12 16:48:22 EDT</bug_when>
+            <thetext>libtool from ftp.gnu.org and libtool in Debian/Ubunto work in different ways, when it comes to link_all_deplibs and this is probably not going to change.
+
+Debian ticket: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=702737
+GNU ticket: http://debbugs.gnu.org/cgi/bugreport.cgi?bug=13920
+
+In our case, some program A depends on library B, library B depends on library C and program A uses functions from library C.  According to me, dependencies are transitive, so program A can use functions from library C without linking to it.
+
+With Debian libtool this does not work, as they strip from linking the derived dependencies, whereas with GNU libtool, this approach does work.
+
+I see now the following options:
+-- Extend Makefile.am to contain explicit dependencies to libSASL and libSSL.
+  I am not in favour, as it makes repeating the same stuff several times and the information is already in the .la files; or
+
+-- Distribute cyrus-imap in the tarball with GNU libtool, this what does not work now with autoreconf and Debian libtool, will work at the end.  Intermediate approaches:
+  -- check at configure time, if libtool has link_all_deplibs and let configure fail then
+  -- upload the relevant libtool files on git.cyrusimap.org, so that even autoreconf does not replace the uploaded GNU libtool with Debian libtool</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-18 02:08:59 EDT</bug_when>
+            <thetext>Dilyan,
+
+how about we just do the simple if inelegant thing, and add
+${LIB_SASL} $(SSL_LIBS) to ${LD_BASIC_ADD} ?  That way at least
+we can quickly get to a state where all the binaries link and
+run on every platform.
+
+I&apos;m asking because 2.5 is going to need to be released Real Soon Now.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-03-20 19:32:34 EDT</bug_when>
+            <thetext>Does commit d68c986f8398ebb00555a95330929c575989a6da (Bug 3768: Makefile.am: Add -lsasl and -lssl as explicit dependencies) fix the problem?
+
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -438,7 +438,8 @@ com_err/et/compile_et: com_err/et/compile_et.sh com_err/et/c
+ # Note that several places in the code use -lcrypto, e.g. for SHA1 or
+ # MD5 algorithms, without needing SSL.  Currently we have no way of
+ # minimally linking such code.
+-LD_BASIC_ADD = lib/libcyrus.la lib/libcyrus_min.la ${LIBS}
++LD_BASIC_ADD = lib/libcyrus.la lib/libcyrus_min.la ${LIBS} $(LIB_RT) \
++       ${LIB_SASL} $(SSL_LIBS)
+
+ # UTILITY is the libraries that utility programs which use Cyrus&apos;
+ # mailbox and message handling code need to link with.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2013-03-21 00:32:22 EDT</bug_when>
+            <thetext>Works for me.  That&apos;s pretty much what I was doing on my machine anyway.
+
+Thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-21 14:00:52 EDT</bug_when>
+            <thetext>Works for me too.
+
+Thanks</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1510</attachid>
+            <date>2013-02-23 14:16 EDT</date>
+            <desc>configure output</desc>
+            <filename>configure.txt</filename>
+            <type>text/plain</type>
+            <size>11048</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">KG14YSljeXJpdXNATjc2LWxpbnV4On4vZGV2L2dpdF9wcm9qZWN0cy9naXRodWIvcmVhbC9jeXJ1
+cy1pbWFwZCQgLi9kb19jb25maWd1cmUuc2ggCmF1dG9yZWNvbmY6IEVudGVyaW5nIGRpcmVjdG9y
+eSBgLicKYXV0b3JlY29uZjogY29uZmlndXJlLmFjOiBub3QgdXNpbmcgR2V0dGV4dAphdXRvcmVj
+b25mOiBydW5uaW5nOiBhY2xvY2FsIC1JIGNtdWxvY2FsCi91c3Ivc2hhcmUvYWNsb2NhbC9sb2c0
+Yy5tNDo3OiB3YXJuaW5nOiB1bmRlcnF1b3RlZCBkZWZpbml0aW9uIG9mIEFNX1BBVEhfTE9HNEMK
+L3Vzci9zaGFyZS9hY2xvY2FsL2xvZzRjLm00Ojc6ICAgcnVuIGluZm8gJyhhdXRvbWFrZSlFeHRl
+bmRpbmcgYWNsb2NhbCcKL3Vzci9zaGFyZS9hY2xvY2FsL2xvZzRjLm00Ojc6ICAgb3Igc2VlIGh0
+dHA6Ly93d3cuZ251Lm9yZy9zb2Z0d2FyZS9hdXRvbWFrZS9tYW51YWwvYXV0b21ha2UuaHRtbCNF
+eHRlbmRpbmctYWNsb2NhbAphdXRvcmVjb25mOiBjb25maWd1cmUuYWM6IHRyYWNpbmcKYXV0b3Jl
+Y29uZjogcnVubmluZzogbGlidG9vbGl6ZSAtLWluc3RhbGwgLS1jb3B5Ci91c3Ivc2hhcmUvYWNs
+b2NhbC9sb2c0Yy5tNDo3OiB3YXJuaW5nOiB1bmRlcnF1b3RlZCBkZWZpbml0aW9uIG9mIEFNX1BB
+VEhfTE9HNEMKL3Vzci9zaGFyZS9hY2xvY2FsL2xvZzRjLm00Ojc6ICAgcnVuIGluZm8gJyhhdXRv
+bWFrZSlFeHRlbmRpbmcgYWNsb2NhbCcKL3Vzci9zaGFyZS9hY2xvY2FsL2xvZzRjLm00Ojc6ICAg
+b3Igc2VlIGh0dHA6Ly93d3cuZ251Lm9yZy9zb2Z0d2FyZS9hdXRvbWFrZS9tYW51YWwvYXV0b21h
+a2UuaHRtbCNFeHRlbmRpbmctYWNsb2NhbAphdXRvcmVjb25mOiBydW5uaW5nOiAvdXNyL2Jpbi9h
+dXRvY29uZgphdXRvcmVjb25mOiBydW5uaW5nOiAvdXNyL2Jpbi9hdXRvaGVhZGVyCmF1dG9yZWNv
+bmY6IHJ1bm5pbmc6IGF1dG9tYWtlIC0tYWRkLW1pc3NpbmcgLS1jb3B5IC0tbm8tZm9yY2UKYXV0
+b3JlY29uZjogTGVhdmluZyBkaXJlY3RvcnkgYC4nCmNoZWNraW5nIGJ1aWxkIHN5c3RlbSB0eXBl
+Li4uIHg4Nl82NC11bmtub3duLWxpbnV4LWdudQpjaGVja2luZyBob3N0IHN5c3RlbSB0eXBlLi4u
+IHg4Nl82NC11bmtub3duLWxpbnV4LWdudQpjaGVja2luZyB0YXJnZXQgc3lzdGVtIHR5cGUuLi4g
+eDg2XzY0LXVua25vd24tbGludXgtZ251CmNoZWNraW5nIGZvciBhIEJTRC1jb21wYXRpYmxlIGlu
+c3RhbGwuLi4gL3Vzci9iaW4vaW5zdGFsbCAtYwpjaGVja2luZyB3aGV0aGVyIGJ1aWxkIGVudmly
+b25tZW50IGlzIHNhbmUuLi4geWVzCmNoZWNraW5nIGZvciBhIHRocmVhZC1zYWZlIG1rZGlyIC1w
+Li4uIC9iaW4vbWtkaXIgLXAKY2hlY2tpbmcgZm9yIGdhd2suLi4gbm8KY2hlY2tpbmcgZm9yIG1h
+d2suLi4gbWF3awpjaGVja2luZyB3aGV0aGVyIG1ha2Ugc2V0cyAkKE1BS0UpLi4uIHllcwpjaGVj
+a2luZyB3aGV0aGVyIHRvIGVuYWJsZSBtYWludGFpbmVyLXNwZWNpZmljIHBvcnRpb25zIG9mIE1h
+a2VmaWxlcy4uLiBubwpjaGVja2luZyBmb3IgZ2NjLi4uIGdjYwpjaGVja2luZyB3aGV0aGVyIHRo
+ZSBDIGNvbXBpbGVyIHdvcmtzLi4uIHllcwpjaGVja2luZyBmb3IgQyBjb21waWxlciBkZWZhdWx0
+IG91dHB1dCBmaWxlIG5hbWUuLi4gYS5vdXQKY2hlY2tpbmcgZm9yIHN1ZmZpeCBvZiBleGVjdXRh
+Ymxlcy4uLiAKY2hlY2tpbmcgd2hldGhlciB3ZSBhcmUgY3Jvc3MgY29tcGlsaW5nLi4uIG5vCmNo
+ZWNraW5nIGZvciBzdWZmaXggb2Ygb2JqZWN0IGZpbGVzLi4uIG8KY2hlY2tpbmcgd2hldGhlciB3
+ZSBhcmUgdXNpbmcgdGhlIEdOVSBDIGNvbXBpbGVyLi4uIHllcwpjaGVja2luZyB3aGV0aGVyIGdj
+YyBhY2NlcHRzIC1nLi4uIHllcwpjaGVja2luZyBmb3IgZ2NjIG9wdGlvbiB0byBhY2NlcHQgSVNP
+IEM4OS4uLiBub25lIG5lZWRlZApjaGVja2luZyBmb3Igc3R5bGUgb2YgaW5jbHVkZSB1c2VkIGJ5
+IG1ha2UuLi4gR05VCmNoZWNraW5nIGRlcGVuZGVuY3kgc3R5bGUgb2YgZ2NjLi4uIGdjYzMKY2hl
+Y2tpbmcgd2hldGhlciBnY2MgYW5kIGNjIHVuZGVyc3RhbmQgLWMgYW5kIC1vIHRvZ2V0aGVyLi4u
+IHllcwpjaGVja2luZyB3aGV0aGVyIGxuIC1zIHdvcmtzLi4uIHllcwpjaGVja2luZyB3aGV0aGVy
+IG1ha2Ugc2V0cyAkKE1BS0UpLi4uIChjYWNoZWQpIHllcwpjaGVja2luZyBob3cgdG8gcnVuIHRo
+ZSBDIHByZXByb2Nlc3Nvci4uLiBnY2MgLUUKY2hlY2tpbmcgZm9yIGdyZXAgdGhhdCBoYW5kbGVz
+IGxvbmcgbGluZXMgYW5kIC1lLi4uIC9iaW4vZ3JlcApjaGVja2luZyBmb3IgZWdyZXAuLi4gL2Jp
+bi9ncmVwIC1FCmNoZWNraW5nIGZvciBBTlNJIEMgaGVhZGVyIGZpbGVzLi4uIHllcwpjaGVja2lu
+ZyBmb3Igc3lzL3R5cGVzLmguLi4geWVzCmNoZWNraW5nIGZvciBzeXMvc3RhdC5oLi4uIHllcwpj
+aGVja2luZyBmb3Igc3RkbGliLmguLi4geWVzCmNoZWNraW5nIGZvciBzdHJpbmcuaC4uLiB5ZXMK
+Y2hlY2tpbmcgZm9yIG1lbW9yeS5oLi4uIHllcwpjaGVja2luZyBmb3Igc3RyaW5ncy5oLi4uIHll
+cwpjaGVja2luZyBmb3IgaW50dHlwZXMuaC4uLiB5ZXMKY2hlY2tpbmcgZm9yIHN0ZGludC5oLi4u
+IHllcwpjaGVja2luZyBmb3IgdW5pc3RkLmguLi4geWVzCmNoZWNraW5nIG1pbml4L2NvbmZpZy5o
+IHVzYWJpbGl0eS4uLiBubwpjaGVja2luZyBtaW5peC9jb25maWcuaCBwcmVzZW5jZS4uLiBubwpj
+aGVja2luZyBmb3IgbWluaXgvY29uZmlnLmguLi4gbm8KY2hlY2tpbmcgd2hldGhlciBpdCBpcyBz
+YWZlIHRvIGRlZmluZSBfX0VYVEVOU0lPTlNfXy4uLiB5ZXMKY2hlY2tpbmcgZm9yIGxpYnJhcnkg
+Y29udGFpbmluZyBzdHJlcnJvci4uLiBub25lIHJlcXVpcmVkCmNoZWNraW5nIGZvciBnYXdrLi4u
+IChjYWNoZWQpIG1hd2sKY2hlY2tpbmcgZm9yIGFuIEFOU0kgQy1jb25mb3JtaW5nIGNvbnN0Li4u
+IHllcwpjaGVja2luZyBmb3IgbG9uZyBmaWxlIG5hbWVzLi4uIHllcwpjaGVja2luZyBmb3IgaW5s
+aW5lLi4uIGlubGluZQpjaGVja2luZyB3aGV0aGVyIHRoZSAtV2Vycm9yIG9wdGlvbiBpcyB1c2Fi
+bGUuLi4geWVzCmNoZWNraW5nIGZvciBzaW1wbGUgdmlzaWJpbGl0eSBkZWNsYXJhdGlvbnMuLi4g
+eWVzCmNoZWNraW5nIGhvdyB0byBwcmludCBzdHJpbmdzLi4uIHByaW50ZgpjaGVja2luZyBmb3Ig
+YSBzZWQgdGhhdCBkb2VzIG5vdCB0cnVuY2F0ZSBvdXRwdXQuLi4gL2Jpbi9zZWQKY2hlY2tpbmcg
+Zm9yIGZncmVwLi4uIC9iaW4vZ3JlcCAtRgpjaGVja2luZyBmb3IgbGQgdXNlZCBieSBnY2MuLi4g
+L3Vzci9iaW4vbGQKY2hlY2tpbmcgaWYgdGhlIGxpbmtlciAoL3Vzci9iaW4vbGQpIGlzIEdOVSBs
+ZC4uLiB5ZXMKY2hlY2tpbmcgZm9yIEJTRC0gb3IgTVMtY29tcGF0aWJsZSBuYW1lIGxpc3RlciAo
+bm0pLi4uIC91c3IvYmluL25tIC1CCmNoZWNraW5nIHRoZSBuYW1lIGxpc3RlciAoL3Vzci9iaW4v
+bm0gLUIpIGludGVyZmFjZS4uLiBCU0Qgbm0KY2hlY2tpbmcgdGhlIG1heGltdW0gbGVuZ3RoIG9m
+IGNvbW1hbmQgbGluZSBhcmd1bWVudHMuLi4gMTU3Mjg2NApjaGVja2luZyB3aGV0aGVyIHRoZSBz
+aGVsbCB1bmRlcnN0YW5kcyBzb21lIFhTSSBjb25zdHJ1Y3RzLi4uIHllcwpjaGVja2luZyB3aGV0
+aGVyIHRoZSBzaGVsbCB1bmRlcnN0YW5kcyAiKz0iLi4uIHllcwpjaGVja2luZyBob3cgdG8gY29u
+dmVydCB4ODZfNjQtdW5rbm93bi1saW51eC1nbnUgZmlsZSBuYW1lcyB0byB4ODZfNjQtdW5rbm93
+bi1saW51eC1nbnUgZm9ybWF0Li4uIGZ1bmNfY29udmVydF9maWxlX25vb3AKY2hlY2tpbmcgaG93
+IHRvIGNvbnZlcnQgeDg2XzY0LXVua25vd24tbGludXgtZ251IGZpbGUgbmFtZXMgdG8gdG9vbGNo
+YWluIGZvcm1hdC4uLiBmdW5jX2NvbnZlcnRfZmlsZV9ub29wCmNoZWNraW5nIGZvciAvdXNyL2Jp
+bi9sZCBvcHRpb24gdG8gcmVsb2FkIG9iamVjdCBmaWxlcy4uLiAtcgpjaGVja2luZyBmb3Igb2Jq
+ZHVtcC4uLiBvYmpkdW1wCmNoZWNraW5nIGhvdyB0byByZWNvZ25pemUgZGVwZW5kZW50IGxpYnJh
+cmllcy4uLiBwYXNzX2FsbApjaGVja2luZyBmb3IgZGxsdG9vbC4uLiBubwpjaGVja2luZyBob3cg
+dG8gYXNzb2NpYXRlIHJ1bnRpbWUgYW5kIGxpbmsgbGlicmFyaWVzLi4uIHByaW50ZiAlc1xuCmNo
+ZWNraW5nIGZvciBhci4uLiBhcgpjaGVja2luZyBmb3IgYXJjaGl2ZXIgQEZJTEUgc3VwcG9ydC4u
+LiBACmNoZWNraW5nIGZvciBzdHJpcC4uLiBzdHJpcApjaGVja2luZyBmb3IgcmFubGliLi4uIHJh
+bmxpYgpjaGVja2luZyBjb21tYW5kIHRvIHBhcnNlIC91c3IvYmluL25tIC1CIG91dHB1dCBmcm9t
+IGdjYyBvYmplY3QuLi4gb2sKY2hlY2tpbmcgZm9yIHN5c3Jvb3QuLi4gbm8KY2hlY2tpbmcgZm9y
+IG10Li4uIG10CmNoZWNraW5nIGlmIG10IGlzIGEgbWFuaWZlc3QgdG9vbC4uLiBubwpjaGVja2lu
+ZyBmb3IgZGxmY24uaC4uLiB5ZXMKY2hlY2tpbmcgZm9yIG9iamRpci4uLiAubGlicwpjaGVja2lu
+ZyBpZiBnY2Mgc3VwcG9ydHMgLWZuby1ydHRpIC1mbm8tZXhjZXB0aW9ucy4uLiBubwpjaGVja2lu
+ZyBmb3IgZ2NjIG9wdGlvbiB0byBwcm9kdWNlIFBJQy4uLiAtZlBJQyAtRFBJQwpjaGVja2luZyBp
+ZiBnY2MgUElDIGZsYWcgLWZQSUMgLURQSUMgd29ya3MuLi4geWVzCmNoZWNraW5nIGlmIGdjYyBz
+dGF0aWMgZmxhZyAtc3RhdGljIHdvcmtzLi4uIHllcwpjaGVja2luZyBpZiBnY2Mgc3VwcG9ydHMg
+LWMgLW8gZmlsZS5vLi4uIHllcwpjaGVja2luZyBpZiBnY2Mgc3VwcG9ydHMgLWMgLW8gZmlsZS5v
+Li4uIChjYWNoZWQpIHllcwpjaGVja2luZyB3aGV0aGVyIHRoZSBnY2MgbGlua2VyICgvdXNyL2Jp
+bi9sZCAtbSBlbGZfeDg2XzY0KSBzdXBwb3J0cyBzaGFyZWQgbGlicmFyaWVzLi4uIHllcwpjaGVj
+a2luZyB3aGV0aGVyIC1sYyBzaG91bGQgYmUgZXhwbGljaXRseSBsaW5rZWQgaW4uLi4gbm8KY2hl
+Y2tpbmcgZHluYW1pYyBsaW5rZXIgY2hhcmFjdGVyaXN0aWNzLi4uIEdOVS9MaW51eCBsZC5zbwpj
+aGVja2luZyBob3cgdG8gaGFyZGNvZGUgbGlicmFyeSBwYXRocyBpbnRvIHByb2dyYW1zLi4uIGlt
+bWVkaWF0ZQpjaGVja2luZyB3aGV0aGVyIHN0cmlwcGluZyBsaWJyYXJpZXMgaXMgcG9zc2libGUu
+Li4geWVzCmNoZWNraW5nIGlmIGxpYnRvb2wgc3VwcG9ydHMgc2hhcmVkIGxpYnJhcmllcy4uLiB5
+ZXMKY2hlY2tpbmcgd2hldGhlciB0byBidWlsZCBzaGFyZWQgbGlicmFyaWVzLi4uIHllcwpjaGVj
+a2luZyB3aGV0aGVyIHRvIGJ1aWxkIHN0YXRpYyBsaWJyYXJpZXMuLi4gbm8KY2hlY2tpbmcgc2l6
+ZSBvZiBpbnQuLi4gNApjaGVja2luZyBzaXplIG9mIGxvbmcuLi4gOApjaGVja2luZyBzaXplIG9m
+IHNpemVfdC4uLiA4CmNoZWNraW5nIHNpemUgb2Ygb2ZmX3QuLi4gOApjaGVja2luZyBzaXplIG9m
+IGxvbmcgbG9uZyBpbnQuLi4gOApjaGVja2luZyBzaXplIG9mIHVuc2lnbmVkIGxvbmcgbG9uZyBp
+bnQuLi4gOApjaGVja2luZyB3aGV0aGVyIGJ5dGUgb3JkZXJpbmcgaXMgYmlnZW5kaWFuLi4uIG5v
+CmNoZWNraW5nIGZvciBfX2F0dHJpYnV0ZV9fLi4uIHllcwpjaGVja2luZyBpZiBjb21waWxlciBz
+dXBwb3J0cyAtZlBJQy4uLiB5ZXMKY2hlY2tpbmcgZm9yIHJ1bnBhdGggc3dpdGNoLi4uIC1XbCwt
+cnBhdGgsCmNoZWNraW5nIGZvciB1bmlzdGQuaC4uLiAoY2FjaGVkKSB5ZXMKY2hlY2tpbmcgc3lz
+L3NlbGVjdC5oIHVzYWJpbGl0eS4uLiB5ZXMKY2hlY2tpbmcgc3lzL3NlbGVjdC5oIHByZXNlbmNl
+Li4uIHllcwpjaGVja2luZyBmb3Igc3lzL3NlbGVjdC5oLi4uIHllcwpjaGVja2luZyBzeXMvcGFy
+YW0uaCB1c2FiaWxpdHkuLi4geWVzCmNoZWNraW5nIHN5cy9wYXJhbS5oIHByZXNlbmNlLi4uIHll
+cwpjaGVja2luZyBmb3Igc3lzL3BhcmFtLmguLi4geWVzCmNoZWNraW5nIHN0ZGFyZy5oIHVzYWJp
+bGl0eS4uLiB5ZXMKY2hlY2tpbmcgc3RkYXJnLmggcHJlc2VuY2UuLi4geWVzCmNoZWNraW5nIGZv
+ciBzdGRhcmcuaC4uLiB5ZXMKY2hlY2tpbmcgZm9yIG1lbW1vdmUuLi4geWVzCmNoZWNraW5nIGZv
+ciBzdHJjYXNlY21wLi4uIHllcwpjaGVja2luZyBmb3IgZnRydW5jYXRlLi4uIHllcwpjaGVja2lu
+ZyBmb3Igc3RyZXJyb3IuLi4geWVzCmNoZWNraW5nIGZvciBwb3NpeF9mYWR2aXNlLi4uIHllcwpj
+aGVja2luZyBmb3Igc3Ryc2VwLi4uIHllcwpjaGVja2luZyBmb3IgbWVtbWVtLi4uIHllcwpjaGVj
+a2luZyBmb3Igc3RybGNhdC4uLiBubwpjaGVja2luZyBmb3Igc3RybGNweS4uLiBubwpjaGVja2lu
+ZyBmb3IgZ2V0Z3JvdXBsaXN0Li4uIHllcwpjaGVja2luZyBmb3IgZm1lbW9wZW4uLi4geWVzCmNo
+ZWNraW5nIGZvciBwc2VsZWN0Li4uIHllcwpjaGVja2luZyBmb3IgZGlyZW50LmggdGhhdCBkZWZp
+bmVzIERJUi4uLiB5ZXMKY2hlY2tpbmcgZm9yIGxpYnJhcnkgY29udGFpbmluZyBvcGVuZGlyLi4u
+IG5vbmUgcmVxdWlyZWQKY2hlY2tpbmcgZm9yIHN0ZGxpYi5oLi4uIChjYWNoZWQpIHllcwpjaGVj
+a2luZyBmb3IgZ2V0cGFzc3BocmFzZS4uLiBubwpjaGVja2luZyBmb3IgY29ubmVjdC4uLiB5ZXMK
+Y2hlY2tpbmcgZm9yIHJlc19zZWFyY2guLi4gbm8KY2hlY2tpbmcgZm9yIGRuX2V4cGFuZC4uLiBu
+bwpjaGVja2luZyBmb3IgZG5zX2xvb2t1cC4uLiBubwpjaGVja2luZyBmb3IgZ2V0YWRkcmluZm8u
+Li4geWVzCmNoZWNraW5nIGZvciBnYWlfc3RyZXJyb3IuLi4geWVzCmNoZWNraW5nIGZvciBnZXRu
+YW1laW5mby4uLiB5ZXMKY2hlY2tpbmcgd2hldGhlciB5b3UgaGF2ZSBzc19mYW1pbHkgaW4gc3Ry
+dWN0IHNvY2thZGRyX3N0b3JhZ2UuLi4geWVzCmNoZWNraW5nIHdoZXRoZXIgeW91IGhhdmUgc2Ff
+bGVuIGluIHN0cnVjdCBzb2NrYWRkci4uLiBubwpjaGVja2luZyBzeXMvdGltZS5oIHVzYWJpbGl0
+eS4uLiB5ZXMKY2hlY2tpbmcgc3lzL3RpbWUuaCBwcmVzZW5jZS4uLiB5ZXMKY2hlY2tpbmcgZm9y
+IHN5cy90aW1lLmguLi4geWVzCmNoZWNraW5nIHdoZXRoZXIgdGltZS5oIGFuZCBzeXMvdGltZS5o
+IG1heSBib3RoIGJlIGluY2x1ZGVkLi4uIHllcwpjaGVja2luZyB3aGV0aGVyIHN0cnVjdCB0bSBp
+cyBpbiBzeXMvdGltZS5oIG9yIHRpbWUuaC4uLiB0aW1lLmgKY2hlY2tpbmcgZm9yIHN0cnVjdCB0
+bS50bV96b25lLi4uIHllcwpjaGVja2luZyBmb3IgdGltZWdtLi4uIHllcwpjaGVja2luZyBmb3Ig
+dnByaW50Zi4uLiB5ZXMKY2hlY2tpbmcgZm9yIF9kb3BybnQuLi4gbm8KY2hlY2tpbmcgZGIuaCB1
+c2FiaWxpdHkuLi4geWVzCmNoZWNraW5nIGRiLmggcHJlc2VuY2UuLi4geWVzCmNoZWNraW5nIGZv
+ciBkYi5oLi4uIHllcwpjb25maWd1cmU6IExlZ2FjeSBvcHRpb24gLS13aXRoLW15c3FsLWxpYmRp
+cj1ESVIgZGV0ZWN0ZWQuCgkJICBZb3UgbWF5IHdpc2ggdG8gY2hhbmdlIHRvIC0td2l0aC1teXNx
+bCB3aGljaCB3b3JrcyBub3cuCmNoZWNraW5nIHdoZXRoZXIgdG8gdXNlIE15U1FMLi4uIHllcwpj
+aGVja2luZyBsaWJwcS1mZS5oIHVzYWJpbGl0eS4uLiB5ZXMKY2hlY2tpbmcgbGlicHEtZmUuaCBw
+cmVzZW5jZS4uLiB5ZXMKY2hlY2tpbmcgZm9yIGxpYnBxLWZlLmguLi4geWVzCmNoZWNraW5nIHNx
+bGl0ZTMuaCB1c2FiaWxpdHkuLi4geWVzCmNoZWNraW5nIHNxbGl0ZTMuaCBwcmVzZW5jZS4uLiB5
+ZXMKY2hlY2tpbmcgZm9yIHNxbGl0ZTMuaC4uLiB5ZXMKY2hlY2tpbmcgZm9yIGJpc29uLi4uIGJp
+c29uIC15CmNoZWNraW5nIGZvciBmbGV4Li4uIGZsZXgKY2hlY2tpbmcgbGV4IG91dHB1dCBmaWxl
+IHJvb3QuLi4gbGV4Lnl5CmNoZWNraW5nIGxleCBsaWJyYXJ5Li4uIC1sZmwKY2hlY2tpbmcgd2hl
+dGhlciB5eXRleHQgaXMgYSBwb2ludGVyLi4uIHllcwpjaGVja2luZyBwY3JlcG9zaXguaCB1c2Fi
+aWxpdHkuLi4geWVzCmNoZWNraW5nIHBjcmVwb3NpeC5oIHByZXNlbmNlLi4uIHllcwpjaGVja2lu
+ZyBmb3IgcGNyZXBvc2l4LmguLi4geWVzCmNoZWNraW5nIGZvciB1dGY4IGVuYWJsZWQgcGNyZS4u
+LiB5ZXMKY2hlY2tpbmcgZm9yIHN0cmVycm9yLi4uIChjYWNoZWQpIHllcwpjaGVja2luZyBzeXMv
+cmVzb3VyY2UuaCB1c2FiaWxpdHkuLi4geWVzCmNoZWNraW5nIHN5cy9yZXNvdXJjZS5oIHByZXNl
+bmNlLi4uIHllcwpjaGVja2luZyBmb3Igc3lzL3Jlc291cmNlLmguLi4geWVzCmNoZWNraW5nIGZv
+ciBzZXRybGltaXQuLi4geWVzCmNoZWNraW5nIGZvciBnZXRybGltaXQuLi4geWVzCmNoZWNraW5n
+IGZvciBkYWVtb24uLi4geWVzCmNoZWNraW5nIGZvciBzZXRzaWQuLi4geWVzCmNoZWNraW5nIGZv
+ciBzaHV0ZG93bi4uLiB5ZXMKY2hlY2tpbmcgZm9yIHNldHByb2N0aXRsZS4uLiBubwpjaGVja2lu
+ZyBmb3Igc2V0cHJvY3RpdGxlIGluIC1sdXRpbC4uLiBubwpjaGVja2luZyBzeXMvcHN0YXQuaCB1
+c2FiaWxpdHkuLi4gbm8KY2hlY2tpbmcgc3lzL3BzdGF0LmggcHJlc2VuY2UuLi4gbm8KY2hlY2tp
+bmcgZm9yIHN5cy9wc3RhdC5oLi4uIG5vCmNoZWNraW5nIHN5cy9zeXNuZXdzLmggdXNhYmlsaXR5
+Li4uIG5vCmNoZWNraW5nIHN5cy9zeXNuZXdzLmggcHJlc2VuY2UuLi4gbm8KY2hlY2tpbmcgZm9y
+IHN5cy9zeXNuZXdzLmguLi4gbm8KY2hlY2tpbmcgZm9yIFBTX1NUUklOR1MuLi4gbm8KY2hlY2tp
+bmcgZm9yIFNDTy4uLiBubwpjaGVja2luZyBmb3Igc2V0cHJvY3RpdGxlIHVzYWJpbGl0eS4uLiB5
+ZXMKY2hlY2tpbmcgbm9uYmxvY2tpbmcgbWV0aG9kLi4uIGZjbnRsCmNoZWNraW5nIHRpbWV6b25l
+IEdNVCBvZmZzZXQgbWV0aG9kLi4uIHRtCmNoZWNraW5nIGZvciBzaGFyZWQgbW1hcC4uLiB5ZXMK
+Y2hlY2tpbmcgZm9yIGZjbnRsLi4uIHllcwpjaGVja2luZyBmb3IgZmRhdGFzeW5jLi4uIHllcwpj
+aGVja2luZyBmb3IgdXVpZF9nZW5lcmF0ZSBpbiAtbHV1aWQuLi4gbm8KY2hlY2tpbmcgZm9yIHNp
+Z3ZlYy4uLiB5ZXMKY2hlY2tpbmcgZm9yIHJlc19zZWFyY2ggaW4gLWxyZXNvbHYuLi4gbm8KY2hl
+Y2tpbmcga3JiLmggdXNhYmlsaXR5Li4uIG5vCmNoZWNraW5nIGtyYi5oIHByZXNlbmNlLi4uIG5v
+CmNoZWNraW5nIGZvciBrcmIuaC4uLiBubwpjb25maWd1cmU6IFdBUk5JTkc6IE5vIEtlcmJlcm9z
+IFY0IGZvdW5kCmNoZWNraW5nIG9wZW5zc2wvZXZwLmggdXNhYmlsaXR5Li4uIHllcwpjaGVja2lu
+ZyBvcGVuc3NsL2V2cC5oIHByZXNlbmNlLi4uIHllcwpjaGVja2luZyBmb3Igb3BlbnNzbC9ldnAu
+aC4uLiB5ZXMKY2hlY2tpbmcgZm9yIFJTQVB1YmxpY0VuY3J5cHQgaW4gLWxyc2FyZWYuLi4gbm8K
+Y2hlY2tpbmcgZm9yIEJJT19hY2NlcHQgaW4gLWxjcnlwdG8uLi4geWVzCmNoZWNraW5nIGZvciBT
+U0xfQ1RYX25ldyBpbiAtbHNzbC4uLiB5ZXMKY2hlY2tpbmcgZm9yIHNzbC4uLiB5ZXMKY2hlY2tp
+bmcgc2l6ZSBvZiBsb25nLi4uIChjYWNoZWQpIDgKY2hlY2tpbmcgd2hhdCBkaXJlY3RvcnkgbGli
+cmFyaWVzIGFyZSBmb3VuZCBpbi4uLiBsaWI2NApjaGVja2luZyB6bGliLmggdXNhYmlsaXR5Li4u
+IHllcwpjaGVja2luZyB6bGliLmggcHJlc2VuY2UuLi4geWVzCmNoZWNraW5nIGZvciB6bGliLmgu
+Li4geWVzCmNoZWNraW5nIGZvciBkZWZsYXRlIGluIC1sei4uLiB5ZXMKY2hlY2tpbmcgZm9yIHps
+aWIuLi4geWVzCmNoZWNraW5nIGZvciBaSW5pdGlhbGl6ZSBpbiAtbHplcGh5ci4uLiBubwpjaGVj
+a2luZyBmb3IgY29tX2VyciBpbiAtbGNvbV9lcnIuLi4geWVzCmNoZWNraW5nIGV0L2NvbV9lcnIu
+aCB1c2FiaWxpdHkuLi4geWVzCmNoZWNraW5nIGV0L2NvbV9lcnIuaCBwcmVzZW5jZS4uLiB5ZXMK
+Y2hlY2tpbmcgZm9yIGV0L2NvbV9lcnIuaC4uLiB5ZXMKY2hlY2tpbmcgZm9yIGNvbXBpbGVfZXQu
+Li4gL3Vzci9iaW4vY29tcGlsZV9ldApjaGVja2luZyBmb3IgbW9kZXJuIHN5c2xvZy4uLiB5ZXMK
+Y2hlY2tpbmcgd2hpY2ggc3lzbG9nIGZhY2lsaXR5IHRvIHVzZS4uLiBMT0dfTE9DQUw2CmNoZWNr
+aW5nIGZvciBnZXRkdGFibGVzaXplLi4uIHllcwpjaGVja2luZyB0byB1c2Ugb2xkIHNpZXZlIHNl
+cnZpY2UgbmFtZS4uLiBubwpjaGVja2luZyBmb3IgY3J5cHQuLi4gbm8KY2hlY2tpbmcgZm9yIGNy
+eXB0IGluIC1sY3J5cHQuLi4geWVzCmNoZWNraW5nIEdTU0FQSS4uLiBkaXNhYmxlZApjaGVja2lu
+ZyBzYXNsL3Nhc2wuaCB1c2FiaWxpdHkuLi4geWVzCmNoZWNraW5nIHNhc2wvc2FzbC5oIHByZXNl
+bmNlLi4uIHllcwpjaGVja2luZyBmb3Igc2FzbC9zYXNsLmguLi4geWVzCmNoZWNraW5nIHNhc2wv
+c2FzbHV0aWwuaCB1c2FiaWxpdHkuLi4geWVzCmNoZWNraW5nIHNhc2wvc2FzbHV0aWwuaCBwcmVz
+ZW5jZS4uLiB5ZXMKY2hlY2tpbmcgZm9yIHNhc2wvc2FzbHV0aWwuaC4uLiB5ZXMKY2hlY2tpbmcg
+Zm9yIHByb3BfZ2V0IGluIC1sc2FzbDIuLi4geWVzCmNoZWNraW5nIGZvciBzYXNsX2NoZWNrYXBv
+cCBpbiAtbHNhc2wyLi4uIHllcwpjaGVja2luZyBsaWJ3cmFwIHN1cHBvcnQuLi4gbm8KY29uZmln
+dXJlOiBjcmVhdGluZyAuL2NvbmZpZy5zdGF0dXMKY29uZmlnLnN0YXR1czogY3JlYXRpbmcgbGli
+Y3lydXNfbWluLnBjCmNvbmZpZy5zdGF0dXM6IGNyZWF0aW5nIGxpYmN5cnVzLnBjCmNvbmZpZy5z
+dGF0dXM6IGNyZWF0aW5nIGxpYmN5cnVzX3NpZXZlLnBjCmNvbmZpZy5zdGF0dXM6IGNyZWF0aW5n
+IE1ha2VmaWxlCmNvbmZpZy5zdGF0dXM6IGNyZWF0aW5nIGNvbmZpZy5oCmNvbmZpZy5zdGF0dXM6
+IGV4ZWN1dGluZyBkZXBmaWxlcyBjb21tYW5kcwpjb25maWcuc3RhdHVzOiBleGVjdXRpbmcgbGli
+dG9vbCBjb21tYW5kcwoKQ3lydXMgSW1hcGQgY29uZmlndXJlZCBjb21wb25lbnRzCgogICBldmVu
+dCBub3RpZmljYXRpb246IG5vCiAgIGlkbGVkOiAgICAgICAgICAgICAgeWVzCiAgIG11cmRlcjog
+ICAgICAgICAgICAgbm8KICAgbnR0cGQ6ICAgICAgICAgICAgICB5ZXMKICAgcmVwbGljYXRpb246
+ICAgICAgICB5ZXMKICAgc2lldmU6ICAgICAgICAgICAgICB5ZXMKCkV4dGVybmFsIGRlcGVuZGVu
+Y2llczoKICAgcGNyZTogICAgICAgICAgICAgICB5ZXMKCkRhdGFiYXNlIHN1cHBvcnQ6CiAgIGJk
+YjogICAgICAgICAgICAgICAgeWVzCiAgIG15c3FsOiAgICAgICAgICAgICAgeWVzCiAgIHBvc3Rn
+cmVzcWw6ICAgICAgICAgeWVzCiAgIHNxbGl0ZTogICAgICAgICAgICAgeWVzCgo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1511</attachid>
+            <date>2013-02-23 14:17 EDT</date>
+            <desc>libcyrus.pc</desc>
+            <filename>libcyrus.pc</filename>
+            <type>text/plain</type>
+            <size>329</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">TmFtZTogQ3lydXMgSW1hcGQgbGliY3lydXMKRGVzY3JpcHRpb246IGxpYmN5cnVzIGxpYnJhcnkg
+b2YgQ3lydXMgSW1hcGQKVVJMOiBodHRwOi8vd3d3LmN5cnVzaW1hcC5vcmcvCkNmbGFnczogIC1J
+L21haWwvbWUvY3lydXMtc2FzbC0yLjEuMjMvaW5jbHVkZQpWZXJzaW9uOiAyLjUKUmVxdWlyZXMu
+cHJpdmF0ZTogbGliY3lydXNfbWluID0gMi41CkxpYnM6IC1sY3lydXMKTGlicy5wcml2YXRlOiAg
+LUwvbWFpbC9tZS9jeXJ1cy1zYXNsLTIuMS4yMy9saWIgIC1XbCwtcnBhdGgsL21haWwvbWUvY3ly
+dXMtc2FzbC0yLjEuMjMvbGliIC1sc2FzbDIgIC1sc3NsIC1sY3J5cHRvIAo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

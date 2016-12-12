@@ -1,0 +1,164 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2023</bug_id>
+          
+          <creation_ts>2003-04-16 15:38 EDT</creation_ts>
+          <short_desc>sasl_*_init reference counting can get confused</short_desc>
+          <delta_ts>2010-10-25 18:46:32 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-04-16 15:38:21 EDT</bug_when>
+            <thetext>Imagine this scenario:
+
+application calls sasl_server_init
+loads a library that calls sasl_client_init.
+library then calls sasl_done.
+
+now both the server and the client have been done()&apos;d, now both the server and
+client are freed.
+
+I think this is much less of a real-world issue than a theoretical one though,</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-03 18:45:38 EDT</bug_when>
+            <thetext>draft-newman-sasl-c-api-01.txt suggests a solution:  if an application calls
+both sasl_client_init() and sasl_server_init(), it needs to call sasl_done() twice.
+
+This may still not quite be good enough, but its better than what we are doign now.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-09-02 12:14:26 EDT</bug_when>
+            <thetext>Created an attachment (id=219)
+patch for this issue
+
+This patch solves the issue, but we can&apos;t apply it since it potentially
+breaks applications, we need to wait for SASL 2.2 (or better, presumably when
+the API stabilizes).
+
+Alexey writes:
+sasl_done.diff.txt - fixes sasl_{server|client}_init/sasl_done issue.
+Now for each sasl_{server|client}_init you need to call sasl_done.
+Before sasl_done was decrementing both reference counters.
+New behaviour is to decrement server side counter first, until it reaches 0,
+after that the client side reference counter is used.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-09-02 12:14:41 EDT</bug_when>
+            <thetext>add alexey as cc</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2009-01-25 10:40:42 EDT</bug_when>
+            <thetext>Resolved in 2.1.23 by introducing sasl_server_done() and sasl_client_done().
+
+</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>219</attachid>
+            <date>2003-09-02 12:14 EDT</date>
+            <desc>patch for this issue</desc>
+            <filename>sas_done.diff.txt</filename>
+            <type>text/plain</type>
+            <size>2487</size>
+            <attacher>rjs3@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGxpYi9jbGllbnQuYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvY3ZzL3NyYy9zYXNsL2xp
+Yi9jbGllbnQuYyx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS42MQpkaWZmIC11IC1yMS42MSBjbGll
+bnQuYwotLS0gbGliL2NsaWVudC5jCTE2IEFwciAyMDAzIDE5OjM2OjAwIC0wMDAwCTEuNjEKKysr
+IGxpYi9jbGllbnQuYwkxIFNlcCAyMDAzIDE2OjA3OjI0IC0wMDAwCkBAIC02NSw2ICs2NSw5IEBA
+CiAKIHN0YXRpYyBpbnQgX3Nhc2xfY2xpZW50X2FjdGl2ZSA9IDA7CiAKKy8qIEZvciBhY2Nlc3Mg
+Ynkgb3RoZXIgbW9kdWxlcyAqLworaW50IF9pc19zYXNsX2NsaWVudF9hY3RpdmUodm9pZCkgeyBy
+ZXR1cm4gX3Nhc2xfY2xpZW50X2FjdGl2ZTsgfQorCiBzdGF0aWMgaW50IGluaXRfbWVjaGxpc3Qo
+KQogewogICBjbWVjaGxpc3QtPm11dGV4ID0gc2FzbF9NVVRFWF9BTExPQygpOwpJbmRleDogbGli
+L2NvbW1vbi5jCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9jdnMvc3JjL3Nhc2wvbGliL2NvbW1vbi5j
+LHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjk1CmRpZmYgLXUgLXIxLjk1IGNvbW1vbi5jCi0tLSBs
+aWIvY29tbW9uLmMJMjQgQXVnIDIwMDMgMjA6NTM6MzEgLTAwMDAJMS45NQorKysgbGliL2NvbW1v
+bi5jCTEgU2VwIDIwMDMgMTY6MDc6MjggLTAwMDAKQEAgLTMxMywxNCArMzA2LDI4IEBACiAKIHZv
+aWQgc2FzbF9kb25lKHZvaWQpCiB7Ci0gICAgaWYgKF9zYXNsX3NlcnZlcl9jbGVhbnVwX2hvb2sg
+JiYgX3Nhc2xfc2VydmVyX2NsZWFudXBfaG9vaygpID09IFNBU0xfT0spIHsKLQlfc2FzbF9zZXJ2
+ZXJfaWRsZV9ob29rID0gTlVMTDsKLQlfc2FzbF9zZXJ2ZXJfY2xlYW51cF9ob29rID0gTlVMTDsK
+KyAgICBpbnQgc2VydmVyX2NvdW50ZXI7CisgICAgaW50IGNsaWVudF9jb3VudGVyOworCisgICAg
+c2VydmVyX2NvdW50ZXIgPSBfaXNfc2FzbF9zZXJ2ZXJfYWN0aXZlKCk7CisgICAgY2xpZW50X2Nv
+dW50ZXIgPSBfaXNfc2FzbF9jbGllbnRfYWN0aXZlKCk7CisKKy8qIENoZWNrIGZvciBhIHNpbGx5
+IHN0YXRlICovCisgICAgaWYgKHNlcnZlcl9jb3VudGVyIDwgMCB8fCBjbGllbnRfY291bnRlciA8
+IDApIHsKKwlyZXR1cm47CiAgICAgfQotICAgIAotICAgIGlmIChfc2FzbF9jbGllbnRfY2xlYW51
+cF9ob29rICYmIF9zYXNsX2NsaWVudF9jbGVhbnVwX2hvb2soKSA9PSBTQVNMX09LKSB7Ci0JX3Nh
+c2xfY2xpZW50X2lkbGVfaG9vayA9IE5VTEw7CQotCV9zYXNsX2NsaWVudF9jbGVhbnVwX2hvb2sg
+PSBOVUxMOworCisvKiBTaHV0ZG93biBzZXJ2ZXIgc2lkZSBBUEkgZmlyc3QuIFRoZSBjaG9pY2Ug
+aXMgcHJldHR5IHJhbmRvbSAqLworICAgIGlmIChzZXJ2ZXJfY291bnRlciA+IDApIHsKKwlpZiAo
+X3Nhc2xfc2VydmVyX2NsZWFudXBfaG9vayAmJiBfc2FzbF9zZXJ2ZXJfY2xlYW51cF9ob29rKCkg
+PT0gU0FTTF9PSykgeworCSAgICBfc2FzbF9zZXJ2ZXJfaWRsZV9ob29rID0gTlVMTDsKKwkgICAg
+X3Nhc2xfc2VydmVyX2NsZWFudXBfaG9vayA9IE5VTEw7CisJfQorICAgIH0gZWxzZSB7CisJaWYg
+KF9zYXNsX2NsaWVudF9jbGVhbnVwX2hvb2sgJiYgX3Nhc2xfY2xpZW50X2NsZWFudXBfaG9vaygp
+ID09IFNBU0xfT0spIHsKKwkgICAgX3Nhc2xfY2xpZW50X2lkbGVfaG9vayA9IE5VTEw7CQorCSAg
+ICBfc2FzbF9jbGllbnRfY2xlYW51cF9ob29rID0gTlVMTDsKKwl9CiAgICAgfQogICAgIAogICAg
+IGlmKF9zYXNsX3NlcnZlcl9jbGVhbnVwX2hvb2sgfHwgX3Nhc2xfY2xpZW50X2NsZWFudXBfaG9v
+aykKSW5kZXg6IGxpYi9zYXNsaW50LmgKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2N2cy9zcmMvc2Fz
+bC9saWIvc2FzbGludC5oLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjUwCmRpZmYgLXUgLXIxLjUw
+IHNhc2xpbnQuaAotLS0gbGliL3Nhc2xpbnQuaAkxOCBBdWcgMjAwMyAxNTo0NzoxNyAtMDAwMAkx
+LjUwCisrKyBsaWIvc2FzbGludC5oCTEgU2VwIDIwMDMgMTY6MDc6MjkgLTAwMDAKQEAgLTMxNiw2
+ICszMTYsMTIgQEAKIGV4dGVybiBpbnQgX2lzX3Nhc2xfc2VydmVyX2FjdGl2ZSh2b2lkKTsKIAog
+LyoKKyAqIGNsaWVudC5jCisgKi8KKy8qICh0aGlzIGlzIGEgZnVuY3Rpb24gY2FsbCB0byBlbnN1
+cmUgdGhpcyBpcyByZWFkLW9ubHkgdG8gdGhlIG91dHNpZGUpICovCitleHRlcm4gaW50IF9pc19z
+YXNsX2NsaWVudF9hY3RpdmUodm9pZCk7CisKKy8qCiAgKiBBbGxvY2F0aW9uIGFuZCBNdXRleCB1
+dGlsaXR5IG1hY3JvcwogICovCiAjZGVmaW5lIHNhc2xfQUxMT0MoX19zaXplX18pIChfc2FzbF9h
+bGxvY2F0aW9uX3V0aWxzLm1hbGxvYygoX19zaXplX18pKSkK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

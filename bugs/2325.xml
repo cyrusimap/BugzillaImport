@@ -1,0 +1,135 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2325</bug_id>
+          
+          <creation_ts>2003-12-16 17:42 EDT</creation_ts>
+          <short_desc>lastread info not being updated by connections to POP server</short_desc>
+          <delta_ts>2010-10-18 12:43:03 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="John Lockard">jlockard@umich.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="John Lockard">jlockard@umich.edu</who>
+            <bug_when>2003-12-16 17:42:08 EDT</bug_when>
+            <thetext>At my site we delete unused email accounts based on the last time the user
+checked email.  Using the fud-client this works just find when the user checks
+their email with an IMAP client.  Unfortunately several of my users use POP
+clients and it appears that the POP server isn&apos;t updating the lastread/recent flag.
+
+fud-client reports:
+user: dcogburn
+mbox: user.dcogburn
+Number of Recent 0
+Last read: Sat Dec 13 01:59:11 2003
+Last arrived: Tue Dec 16 17:01:56 2003
+
+
+Yet, I can ask the user and check the imapd log file and find that the user has
+checked email since the 13th:
+Dec 16 17:01:34 krusty pop3d[23506]: login:
+xxxxxxxxxxxx.nanarb01.mi.comcast.net[68.40.##.##] dcogburn plaintext</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="John Lockard">jlockard@umich.edu</who>
+            <bug_when>2003-12-16 18:08:51 EDT</bug_when>
+            <thetext>User has a cyrus.seen file in their inbox (d/user/dcogburn) that is dated
+13-Dec-2001 and the contents are:
+dcogburn        999692449 30326 999692569 1:30325
+
+There&apos;s a dcogburn.seen file for the user at /var/imap/user/d that contains:
+1175e7a936a8a7ad        1 1065183647 152 1065130530 1:152
+1e5e2de939c28a8f        1 1061675100 93 1071298729 1:116
+3f45429b365adc15        1 1071298751 79756 1071298751
+1:79709,79712,79723,79735:79738,79748,79750:79753
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-12-17 08:45:11 EDT</bug_when>
+            <thetext>Since this information is used to cacluate the \Recent flag, it is correct that
+POP does not update it -- only an IMAP SELECT should do that.
+
+I suppose fud-client could be better worded as &quot;last IMAP selection&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="John Lockard">jlockard@umich.edu</who>
+            <bug_when>2003-12-17 15:04:29 EDT</bug_when>
+            <thetext>Why doesn&apos;t POP touch the lastread info?  If I were to use a POP client in one
+location and an IMAP client in another location, the &quot;Recent&quot; flag would be
+wrong.  If I connect with IMAP, check messages, the recent flag gets set to
+zero.  After receiving 20 messages I connect with a POP client, grab my 20
+messages, yet the recent flag would still be 20, would it not?  This would be
+incorrect.  If there&apos;s a good possibility that data on the server is incorrect,
+either that functionality should be removed, or added to the functions that make
+the data incorrect.
+
+The POP server should be updated to &quot;touch&quot; the recent flag.  This functionality
+would be SOOOOOOOO useful.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-12-17 15:06:18 EDT</bug_when>
+            <thetext>\Recent has no meaning to POP.  It shouldn&apos;t be affected by any POP session.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="John Lockard">jlockard@umich.edu</who>
+            <bug_when>2003-12-17 15:59:50 EDT</bug_when>
+            <thetext>Okay, since you don&apos;t think it&apos;s useful, could you point me to where I might
+&quot;tweak&quot; it for myself so that the POP server at least touches the \Recent flag
+on the user&apos;s inbox?
+
+-John
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-12-17 16:07:59 EDT</bug_when>
+            <thetext>The &quot;magic&quot; for this happens in the index_newmailbox call in cmd_select() in
+imapd.c -- the second parameter is set to 0, and then when index_checkseen is
+called, the update happens.
+
+the problem you&apos;ll have is that index_checkseen is very imap-centric.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

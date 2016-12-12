@@ -1,0 +1,237 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2720</bug_id>
+          
+          <creation_ts>2005-10-06 07:34 EDT</creation_ts>
+          <short_desc>Reentrancy problem in auth_unix.c kills mupdate processes</short_desc>
+          <delta_ts>2010-10-18 12:43:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Torsten Hilbrich">torsten.hilbrich@secunet.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>phr2101@columbia.edu</cc>
+    
+    <cc>pturgyan@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-10-06 07:34:55 EDT</bug_when>
+            <thetext>The calls to setgrent, getgrent, and endgrent in lib/auth_unix.c, function
+auth_newstate are thread-unsafe functions as they are potentially using static
+data areas.
+
+Unfortunatly, this function is called via the mysasl_proxy_policy,
+sasl_server_new, sasl_server_step, and saslserver from within the mupdate server
+(master and slave) which are multi-threaded applications.  This results in a
+crashed caused by accessing the group member data in this code area (the
+segfaults occurs when mem contains a pointer to inaccessible memory):
+
+    while ((grp = getgrent())) {
+        for (mem = grp-&gt;gr_mem; *mem; mem++) {
+            if (!strcmp(*mem, identifier)) break;
+        }
+
+ ...
+    }
+
+On my systems the crashed occured within the strcmp because the content of *mem
+got overriden since checking its value within the for end condition.
+
+I got about 10 segfauls on my system which were especially fatal during transfer
+operations of mailboxes from one backend to another.  It was usually necessary
+to manually remove the failed destination mailbox on the backend using
+localdelete IMAP commands to avoid problems on the next mupdatepush.
+
+I was able to reproduce the problem with some testing code which I will attach
+as test-pthread.c.  If the code is compiled without any modifications, it
+crashes almost immediatly with segmentation fault on my system.  If I define the
+THREAD_SAFE macro during compilation the critical section is protected with a
+mutex.  This is the same modification I made to the code of auth_newstate, which
+is attached as patch auth_unix_mutex.diff.
+
+Thanks,
+
+Torsten</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-10-06 07:36:35 EDT</bug_when>
+            <thetext>Created an attachment (id=382)
+Test program to easily reproduce the problem
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-10-06 07:37:19 EDT</bug_when>
+            <thetext>Created an attachment (id=383)
+Patch to version 2.2.10 to fix the problem.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2005-10-27 10:43:17 EDT</bug_when>
+            <thetext>Created an attachment (id=387)
+Alternate (more generic) patch
+
+Please test the alternate patch to make sure that it solves the problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-10-31 13:06:54 EDT</bug_when>
+            <thetext>Applied my patch to CVS.  Fixes problems seen at columbia.edu</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-10-31 13:07:28 EDT</bug_when>
+            <thetext>*** Bug 2705 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-11-01 02:11:21 EDT</bug_when>
+            <thetext>It fixes the problem for me too.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>382</attachid>
+            <date>2005-10-06 07:36 EDT</date>
+            <desc>Test program to easily reproduce the problem</desc>
+            <filename>test-pthread.c</filename>
+            <type>text/plain</type>
+            <size>935</size>
+            <attacher>torsten.hilbrich@secunet.com</attacher>
+            
+              <data encoding="base64">I2luY2x1ZGUgPGdycC5oPgojaW5jbHVkZSA8cHRocmVhZC5oPgoKI2lmZGVmIFRIUkVBRF9TQUZF
+CnN0YXRpYyBwdGhyZWFkX211dGV4X3QgZ3JvdXBfbXV0ZXggPSBQVEhSRUFEX01VVEVYX0lOSVRJ
+QUxJWkVSOwojZW5kaWYKCnZvaWQgKnNlcnZpY2Uodm9pZCAqZGF0YSkKewogIHN0cnVjdCBncm91
+cCAqZ3JwOwoKICB3aGlsZSgxKSB7CiNpZmRlZiBUSFJFQURfU0FGRQogICAgcHRocmVhZF9tdXRl
+eF9sb2NrKCZncm91cF9tdXRleCk7CiNlbmRpZgogICAgc2V0Z3JlbnQoKTsKICAgIHdoaWxlKChn
+cnAgPSBnZXRncmVudCgpKSkgewogICAgICBjaGFyICoqbWVtOwogICAgICBmb3IobWVtID0gZ3Jw
+LT5ncl9tZW07ICptZW07IG1lbSsrKSB7CiAgICAgICAgLyogU3BlaWNoZXJ6dWdyaWZmIHZvcm5l
+aG1lbiAqLwogICAgICAgIGNoYXIgZHVtbXkgPSAqKm1lbTsKICAgICAgfQogICAgfQogICAgZW5k
+Z3JlbnQoKTsKI2lmZGVmIFRIUkVBRF9TQUZFCiAgICBwdGhyZWFkX211dGV4X3VubG9jaygmZ3Jv
+dXBfbXV0ZXgpOwojZW5kaWYKICB9Cn0KCgppbnQgbWFpbigpCnsKICBwdGhyZWFkX3QgdGhyZWFk
+MTsKICBwdGhyZWFkX3QgdGhyZWFkMjsKCiAgaW50IHJldDsKCiAgcmV0ID0gcHRocmVhZF9jcmVh
+dGUoJnRocmVhZDEsIDAsIHNlcnZpY2UsIDApOwogIGlmKHJldCAhPSAwKSB7CiAgICBwZXJyb3Io
+ImNyZWF0ZTEiKTsKICB9CiAgcmV0ID0gcHRocmVhZF9jcmVhdGUoJnRocmVhZDIsIDAsIHNlcnZp
+Y2UsIDApOwogIGlmKHJldCAhPSAwKSB7CiAgICBwZXJyb3IoImNyZWF0ZTIiKTsKICB9CiAgcHRo
+cmVhZF9qb2luKHRocmVhZDEsIDApOwogIGlmKHJldCAhPSAwKSB7CiAgICBwZXJyb3IoImpvaW4x
+Iik7CiAgfQogIHB0aHJlYWRfam9pbih0aHJlYWQyLCAwKTsKICBpZihyZXQgIT0gMCkgewogICAg
+cGVycm9yKCJqb2luMiIpOwogIH0KfQo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>383</attachid>
+            <date>2005-10-06 07:37 EDT</date>
+            <desc>Patch to version 2.2.10 to fix the problem.</desc>
+            <filename>auth_unix_mutex.diff</filename>
+            <type>text/plain</type>
+            <size>892</size>
+            <attacher>torsten.hilbrich@secunet.com</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTmFydSBjeXJ1cy1pbWFwZC0yLjIuMTAub3JpZy9saWIvYXV0aF91bml4LmMgY3lydXMt
+aW1hcGQtMi4yLjEwL2xpYi9hdXRoX3VuaXguYwotLS0gY3lydXMtaW1hcGQtMi4yLjEwLm9yaWcv
+bGliL2F1dGhfdW5peC5jICAgICAyMDA1LTEwLTA1IDE0OjU2OjIwLjAwMDAwMDAwMCArMDIwMAor
+KysgY3lydXMtaW1hcGQtMi4yLjEwL2xpYi9hdXRoX3VuaXguYyAgMjAwNS0xMC0wNSAxNDo1Nzow
+Ny4wMDAwMDAwMDAgKzAyMDAKQEAgLTU1LDYgKzU1LDggQEAKICNpbmNsdWRlICJsaWJjeXJfY2Zn
+LmgiCiAjaW5jbHVkZSAieG1hbGxvYy5oIgogCisjaW5jbHVkZSA8cHRocmVhZC5oPgorCiBjb25z
+dCBjaGFyICphdXRoX21ldGhvZF9kZXNjID0gInVuaXgiOwogCiBzdHJ1Y3QgYXV0aF9zdGF0ZSB7
+CkBAIC02Nyw2ICs2OSw4IEBACiAgICAgImFub255bW91cyIsIDAsIDAKIH07CiAKK3N0YXRpYyBw
+dGhyZWFkX211dGV4X3QgZ3JvdXBfbXV0ZXggPSBQVEhSRUFEX01VVEVYX0lOSVRJQUxJWkVSOwor
+CiAvKgogICogRGV0ZXJtaW5lIGlmIHRoZSB1c2VyIGlzIGEgbWVtYmVyIG9mICdpZGVudGlmaWVy
+JwogICogUmV0dXJucyBvbmUgb2Y6CkBAIC0yNTIsNiArMjU4LDggQEAKICAgICAgICByZXR1cm4g
+bmV3c3RhdGU7CiAKICAgICBwd2QgPSBnZXRwd25hbShpZGVudGlmaWVyKTsKKworICAgIHB0aHJl
+YWRfbXV0ZXhfbG9jaygmZ3JvdXBfbXV0ZXgpOwogCiAgICAgc2V0Z3JlbnQoKTsKICAgICB3aGls
+ZSAoKGdycCA9IGdldGdyZW50KCkpKSB7CkBAIC0yNzIsNiArMjgwLDkgQEAKICAgICAgICB9CiAg
+ICAgfQogICAgIGVuZGdyZW50KCk7CisKKyAgICBwdGhyZWFkX211dGV4X3VubG9jaygmZ3JvdXBf
+bXV0ZXgpOworCiAgICAgcmV0dXJuIG5ld3N0YXRlOwogfQogCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>387</attachid>
+            <date>2005-10-27 10:43 EDT</date>
+            <desc>Alternate (more generic) patch</desc>
+            <filename>mupdate.patch</filename>
+            <type>text/plain</type>
+            <size>1421</size>
+            <attacher>ken@oceana.com</attacher>
+            
+              <data encoding="base64">KioqIG11cGRhdGUuYy5+MS44OS5+CTIwMDQtMTItMTcgMTM6MTk6MjkuMDAwMDAwMDAwIC0wNTAw
+DQotLS0gbXVwZGF0ZS5jCTIwMDUtMTAtMjcgMTA6MzY6MDkuMDAwMDAwMDAwIC0wNDAwDQoqKioq
+KioqKioqKioqKioNCioqKiA0NjAsNDY4ICoqKioNCiAgICAgIHJldHVybiAwOw0KICB9DQogIA0K
+ICBzdGF0aWMgc3RydWN0IHNhc2xfY2FsbGJhY2sgbXlzYXNsX2NiW10gPSB7DQogICAgICB7IFNB
+U0xfQ0JfR0VUT1BULCAmbXlzYXNsX2NvbmZpZywgTlVMTCB9LA0KISAgICAgeyBTQVNMX0NCX1BS
+T1hZX1BPTElDWSwgJm15c2FzbF9wcm94eV9wb2xpY3ksIE5VTEwgfSwNCiAgICAgIHsgU0FTTF9D
+Ql9MSVNUX0VORCwgTlVMTCwgTlVMTCB9DQogIH07DQogIA0KLS0tIDQ2MCw0OTUgLS0tLQ0KICAg
+ICAgcmV0dXJuIDA7DQogIH0NCiAgDQorIA0KKyAvKg0KKyAgKiBUaGUgYXV0aF8qLmMgYmFja2Vu
+ZHMgY2FsbGVkIGJ5IG15c2FzbF9wcm94eV9wb2xpY3koKQ0KKyAgKiB1c2Ugc3RhdGljIHZhcmlh
+YmxlcyB3aGljaCB3ZSBuZWVkIHRvIHByb3RlY3Qgd2l0aCBhIG11dGV4Lg0KKyAgKi8NCisgc3Rh
+dGljIHB0aHJlYWRfbXV0ZXhfdCBwcm94eV9wb2xpY3lfbXV0ZXggPSBQVEhSRUFEX01VVEVYX0lO
+SVRJQUxJWkVSOw0KKyANCisgc3RhdGljIGludCBtdXBkYXRlX3Byb3h5X3BvbGljeShzYXNsX2Nv
+bm5fdCAqY29ubiwNCisgCQkJCXZvaWQgKmNvbnRleHQsDQorIAkJCQljb25zdCBjaGFyICpyZXF1
+ZXN0ZWRfdXNlciwgdW5zaWduZWQgcmxlbiwNCisgCQkJCWNvbnN0IGNoYXIgKmF1dGhfaWRlbnRp
+dHksIHVuc2lnbmVkIGFsZW4sDQorIAkJCQljb25zdCBjaGFyICpkZWZfcmVhbG0sDQorIAkJCQl1
+bnNpZ25lZCB1cmxlbiwNCisgCQkJCXN0cnVjdCBwcm9wY3R4ICpwcm9wY3R4KQ0KKyB7DQorICAg
+ICBpbnQgcjsNCisgDQorICAgICBwdGhyZWFkX211dGV4X2xvY2soJnByb3h5X3BvbGljeV9tdXRl
+eCk7IC8qIExPQ0sgKi8NCisgDQorICAgICByID0gbXlzYXNsX3Byb3h5X3BvbGljeShjb25uLCBj
+b250ZXh0LCByZXF1ZXN0ZWRfdXNlciwgcmxlbiwNCisgCQkJICAgIGF1dGhfaWRlbnRpdHksIGFs
+ZW4sIGRlZl9yZWFsbSwgdXJsZW4sIHByb3BjdHgpOw0KKyANCisgICAgIHB0aHJlYWRfbXV0ZXhf
+dW5sb2NrKCZwcm94eV9wb2xpY3lfbXV0ZXgpOyAvKiBVTkxPQ0sgKi8NCisgDQorICAgICByZXR1
+cm4gcjsNCisgfQ0KKyANCiAgc3RhdGljIHN0cnVjdCBzYXNsX2NhbGxiYWNrIG15c2FzbF9jYltd
+ID0gew0KICAgICAgeyBTQVNMX0NCX0dFVE9QVCwgJm15c2FzbF9jb25maWcsIE5VTEwgfSwNCiEg
+ICAgIHsgU0FTTF9DQl9QUk9YWV9QT0xJQ1ksICZtdXBkYXRlX3Byb3h5X3BvbGljeSwgTlVMTCB9
+LA0KICAgICAgeyBTQVNMX0NCX0xJU1RfRU5ELCBOVUxMLCBOVUxMIH0NCiAgfTsNCiAgDQo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

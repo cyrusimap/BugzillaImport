@@ -1,0 +1,117 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3528</bug_id>
+          
+          <creation_ts>2011-08-24 12:25 EDT</creation_ts>
+          <short_desc>Copying mails with annotation fails</short_desc>
+          <delta_ts>2011-09-19 06:21:22 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-08-24 12:25:47 EDT</bug_when>
+            <thetext>Created an attachment (id=1417)
+Patch for annotations copy upon message copy
+
+For &apos;annotate&apos; branch on git://github.com/gnb/cyrus-imapd.git.
+
+How to reproduce:
+ - create a user folder
+ - add a mail
+ - set annotation on mail
+ - copy mail
+Server response is &quot;NO Internal Error&quot;. The mail is actually copied, but not its annotation.
+If trying to copy several mails at once, command returns on the first mail having an annotation.
+
+It appears the issue is raised because annotation is being changed without a transaction being initiated.
+Proposed patch attached.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-09-19 06:21:22 EDT</bug_when>
+            <thetext>Ok, so the bug is real but the patch is incorrect.  The function
+annotate_msg_copy() doesn&apos;t do it&apos;s own transaction for a very good
+reason: it&apos;s designed to live inside a larger annotations db transaction
+which is managed by in the code which manages struct appendstate.  The
+annotatemore_commit() call occurs in append_commit().  The bug is due
+to a lack of an annotatemore_begin() call in append_setup(), which I
+broke one or two API rewrites ago :(  It turns out I fixed this problem
+in commit &quot;annotate: actually start a txn for callout&quot; while adding tests
+for the annotator daemon (which was, guess what, also broken).  Anyway
+I&apos;ve added a Cassandane regression test Metadata.copy_messages, which
+fails with &quot;NO Internal Error&quot; on the old code and passes on the new
+code.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1417</attachid>
+            <date>2011-08-24 12:25 EDT</date>
+            <desc>Patch for annotations copy upon message copy</desc>
+            <filename>msg_copy_annotation.patch</filename>
+            <type>text/plain</type>
+            <size>791</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL2ltYXAvYW5ub3RhdGUuYyBiL2ltYXAvYW5ub3RhdGUuYwppbmRleCBmZjUz
+NzM1Li4xYzc0NzNjIDEwMDY0NAotLS0gYS9pbWFwL2Fubm90YXRlLmMKKysrIGIvaW1hcC9hbm5v
+dGF0ZS5jCkBAIC0zMDY3LDkgKzMwNjcsMjMgQEAgaW50IGFubm90YXRlX21zZ19jb3B5KGNvbnN0
+IGNoYXIgKm9sZG1ib3huYW1lLCB1aW50MzJfdCBvbGR1aWQsCiAJCSAgICAgIGNvbnN0IGNoYXIg
+Km5ld21ib3huYW1lLCB1aW50MzJfdCBuZXd1aWQsCiAJCSAgICAgIGNvbnN0IGNoYXIgKnVzZXJp
+ZCkKIHsKLSAgICByZXR1cm4gX2Fubm90YXRlX3Jld3JpdGUob2xkbWJveG5hbWUsIG9sZHVpZCwg
+dXNlcmlkLAotCQkJICAgICBuZXdtYm94bmFtZSwgbmV3dWlkLCB1c2VyaWQsCi0JCQkgICAgIC8q
+Y29weSovMSk7CisgICAgaW50IHI7CisKKyAgICByID0gYW5ub3RhdGVtb3JlX2JlZ2luKCk7Cisg
+ICAgaWYgKHIpCisJZ290byBvdXQ7CisKKyAgICByID0gX2Fubm90YXRlX3Jld3JpdGUob2xkbWJv
+eG5hbWUsIG9sZHVpZCwgdXNlcmlkLAorCQkJICBuZXdtYm94bmFtZSwgbmV3dWlkLCB1c2VyaWQs
+CisJCQkgIC8qY29weSovMSk7CisgICAgaWYgKHIpCisJZ290byBvdXQ7CisgICAgciA9IGFubm90
+YXRlbW9yZV9jb21taXQoKTsKKworb3V0OgorICAgIGlmIChyKQorCWFubm90YXRlbW9yZV9hYm9y
+dCgpOworICAgIHJldHVybiByOwogfQogCiAvKioqKioqKioqKioqKioqKioqKioqKioqKiAgQW5u
+b3RhdGlvbiBJbml0aWFsaXphdGlvbiAgKioqKioqKioqKioqKioqKioqKioqKioqLwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

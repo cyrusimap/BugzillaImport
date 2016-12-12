@@ -1,0 +1,291 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1651</bug_id>
+          
+          <creation_ts>2002-11-17 23:38 EDT</creation_ts>
+          <short_desc>IPv6 Support</short_desc>
+          <delta_ts>2010-10-18 12:07:22 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <bug_file_loc>http://www.imasy.or.jp/~ume/ipv6/cyrus-imapd-2.2.prealpha-ipv6-20021122.diff.gz</bug_file_loc>
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.2.x</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>leg+cyrus@andrew.cmu.edu</cc>
+    
+    <cc>ume@mahoroba.org</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-11-17 23:38:45 EDT</bug_when>
+            <thetext>We want to require this before 2.2.0 goes out.  CC: Hajimu UMEMOTO
+&lt;ume@mahoroba.org&gt;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-11-17 23:39:08 EDT</bug_when>
+            <thetext>Set 2.2.0 milestone</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-11-26 13:15:35 EDT</bug_when>
+            <thetext>added URL, reassigning to Rob since he&apos;s really our 2.2 guy right now
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-12-10 13:50:13 EDT</bug_when>
+            <thetext>Hajimu,
+
+I note that the autoconf stuff uses the same macros we have in SASL (though with
+a slightly different implementation of IPv6_CHECK_FUNC)
+
+Since the cmulocal directory is shared between our products, can we just pick
+one implementation of this and put it there,so we don&apos;t have to fix it in
+multiple places?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-12-10 14:17:43 EDT</bug_when>
+            <thetext>This patch also places a libcyrus dependency on master.
+
+I&apos;m guessing this is for the getaddrinfo/getnameinfo replacements...
+
+I also note that there is a #if !(defined(__FreeBSD__) &amp;&amp; __FreeBSD__ &lt; 3)
+is there a way to avoid this with a configure check instead?
+
+Finally, what is CYRUS_ID/the &quot;associate&quot; code for?  </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Hajimu UMEMOTO">ume@mahoroba.org</who>
+            <bug_when>2003-01-09 05:46:15 EDT</bug_when>
+            <thetext>&gt; #3
+
+No, you don&apos;t have to maintain multiple copies.
+I think IPv6_CHECK_FUNC in SASLv2 was modified to be better after I
+sent to sasl guys, and my local version is stay old.  I just use my
+local version.  Please use SASLv2 version of IPv6_CHECK_FUNC.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Hajimu UMEMOTO">ume@mahoroba.org</who>
+            <bug_when>2003-01-09 05:50:20 EDT</bug_when>
+            <thetext>&gt; #4
+
+bugzilla-daemon&gt; This patch also places a libcyrus dependency on master.
+
+bugzilla-daemon&gt; I&apos;m guessing this is for the getaddrinfo/getnameinfo 
+replacements...
+
+Yes, libcyrus is required only for the getaddrinfo/getnameinfo
+replacements.  It may better to link libcyrus only if
+getaddrinfo/getnameinfo is not available.
+
+bugzilla-daemon&gt; I also note that there is a #if !(defined(__FreeBSD__) &amp;&amp; 
+__FreeBSD__ &lt; 3)
+bugzilla-daemon&gt; is there a way to avoid this with a configure check instead?
+
+KAME/FreeBSD 2.X defines IPV6_BINDV6ONLY but the implementation is
+incomplete.  However, KAME/FreeBSD 2.X is quite old implementation and
+I believe KAME/FreeBSD 2.X is not used for application platform,
+anymore.  So, you can simply omit this check.
+
+bugzilla-daemon&gt; Finally, what is CYRUS_ID/the &quot;associate&quot; code for?
+
+The master may invoke two child processes for one service, one is for
+IPv4 and the other is for IPv6 on the platform where IPv4-mapped IPv6
+address is not premised, e.g. *BSD.  For example,
+
+        SERVICES {
+          imap          cmd=&quot;imapd&quot; listen=&quot;imap&quot; prefork=0
+        }
+
+invokes two imapd.
+In original implementation, each service has its own lockfile named
+CONFIG_DIR/socket/CYRUS_SERVICE.lock.
+The two child processes from one service breaks this locking.  So, I
+introduced CYRUS_ID to distinguish each processes by changing lockfile
+name to CONFIG_DIR/socket/CYRUS_SERVICE-CYRUS_ID.lock.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-02-05 18:48:46 EDT</bug_when>
+            <thetext>&gt;Yes, libcyrus is required only for the getaddrinfo/getnameinfo
+&gt;replacements.  It may better to link libcyrus only if
+&gt;getaddrinfo/getnameinfo is not available
+
+I&apos;m thinking we just want to have the getaddrinfo/getnameinfo replacements for
+master separate, atleast for now.  In the grand scheme of things, its easy to
+reverse and doesn&apos;t hurt us much (beyond some extra files in CVS).
+
+I&apos;m also bouncing back and forth if we want to supply replacements in libcyrus
+as well, since SASL will already have them (This is assuming that everyone is
+using Cyrus SASL, and not some other implementor&apos;s, of course).  Note that I
+believe SASL names these symbols sasl_getaddrinfo (and friends), so we&apos;d have to
+do the same.  It turns out Cyrus currently does this, I don&apos;t have a good
+concept of wether it works.
+
+I guess Hajimu is the one with the experience as to what works best.  Larry will
+probably flame me for trying to violate the API.
+
+Finally, I think we&apos;ll just omit the freebsd check, maybe documenting the issue
+somewhere.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Hajimu UMEMOTO">ume@mahoroba.org</who>
+            <bug_when>2003-02-08 06:54:37 EDT</bug_when>
+            <thetext>&gt; I&apos;m also bouncing back and forth if we want to supply replacements in libcyrus
+&gt; as well, since SASL will already have them (This is assuming that everyone is
+&gt; using Cyrus SASL, and not some other implementor&apos;s, of course).  Note that I
+&gt; believe SASL names these symbols sasl_getaddrinfo (and friends), so we&apos;d have to
+&gt; do the same.  It turns out Cyrus currently does this, I don&apos;t have a good
+&gt; concept of wether it works.
+
+&gt; I guess Hajimu is the one with the experience as to what works best.  Larry will
+&gt; probably flame me for trying to violate the API.
+
+I don&apos;t recommend to just use sasl_getaddrinfo() and sasl_getnameinfo().  It
+breaks the API as you mentioned.
+Further, existing sasl_getaddrinfo() and sasl_getnameinfo() lack some feature
+that Cyrus IMAPd requires. If you insist on using libsasl2 version, please
+update getaddrinfo.c, getnameinfo.c and gai.h in sasl2 to sync with the patch
+for imapd 2.2.X.
+
+How about the attached patch.  This patch adds $GAIOBJS for master/Makefile. 
+The patch includes only getaddrinfo()/getnameinfo() detection.
+
+&gt; Finally, I think we&apos;ll just omit the freebsd check, maybe documenting the issue
+&gt; somewhere.
+
+Okay, thanks.
+
+Index: acconfig.h
+diff -u acconfig.h.orig acconfig.h
+--- acconfig.h.orig	Tue Feb  4 23:22:56 2003
++++ acconfig.h	Fri Feb  7 11:41:45 2003
+@@ -217,14 +217,7 @@
+ #include &lt;sys/socket.h&gt;
+ 
+ #ifndef HAVE_GETADDRINFO
+-#define	getaddrinfo	sasl_getaddrinfo
+-#define	freeaddrinfo	sasl_freeaddrinfo
+-#define	gai_strerror	sasl_gai_strerror
+ #include &quot;gai.h&quot;
+-#endif
+-
+-#ifndef HAVE_GETNAMEINFO
+-#define	getnameinfo	sasl_getnameinfo
+ #endif
+ 
+ #ifndef	NI_WITHSCOPEID
+Index: configure.in
+diff -u configure.in.orig configure.in
+--- configure.in.orig	Tue Feb  4 23:22:56 2003
++++ configure.in	Fri Feb  7 11:38:01 2003
+@@ -111,16 +111,24 @@
+ CMU_SOCKETS
+ LIBS=&quot;$LIBS ${LIB_SOCKET}&quot;
+ 
+-dnl check for IPv6 functions (fall back to sasl&apos;s if we don&apos;t have them)
+-cyrus_cv_getaddrinfo=yes
++dnl check for IPv6 functions
++cyrus_cv_getaddrinfo=no
+ IPv6_CHECK_FUNC(getaddrinfo, [IPv6_CHECK_FUNC(gai_strerror,[
+ 	AC_DEFINE(HAVE_GETADDRINFO)
+-	cyrus_cv_getaddrinfo=no])])
++	cyrus_cv_getaddrinfo=yes])])
++if test $cyrus_cv_getaddrinfo = no; then
++	LIBOBJS=&quot;$LIBOBJS getaddrinfo.o&quot;
++	GAIOBJS=&quot;../lib/getaddrinfo.o&quot;
++fi
+ 
+-cyrus_cv_getnameinfo=yes
+-IPv6_CHECK_FUNC(getnameinfo,
+-	AC_DEFINE(HAVE_GETNAMEINFO),
+-	cyrus_cv_getnameinfo=no)
++cyrus_cv_getnameinfo=no
++IPv6_CHECK_FUNC(getnameinfo,[
++	AC_DEFINE(HAVE_GETNAMEINFO)
++	cyrus_cv_getnameinfo=yes])
++if test $cyrus_cv_getnameinfo = no; then
++	LIBOBJS=&quot;$LIBOBJS getnameinfo.o&quot;
++	GAIOBJS=&quot;$GAIOBJS ../lib/getnameinfo.o&quot;
++fi
+ 
+ dnl this is to check for time things
+ AC_CHECK_HEADERS(sys/time.h)
+@@ -132,6 +140,7 @@
+ AC_SUBST(PRE_SUBDIRS)
+ AC_SUBST(EXTRA_SUBDIRS)
+ AC_SUBST(DEPLIBS)
++AC_SUBST(GAIOBJS)
+ AC_SUBST(LOCALDEFS)
+ AC_FUNC_VPRINTF
+ 
+Index: master/Makefile.in
+diff -u master/Makefile.in.orig master/Makefile.in
+--- master/Makefile.in.orig	Mon Dec 16 23:34:13 2002
++++ master/Makefile.in	Fri Feb  7 11:38:46 2003
+@@ -54,7 +54,7 @@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+ CPPFLAGS = -I. -I.. -I$(srcdir) -I$(srcdir)/../lib @CPPFLAGS@ @COM_ERR_CPPFLAGS@
+-DEPLIBS = @DEPLIBS@
++DEPLIBS = @DEPLIBS@ @GAIOBJS@
+ 
+ CFLAGS = @CFLAGS@
+ LDFLAGS = @LDFLAGS@ @CFLAGS@ @COM_ERR_LDFLAGS@
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-02-08 09:05:06 EDT</bug_when>
+            <thetext>We&apos;re probably going to go with the libcyrus_min.a support that we just added to
+do this.
+
+so it should be in next week sometime.  (provided the patch still applies
+relatively cleanly)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-02-12 14:14:54 EDT</bug_when>
+            <thetext>Committed.  Woo.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

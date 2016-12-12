@@ -1,0 +1,140 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2707</bug_id>
+          
+          <creation_ts>2005-09-19 19:06 EDT</creation_ts>
+          <short_desc>master does not detect duplicate service names with different listen or proto</short_desc>
+          <delta_ts>2013-02-24 23:10:07 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Christian Schulte">cs@schulte.it</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>cs@schulte.it</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Christian Schulte">cs@schulte.it</who>
+            <bug_when>2005-09-19 19:06:03 EDT</bug_when>
+            <thetext>After adding a second imap service to cyrus.conf new connections to the server
+hung sporadically. The service definitions I had in my cyrus.conf looked
+something like this:
+
+imap    cmd=&quot;/usr/local/cyrus22/bin/imapd -C /etc/cyrus/imap/imap&quot;
+listen=&quot;XXX.XXX.XXX.XXX:imap2&quot; prefork=0
+
+imap-1    cmd=&quot;/usr/local/cyrus22/bin/imapd -C /etc/cyrus/imap/imap-1&quot;
+listen=&quot;YYY.YYY.YYY.YYY:imap2&quot; prefork=0
+
+In masterconf.c - process_section() service names which do not completely comply
+with the requirements of isalnum() will get cutted after the last valid
+character silently.
+
+        for (q = p; isalnum((int) *q); q++) ;
+        if (q) { *q = &apos;\0&apos;; q++; }
+
+Thus the service name imap-1 will become imap and the above service definitions
+will lead to two services named imap. In master.c - add_service() duplicate
+service names are not detected correctly. There is a check to find duplicate
+service definitions (name, listen and proto) but it does not detect duplicate
+service names differing in listen or proto. This leeds to locking problems
+between calls to lockaccept() and unlockaccept() in service.c - main().</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Christian Schulte">cs@schulte.it</who>
+            <bug_when>2005-09-19 19:07:05 EDT</bug_when>
+            <thetext>Created an attachment (id=376)
+Quick patch to detect duplicate service names
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-24 23:10:07 EDT</bug_when>
+            <thetext>This bug was fixed as a side effect of dealing with other problems in the masterconf.c code, in commit 
+
+  c2d8aae Remove 256 byte limit on cyrus.conf arg values
+
+which will be in 2.5.  The example given above will now produce the following message in syslog and fail to start the master process.
+
+Feb 25 15:06:44 hostname cyrus/master[8433]: configuration file /etc/cyrus.conf: bad character &apos;-&apos; in name on line 6
+Feb 25 15:06:44 hostname cyrus/master[8433]: exiting</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>376</attachid>
+            <date>2005-09-19 19:07 EDT</date>
+            <desc>Quick patch to detect duplicate service names</desc>
+            <filename>master.c.patch</filename>
+            <type>text/plain</type>
+            <size>1343</size>
+            <attacher>cs@schulte.it</attacher>
+            
+              <data encoding="base64">LS0tIG1hc3Rlci5jLm9yaWdpbmFsCTIwMDUtMDktMTkgMjE6NDg6MzMuMDAwMDAwMDAwICswMjAw
+CisrKyBtYXN0ZXIuYwkyMDA1LTA5LTE5IDIyOjExOjEwLjAwMDAwMDAwMCArMDIwMApAQCAtMTMz
+NywxNCArMTMzNywyMSBAQAogCS8qIHNraXAgbm9uLXByaW1hcnkgaW5zdGFuY2VzICovCiAJaWYg
+KFNlcnZpY2VzW2ldLmFzc29jaWF0ZSA+IDApCiAJICAgIGNvbnRpbnVlOwotCS8qIG11c3QgaGF2
+ZSBlbXB0eS9zYW1lIHNlcnZpY2UgbmFtZSwgbGlzdGVuIGFuZCBwcm90byAqLwotCWlmICgoIVNl
+cnZpY2VzW2ldLm5hbWUgfHwgIXN0cmNtcChTZXJ2aWNlc1tpXS5uYW1lLCBuYW1lKSkgJiYKLQkg
+ICAgKCFTZXJ2aWNlc1tpXS5saXN0ZW4gfHwgIXN0cmNtcChTZXJ2aWNlc1tpXS5saXN0ZW4sIGxp
+c3RlbikpICYmCi0JICAgICghU2VydmljZXNbaV0ucHJvdG8gfHwgIXN0cmNtcChTZXJ2aWNlc1tp
+XS5wcm90bywgcHJvdG8pKSkKKwkvKiBtdXN0IGhhdmUgZW1wdHkvc2FtZSBzZXJ2aWNlIG5hbWUs
+IGxpc3RlbiBhbmQgcHJvdG8KKwkgKiBhbmQgbXVzdCBub3QgaGF2ZSB0aGUgc2FtZSBzZXJ2aWNl
+IG5hbWUgd2l0aCBkaWZmZXJlbnQKKwkgKiBsaXN0ZW4gb3IgcHJvdG8KKwkgKi8KKwlpZiAoU2Vy
+dmljZXNbaV0ubmFtZSAmJiAhc3RyY21wKFNlcnZpY2VzW2ldLm5hbWUsIG5hbWUpICYmCisJICAg
+ICgoU2VydmljZXNbaV0ubGlzdGVuICYmIHN0cmNtcChTZXJ2aWNlc1tpXS5saXN0ZW4sIGxpc3Rl
+bikpIHx8CisJICAgIChTZXJ2aWNlc1tpXS5wcm90byAmJiBzdHJjbXAoU2VydmljZXNbaV0ucHJv
+dG8sIHByb3RvKSkpKQogCSAgICBicmVhazsKKwllbHNlIGlmICgoIVNlcnZpY2VzW2ldLm5hbWUg
+fHwgIXN0cmNtcChTZXJ2aWNlc1tpXS5uYW1lLCBuYW1lKSkgJiYKKwkgICAgICAgICAoIVNlcnZp
+Y2VzW2ldLmxpc3RlbiB8fCAhc3RyY21wKFNlcnZpY2VzW2ldLmxpc3RlbiwgbGlzdGVuKSkgJiYK
+KwkgICAgICAgICAoIVNlcnZpY2VzW2ldLnByb3RvIHx8ICFzdHJjbXAoU2VydmljZXNbaV0ucHJv
+dG8sIHByb3RvKSkpCisJICAgICAgICAgYnJlYWs7CiAgICAgfQogCi0gICAgLyogd2UgaGF2ZSBk
+dXBsaWNhdGUgc2VydmljZSBuYW1lcyBpbiB0aGUgY29uZmlnIGZpbGUgKi8KKyAgICAvKiB3ZSBo
+YXZlIGR1cGxpY2F0ZSBzZXJ2aWNlIG5hbWVzIG9yIGRlZmluaXRpb25zIGluIHRoZSBjb25maWcg
+ZmlsZSAqLwogICAgIGlmICgoaSA8IG5zZXJ2aWNlcykgJiYgU2VydmljZXNbaV0uZXhlYykgewog
+CWNoYXIgYnVmWzI1Nl07CiAJc25wcmludGYoYnVmLCBzaXplb2YoYnVmKSwgIm11bHRpcGxlIGVu
+dHJpZXMgZm9yIHNlcnZpY2UgJyVzJyIsIG5hbWUpOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

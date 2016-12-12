@@ -1,0 +1,137 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2819</bug_id>
+          
+          <creation_ts>2006-04-05 13:02 EDT</creation_ts>
+          <short_desc>ctl_mboxlist -u creates unsuable mailboxes.db</short_desc>
+          <delta_ts>2010-10-25 18:46:38 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Patrick Radtke">phr2101@columbia.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>jeaton@cmu.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Patrick Radtke">phr2101@columbia.edu</who>
+            <bug_when>2006-04-05 13:02:34 EDT</bug_when>
+            <thetext>Recreating the mailboxes.db fron a text backup leads to &apos;Unknown/invalid
+partition&apos; errors.
+
+
+I do
+
+rphr2101@hotdog:/var/cyrus/proc&gt; /etc/init.d/cyrus stop
+Stopping cyrusmaster:                                      [  OK  ]
+rphr2101@hotdog:/var/cyrus/proc&gt; su cyrus -c &quot;ctl_mboxlist -d &gt; /tmp/mlist&quot;
+rphr2101@hotdog:/var/cyrus/proc&gt; mv /var/cyrus/mailboxes.db /var/cyrus/mailboxes.bk
+rphr2101@hotdog:/var/cyrus/proc&gt; su cyrus -c &quot;ctl_mboxlist -u &lt;  /tmp/mlist&quot;
+
+when logging in I get
+
+
+---------- phr2101 Tue Apr  4 13:55:15 2006
+
+&lt;1144173315&lt;00000003 SELECT INBOX
+&gt;1144173315&gt;00000003 NO Unknown/invalid partition
+&lt;1144173315&lt;00000004 LOGOUT
+&gt;1144173315&gt;* BYE LOGOUT received
+00000004 OK Completed
+
+
+
+prior to running the test, logging in would reveal
+
+---------- phr2101 Tue Apr  4 13:46:57 2006
+
+&lt;1144172817&lt;00000003 SELECT INBOX
+&gt;1144172817&gt;* FLAGS (\Answered \Flagged \Draft \Deleted \Seen NotJunk Junk
+JunkRecorded $NotJunk $Junk $Forwarded)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen NotJunk Junk
+JunkRecorded $NotJunk $Junk $Forwarded \*)]
+* 2215 EXISTS
+* 2 RECENT
+* OK [UNSEEN 673]
+* OK [UIDVALIDITY 1120243065]
+* OK [UIDNEXT 40335]
+00000003 OK [READ-WRITE] Completed
+
+
+
+Like wise mbpath no longer works
+cyrus@mockduck:/var/cyrus/log/phr2101&gt;  mbpath user.phr2101
+
+while before
+
+cyrus@mockduck:/etc/mail&gt;  mbpath user.phr2101
+bratwurst.cc.columbia.edu!2
+
+
+
+here&apos;s what my entry looks like
+
+cyrus@mockduck:/var/cyrus/log/phr2101&gt; grep user.phr2101 /tmp/mlist
+user.phr2101    bratwurst.cc.columbia.edu!2     phr2101 lrswipcda</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-05 14:25:51 EDT</bug_when>
+            <thetext>I did some research and this is a problem with frontends running 2.1-2.3.  The
+problem is that the text dump doesn&apos;t write out the mailbox type flags, so that
+when undumped, all mailboxes have a type of zero (local), instead of a type of
+one (remote).  The easy solution is to use cvt_cyrusdb and convert mailboxes.db
+to &apos;flat&apos;.  This will produce a usable text format which could then be converted
+back into &apos;skiplist&apos; or &apos;berkeley&apos;.
+
+I have to decide if we should change ctl_mboxlist -d/-u to process the mailbox
+type flags, because this would make any existing dumps useless.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-05 14:27:35 EDT</bug_when>
+            <thetext>Actually, the same problem would exist on the mupdate master and on any unified
+backends (2.3).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-06 11:47:58 EDT</bug_when>
+            <thetext>Fix commited to CVS (2.2 and 2.3)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

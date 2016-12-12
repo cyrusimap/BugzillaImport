@@ -1,0 +1,100 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3464</bug_id>
+          
+          <creation_ts>2011-05-17 01:51 EDT</creation_ts>
+          <short_desc>lmtpd loops and corrupts database under certain error conditions</short_desc>
+          <delta_ts>2011-06-21 17:20:12 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.4.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <bug_file_loc>http://www.spinics.net/lists/info-cyrus/msg03554.html</bug_file_loc>
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.9</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Donald Buczek">buczek@molgen.mpg.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Donald Buczek">buczek@molgen.mpg.de</who>
+            <bug_when>2011-05-17 01:51:45 EDT</bug_when>
+            <thetext>When lmtpd fails to exec() sendmail while processing a sieve script, the lmtpd can go into a loop blocking other deliveries and leaving the mailbox database in a corrupt state when killed. The reason is that the child forked to exec sendmail is wrongly calling error handling code which tries to shut down the database connection instead of just exiting with a error status.
+
+We&apos;ve got hit by this with cyrus-imapd-2.4.2 last week, but the bug still exists in the current version 2.4.8. The bug was already analyzed, and reported 2007 by Jesús Roncero together with a valid fix, but it must have slipped the attention of the maintainers.
+
+Original report: http://www.spinics.net/lists/info-cyrus/msg03554.html
+
+
+Here&apos;s my stack trace of a looping lmtpd. 
+
+----------------
+root@rofl:/project/imap/cyrus/2009-01-14/cyrus/bin# gdb ./lmtpd 32449
+
+#0  0x00007f7a8358ba65 in __db_shalloc_free () from /usr/lib/libdb-4.5.so
+#1  0x00007f7a8358f6b7 in __dbreg_teardown () from /usr/lib/libdb-4.5.so
+#2  0x00007f7a8356a545 in __db_refresh () from /usr/lib/libdb-4.5.so
+#3  0x00007f7a8356ab91 in __db_close () from /usr/lib/libdb-4.5.so
+#4  0x00007f7a8357909c in __db_close_pp () from /usr/lib/libdb-4.5.so
+#5  0x000000000045ad11 in myclose (db=&lt;value optimized out&gt;) at cyrusdb_berkeley.c:455
+#6  0x000000000042aa09 in duplicate_done () at duplicate.c:398
+#7  0x0000000000407f39 in shut_down (code=75) at lmtpd.c:955
+#8  0x0000000000407fe6 in fatal (s=0x464ca6 &quot;couldn&apos;t exec() sendmail&quot;, code=75) at lmtpd.c:925
+#9  0x00000000004107f1 in open_sendmail (argv=0x7fff39e52f20, sm=0x7fff39e52f70) at smtpclient.c:77
+#10 0x0000000000410404 in sieve_redirect (ac=&lt;value optimized out&gt;, ic=&lt;value optimized out&gt;, sc=&lt;value optimized out&gt;, mc=&lt;value optimized out&gt;, errmsg
+=0x7f7a81f269f0)
+    at lmtp_sieve.c:329
+#11 0x000000000043b055 in sieve_execute_bytecode (exe=&lt;value optimized out&gt;, interp=0x718e50, script_context=&lt;value optimized out&gt;, message_context=&lt;val
+ue optimized out&gt;)
+    at script.c:779
+#12 0x000000000040f167 in run_sieve (user=0x729da0 &quot;rippel&quot;, domain=0x0, mailbox=0x0, interp=0x718e50, msgdata=0x7fff39e565b0) at lmtp_sieve.c:912
+#13 0x00000000004097d5 in deliver (msgdata=0x72b160, authuser=&lt;value optimized out&gt;, authstate=&lt;value optimized out&gt;) at lmtpd.c:823
+#14 0x000000000040c973 in lmtpmode (func=&lt;value optimized out&gt;, pin=0x72afa0, pout=0x72b080, fd=&lt;value optimized out&gt;) at lmtpengine.c:1310
+#15 0x0000000000408f16 in service_main (argc=2, argv=0x715010, envp=&lt;value optimized out&gt;) at lmtpd.c:302
+#16 0x0000000000407a09 in main (argc=&lt;value optimized out&gt;, argv=&lt;value optimized out&gt;, envp=&lt;value optimized out&gt;) at service.c:540
+
+----------------</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 14:58:34 EDT</bug_when>
+            <thetext>Gosh - indeed.  That&apos;s pretty poor.  I&apos;ve put the fix in the queue for 2.4.9.
+
+Thanks,
+
+Bron.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

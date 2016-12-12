@@ -1,0 +1,1649 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3163</bug_id>
+          
+          <creation_ts>2009-06-03 14:22 EDT</creation_ts>
+          <short_desc>lmtp delivery to subfolder fails</short_desc>
+          <delta_ts>2011-06-21 15:25:41 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.4.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.9</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alberto Sentieri">bugzilla@netgroup.com.br</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>awilliam@whitemice.org</cc>
+    
+    <cc>baldur@email.de</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alberto Sentieri">bugzilla@netgroup.com.br</who>
+            <bug_when>2009-06-03 14:22:18 EDT</bug_when>
+            <thetext>I am trying to deliver emails to subfolders using lmtp and getting strange
+errors.
+
+A regular delivery works fine, as could be seen on the attempt below:
+
+$ telnet 192.168.44.70 24
+Trying 192.168.44.70...
+Connected to 192.168.44.70 (192.168.44.70).
+Escape character is &apos;^]&apos;.
+220 localhost.localdomain LMTP Cyrus v2.3.7-Invoca-RPM-2.3.7-2.el5 ready
+lhlo truco
+250-localhost.localdomain
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-PIPELINING
+250-SIZE
+250-AUTH EXTERNAL
+250 IGNOREQUOTA
+mail from:&lt;&gt;
+250 2.1.0 ok
+rcpt to:&lt;abcd&gt;
+250 2.1.5 ok
+data
+354 go ahead
+subject: test 1
+
+testing
+.
+quit250 2.1.5 Ok
+221 2.0.0 bye
+Connection closed by foreign host.
+
+
+A subfolder delivery fails:
+
+$ telnet 192.168.44.70 24
+Trying 192.168.44.70...
+Connected to 192.168.44.70 (192.168.44.70).
+Escape character is &apos;^]&apos;.
+220 localhost.localdomain LMTP Cyrus v2.3.7-Invoca-RPM-2.3.7-2.el5 ready
+lhlo truco
+250-localhost.localdomain
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-PIPELINING
+250-SIZE
+250-AUTH EXTERNAL
+250 IGNOREQUOTA
+mail from:&lt;&gt;
+250 2.1.0 ok
+rcpt to:&lt;abcd.test1&gt;
+250 2.1.5 ok
+data
+354 go ahead
+subject: test 2
+
+testing ...
+.
+554 5.0.0 Unexpected internal error
+quit
+221 2.0.0 bye
+Connection closed by foreign host.
+
+The log file contains this information:
+
+File /var/log/maillog after a unsucessful delivery:
+
+Apr  6 12:05:46 localhost master[21710]: about to exec
+/usr/lib/cyrus-imapd/lmtpd
+Apr  6 12:05:46 localhost lmtp[21710]: executed
+Apr  6 12:05:46 localhost lmtp[21710]: accepted connection
+Apr  6 12:05:46 localhost lmtp[21710]: connection from bugs.mail0.xxx
+[192.168.44.11] preauth&apos;d as postman
+Apr  6 12:06:40 localhost lmtp[21710]: IOERROR: fstating sieve script
+/var/lib/imap/sieve/a/abcd.test1/defaultbc: No such file or directory
+
+
+The exact information about the version I am using is:
+
+Server version information (version inside cyradm):
+
+localhost.localdomain&gt; version
+name       : Cyrus IMAPD
+version    : v2.3.7-Invoca-RPM-2.3.7-2.el5 2006/07/10 13:46:20
+vendor     : Project Cyrus
+support-url: http://asg.web.cmu.edu/cyrus
+os         : Linux
+os-version : 2.6.18-92.1.22.el5.centos.plus
+environment: Built w/Cyrus SASL 2.1.22
+             Running w/Cyrus SASL 2.1.22
+             Built w/Sleepycat Software: Berkeley DB 4.3.29: (January  7,
+2007)
+             Running w/Sleepycat Software: Berkeley DB 4.3.29: (January  7,
+2007)
+             Built w/OpenSSL 0.9.8b 04 May 2006
+             Running w/OpenSSL 0.9.8b 04 May 2006
+             CMU Sieve 2.3
+             TCP Wrappers
+             NET-SNMP
+             mmap = shared
+             lock = fcntl
+             nonblock = fcntl
+             idle = idled</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-04-23 09:46:05 EDT</bug_when>
+            <thetext>I can confirm this with cyrus imapd 2.4.8 package on Fedora 15 (Beta at this time).
+
+My old procmail script tried to deliver the following
+
+/usr/lib/cyrus-imapd/deliver -a myaccount -m user.myaccount.ebay  
+
+After debugging heavily i found that moving folders does not work anymore as before in the old cyrus version of fedora 14.
+
+Bug description: 
+
+The old behaviour of cyrus was to exactly taking the -m argument and moving this into the folder. The behavour of 2.4.8 is that there is already an
+existing prefix  &quot;user.myaccount&quot;  and this is joined with the -m command.
+The result &quot;user.myaccount.user.myaccount.ebay&quot;  is of course an invalid Folder.
+I can understand the intention to avoid the unnecessary prefix. So i created
+a patch which looks if the preifx is already there in the -m option. If yes, the whole content of the -m option is copied into the buffer.
+
++ Additional benefit. I have added some debug messages while hunting for the 
+   problem, please apply, i think they will help all other users 
+    (see separate patch)
+
+----------- Patch 1 Restore behaviour of old cyrus ----------
+
+diff -ur cyrus-imapd-2.4.8/imap/lmtpd.c ../cyrus-imapd-2.4.8.modified/imap/lmtpd.c
+--- cyrus-imapd-2.4.8/imap/lmtpd.c      2011-04-13 16:35:22.000000000 +0200
++++ ../cyrus-imapd-2.4.8.modified/imap/lmtpd.c  2011-04-23 15:10:53.244644764 +0200
+@@ -503,6 +503,10 @@
+     struct appendstate as;
+     unsigned long uid;
+     const char *notifier;
++
++    syslog(LOG_DEBUG, &quot;deliver_mailbox: user %s&quot;, user);
++    syslog(LOG_DEBUG, &quot;deliver_mailbox: mailboxname %s&quot;, mailboxname);
++
+
+     r = append_setup(&amp;as, mailboxname,
+                     authuser, authstate, acloverride ? 0 : ACL_POST,
+@@ -701,14 +705,18 @@
+
+        tail = namebuf + strlen(namebuf);
+        if (mailboxname) {
+-           strlcat(namebuf, &quot;.&quot;, sizeof(namebuf));
+-           strlcat(namebuf, mailboxname, sizeof(namebuf));
++           if ( strncmp(mailboxname,namebuf,strlen(namebuf)) == 0 ) {
++             strncpy(namebuf,mailboxname,strlen(mailboxname));
++            } else  {
++             strlcat(namebuf, &quot;.&quot;, sizeof(namebuf));
++             strlcat(namebuf, mailboxname, sizeof(namebuf));
++            }
+
+----- Patch 2: Helpful debug messages ---------------------------
+
+diff -ur cyrus-imapd-2.4.8/imap/append.c cyrus-imapd-2.4.8.modified/imap/append.c
+--- cyrus-imapd-2.4.8/imap/append.c             2011-04-13 16:35:22.000000000 +0200
++++ cyrus-imapd-2.4.8.modified/imap/append.c    2011-04-23 14:45:13.671147050 +0200
+@@ -163,7 +163,10 @@
+
+     as-&gt;mailbox = NULL;
+     r = mailbox_open_iwl(name, &amp;as-&gt;mailbox);
+-    if (r) return r;
++    if (r) {
++     syslog(LOG_DEBUG, &quot;append_setup: open mailbox failed %s&quot;, name);
++     return r;
++    }
+
+     as-&gt;myrights = cyrus_acl_myrights(auth_state, as-&gt;mailbox-&gt;acl);
+
+@@ -171,6 +174,12 @@
+        r = (as-&gt;myrights &amp; ACL_LOOKUP) ?
+          IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
+        mailbox_close(&amp;as-&gt;mailbox);
++        if (r == IMAP_PERMISSION_DENIED ) {
++         syslog(LOG_DEBUG, &quot;append_setup: aclcheck failed IMAP_PERMISSION_DENIED&quot;);
++        } else {
++         syslog(LOG_DEBUG, &quot;append_setup: aclcheck failed IMAP_MAILBOX_NONEXISTENT&quot;);
++       }
++
+        return r;
+     }
+
+@@ -180,6 +189,7 @@
+        if (q.limit &gt;= 0 &amp;&amp; quotacheck &gt;= 0 &amp;&amp;
+            q.used + quotacheck &gt; ((uquota_t) q.limit * QUOTA_UNITS)) {
+            r = IMAP_QUOTA_EXCEEDED;
++            syslog(LOG_DEBUG, &quot;append_setup: quota exceeded&quot;);
+        }
+     }
+     else if (r == IMAP_QUOTAROOT_NONEXISTENT) r = 0;
+@@ -199,6 +209,7 @@
+     r = mailbox_open_cache(as-&gt;mailbox);
+     if (r) {
+        mailbox_close(&amp;as-&gt;mailbox);
++        syslog(LOG_DEBUG, &quot;append_setup: could not open cachefile&quot;);
+        return r;
+     }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-04-23 09:50:30 EDT</bug_when>
+            <thetext>Created an attachment (id=1380)
+Restores old behaviour of cyrus
+
+Please apply in next version</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-04-23 09:52:16 EDT</bug_when>
+            <thetext>Created an attachment (id=1381)
+Adds Debug Messages for finding problems in CYrus
+
+Please add this in the next release. It helps a lot in find weird problems with cyrus.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-04-23 10:46:58 EDT</bug_when>
+            <thetext>Updating the milestone to be 2.4.9, the upcoming 2.4-next release.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-04-24 15:33:41 EDT</bug_when>
+            <thetext>Guys, there was an additional bug, i wonder if anyone has ever test the old way of cyrus by using something like
+
+/usr/lib/cyrus-imapd/deliver -a myusername -m user.myusername.ebay myusername
+
+This doesn&apos;t work with the current code, one for the reason i posted above,
+and the other reason is, that the deliver_local function is broken.  Actually it is because of the &quot;auth_newstate(username&quot; being on the wrong line, the two calls to deliver_mailbox never suceed, because on the way down there is a check that auth_state-&gt;userid=anonymous and the identifier=myusername (deep down in auth_unix, is where it is checked).
+Therefore these calls never succeed and cyrus always falls back into delivering into INBOX.
+
+---&gt; all attempts to deliver into a subfolder fail.  
+
+Therefore i cleaned up the code a little bit (i admit i couldn&apos;t understand what was oging on which is always a bad sign)  and move the auth_newstate(username) to hopefully the right position. 
+
+Now the check for acls do not fails --&gt; and the move into the mailbox succeeds even with the acl check on.
+
+I tested it on my system (with and without -m pathnames) it seems to work now.
+
+Please add this asap into your next release, as i cannot go without a working cyrus (and this functionality worked for 7 years now in my old setup)
+
+Patch will be attached</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-04-24 15:36:19 EDT</bug_when>
+            <thetext>Created an attachment (id=1382)
+Restores old behaviour of cyrus (and fixes 2 bugs, one acl and one folderpath)
+
+This fixes hoepuflly all the problems i had with my new server.
+
+Please integrate asap, i cannot go without it :-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-04-24 15:53:17 EDT</bug_when>
+            <thetext>Created an attachment (id=1383)
+Restores old behaviour V3.0  (fixes 2bugs)
+
+3rd Version of patch. Applies clean to 2.4.8 (Fedora 15).
+
+- Removed some debug statement and comments, which made no sense
+
+Please apply</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-04-24 16:27:47 EDT</bug_when>
+            <thetext>Created an attachment (id=1384)
+V3.1 of patch, further refinement, and fixed typos and missing %s
+
+ok, nothing is perfect, 
+  * fixed a typo in a debug statement
+  * a missing %s in a debug statement
+  * superflous debug statements
+
+Now it should be ready for consumption</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 07:37:44 EDT</bug_when>
+            <thetext>I&apos;m trying to find where it&apos;s documented this should work.
+
+My apologies for leaving this one so long - I really do want to integrate it into stable Cyrus, but I want to know that it&apos;s actually the correct interface and not some historical accident that was never supposed to work.
+
+My reading is that the correct way to deliver to a subfolder is plus addressing...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-05-26 10:46:42 EDT</bug_when>
+            <thetext>Hi,
+even if it was an initial bug, then this behaviour is now documented in various FAQs and emails 
+
+after a quick search with Google here an english mail from 2002 which describes the behaviour
+
+http://lists.andrew.cmu.edu/pipermail/info-cyrus/2002-September/018660.html
+
+
+From 2007 (sorry german, but there actually a lot of German FAQ documenting this behavior)
+e.g. (search for DELIVER -e -a tiberian -m user.tiberian.Junk&quot;
+http://www.denkweite.de/2007-03-10/lokaler-mailserver-mit-fetchmail-procmail-und-cyrus/
+
+
+so i believe this makes the case that it is today an expected behaviour - and people who start to switch from old cyrus 1.4*  to 2.*  releases will be very disappointed.
+
+
+
+(Mit Bezug zu comment #9)
+&gt; I&apos;m trying to find where it&apos;s documented this should work.
+&gt; 
+&gt; My apologies for leaving this one so long - I really do want to integrate it
+&gt; into stable Cyrus, but I want to know that it&apos;s actually the correct interface
+&gt; and not some historical accident that was never supposed to work.
+&gt; 
+&gt; My reading is that the correct way to deliver to a subfolder is plus
+&gt; addressing...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adam Tauno Williams">awilliam@whitemice.org</who>
+            <bug_when>2011-05-26 11:44:38 EDT</bug_when>
+            <thetext>I believe the correct behavior is the use of plussed addressing.  We&apos;ve been using Cyrus for a decade or more and recall that as having always been the documented mechanism for subfolder delivery.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-05-26 12:45:35 EDT</bug_when>
+            <thetext>Please explain &quot;plussed addressing&quot;
+
+But please provide also evidence for this. Here another bunch of URLs which document the behaviour i want to restore:
+Any google search for procmail recipes and cyrus makes the case since 2001.
+
+
+http://www.irbs.net/internet/info-cyrus/0504/0167.html
+http://objectmix.com/imap/200854-re-cyrus-imap-sendmail-procmail-sieve-spamassassin-oh-my.html
+http://www.issociate.de/board/post/405775/Another_procmail_configuration.html
+http://www.spinics.net/lists/info-cyrus/msg11048.html
+http://macosx.com/forums/mac-os-x-system-mac-software/49937-procmail-postfix.html
+
+
+
+(Mit Bezug zu comment #11)
+&gt; I believe the correct behavior is the use of plussed addressing.  We&apos;ve been
+&gt; using Cyrus for a decade or more and recall that as having always been the
+&gt; documented mechanism for subfolder delivery.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-27 03:33:18 EDT</bug_when>
+            <thetext>(In reply to comment #12)
+&gt; Please explain &quot;plussed addressing&quot;
+
+RCPT TO: &lt;username+subfolder&gt;
+
+&gt; But please provide also evidence for this. Here another bunch of URLs which
+&gt; document the behaviour i want to restore:
+&gt; Any google search for procmail recipes and cyrus makes the case since 2001.
+&gt; 
+&gt; 
+&gt; http://www.irbs.net/internet/info-cyrus/0504/0167.html
+&gt; http://objectmix.com/imap/200854-re-cyrus-imap-sendmail-procmail-sieve-spamassassin-oh-my.html
+&gt; http://www.issociate.de/board/post/405775/Another_procmail_configuration.html
+&gt; http://www.spinics.net/lists/info-cyrus/msg11048.html
+&gt; http://macosx.com/forums/mac-os-x-system-mac-software/49937-procmail-postfix.html
+
+They all look like documentation of behaviour of the &quot;deliver&quot; command line tool,
+which can be given a mailbox rather than a user.  Hmm.
+
+I will look and see what I can find on the matter.  I guess we could go with an &quot;if the user is pre-authenticated admin then allow a direct mailbox name&quot;, which is probably what it used to do.
+
+By the way, the example here was &quot;rcpt to abcd.test&quot; - the examples in the links you have given seem to be &quot;rcpt to user.abcd.test&quot;.  I would be more willing to accept the second format than the first.  The first is an unholy abomination.
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-05-27 11:23:57 EDT</bug_when>
+            <thetext>
+i am absolutly fine with &quot;user.myusername.subfolder&quot; - this is the way i want it. but the implementation (which didnt work ) currently internally prepares &quot;user.myusername&quot; already as an prefix and would - if it would have worked - only accept &quot;subfolder&quot;.
+
+My patch actually just does.
+&quot;check if user supplied subfolder has &quot;user.myusername.subfolder&quot;, than use this.
+and if the user hasn&apos;t supplied &quot;user.myusername&quot; it simply appends the given string internally to the provided string by the deliver system, which again results in &quot;user.myusername.subfolder&quot;
+
+&gt; 
+&gt; By the way, the example here was &quot;rcpt to abcd.test&quot; - the examples in the
+&gt; links you have given seem to be &quot;rcpt to user.abcd.test&quot;.  I would be more
+&gt; willing to accept the second format than the first.  The first is an unholy
+&gt; abomination.
+&gt; 
+&gt; Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-05-27 13:09:28 EDT</bug_when>
+            <thetext>i am not exactly sure what you mean by pre-authenticated admin.
+
+The usual usage is to call &quot;procmail&quot; instead of &quot;deliver&quot; from sendmail or postfix (i used both mtas). Remember that sendmail and postfix run with the userid &quot;mail&quot; or &quot;postfix&quot; on a fedora system.  With this user deliver gets called nowadays.
+
+Btw the patch 3.1 runs now since one month witouth troubles on my system.
+callpath is  postfix-&gt;procmail-&gt;deliver
+
+
+
+&gt; &quot;if the user is pre-authenticated admin then allow a direct mailbox name&quot;,
+&gt; which is probably what it used to do.
+&gt; 
+&gt; By the way, the example here was &quot;rcpt to abcd.test&quot; - the examples in the
+&gt; links you have given seem to be &quot;rcpt to user.abcd.test&quot;.  I would be more
+&gt; willing to accept the second format than the first.  The first is an unholy
+&gt; abomination.
+&gt; 
+&gt; Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-27 14:36:05 EDT</bug_when>
+            <thetext>Wow, just trying to read the patch again.  Please, please, PLEASE if you need to do code cleanup first, make it two separate patches.  It&apos;s really hard figuring out what actually changed in amongst a bunch of meaningless code layout changes.
+
+Even better, get yourself a copy of the git repository and make a series of commits in on a branch somewhere that I can pull :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-05-27 15:16:18 EDT</bug_when>
+            <thetext>;-)
+sorry - but no git available here.
+but to make it easier the only section that is &quot;new&quot; code is this in 3.1
+ -  everything else is cleanup. Its an incredible messy part of code. 
+(not that i claim that i did perfect, but imho, the structure is more
+clear)
+
+
++    /* if the prefix is already existing in the mailbox name, then do not attach him */
++    if ( strncmp(mailboxname,namebuf,strlen(namebuf)) == 0 ) {
++      strncpy(namebuf,mailboxname,strlen(mailboxname));
++    } else  {
++      strlcat(namebuf, &quot;.&quot;, sizeof(namebuf));
++      strlcat(namebuf, mailboxname, sizeof(namebuf));
++    }
+
+
+
+
+
+
+
+(Mit Bezug zu comment #16)
+&gt; Wow, just trying to read the patch again.  Please, please, PLEASE if you need
+&gt; to do code cleanup first, make it two separate patches.  It&apos;s really hard
+&gt; figuring out what actually changed in amongst a bunch of meaningless code
+&gt; layout changes.
+&gt; 
+&gt; Even better, get yourself a copy of the git repository and make a series of
+&gt; commits in on a branch somewhere that I can pull :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-27 18:06:19 EDT</bug_when>
+            <thetext>No, you made a memory leak :(
+
+I&apos;m cleaning it up to match the coding standards.
+
+The general concept of the cleanup was good, but large rewrites that don&apos;t fit with the rest of the codebase aren&apos;t going to win you confidence that it&apos;s a safe thing to apply to a stable release.
+
+As for git - you can get it pretty easily, and install it as an ordinary user.  It really is worth it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-27 18:40:02 EDT</bug_when>
+            <thetext>Yeah, OK - this will go in 2.4.9.  Thanks for following up on it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-14 02:14:01 EDT</bug_when>
+            <thetext>The patch broke Sieve deliveries, so I have reverted it on both branches.
+
+Here&apos;s what deliver actually does:
+
+
+  /* just deliver to mailbox &apos;mailbox&apos; */
+  const char *BB = config_getstring(IMAPOPT_POSTUSER);
+  txn-&gt;rcpt[0].addr = (char *) xmalloc(ml + strlen(BB) + 2); /* xxx leaks! */
+  sprintf(txn-&gt;rcpt[0].addr, &quot;%s+%s&quot;, BB, mailbox);
+  txn-&gt;rcpt[0].ignorequota = ignorequota;
+
+
+so in other words what gets send to the lmtpd is:
+
+RCPT TO: &lt;postuser+user.brong.SubFolder&gt;
+
+(where postuser is configurable: but most people just put &apos;anyone p&apos; as an ACL or us a pre-authed admin instance of lmtpd, so it doesn&apos;t really matter)
+
+NOTE: I&apos;m not certain how all this interacts with altnamespace and unixheirarchysep - it could get pretty ugly.  I&apos;m more certain that your solution is not the correct one though.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-14 09:09:24 EDT</bug_when>
+            <thetext>Ok - I&apos;m marking this whole kit and kaboodle invalid.
+
+Maybe it used to work because of a bug in altnamespace and unixheirarchysep.  It might be easier for you to turn those two off for your local lmtp daemon, lime this:
+
+imapd.conf:
+lmtplocal_altnamespace: 0
+lmtplocal_unixhierarchysep: 0
+
+cyrus.conf:
+lmtplocal     cmd=&quot;lmtpd -a&quot; listen=&quot;/var/run/cyrus/socket/lmtp&quot;
+
+(or whatever)
+
+Then deliver -m user.foo.subdir will work (I just tested it on master and stable).
+
+You will need either &apos;-a&apos; in cyrus.conf, or &quot;anyone p&quot; ACL on the mailbox.
+
+If you leave unixheirarchysep on, you may need to deliver to user/foo/subdir instead.  I have also tested that this works.
+
+Under the hood, if you don&apos;t set a postuser, the network traffic will be:
+
+RCPT TO: &lt;+user.foo.subdir&gt;
+
+Note the leading plus.
+
+If you do set a postuser, it will be
+
+RCPT TO: &lt;postuser+user.foo.subdir&gt;
+
+Regards,
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-06-14 11:12:22 EDT</bug_when>
+            <thetext>sorry for causing a memory leak.
+
+However i&apos;d like to know if it only because of the memory leak it breaks (because this i can fix)
+
+Why is the patch invalid?
+
+
+Please provide a test case which proves failure with sieve.
+
+I am not sure, but i spotted way too much bugs when i did go
+to the delivery codepath, so my common sense tells me now: 
+&quot;another sieve bug hiding&quot;
+
+
+I request to reopen is and wait for a memory leak fixed patch.
+
+Or a test case which proves that it breaks sieve.
+
+
+But please do not hide bugs by closing it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-14 14:08:09 EDT</bug_when>
+            <thetext>It&apos;s invalid because you&apos;re wrong.  It&apos;s not correct to deliver via LMTP to recipient user.foo.subdir, and it never was - even if somewhere on the net said so, and it perhaps used to work.
+
+Which is why deliver sends to either:
+
+RCPT TO: &lt;+user.foo.subdir&gt;
+
+or if you specify a &quot;postuser&quot;, to:
+
+RCPT TO: &lt;postuser+user.foo.subdir&gt;
+
+when you specify the &apos;-m mailbox&apos; option.
+
+As for the sieve case, I can try to recreate a test case, but I can promise you that I rolled this code out on FastMail&apos;s production systems and had literally thousands of &quot;could not find folder INBOX.name&quot; errors, for mailboxes that clearly existed.  When I checked the sieve scripts, they had rules of the form:
+
+fileinto INBOX.name;
+
+I rebuilt our packages with the one patch reverted, and the problem went away.
+
+I do appreciate that you&apos;ve put a lot of work into this, but I have spent a lot of time testing this, and it&apos;s not a bug.  It&apos;s supposed to work like this.  The target of a &quot;rcpt to&quot; is a username, not a mailbox spec.
+
+It might contain a &quot;detail&quot; part, see rfc5233 for description of plus addressing and &quot;detail&quot; - and the detail is interpreted as being a mailbox name in the user&apos;s namespace if sieve doesn&apos;t do anything else with it.
+
+But RCPT TO: &lt;foo.subdir&gt; is clearly wrong, as could be clearly seen in the
+degenerate case of a user called &apos;user&apos; or called &apos;shared&apos;.
+
+I have fixed a bunch of actual bugs relating to auth and delivery with the
+&apos;deliver&apos; tool, which should mean that your LMTP deliveries can keep working,
+and I have documented that you need to be careful what namespace your lmtpd is operating in on those other bugs, or you may need to use:
+
+RCPT TO: &lt;+user/foo/subdir@domain&gt;
+
+which is pretty strange looking!
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-06-14 16:33:05 EDT</bug_when>
+            <thetext>let me be clear - i do not want to defend my code endlessly - if the facts
+are there i sincerly apologize for having overseen something.
+
+but at this point in time, i only see you claiming that there is a faulty
+behaviour and no fact that this due to this patch.
+
+you are telling sieve rule doesn&apos;t work.
+I have to counter argument
+(1)  at that point the code, the namespace has already been set by other code pathes. Thus the behaviour you are  describing has nothing to do with this code snippet - it doesn&apos;t fiddle with namespace hierachies nor the separators. 
+
+(2) I also have used a sieve script and tried to reproduce your problem with filtering to inbox and &quot;inbox.ebay&quot;. This worked correctly in my environment(*).
+
+Therefore i fail to reproduce your problem. I have added now some more debug messages and would be happy to get a test case which reproduces your problem.
+
+
+I do not argue that you don&apos;t have a problem. But it seems that we have not a common understanding of the real reason.
+
+(*) my environment has 5% more debug messages, which i didn&apos;t publish :-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-14 17:04:59 EDT</bug_when>
+            <thetext>(In reply to comment #24)
+&gt; but at this point in time, i only see you claiming that there is a faulty
+&gt; behaviour and no fact that this due to this patch.
+
+Well, I reverted just this patch and the problem went away again.  That&apos;s
+usually a pretty good indicator...
+
+&gt; you are telling sieve rule doesn&apos;t work.
+&gt; I have to counter argument
+&gt; (1)  at that point the code, the namespace has already been set by other code
+&gt; pathes. Thus the behaviour you are  describing has nothing to do with this code
+&gt; snippet - it doesn&apos;t fiddle with namespace hierachies nor the separators. 
+
+It fiddles with the mailbox name inside &quot;deliver_local&quot;, which path is used
+by two things - one of which is sieve delivery.
+
+&gt; (2) I also have used a sieve script and tried to reproduce your problem with
+&gt; filtering to inbox and &quot;inbox.ebay&quot;. This worked correctly in my
+&gt; environment(*).
+
+Interesting.  I&apos;ll try to make a complete testcase now, but I sure did
+get a lot of issues in our environment.
+
+Can you please give me the values of &quot;altnamespace&quot; and &quot;unixheirarchysep&quot;
+that you use.  For all that they don&apos;t get set at this point, they do have
+influence over what gets passed to here.
+
+&gt; Therefore i fail to reproduce your problem. I have added now some more debug
+&gt; messages and would be happy to get a test case which reproduces your problem.
+
+I&apos;ll see what I can do!
+
+&gt; I do not argue that you don&apos;t have a problem. But it seems that we have not a
+&gt; common understanding of the real reason.
+
+Sure.  I&apos;d like to get a deeper understanding too. Will do.
+
+&gt; (*) my environment has 5% more debug messages, which i didn&apos;t publish :-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-06-15 01:49:30 EDT</bug_when>
+            <thetext>:-) regarding your content you seem to believe that i have added the changing of the mailbox name. let me be clear. I have appended the original modification from 2.4.8 source code. I have added line numbers to the patch, i have made originally. &quot;-&quot; indicates removed code from 2.4.8 and + inidicates added code.
+
+Important Info: From my debugging i know that in namebuf, already contains the string &quot;user.myusername&quot; when reaching this part of the code.
+
+Line 20,30 are &quot;original 2.4.8&quot; code, they show up again in in line 70,80.
+
+So the only modification i claim to be mine is line 40,50,60,90, two of the only contain brackets - so leaves me with 40,50.
+
+i currently cannnot access my machiine it would be nice if you would addd on debugging statement at line 15, which would print out the content of namebuf and the content of mailboxname
+
+Therefore i am puzzled how i would have to crash the statement in line 40,or 50.
+which only says &quot;if the mailboxname already contains the prefix, then use the whole mailboxaname&quot;.
+
+10         if (mailboxname) {
+20 -           strlcat(namebuf, &quot;.&quot;, sizeof(namebuf));
+30 -           strlcat(namebuf, mailboxname, sizeof(namebuf));
+40 +           if ( strncmp(mailboxname,namebuf,strlen(namebuf)) == 0 ) {
+50 +             strncpy(namebuf,mailboxname,strlen(mailboxname));
+60 +            } else  {
+70 +             strlcat(namebuf, &quot;.&quot;, sizeof(namebuf));
+80 +             strlcat(namebuf, mailboxname, sizeof(namebuf));
+90 +            }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-21 04:30:04 EDT</bug_when>
+            <thetext>Sorry - I can&apos;t recreate my crash, but I want to show you this:
+
+&apos;man deliver&apos;
+
+       -m mailbox
+              Deliver  to  mailbox.   If any userids are specified, attempts to deliver to user.userid.mailbox for
+              each userid.  If the ACL on any such mailbox does not grant the sender the &quot;p&quot; right or if -m is not
+              specified, then delivers to the INBOX for the userid, regardless of the ACL on the INBOX.
+
+              If  no  userids are specified, attempts to deliver to mailbox.  If the ACL on mailbox does not grant
+              the sender the &quot;p&quot; right, the delivery fails.
+
+
+
+
+See this: ff any userids are specified, attempts to deliver to user.userid.mailbox for each userid.
+
+This documentation dates from the stoneage some time.
+
+git blame man/deliver.8
+
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 116) .BI \-m &quot; mailbox&quot;
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 117) Deliver to 
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 118) .IR mailbox .
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 119) If any
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 120) .IR userid s
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 121) are specified, attempts to deliver to
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 122) .RI user. userid . mailbox
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 123) for each 
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 124) .IR userid .
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 125) If the ACL on any such mailbox does not grant the sende
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 126) or if 
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 127) .B \-m
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 128) is not specified,
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 129) then delivers to the INBOX for the
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 130) .IR userid ,
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 131) regardless of the ACL on the INBOX.
+3c30c543 (John Gardiner Myers  1994-10-17 17:44:52 +0000 132) .IP
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 133) If no
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 134) .IR userid s
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 135) are specified, attempts to deliver to
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 136) .IR mailbox .
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 137) If the ACL on
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 138) .I mailbox
+ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 139) does not grant the sender the &quot;p&quot; right, the delivery f
+
+
+This is really, REALLY clear that the current behaviour is intentional.  You have two clear correct ways to do this:
+
+a) use a pre-authenticated connection without specifying userid and give a full mailbox path.
+
+b) use a userid and give the bit after user.$username only.
+
+If you&apos;re sending via LMTP then you can either specify:
+
+a) RCPT TO: &lt;username+subdir&gt;
+b) RCPT TO:&lt;+user.username.subdir&gt;
+
+As per the RFC on subaddressing.
+
+And I&apos;m closing this as invalid again.  If you old procmail worked, it was due to a bug, and this behaviour is correct as per the documentation.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">baldur@email.de</who>
+            <bug_when>2011-06-21 07:51:15 EDT</bug_when>
+            <thetext>so lets summarize the facts
+
+(1) you did fail to recreate the behaviourr
+     i conclude, that your claim can not be further hold to be true
+(2) you are bringing up the documentation argument 
+    which was already was discussed in the history of this bug report
+    - counter arguments were also given, which should not be simply ignored
+
+At this pointed i am disappointed - i will not fight ignorance, which is probably coming from the will to make a release.
+
+ I will keep a patched version, please proceed as you want.
+
+
+
+(Mit Bezug zu comment #27)
+&gt; Sorry - I can&apos;t recreate my crash, but I want to show you this:
+&gt; 
+&gt; &apos;man deliver&apos;
+&gt; 
+&gt;        -m mailbox
+&gt;               Deliver  to  mailbox.   If any userids are specified, attempts to
+&gt; deliver to user.userid.mailbox for
+&gt;               each userid.  If the ACL on any such mailbox does not grant the
+&gt; sender the &quot;p&quot; right or if -m is not
+&gt;               specified, then delivers to the INBOX for the userid, regardless
+&gt; of the ACL on the INBOX.
+&gt; 
+&gt;               If  no  userids are specified, attempts to deliver to mailbox. 
+&gt; If the ACL on mailbox does not grant
+&gt;               the sender the &quot;p&quot; right, the delivery fails.
+&gt; 
+&gt; 
+&gt; 
+&gt; 
+&gt; See this: ff any userids are specified, attempts to deliver to
+&gt; user.userid.mailbox for each userid.
+&gt; 
+&gt; This documentation dates from the stoneage some time.
+&gt; 
+&gt; git blame man/deliver.8
+&gt; 
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 116) .BI \-m &quot;
+&gt; mailbox&quot;
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 117) Deliver to 
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 118) .IR mailbox .
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 119) If any
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 120) .IR userid s
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 121) are specified,
+&gt; attempts to deliver to
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 122) .RI user. userid
+&gt; . mailbox
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 123) for each 
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 124) .IR userid .
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 125) If the ACL on any
+&gt; such mailbox does not grant the sende
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 126) or if 
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 127) .B \-m
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 128) is not specified,
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 129) then delivers to
+&gt; the INBOX for the
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 130) .IR userid ,
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 131) regardless of the
+&gt; ACL on the INBOX.
+&gt; 3c30c543 (John Gardiner Myers  1994-10-17 17:44:52 +0000 132) .IP
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 133) If no
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 134) .IR userid s
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 135) are specified,
+&gt; attempts to deliver to
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 136) .IR mailbox .
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 137) If the ACL on
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 138) .I mailbox
+&gt; ff90aff0 (John Gardiner Myers  1994-06-28 21:28:50 +0000 139) does not grant
+&gt; the sender the &quot;p&quot; right, the delivery f
+&gt; 
+&gt; 
+&gt; This is really, REALLY clear that the current behaviour is intentional.  You
+&gt; have two clear correct ways to do this:
+&gt; 
+&gt; a) use a pre-authenticated connection without specifying userid and give a full
+&gt; mailbox path.
+&gt; 
+&gt; b) use a userid and give the bit after user.$username only.
+&gt; 
+&gt; If you&apos;re sending via LMTP then you can either specify:
+&gt; 
+&gt; a) RCPT TO: &lt;username+subdir&gt;
+&gt; b) RCPT TO:&lt;+user.username.subdir&gt;
+&gt; 
+&gt; As per the RFC on subaddressing.
+&gt; 
+&gt; And I&apos;m closing this as invalid again.  If you old procmail worked, it was due
+&gt; to a bug, and this behaviour is correct as per the documentation.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-21 15:25:41 EDT</bug_when>
+            <thetext>(In reply to comment #28)
+&gt; so lets summarize the facts
+&gt; 
+&gt; (1) you did fail to recreate the behaviourr
+&gt;      i conclude, that your claim can not be further hold to be true
+
+I take back my claim that your patch is responsible for the crashes that we saw at FastMail, since I am unable to reproduce them with just your patch in a standalone environment.  I strongly suspect it was actually my porting of those patches on top of master interacting badly with our environment.
+
+&gt; (2) you are bringing up the documentation argument 
+&gt;     which was already was discussed in the history of this bug report
+&gt;     - counter arguments were also given, which should not be simply ignored
+
+I have also been unable to find a single Cyrus release in which the behaviour was EVER what you want here.  Cyrus 2.2 does not appear to have (in the released version anyway) done mailbox expansion at all when using an authenticated user, and Cyrus 2.3.x all did exactly what Cyrus 2.4.x does - append the mailbox name to the user&apos;s INBOX name if you pass a username to deliver.  This is also what the documentation says it does.
+
+&gt; At this pointed i am disappointed - i will not fight ignorance, which is
+&gt; probably coming from the will to make a release.
+
+No - I had already decided that this would be dropped from the release anyway, and I can happily release without it regardless.  It&apos;s not ignorance, it&apos;s disagreeing with your assertion that this was ever a bug.  Webpages published by a third party suggesting something that&apos;s not how it ever worked are not evidence to the contrary.
+
+&gt;  I will keep a patched version, please proceed as you want.
+
+You&apos;re quite welcome to apply whatever patches you like.  We apply a small subset of patches at FastMail which provide functionality we want, but which are not appropriate for upstream.  The reason I&apos;m annoyed here is that this was pushed as a bugfix, when it&apos;s actually a new feature that clashes with the documented behaviour.  And I spent a lot of time on it because I believed it was a legitimate bug, when actually it was just a failure to understand how mailboxes are addressed via LMTP with Cyrus.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1380</attachid>
+            <date>2011-04-23 09:50 EDT</date>
+            <desc>Restores old behaviour of cyrus</desc>
+            <filename>patch.bug</filename>
+            <type>text/plain</type>
+            <size>3549</size>
+            <attacher>baldur@email.de</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXIgY3lydXMtaW1hcGQtMi40LjgvaW1hcC9hcHBlbmQuYyAuLi9jeXJ1cy1pbWFwZC0y
+LjQuOC5tb2RpZmllZC9pbWFwL2FwcGVuZC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjQuOC9pbWFwL2Fw
+cGVuZC5jCTIwMTEtMDQtMTMgMTY6MzU6MjIuMDAwMDAwMDAwICswMjAwCisrKyAuLi9jeXJ1cy1p
+bWFwZC0yLjQuOC5tb2RpZmllZC9pbWFwL2FwcGVuZC5jCTIwMTEtMDQtMjMgMTQ6NDU6MTMuNjcx
+MTQ3MDUwICswMjAwCkBAIC0xNjMsNyArMTYzLDEwIEBACiAKICAgICBhcy0+bWFpbGJveCA9IE5V
+TEw7CiAgICAgciA9IG1haWxib3hfb3Blbl9pd2wobmFtZSwgJmFzLT5tYWlsYm94KTsKLSAgICBp
+ZiAocikgcmV0dXJuIHI7CisgICAgaWYgKHIpIHsKKyAgICAgc3lzbG9nKExPR19ERUJVRywgImFw
+cGVuZF9zZXR1cDogb3BlbiBtYWlsYm94IGZhaWxlZCAlcyIsIG5hbWUpOworICAgICByZXR1cm4g
+cjsKKyAgICB9CiAKICAgICBhcy0+bXlyaWdodHMgPSBjeXJ1c19hY2xfbXlyaWdodHMoYXV0aF9z
+dGF0ZSwgYXMtPm1haWxib3gtPmFjbCk7CiAKQEAgLTE3MSw2ICsxNzQsMTIgQEAKIAlyID0gKGFz
+LT5teXJpZ2h0cyAmIEFDTF9MT09LVVApID8KIAkgIElNQVBfUEVSTUlTU0lPTl9ERU5JRUQgOiBJ
+TUFQX01BSUxCT1hfTk9ORVhJU1RFTlQ7CiAJbWFpbGJveF9jbG9zZSgmYXMtPm1haWxib3gpOwor
+ICAgICAgICBpZiAociA9PSBJTUFQX1BFUk1JU1NJT05fREVOSUVEICkgeyAKKwkgIHN5c2xvZyhM
+T0dfREVCVUcsICJhcHBlbmRfc2V0dXA6IGFjbGNoZWNrIGZhaWxlZCBJTUFQX1BFUk1JU1NJT05f
+REVOSUVEIik7CisgICAgICAgIH0gZWxzZSB7CisJICBzeXNsb2coTE9HX0RFQlVHLCAiYXBwZW5k
+X3NldHVwOiBhY2xjaGVjayBmYWlsZWQgSU1BUF9NQUlMQk9YX05PTkVYSVNURU5UIik7CisJfQor
+ICAgICAgICAKIAlyZXR1cm4gcjsKICAgICB9CiAKQEAgLTE4MCw2ICsxODksNyBAQAogCWlmIChx
+LmxpbWl0ID49IDAgJiYgcXVvdGFjaGVjayA+PSAwICYmCiAJICAgIHEudXNlZCArIHF1b3RhY2hl
+Y2sgPiAoKHVxdW90YV90KSBxLmxpbWl0ICogUVVPVEFfVU5JVFMpKSB7CiAJICAgIHIgPSBJTUFQ
+X1FVT1RBX0VYQ0VFREVEOworICAgICAgICAgICAgc3lzbG9nKExPR19ERUJVRywgImFwcGVuZF9z
+ZXR1cDogcXVvdGEgZXhjZWVkZWQiKTsKIAl9CiAgICAgfQogICAgIGVsc2UgaWYgKHIgPT0gSU1B
+UF9RVU9UQVJPT1RfTk9ORVhJU1RFTlQpIHIgPSAwOwpAQCAtMTk5LDYgKzIwOSw3IEBACiAgICAg
+ciA9IG1haWxib3hfb3Blbl9jYWNoZShhcy0+bWFpbGJveCk7CiAgICAgaWYgKHIpIHsKIAltYWls
+Ym94X2Nsb3NlKCZhcy0+bWFpbGJveCk7CisgICAgICAgIHN5c2xvZyhMT0dfREVCVUcsICJhcHBl
+bmRfc2V0dXA6IGNvdWxkIG5vdCBvcGVuIGNhY2hlZmlsZSIpOwogCXJldHVybiByOwogICAgIH0K
+IApkaWZmIC11ciBjeXJ1cy1pbWFwZC0yLjQuOC9pbWFwL2xtdHBkLmMgLi4vY3lydXMtaW1hcGQt
+Mi40LjgubW9kaWZpZWQvaW1hcC9sbXRwZC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjQuOC9pbWFwL2xt
+dHBkLmMJMjAxMS0wNC0xMyAxNjozNToyMi4wMDAwMDAwMDAgKzAyMDAKKysrIC4uL2N5cnVzLWlt
+YXBkLTIuNC44Lm1vZGlmaWVkL2ltYXAvbG10cGQuYwkyMDExLTA0LTIzIDE1OjEwOjUzLjI0NDY0
+NDc2NCArMDIwMApAQCAtNTAzLDYgKzUwMywxMCBAQAogICAgIHN0cnVjdCBhcHBlbmRzdGF0ZSBh
+czsKICAgICB1bnNpZ25lZCBsb25nIHVpZDsKICAgICBjb25zdCBjaGFyICpub3RpZmllcjsKKyAg
+ICAKKyAgICBzeXNsb2coTE9HX0RFQlVHLCAiZGVsaXZlcl9tYWlsYm94OiB1c2VyICVzIiwgdXNl
+cik7CisgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJfbWFpbGJveDogbWFpbGJveG5hbWUg
+JXMiLCBtYWlsYm94bmFtZSk7CisKIAogICAgIHIgPSBhcHBlbmRfc2V0dXAoJmFzLCBtYWlsYm94
+bmFtZSwKIAkJICAgICBhdXRodXNlciwgYXV0aHN0YXRlLCBhY2xvdmVycmlkZSA/IDAgOiBBQ0xf
+UE9TVCwgCkBAIC03MDEsMTQgKzcwNSwxOCBAQAogCiAJdGFpbCA9IG5hbWVidWYgKyBzdHJsZW4o
+bmFtZWJ1Zik7CiAJaWYgKG1haWxib3huYW1lKSB7Ci0JICAgIHN0cmxjYXQobmFtZWJ1ZiwgIi4i
+LCBzaXplb2YobmFtZWJ1ZikpOwotCSAgICBzdHJsY2F0KG5hbWVidWYsIG1haWxib3huYW1lLCBz
+aXplb2YobmFtZWJ1ZikpOworCSAgICBpZiAoIHN0cm5jbXAobWFpbGJveG5hbWUsbmFtZWJ1Zixz
+dHJsZW4obmFtZWJ1ZikpID09IDAgKSB7CisJICAgICAgc3RybmNweShuYW1lYnVmLG1haWxib3hu
+YW1lLHN0cmxlbihtYWlsYm94bmFtZSkpOworICAgICAgICAgICAgfSBlbHNlICB7CisJICAgICAg
+c3RybGNhdChuYW1lYnVmLCAiLiIsIHNpemVvZihuYW1lYnVmKSk7CisJICAgICAgc3RybGNhdChu
+YW1lYnVmLCBtYWlsYm94bmFtZSwgc2l6ZW9mKG5hbWVidWYpKTsKKyAgICAgICAgICAgIH0KIAog
+CSAgICByZXQyID0gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0
+YS0+c3RhZ2UsCiAJCQkJICAgbWQtPnNpemUsIGZsYWcsIG5mbGFncywKIAkJCQkgICBteWRhdGEt
+PmF1dGh1c2VyLCBteWRhdGEtPmF1dGhzdGF0ZSwgbWQtPmlkLAogCQkJCSAgIHVzZXJuYW1lLCBt
+eWRhdGEtPm5vdGlmeWhlYWRlciwKLQkJCQkgICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAwKTsK
+KwkJCQkgICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAxKTsKIAl9CiAJaWYgKHJldDIgPT0gSU1B
+UF9NQUlMQk9YX05PTkVYSVNURU5UICYmIG1haWxib3huYW1lICYmCiAJICAgIGNvbmZpZ19nZXRz
+d2l0Y2goSU1BUE9QVF9MTVRQX0ZVWlpZX01BSUxCT1hfTUFUQ0gpICYmCkBAIC05ODIsNiArOTkw
+LDI0IEBACiAgICAgY2hhciBuYW1lYnVmW01BWF9NQUlMQk9YX0JVRkZFUl0gPSAiIjsKICAgICBp
+bnQgciA9IDA7CiAKKworICAgIGlmICghdXNlcikgeworCXN5c2xvZyhMT0dfREVCVUcsICJ2ZXJp
+ZnlfdXNlcjogdXNlciBub3Qgc2V0Iik7CisgICAgfSBlbHNlIHsKKwlzeXNsb2coTE9HX0RFQlVH
+LCAidmVyaWZ5X3VzZXI6IHVzZXIgJXMiLHVzZXIpOworICAgIH0KKyAgICBpZiAoIW1haWxib3gp
+IHsKKwlzeXNsb2coTE9HX0RFQlVHLCAidmVyaWZ5X3VzZXI6IG1haWxib3ggbm90IHNldCIpOwor
+ICAgIH0gZWxzZSB7CisgICAgICAgIHN5c2xvZyhMT0dfREVCVUcsICJ2ZXJpZnlfdXNlcjogbWFp
+bGJveCAlcyIsbWFpbGJveCk7CisgICAgfQorICAgIGlmICggZG9tYWluICYmIChzdHJsZW4oZG9t
+YWluKSArIDEgPiBzaXplb2YobmFtZWJ1ZikpKSB7CisJc3lzbG9nKExPR19ERUJVRywgInZlcmlm
+eV91c2VyOiBkb21haW4gbmFtZSBsb25nZXIgdGhhbiBuYW1lYnVmIik7CisgICAgfSBlbHNlIHsK
+KwlzeXNsb2coTE9HX0RFQlVHLCAidmVyaWZ5X3VzZXI6IGRvbWFpbiAlcyIsIGRvbWFpbik7Cisg
+ICAgfQorCisKICAgICBpZiAoKCF1c2VyICYmICFtYWlsYm94KSB8fAogCShkb21haW4gJiYgKHN0
+cmxlbihkb21haW4pICsgMSA+IHNpemVvZihuYW1lYnVmKSkpKSB7CiAJciA9IElNQVBfTUFJTEJP
+WF9OT05FWElTVEVOVDsK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1381</attachid>
+            <date>2011-04-23 09:52 EDT</date>
+            <desc>Adds Debug Messages for finding problems in CYrus</desc>
+            <filename>patch.release</filename>
+            <type>text/plain</type>
+            <size>1423</size>
+            <attacher>baldur@email.de</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXIgY3lydXMtaW1hcGQtMi40LjgvaW1hcC9hcHBlbmQuYyBjeXJ1cy1pbWFwZC0yLjQu
+OC5tb2RpZmllZC9pbWFwL2FwcGVuZC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjQuOC9pbWFwL2FwcGVu
+ZC5jCQkyMDExLTA0LTEzIDE2OjM1OjIyLjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQt
+Mi40LjgubW9kaWZpZWQvaW1hcC9hcHBlbmQuYwkyMDExLTA0LTIzIDE0OjQ1OjEzLjY3MTE0NzA1
+MCArMDIwMApAQCAtMTYzLDcgKzE2MywxMCBAQAogCiAgICAgYXMtPm1haWxib3ggPSBOVUxMOwog
+ICAgIHIgPSBtYWlsYm94X29wZW5faXdsKG5hbWUsICZhcy0+bWFpbGJveCk7Ci0gICAgaWYgKHIp
+IHJldHVybiByOworICAgIGlmIChyKSB7CisgICAgIHN5c2xvZyhMT0dfREVCVUcsICJhcHBlbmRf
+c2V0dXA6IG9wZW4gbWFpbGJveCBmYWlsZWQgJXMiLCBuYW1lKTsKKyAgICAgcmV0dXJuIHI7Cisg
+ICAgfQogCiAgICAgYXMtPm15cmlnaHRzID0gY3lydXNfYWNsX215cmlnaHRzKGF1dGhfc3RhdGUs
+IGFzLT5tYWlsYm94LT5hY2wpOwogCkBAIC0xNzEsNiArMTc0LDEyIEBACiAJciA9IChhcy0+bXly
+aWdodHMgJiBBQ0xfTE9PS1VQKSA/CiAJICBJTUFQX1BFUk1JU1NJT05fREVOSUVEIDogSU1BUF9N
+QUlMQk9YX05PTkVYSVNURU5UOwogCW1haWxib3hfY2xvc2UoJmFzLT5tYWlsYm94KTsKKyAgICAg
+ICAgaWYgKHIgPT0gSU1BUF9QRVJNSVNTSU9OX0RFTklFRCApIHsgCisJICBzeXNsb2coTE9HX0RF
+QlVHLCAiYXBwZW5kX3NldHVwOiBhY2xjaGVjayBmYWlsZWQgSU1BUF9QRVJNSVNTSU9OX0RFTklF
+RCIpOworICAgICAgICB9IGVsc2UgeworCSAgc3lzbG9nKExPR19ERUJVRywgImFwcGVuZF9zZXR1
+cDogYWNsY2hlY2sgZmFpbGVkIElNQVBfTUFJTEJPWF9OT05FWElTVEVOVCIpOworCX0KKyAgICAg
+ICAgCiAJcmV0dXJuIHI7CiAgICAgfQogCkBAIC0xODAsNiArMTg5LDcgQEAKIAlpZiAocS5saW1p
+dCA+PSAwICYmIHF1b3RhY2hlY2sgPj0gMCAmJgogCSAgICBxLnVzZWQgKyBxdW90YWNoZWNrID4g
+KCh1cXVvdGFfdCkgcS5saW1pdCAqIFFVT1RBX1VOSVRTKSkgewogCSAgICByID0gSU1BUF9RVU9U
+QV9FWENFRURFRDsKKyAgICAgICAgICAgIHN5c2xvZyhMT0dfREVCVUcsICJhcHBlbmRfc2V0dXA6
+IHF1b3RhIGV4Y2VlZGVkIik7CiAJfQogICAgIH0KICAgICBlbHNlIGlmIChyID09IElNQVBfUVVP
+VEFST09UX05PTkVYSVNURU5UKSByID0gMDsKQEAgLTE5OSw2ICsyMDksNyBAQAogICAgIHIgPSBt
+YWlsYm94X29wZW5fY2FjaGUoYXMtPm1haWxib3gpOwogICAgIGlmIChyKSB7CiAJbWFpbGJveF9j
+bG9zZSgmYXMtPm1haWxib3gpOworICAgICAgICBzeXNsb2coTE9HX0RFQlVHLCAiYXBwZW5kX3Nl
+dHVwOiBjb3VsZCBub3Qgb3BlbiBjYWNoZWZpbGUiKTsKIAlyZXR1cm4gcjsKICAgICB9CiAKCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1382</attachid>
+            <date>2011-04-24 15:36 EDT</date>
+            <desc>Restores old behaviour of cyrus (and fixes 2 bugs, one acl and one folderpath)</desc>
+            <filename>patch2.diff</filename>
+            <type>text/plain</type>
+            <size>10324</size>
+            <attacher>baldur@email.de</attacher>
+            
+              <data encoding="base64">LS0tIEJVSUxEL2N5cnVzLWltYXBkLTIuNC44L2ltYXAvbG10cGQuYwkyMDExLTA0LTEzIDE2OjM1
+OjIyLjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQtMi40LjgubW9kaWZpZWQvaW1hcC9s
+bXRwZC5jCTIwMTEtMDQtMjQgMjE6MTk6MDguNzQ0NTM1MTA4ICswMjAwCkBAIC00NzcsNiArNDc3
+LDYxIEBACiAgICAgcmV0dXJuIHI7CiB9CiAKKy8qIGhlbHBlciBmdW5jdGlvbiB3aGljaCBub3Rp
+ZmllcyB0aGUgdXNlcgorICoKKyAqLwordm9pZCBub3RpZnlfdXNlcihjb25zdCBjaGFyICp1c2Vy
+LCBjaGFyKm5vdGlmeWhlYWRlciwgY29uc3QgY2hhciogbWFpbGJveG5hbWUpCit7CisgIGlmICgh
+dXNlcikgeworICAgIHJldHVybjsgCisgIH0KKworICBjb25zdCBjaGFyICpub3RpZmllciA9IGNv
+bmZpZ19nZXRzdHJpbmcoSU1BUE9QVF9NQUlMTk9USUZJRVIpOworICBpZiAoIW5vdGlmaWVyKSB7
+CisgICAgcmV0dXJuOworICB9CisKKyAgY29uc3QgY2hhciAqbm90aWZ5X21haWxib3ggPSBtYWls
+Ym94bmFtZTsKKyAgY2hhciBpbmJveFtNQVhfTUFJTEJPWF9CVUZGRVJdOworICBpbnQgcjsKKwor
+ICAvKiB0cmFuc2xhdGUgdXNlci5mb28gdG8gSU5CT1ggKi8KKyAgciA9ICgqbG10cGRfbmFtZXNw
+YWNlLm1ib3huYW1lX3RvaW50ZXJuYWwpKCZsbXRwZF9uYW1lc3BhY2UsIAorCSJJTkJPWCIsIHVz
+ZXIsIGluYm94KTsKKyAKKyAgaWYgKCByICE9IDAgKSB7CisgICAgc2l6ZV90IGluYm94bGVuID0g
+c3RybGVuKGluYm94KTsKKyAgICBpZiAoc3RybGVuKG1haWxib3huYW1lKSA+PSBpbmJveGxlbiAm
+JgorCQkhc3RybmNtcChtYWlsYm94bmFtZSwgaW5ib3gsIGluYm94bGVuKSAmJgorCQkoIW1haWxi
+b3huYW1lW2luYm94bGVuXSB8fCBtYWlsYm94bmFtZVtpbmJveGxlbl0gPT0gJy4nKSkgeworCisJ
+CXN0cmxjcHkoaW5ib3gsICJJTkJPWCIsIHNpemVvZihpbmJveCkpOyAKKwkJc3RybGNhdChpbmJv
+eCwgbWFpbGJveG5hbWUraW5ib3hsZW4sIHNpemVvZihpbmJveCkpOworCQlub3RpZnlfbWFpbGJv
+eCA9IGluYm94OworCSAgICB9CisgIH0KKyAgCisgIGNoYXIgbmFtZWJ1ZltNQVhfTUFJTEJPWF9C
+VUZGRVJdOworCisgIC8qIHRyYW5zbGF0ZSBtYWlsYm94bmFtZSAqLworICByID0gKCpsbXRwZF9u
+YW1lc3BhY2UubWJveG5hbWVfdG9leHRlcm5hbCkoJmxtdHBkX25hbWVzcGFjZSwKKwkJCQkJCSAg
+ICBub3RpZnlfbWFpbGJveCwKKwkJCQkJCSAgICB1c2VyLCBuYW1lYnVmKTsKKyAgaWYgKHIgIT0g
+MCApIAorCXJldHVybjsKKworICBjaGFyIHVzZXJidWZbTUFYX01BSUxCT1hfQlVGRkVSXTsKKyAg
+c3RybGNweSh1c2VyYnVmLCB1c2VyLCBzaXplb2YodXNlcmJ1ZikpOworICAvKiB0cmFuc2xhdGUg
+YW55IHNlcGFyYXRvcnMgaW4gdXNlciAqLworICBtYm94bmFtZV9oaWVyc2VwX3RvZXh0ZXJuYWwo
+JmxtdHBkX25hbWVzcGFjZSwgdXNlcmJ1ZiwKKyAgIAkJCSAgICAgIGNvbmZpZ192aXJ0ZG9tYWlu
+cyA/CisJCQkgICAgICBzdHJjc3BuKHVzZXJidWYsICJAIikgOiAwKTsKKworICBub3RpZnkobm90
+aWZpZXIsICJNQUlMIiwgTlVMTCwgdXNlcmJ1ZiwgbmFtZWJ1ZiwgMCwgTlVMTCwKKwkJICAgbm90
+aWZ5aGVhZGVyID8gbm90aWZ5aGVhZGVyIDogIiIpOworIAorICByZXR1cm47Cit9CiAvKiBwbGFj
+ZXMgbXNnIGluIG1haWxib3ggbWFpbGJveG5hbWUuICAKICAqIGlmIHlvdSB3aXNoIHRvIHVzZSBz
+aW5nbGUgaW5zdGFuY2Ugc3RvcmUsIHBhc3Mgc3RhZ2UgYXMgbm9uLU5VTEwKICAqIGlmIHlvdSB3
+YW50IHRvIGRlbGl2ZXIgbWVzc2FnZSByZWdhcmRsZXNzIG9mIGR1cGxpY2F0ZXMsIHBhc3MgaWQg
+YXMgTlVMTApAQCAtNTAzLDg0ICs1NTgsNjcgQEAKICAgICBzdHJ1Y3QgYXBwZW5kc3RhdGUgYXM7
+CiAgICAgdW5zaWduZWQgbG9uZyB1aWQ7CiAgICAgY29uc3QgY2hhciAqbm90aWZpZXI7CisgICAg
+CisgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJfbWFpbGJveDogdXNlcj0lcyxtYWlsYm94
+bmFtZT0lcyxxdW90YW92ZXJyaWRlPSVpLGFjbG92ZXJyaWRlPSVpIiwgdXNlciwgbWFpbGJveG5h
+bWUscXVvdGFvdmVycmlkZSxhY2xvdmVycmlkZSk7CisgICAgaWYgKCBhY2xvdmVycmlkZSApIHsK
+KwlzeXNsb2coTE9HX0RFQlVHLCJhY2xjaGVjaz0wIik7CisgICAgfSBlbHNlIHsKKwlzeXNsb2co
+TE9HX0RFQlVHLCJhY2xjaGVjaz0laSAoQUNMX1BPU1QpIixBQ0xfUE9TVCk7CisgICAgfQogCi0g
+ICAgciA9IGFwcGVuZF9zZXR1cCgmYXMsIG1haWxib3huYW1lLAotCQkgICAgIGF1dGh1c2VyLCBh
+dXRoc3RhdGUsIGFjbG92ZXJyaWRlID8gMCA6IEFDTF9QT1NULCAKLQkJICAgICBxdW90YW92ZXJy
+aWRlID8gKGxvbmcpIC0xIDoKLQkJICAgICBjb25maWdfZ2V0c3dpdGNoKElNQVBPUFRfTE1UUF9T
+VFJJQ1RfUVVPVEEpID8KLQkJICAgICAobG9uZykgc2l6ZSA6IDApOworCisgICAgciA9IGFwcGVu
+ZF9zZXR1cCgmYXMsIG1haWxib3huYW1lLCBhdXRodXNlciwgYXV0aHN0YXRlLCAKKwkJCWFjbG92
+ZXJyaWRlICAgPyAgICAgICAgIDAgOiBBQ0xfUE9TVCwgCisJCQlxdW90YW92ZXJyaWRlID8gKGxv
+bmcpIC0xIDogY29uZmlnX2dldHN3aXRjaChJTUFQT1BUX0xNVFBfU1RSSUNUX1FVT1RBKSA/ICAo
+bG9uZykgc2l6ZSA6IDApOworCisgICAgaWYgKCByICE9IDAgKSB7CisgICAgICByZXR1cm4gcjsK
+KyAgICB9CiAKICAgICAvKiBjaGVjayBmb3IgZHVwbGljYXRlIG1lc3NhZ2UgKi8KLSAgICBpZiAo
+IXIgJiYgaWQgJiYgZHVwZWxpbSAmJiAhKGFzLm1haWxib3gtPmkub3B0aW9ucyAmIE9QVF9JTUFQ
+X0RVUERFTElWRVIpICYmCi0JZHVwbGljYXRlX2NoZWNrKGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94
+bmFtZSwgc3RybGVuKG1haWxib3huYW1lKSkpIHsKKyAgICBpZiAoIGlkIAorCSYmIGR1cGVsaW0g
+CisJJiYgIShhcy5tYWlsYm94LT5pLm9wdGlvbnMgJiBPUFRfSU1BUF9EVVBERUxJVkVSKSAKKwkm
+JiBkdXBsaWNhdGVfY2hlY2soaWQsIHN0cmxlbihpZCksIG1haWxib3huYW1lLCBzdHJsZW4obWFp
+bGJveG5hbWUpKSkgeworCiAJZHVwbGljYXRlX2xvZyhpZCwgbWFpbGJveG5hbWUsICJkZWxpdmVy
+eSIpOwogCWFwcGVuZF9hYm9ydCgmYXMpOwogCXJldHVybiAwOwogICAgIH0KIAotICAgIGlmICgh
+ciAmJiAhY29udGVudC0+Ym9keSkgeworICAgIGlmICghY29udGVudC0+Ym9keSkgewogCS8qIHBh
+cnNlIHRoZSBtZXNzYWdlIGJvZHkgaWYgd2UgaGF2ZW4ndCBhbHJlYWR5LAogCSAgIGFuZCBrZWVw
+IHRoZSBmaWxlIG1tYXAnZWQgKi8KIAlyID0gbWVzc2FnZV9wYXJzZV9maWxlKGYsICZjb250ZW50
+LT5iYXNlLCAmY29udGVudC0+bGVuLCAmY29udGVudC0+Ym9keSk7CisJaWYgKHIgIT0gMCkgewor
+CSAgcmV0dXJuIHI7CisgICAgICAgIH0KICAgICB9CiAKLSAgICBpZiAoIXIpIHsKLQlyID0gYXBw
+ZW5kX2Zyb21zdGFnZSgmYXMsICZjb250ZW50LT5ib2R5LCBzdGFnZSwgMCwKKyAgICByID0gYXBw
+ZW5kX2Zyb21zdGFnZSgmYXMsICZjb250ZW50LT5ib2R5LCBzdGFnZSwgMCwKIAkJCSAgICAgKGNv
+bnN0IGNoYXIgKiopIGZsYWcsIG5mbGFncywgIXNpbmdsZWluc3RhbmNlKTsKLQotCWlmIChyKSB7
+Ci0JICAgIGFwcGVuZF9hYm9ydCgmYXMpOwotCX0gZWxzZSB7Ci0JICAgIHN0cnVjdCBtYWlsYm94
+ICptYWlsYm94ID0gTlVMTDsKLQkgICAgLyogaG9sZCB0aGUgbWFpbGJveCBvcGVuIHVudGlsIHRo
+ZSBkdXBsaWNhdGUgbWFyayBpcyBkb25lICovCi0JICAgIHIgPSBhcHBlbmRfY29tbWl0KCZhcywg
+cXVvdGFvdmVycmlkZSA/IC0xIDogMCwgTlVMTCwgJnVpZCwKLQkJCSAgICAgIE5VTEwsICZtYWls
+Ym94KTsKLQkgICAgaWYgKCFyKSB7Ci0JCXN5c2xvZyhMT0dfSU5GTywgIkRlbGl2ZXJlZDogJXMg
+dG8gbWFpbGJveDogJXMiLAotCQkgICAgICAgaWQsIG1haWxib3huYW1lKTsKLQkJaWYgKGR1cGVs
+aW0gJiYgaWQpIHsKLQkJICAgIGR1cGxpY2F0ZV9tYXJrKGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94
+bmFtZSwgCi0JCQkJICAgc3RybGVuKG1haWxib3huYW1lKSwgdGltZShOVUxMKSwgdWlkKTsKLQkJ
+fQotCQltYWlsYm94X2Nsb3NlKCZtYWlsYm94KTsKLQkgICAgfQotCX0KLSAgICB9Ci0KLSAgICBp
+ZiAoIXIgJiYgdXNlciAmJiAobm90aWZpZXIgPSBjb25maWdfZ2V0c3RyaW5nKElNQVBPUFRfTUFJ
+TE5PVElGSUVSKSkpIHsKLQljaGFyIGluYm94W01BWF9NQUlMQk9YX0JVRkZFUl07Ci0JY2hhciBu
+YW1lYnVmW01BWF9NQUlMQk9YX0JVRkZFUl07Ci0JY2hhciB1c2VyYnVmW01BWF9NQUlMQk9YX0JV
+RkZFUl07Ci0JY29uc3QgY2hhciAqbm90aWZ5X21haWxib3ggPSBtYWlsYm94bmFtZTsKLQlpbnQg
+cjI7Ci0KLQkvKiB0cmFuc2xhdGUgdXNlci5mb28gdG8gSU5CT1ggKi8KLQlpZiAoISgqbG10cGRf
+bmFtZXNwYWNlLm1ib3huYW1lX3RvaW50ZXJuYWwpKCZsbXRwZF9uYW1lc3BhY2UsCi0JCQkJCQkg
+ICAgIklOQk9YIiwgdXNlciwgaW5ib3gpKSB7Ci0JICAgIHNpemVfdCBpbmJveGxlbiA9IHN0cmxl
+bihpbmJveCk7Ci0JICAgIGlmIChzdHJsZW4obWFpbGJveG5hbWUpID49IGluYm94bGVuICYmCi0J
+CSFzdHJuY21wKG1haWxib3huYW1lLCBpbmJveCwgaW5ib3hsZW4pICYmCi0JCSghbWFpbGJveG5h
+bWVbaW5ib3hsZW5dIHx8IG1haWxib3huYW1lW2luYm94bGVuXSA9PSAnLicpKSB7Ci0JCXN0cmxj
+cHkoaW5ib3gsICJJTkJPWCIsIHNpemVvZihpbmJveCkpOyAKLQkJc3RybGNhdChpbmJveCwgbWFp
+bGJveG5hbWUraW5ib3hsZW4sIHNpemVvZihpbmJveCkpOwotCQlub3RpZnlfbWFpbGJveCA9IGlu
+Ym94OwotCSAgICB9Ci0JfQotCi0JLyogdHJhbnNsYXRlIG1haWxib3huYW1lICovCi0JcjIgPSAo
+KmxtdHBkX25hbWVzcGFjZS5tYm94bmFtZV90b2V4dGVybmFsKSgmbG10cGRfbmFtZXNwYWNlLAot
+CQkJCQkJICAgIG5vdGlmeV9tYWlsYm94LAotCQkJCQkJICAgIHVzZXIsIG5hbWVidWYpOwotCWlm
+ICghcjIpIHsKLQkgICAgc3RybGNweSh1c2VyYnVmLCB1c2VyLCBzaXplb2YodXNlcmJ1ZikpOwot
+CSAgICAvKiB0cmFuc2xhdGUgYW55IHNlcGFyYXRvcnMgaW4gdXNlciAqLwotCSAgICBtYm94bmFt
+ZV9oaWVyc2VwX3RvZXh0ZXJuYWwoJmxtdHBkX25hbWVzcGFjZSwgdXNlcmJ1ZiwKLQkJCQkJY29u
+ZmlnX3ZpcnRkb21haW5zID8KLQkJCQkJc3RyY3Nwbih1c2VyYnVmLCAiQCIpIDogMCk7Ci0JICAg
+IG5vdGlmeShub3RpZmllciwgIk1BSUwiLCBOVUxMLCB1c2VyYnVmLCBuYW1lYnVmLCAwLCBOVUxM
+LAotCQkgICBub3RpZnloZWFkZXIgPyBub3RpZnloZWFkZXIgOiAiIik7Ci0JfQorICAgIGlmIChy
+ICE9MCApIHsKKyAgICAgIGFwcGVuZF9hYm9ydCgmYXMpOworICAgICAgcmV0dXJuIHI7IAorICAg
+IH0gCisKKyAgICBzdHJ1Y3QgbWFpbGJveCAqbWFpbGJveCA9IE5VTEw7CisgICAgLyogaG9sZCB0
+aGUgbWFpbGJveCBvcGVuIHVudGlsIHRoZSBkdXBsaWNhdGUgbWFyayBpcyBkb25lICovCisgICAg
+ciA9IGFwcGVuZF9jb21taXQoJmFzLCBxdW90YW92ZXJyaWRlID8gLTEgOiAwLCBOVUxMLCAmdWlk
+LAorCQkgICAgICBOVUxMLCAmbWFpbGJveCk7CisgICAgaWYgKCByICE9MCApIHsKKyAgICAgIHJl
+dHVybiByOworICAgIH0KKworICAgIHN5c2xvZyhMT0dfSU5GTywgIkRlbGl2ZXJlZDogJXMgdG8g
+bWFpbGJveDogJXMiLCBpZCwgbWFpbGJveG5hbWUpOworCisgICAgaWYgKGR1cGVsaW0gJiYgaWQp
+IHsKKyAgICAgIGR1cGxpY2F0ZV9tYXJrKGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94bmFtZSwgCisg
+ICAgICBzdHJsZW4obWFpbGJveG5hbWUpLCB0aW1lKE5VTEwpLCB1aWQpOwogICAgIH0KKyAgICBt
+YWlsYm94X2Nsb3NlKCZtYWlsYm94KTsKKyAgIAorICAgIG5vdGlmeV91c2VyKHVzZXIsbm90aWZ5
+aGVhZGVyLG1haWxib3huYW1lKTsgCiAKICAgICByZXR1cm4gcjsKIH0KQEAgLTY3MSw2ICs3MDks
+OSBAQAogICAgIH0KIH0KIAorCisKKwogaW50IGRlbGl2ZXJfbG9jYWwoZGVsaXZlcl9kYXRhX3Qg
+Km15ZGF0YSwgY2hhciAqKmZsYWcsIGludCBuZmxhZ3MsCiAJCSAgY29uc3QgY2hhciAqdXNlcm5h
+bWUsIGNvbnN0IGNoYXIgKm1haWxib3huYW1lKQogewpAQCAtNjc5LDY2ICs3MjAsOTEgQEAKICAg
+ICBpbnQgcXVvdGFvdmVycmlkZSA9IG1zZ19nZXRyY3B0X2lnbm9yZXF1b3RhKG1kLCBteWRhdGEt
+PmN1cl9yY3B0KTsKICAgICBpbnQgcmV0OwogCisgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2
+ZXJfbG9jYWwgOiB1c2VyPSVzIG1haWxib3g9JXMiLHVzZXJuYW1lLG1haWxib3huYW1lKTsKKwog
+ICAgIC8qIGNhc2UgMTogc2hhcmVkIG1haWxib3ggcmVxdWVzdCAqLwotICAgIGlmICghKnVzZXJu
+YW1lIHx8IHVzZXJuYW1lWzBdID09ICdAJykgewotCWlmICgqdXNlcm5hbWUpIHNucHJpbnRmKG5h
+bWVidWYsIHNpemVvZihuYW1lYnVmKSwgIiVzISIsIHVzZXJuYW1lKzEpOworICAgIGlmICghdXNl
+cm5hbWUgfHwgdXNlcm5hbWVbMF0gPT0gJ0AnKSAKKyAgICB7CisJaWYgKCp1c2VybmFtZSkgCisJ
+CXNucHJpbnRmKG5hbWVidWYsIHNpemVvZihuYW1lYnVmKSwgIiVzISIsIHVzZXJuYW1lKzEpOwog
+CXN0cmxjYXQobmFtZWJ1ZiwgbWFpbGJveG5hbWUsIHNpemVvZihuYW1lYnVmKSk7CiAKLQlyZXR1
+cm4gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3RhZ2Us
+CisJcmV0ID0gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+
+c3RhZ2UsCiAJCQkgICAgICAgbWQtPnNpemUsIGZsYWcsIG5mbGFncywKIAkJCSAgICAgICBteWRh
+dGEtPmF1dGh1c2VyLCBteWRhdGEtPmF1dGhzdGF0ZSwgbWQtPmlkLAogCQkJICAgICAgIE5VTEws
+IG15ZGF0YS0+bm90aWZ5aGVhZGVyLAogCQkJICAgICAgIG5hbWVidWYsIHF1b3Rhb3ZlcnJpZGUs
+IDApOworICAgICAgIGlmIChyZXQgPT0gMCApICB7CisgICAgICAgICBzeXNsb2coTE9HX0RFQlVH
+LCAiZGVsaXZlcmVkIGludG8gc2hhcmVkICBtYWlsYm94ICVzIiwgbmFtZWJ1Zik7CisgICAgICAg
+fSAKKyAgICAgICByZXR1cm4gcmV0OwogICAgIH0KIAogICAgIC8qIGNhc2UgMjogb3JkaW5hcnkg
+dXNlciAqLwogICAgIHJldCA9ICgqbXlkYXRhLT5uYW1lc3BhY2UtPm1ib3huYW1lX3RvaW50ZXJu
+YWwpKG15ZGF0YS0+bmFtZXNwYWNlLAogCQkJCQkJICAgICJJTkJPWCIsCiAJCQkJCQkgICAgdXNl
+cm5hbWUsIG5hbWVidWYpOworICAgIGlmICggcmV0ICE9IDAgKSB7CisgICAgICByZXR1cm4gcmV0
+OworICAgIH0KKyAgICAKKyAgICBzdHJ1Y3QgYXV0aF9zdGF0ZSAqYXV0aHN0YXRlID0gYXV0aF9u
+ZXdzdGF0ZSh1c2VybmFtZSk7CisgICAgdGFpbCA9IG5hbWVidWYgKyBzdHJsZW4obmFtZWJ1Zik7
+CiAKLSAgICBpZiAoIXJldCkgewotCWludCByZXQyID0gMTsKKyAgICBpZiAoICFtYWlsYm94bmFt
+ZSApIHsKKwlnb3RvIG5vcm1hbGRlbGl2ZXJ5OworICAgIH0KIAotCXRhaWwgPSBuYW1lYnVmICsg
+c3RybGVuKG5hbWVidWYpOwotCWlmIChtYWlsYm94bmFtZSkgewotCSAgICBzdHJsY2F0KG5hbWVi
+dWYsICIuIiwgc2l6ZW9mKG5hbWVidWYpKTsKLQkgICAgc3RybGNhdChuYW1lYnVmLCBtYWlsYm94
+bmFtZSwgc2l6ZW9mKG5hbWVidWYpKTsKLQotCSAgICByZXQyID0gZGVsaXZlcl9tYWlsYm94KG1k
+LT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3RhZ2UsCi0JCQkJICAgbWQtPnNpemUsIGZs
+YWcsIG5mbGFncywKLQkJCQkgICBteWRhdGEtPmF1dGh1c2VyLCBteWRhdGEtPmF1dGhzdGF0ZSwg
+bWQtPmlkLAotCQkJCSAgIHVzZXJuYW1lLCBteWRhdGEtPm5vdGlmeWhlYWRlciwKLQkJCQkgICBu
+YW1lYnVmLCBxdW90YW92ZXJyaWRlLCAwKTsKLQl9Ci0JaWYgKHJldDIgPT0gSU1BUF9NQUlMQk9Y
+X05PTkVYSVNURU5UICYmIG1haWxib3huYW1lICYmCi0JICAgIGNvbmZpZ19nZXRzd2l0Y2goSU1B
+UE9QVF9MTVRQX0ZVWlpZX01BSUxCT1hfTUFUQ0gpICYmCi0JICAgIGZ1enp5X21hdGNoKG5hbWVi
+dWYpKSB7Ci0JICAgIC8qIHRyeSBkZWxpdmVyeSB0byBhIGZ1enp5IG1hdGNoZWQgbWFpbGJveCAq
+LwotCSAgICByZXQyID0gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15
+ZGF0YS0+c3RhZ2UsCi0JCQkJICAgbWQtPnNpemUsIGZsYWcsIG5mbGFncywKLQkJCQkgICBteWRh
+dGEtPmF1dGh1c2VyLCBteWRhdGEtPmF1dGhzdGF0ZSwgbWQtPmlkLAotCQkJCSAgIHVzZXJuYW1l
+LCBteWRhdGEtPm5vdGlmeWhlYWRlciwKLQkJCQkgICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAw
+KTsKLQl9Ci0JaWYgKHJldDIpIHsKLQkgICAgLyogbm9ybWFsIGRlbGl2ZXJ5IHRvIElOQk9YICov
+Ci0JICAgIHN0cnVjdCBhdXRoX3N0YXRlICphdXRoc3RhdGUgPSBhdXRoX25ld3N0YXRlKHVzZXJu
+YW1lKTsKIAotCSAgICAqdGFpbCA9ICdcMCc7CisgICAgLyogaWYgdGhlIHByZWZpeCBpcyBhbHJl
+YWR5IGV4aXN0aW5nIGluIHRoZSBtYWlsYm94IG5hbWUsIHRoZW4gZG8gbm90IGF0dGFjaCBoaW0g
+Ki8KKyAgICBpZiAoIHN0cm5jbXAobWFpbGJveG5hbWUsbmFtZWJ1ZixzdHJsZW4obmFtZWJ1Zikp
+ID09IDAgKSB7CisgICAgICBzdHJuY3B5KG5hbWVidWYsbWFpbGJveG5hbWUsc3RybGVuKG1haWxi
+b3huYW1lKSk7CisgICAgfSBlbHNlICB7CisgICAgICBzdHJsY2F0KG5hbWVidWYsICIuIiwgc2l6
+ZW9mKG5hbWVidWYpKTsKKyAgICAgIHN0cmxjYXQobmFtZWJ1ZiwgbWFpbGJveG5hbWUsIHNpemVv
+ZihuYW1lYnVmKSk7CisgICAgfQorCisgICAgcmV0ID0gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBt
+eWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3RhZ2UsCisgIAkJCSAgIG1kLT5zaXplLCBmbGFnLCBu
+ZmxhZ3MsCisgCQkJICAgKGNoYXIgKikgdXNlcm5hbWUsIGF1dGhzdGF0ZSwgbWQtPmlkLAorCQkJ
+ICAgdXNlcm5hbWUsIG15ZGF0YS0+bm90aWZ5aGVhZGVyLAorCQkJICAgbmFtZWJ1ZiwgcXVvdGFv
+dmVycmlkZSwgMCk7ICAgLy8vIEhFRVJFIElTIFRIRSBESUZGRVJFTkNFCisgICAgaWYgKHJldCA9
+PSAwICkgIHsKKyAgICAgIHN5c2xvZyhMT0dfREVCVUcsICJkZWxpdmVyZWQgaW50byBtYWlsYm94
+ICVzIiwgbmFtZWJ1Zik7CisgICAgICByZXR1cm4gcmV0OyAKKyAgICB9CiAKLQkgICAgcmV0ID0g
+ZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3RhZ2UsCisg
+ICAgIC8qIHRyeSBkZWxpdmVyeSB0byBhIGZ1enp5IG1hdGNoZWQgbWFpbGJveCAsIGlmIGVuYWJs
+ZWQqLworICAgIGlmICggcmV0ID09IElNQVBfTUFJTEJPWF9OT05FWElTVEVOVCAgCisJICYmIGNv
+bmZpZ19nZXRzd2l0Y2goSU1BUE9QVF9MTVRQX0ZVWlpZX01BSUxCT1hfTUFUQ0gpIAorCSAmJiBm
+dXp6eV9tYXRjaChuYW1lYnVmKSkgeworCQorCSByZXQgPSBkZWxpdmVyX21haWxib3gobWQtPmYs
+IG15ZGF0YS0+Y29udGVudCwgbXlkYXRhLT5zdGFnZSwKKwkgCQkgICAJbWQtPnNpemUsIGZsYWcs
+IG5mbGFncywKKwkJCQkoY2hhciAqKSB1c2VybmFtZSwgYXV0aHN0YXRlLCBtZC0+aWQsCisJCQkJ
+dXNlcm5hbWUsIG15ZGF0YS0+bm90aWZ5aGVhZGVyLAorCQkJCW5hbWVidWYsIHF1b3Rhb3ZlcnJp
+ZGUsIDApOworICAgIH0KKyAgICBpZiAocmV0ID09IDAgKSB7CisgICAgICBzeXNsb2coTE9HX0RF
+QlVHLCAiZGVsaXZlcmVkIHdpdGggZnV6enltYXRjaCBpbnRvIG1haWxib3giLCBuYW1lYnVmKTsK
+KyAgICAgIHJldHVybiByZXQ7CisgICAgfQorCitub3JtYWxkZWxpdmVyeToKKyAgICAvKiBub3Jt
+YWwgZGVsaXZlcnkgdG8gSU5CT1ggKi8KKyAgICAqdGFpbCA9ICdcMCc7CisgICAgcmV0ID0gZGVs
+aXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3RhZ2UsCiAJCQkJ
+ICBtZC0+c2l6ZSwgZmxhZywgbmZsYWdzLAogCQkJCSAgKGNoYXIgKikgdXNlcm5hbWUsIGF1dGhz
+dGF0ZSwgbWQtPmlkLAogCQkJCSAgdXNlcm5hbWUsIG15ZGF0YS0+bm90aWZ5aGVhZGVyLAogCQkJ
+CSAgbmFtZWJ1ZiwgcXVvdGFvdmVycmlkZSwgMSk7Ci0KLQkgICAgaWYgKGF1dGhzdGF0ZSkgYXV0
+aF9mcmVlc3RhdGUoYXV0aHN0YXRlKTsKLQl9CisgICAgaWYgKHJldCA9PSAwICkgeworICAgICAg
+c3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJlZCBpbnRvIGRlZmF1bHQgbWFpbGJveCAlcyIsbmFt
+ZWJ1Zik7CiAgICAgfQorICAgIGlmIChhdXRoc3RhdGUpIGF1dGhfZnJlZXN0YXRlKGF1dGhzdGF0
+ZSk7CiAKICAgICByZXR1cm4gcmV0OwogfQotCiBpbnQgZGVsaXZlcihtZXNzYWdlX2RhdGFfdCAq
+bXNnZGF0YSwgY2hhciAqYXV0aHVzZXIsCiAJICAgIHN0cnVjdCBhdXRoX3N0YXRlICphdXRoc3Rh
+dGUpCiB7Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1383</attachid>
+            <date>2011-04-24 15:53 EDT</date>
+            <desc>Restores old behaviour V3.0  (fixes 2bugs)</desc>
+            <filename>patch3.diff</filename>
+            <type>text/plain</type>
+            <size>10873</size>
+            <attacher>baldur@email.de</attacher>
+            
+              <data encoding="base64">LS0tIEJVSUxEL2N5cnVzLWltYXBkLTIuNC44L2ltYXAvbG10cGQuYwkyMDExLTA0LTEzIDE2OjM1
+OjIyLjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQtMi40LjgubW9kaWZpZWQvaW1hcC9s
+bXRwZC5jCTIwMTEtMDQtMjQgMjE6NDc6MzguMzY5MzU1NjgzICswMjAwCkBAIC00NzcsNiArNDc3
+LDYxIEBACiAgICAgcmV0dXJuIHI7CiB9CiAKKy8qIGhlbHBlciBmdW5jdGlvbiB3aGljaCBub3Rp
+ZmllcyB0aGUgdXNlcgorICoKKyAqLwordm9pZCBub3RpZnlfdXNlcihjb25zdCBjaGFyICp1c2Vy
+LCBjaGFyKm5vdGlmeWhlYWRlciwgY29uc3QgY2hhciogbWFpbGJveG5hbWUpCit7CisgIGlmICgh
+dXNlcikgeworICAgIHJldHVybjsgCisgIH0KKworICBjb25zdCBjaGFyICpub3RpZmllciA9IGNv
+bmZpZ19nZXRzdHJpbmcoSU1BUE9QVF9NQUlMTk9USUZJRVIpOworICBpZiAoIW5vdGlmaWVyKSB7
+CisgICAgcmV0dXJuOworICB9CisKKyAgY29uc3QgY2hhciAqbm90aWZ5X21haWxib3ggPSBtYWls
+Ym94bmFtZTsKKyAgY2hhciBpbmJveFtNQVhfTUFJTEJPWF9CVUZGRVJdOworICBpbnQgcjsKKwor
+ICAvKiB0cmFuc2xhdGUgdXNlci5mb28gdG8gSU5CT1ggKi8KKyAgciA9ICgqbG10cGRfbmFtZXNw
+YWNlLm1ib3huYW1lX3RvaW50ZXJuYWwpKCZsbXRwZF9uYW1lc3BhY2UsIAorCSJJTkJPWCIsIHVz
+ZXIsIGluYm94KTsKKyAKKyAgaWYgKCByICE9IDAgKSB7CisgICAgc2l6ZV90IGluYm94bGVuID0g
+c3RybGVuKGluYm94KTsKKyAgICBpZiAoc3RybGVuKG1haWxib3huYW1lKSA+PSBpbmJveGxlbiAm
+JgorCQkhc3RybmNtcChtYWlsYm94bmFtZSwgaW5ib3gsIGluYm94bGVuKSAmJgorCQkoIW1haWxi
+b3huYW1lW2luYm94bGVuXSB8fCBtYWlsYm94bmFtZVtpbmJveGxlbl0gPT0gJy4nKSkgeworCisJ
+CXN0cmxjcHkoaW5ib3gsICJJTkJPWCIsIHNpemVvZihpbmJveCkpOyAKKwkJc3RybGNhdChpbmJv
+eCwgbWFpbGJveG5hbWUraW5ib3hsZW4sIHNpemVvZihpbmJveCkpOworCQlub3RpZnlfbWFpbGJv
+eCA9IGluYm94OworCSAgICB9CisgIH0KKyAgCisgIGNoYXIgbmFtZWJ1ZltNQVhfTUFJTEJPWF9C
+VUZGRVJdOworCisgIC8qIHRyYW5zbGF0ZSBtYWlsYm94bmFtZSAqLworICByID0gKCpsbXRwZF9u
+YW1lc3BhY2UubWJveG5hbWVfdG9leHRlcm5hbCkoJmxtdHBkX25hbWVzcGFjZSwKKwkJCQkJCSAg
+ICBub3RpZnlfbWFpbGJveCwKKwkJCQkJCSAgICB1c2VyLCBuYW1lYnVmKTsKKyAgaWYgKHIgIT0g
+MCApIAorCXJldHVybjsKKworICBjaGFyIHVzZXJidWZbTUFYX01BSUxCT1hfQlVGRkVSXTsKKyAg
+c3RybGNweSh1c2VyYnVmLCB1c2VyLCBzaXplb2YodXNlcmJ1ZikpOworICAvKiB0cmFuc2xhdGUg
+YW55IHNlcGFyYXRvcnMgaW4gdXNlciAqLworICBtYm94bmFtZV9oaWVyc2VwX3RvZXh0ZXJuYWwo
+JmxtdHBkX25hbWVzcGFjZSwgdXNlcmJ1ZiwKKyAgIAkJCSAgICAgIGNvbmZpZ192aXJ0ZG9tYWlu
+cyA/CisJCQkgICAgICBzdHJjc3BuKHVzZXJidWYsICJAIikgOiAwKTsKKworICBub3RpZnkobm90
+aWZpZXIsICJNQUlMIiwgTlVMTCwgdXNlcmJ1ZiwgbmFtZWJ1ZiwgMCwgTlVMTCwKKwkJICAgbm90
+aWZ5aGVhZGVyID8gbm90aWZ5aGVhZGVyIDogIiIpOworIAorICByZXR1cm47Cit9CiAvKiBwbGFj
+ZXMgbXNnIGluIG1haWxib3ggbWFpbGJveG5hbWUuICAKICAqIGlmIHlvdSB3aXNoIHRvIHVzZSBz
+aW5nbGUgaW5zdGFuY2Ugc3RvcmUsIHBhc3Mgc3RhZ2UgYXMgbm9uLU5VTEwKICAqIGlmIHlvdSB3
+YW50IHRvIGRlbGl2ZXIgbWVzc2FnZSByZWdhcmRsZXNzIG9mIGR1cGxpY2F0ZXMsIHBhc3MgaWQg
+YXMgTlVMTApAQCAtNTAzLDg0ICs1NTgsNjEgQEAKICAgICBzdHJ1Y3QgYXBwZW5kc3RhdGUgYXM7
+CiAgICAgdW5zaWduZWQgbG9uZyB1aWQ7CiAgICAgY29uc3QgY2hhciAqbm90aWZpZXI7CisgICAg
+CisgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJfbWFpbGJveDogdXNlcj0lcyxtYWlsYm94
+bmFtZT0lcyxxdW90YW92ZXJyaWRlPSVpLGFjbG92ZXJyaWRlPSVpIiwgdXNlciwgbWFpbGJveG5h
+bWUscXVvdGFvdmVycmlkZSxhY2xvdmVycmlkZSk7CisKKyAgICByID0gYXBwZW5kX3NldHVwKCZh
+cywgbWFpbGJveG5hbWUsIGF1dGh1c2VyLCBhdXRoc3RhdGUsIAorCQkJYWNsb3ZlcnJpZGUgICA/
+ICAgICAgICAgMCA6IEFDTF9QT1NULCAKKwkJCXF1b3Rhb3ZlcnJpZGUgPyAobG9uZykgLTEgOiBj
+b25maWdfZ2V0c3dpdGNoKElNQVBPUFRfTE1UUF9TVFJJQ1RfUVVPVEEpID8gIChsb25nKSBzaXpl
+IDogMCk7CiAKLSAgICByID0gYXBwZW5kX3NldHVwKCZhcywgbWFpbGJveG5hbWUsCi0JCSAgICAg
+YXV0aHVzZXIsIGF1dGhzdGF0ZSwgYWNsb3ZlcnJpZGUgPyAwIDogQUNMX1BPU1QsIAotCQkgICAg
+IHF1b3Rhb3ZlcnJpZGUgPyAobG9uZykgLTEgOgotCQkgICAgIGNvbmZpZ19nZXRzd2l0Y2goSU1B
+UE9QVF9MTVRQX1NUUklDVF9RVU9UQSkgPwotCQkgICAgIChsb25nKSBzaXplIDogMCk7CisgICAg
+aWYgKCByICE9IDAgKSB7CisgICAgICByZXR1cm4gcjsKKyAgICB9CiAKICAgICAvKiBjaGVjayBm
+b3IgZHVwbGljYXRlIG1lc3NhZ2UgKi8KLSAgICBpZiAoIXIgJiYgaWQgJiYgZHVwZWxpbSAmJiAh
+KGFzLm1haWxib3gtPmkub3B0aW9ucyAmIE9QVF9JTUFQX0RVUERFTElWRVIpICYmCi0JZHVwbGlj
+YXRlX2NoZWNrKGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94bmFtZSwgc3RybGVuKG1haWxib3huYW1l
+KSkpIHsKKyAgICBpZiAoIGlkIAorCSYmIGR1cGVsaW0gCisJJiYgIShhcy5tYWlsYm94LT5pLm9w
+dGlvbnMgJiBPUFRfSU1BUF9EVVBERUxJVkVSKSAKKwkmJiBkdXBsaWNhdGVfY2hlY2soaWQsIHN0
+cmxlbihpZCksIG1haWxib3huYW1lLCBzdHJsZW4obWFpbGJveG5hbWUpKSkgeworCiAJZHVwbGlj
+YXRlX2xvZyhpZCwgbWFpbGJveG5hbWUsICJkZWxpdmVyeSIpOwogCWFwcGVuZF9hYm9ydCgmYXMp
+OwogCXJldHVybiAwOwogICAgIH0KIAotICAgIGlmICghciAmJiAhY29udGVudC0+Ym9keSkgewor
+ICAgIGlmICghY29udGVudC0+Ym9keSkgewogCS8qIHBhcnNlIHRoZSBtZXNzYWdlIGJvZHkgaWYg
+d2UgaGF2ZW4ndCBhbHJlYWR5LAogCSAgIGFuZCBrZWVwIHRoZSBmaWxlIG1tYXAnZWQgKi8KIAly
+ID0gbWVzc2FnZV9wYXJzZV9maWxlKGYsICZjb250ZW50LT5iYXNlLCAmY29udGVudC0+bGVuLCAm
+Y29udGVudC0+Ym9keSk7CisJaWYgKHIgIT0gMCkgeworCSAgcmV0dXJuIHI7CisgICAgICAgIH0K
+ICAgICB9CiAKLSAgICBpZiAoIXIpIHsKLQlyID0gYXBwZW5kX2Zyb21zdGFnZSgmYXMsICZjb250
+ZW50LT5ib2R5LCBzdGFnZSwgMCwKKyAgICByID0gYXBwZW5kX2Zyb21zdGFnZSgmYXMsICZjb250
+ZW50LT5ib2R5LCBzdGFnZSwgMCwKIAkJCSAgICAgKGNvbnN0IGNoYXIgKiopIGZsYWcsIG5mbGFn
+cywgIXNpbmdsZWluc3RhbmNlKTsKLQotCWlmIChyKSB7Ci0JICAgIGFwcGVuZF9hYm9ydCgmYXMp
+OwotCX0gZWxzZSB7Ci0JICAgIHN0cnVjdCBtYWlsYm94ICptYWlsYm94ID0gTlVMTDsKLQkgICAg
+LyogaG9sZCB0aGUgbWFpbGJveCBvcGVuIHVudGlsIHRoZSBkdXBsaWNhdGUgbWFyayBpcyBkb25l
+ICovCi0JICAgIHIgPSBhcHBlbmRfY29tbWl0KCZhcywgcXVvdGFvdmVycmlkZSA/IC0xIDogMCwg
+TlVMTCwgJnVpZCwKLQkJCSAgICAgIE5VTEwsICZtYWlsYm94KTsKLQkgICAgaWYgKCFyKSB7Ci0J
+CXN5c2xvZyhMT0dfSU5GTywgIkRlbGl2ZXJlZDogJXMgdG8gbWFpbGJveDogJXMiLAotCQkgICAg
+ICAgaWQsIG1haWxib3huYW1lKTsKLQkJaWYgKGR1cGVsaW0gJiYgaWQpIHsKLQkJICAgIGR1cGxp
+Y2F0ZV9tYXJrKGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94bmFtZSwgCi0JCQkJICAgc3RybGVuKG1h
+aWxib3huYW1lKSwgdGltZShOVUxMKSwgdWlkKTsKLQkJfQotCQltYWlsYm94X2Nsb3NlKCZtYWls
+Ym94KTsKLQkgICAgfQotCX0KLSAgICB9Ci0KLSAgICBpZiAoIXIgJiYgdXNlciAmJiAobm90aWZp
+ZXIgPSBjb25maWdfZ2V0c3RyaW5nKElNQVBPUFRfTUFJTE5PVElGSUVSKSkpIHsKLQljaGFyIGlu
+Ym94W01BWF9NQUlMQk9YX0JVRkZFUl07Ci0JY2hhciBuYW1lYnVmW01BWF9NQUlMQk9YX0JVRkZF
+Ul07Ci0JY2hhciB1c2VyYnVmW01BWF9NQUlMQk9YX0JVRkZFUl07Ci0JY29uc3QgY2hhciAqbm90
+aWZ5X21haWxib3ggPSBtYWlsYm94bmFtZTsKLQlpbnQgcjI7Ci0KLQkvKiB0cmFuc2xhdGUgdXNl
+ci5mb28gdG8gSU5CT1ggKi8KLQlpZiAoISgqbG10cGRfbmFtZXNwYWNlLm1ib3huYW1lX3RvaW50
+ZXJuYWwpKCZsbXRwZF9uYW1lc3BhY2UsCi0JCQkJCQkgICAgIklOQk9YIiwgdXNlciwgaW5ib3gp
+KSB7Ci0JICAgIHNpemVfdCBpbmJveGxlbiA9IHN0cmxlbihpbmJveCk7Ci0JICAgIGlmIChzdHJs
+ZW4obWFpbGJveG5hbWUpID49IGluYm94bGVuICYmCi0JCSFzdHJuY21wKG1haWxib3huYW1lLCBp
+bmJveCwgaW5ib3hsZW4pICYmCi0JCSghbWFpbGJveG5hbWVbaW5ib3hsZW5dIHx8IG1haWxib3hu
+YW1lW2luYm94bGVuXSA9PSAnLicpKSB7Ci0JCXN0cmxjcHkoaW5ib3gsICJJTkJPWCIsIHNpemVv
+ZihpbmJveCkpOyAKLQkJc3RybGNhdChpbmJveCwgbWFpbGJveG5hbWUraW5ib3hsZW4sIHNpemVv
+ZihpbmJveCkpOwotCQlub3RpZnlfbWFpbGJveCA9IGluYm94OwotCSAgICB9Ci0JfQotCi0JLyog
+dHJhbnNsYXRlIG1haWxib3huYW1lICovCi0JcjIgPSAoKmxtdHBkX25hbWVzcGFjZS5tYm94bmFt
+ZV90b2V4dGVybmFsKSgmbG10cGRfbmFtZXNwYWNlLAotCQkJCQkJICAgIG5vdGlmeV9tYWlsYm94
+LAotCQkJCQkJICAgIHVzZXIsIG5hbWVidWYpOwotCWlmICghcjIpIHsKLQkgICAgc3RybGNweSh1
+c2VyYnVmLCB1c2VyLCBzaXplb2YodXNlcmJ1ZikpOwotCSAgICAvKiB0cmFuc2xhdGUgYW55IHNl
+cGFyYXRvcnMgaW4gdXNlciAqLwotCSAgICBtYm94bmFtZV9oaWVyc2VwX3RvZXh0ZXJuYWwoJmxt
+dHBkX25hbWVzcGFjZSwgdXNlcmJ1ZiwKLQkJCQkJY29uZmlnX3ZpcnRkb21haW5zID8KLQkJCQkJ
+c3RyY3Nwbih1c2VyYnVmLCAiQCIpIDogMCk7Ci0JICAgIG5vdGlmeShub3RpZmllciwgIk1BSUwi
+LCBOVUxMLCB1c2VyYnVmLCBuYW1lYnVmLCAwLCBOVUxMLAotCQkgICBub3RpZnloZWFkZXIgPyBu
+b3RpZnloZWFkZXIgOiAiIik7Ci0JfQorICAgIGlmIChyICE9MCApIHsKKyAgICAgIGFwcGVuZF9h
+Ym9ydCgmYXMpOworICAgICAgcmV0dXJuIHI7IAorICAgIH0gCisKKyAgICBzdHJ1Y3QgbWFpbGJv
+eCAqbWFpbGJveCA9IE5VTEw7CisgICAgLyogaG9sZCB0aGUgbWFpbGJveCBvcGVuIHVudGlsIHRo
+ZSBkdXBsaWNhdGUgbWFyayBpcyBkb25lICovCisgICAgciA9IGFwcGVuZF9jb21taXQoJmFzLCBx
+dW90YW92ZXJyaWRlID8gLTEgOiAwLCBOVUxMLCAmdWlkLAorCQkgICAgICBOVUxMLCAmbWFpbGJv
+eCk7CisgICAgaWYgKCByICE9MCApIHsKKyAgICAgIHJldHVybiByOworICAgIH0KKworICAgIHN5
+c2xvZyhMT0dfSU5GTywgIkRlbGl2ZXJlZDogJXMgdG8gbWFpbGJveDogJXMiLCBpZCwgbWFpbGJv
+eG5hbWUpOworCisgICAgaWYgKGR1cGVsaW0gJiYgaWQpIHsKKyAgICAgIGR1cGxpY2F0ZV9tYXJr
+KGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94bmFtZSwgCisgICAgICBzdHJsZW4obWFpbGJveG5hbWUp
+LCB0aW1lKE5VTEwpLCB1aWQpOwogICAgIH0KKyAgICBtYWlsYm94X2Nsb3NlKCZtYWlsYm94KTsK
+KyAgIAorICAgIG5vdGlmeV91c2VyKHVzZXIsbm90aWZ5aGVhZGVyLG1haWxib3huYW1lKTsgCiAK
+ICAgICByZXR1cm4gcjsKIH0KQEAgLTY3MSw2ICs3MDMsOSBAQAogICAgIH0KIH0KIAorCisKKwog
+aW50IGRlbGl2ZXJfbG9jYWwoZGVsaXZlcl9kYXRhX3QgKm15ZGF0YSwgY2hhciAqKmZsYWcsIGlu
+dCBuZmxhZ3MsCiAJCSAgY29uc3QgY2hhciAqdXNlcm5hbWUsIGNvbnN0IGNoYXIgKm1haWxib3hu
+YW1lKQogewpAQCAtNjc5LDY2ICs3MTQsOTEgQEAKICAgICBpbnQgcXVvdGFvdmVycmlkZSA9IG1z
+Z19nZXRyY3B0X2lnbm9yZXF1b3RhKG1kLCBteWRhdGEtPmN1cl9yY3B0KTsKICAgICBpbnQgcmV0
+OwogCisgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJfbG9jYWwgOiB1c2VyPSVzIG1haWxi
+b3g9JXMiLHVzZXJuYW1lLG1haWxib3huYW1lKTsKKwogICAgIC8qIGNhc2UgMTogc2hhcmVkIG1h
+aWxib3ggcmVxdWVzdCAqLwotICAgIGlmICghKnVzZXJuYW1lIHx8IHVzZXJuYW1lWzBdID09ICdA
+JykgewotCWlmICgqdXNlcm5hbWUpIHNucHJpbnRmKG5hbWVidWYsIHNpemVvZihuYW1lYnVmKSwg
+IiVzISIsIHVzZXJuYW1lKzEpOworICAgIGlmICghKnVzZXJuYW1lIHx8IHVzZXJuYW1lWzBdID09
+ICdAJykgCisgICAgeworCWlmICgqdXNlcm5hbWUpIAorCQlzbnByaW50ZihuYW1lYnVmLCBzaXpl
+b2YobmFtZWJ1ZiksICIlcyEiLCB1c2VybmFtZSsxKTsKIAlzdHJsY2F0KG5hbWVidWYsIG1haWxi
+b3huYW1lLCBzaXplb2YobmFtZWJ1ZikpOwogCi0JcmV0dXJuIGRlbGl2ZXJfbWFpbGJveChtZC0+
+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEtPnN0YWdlLAorCXJldCA9IGRlbGl2ZXJfbWFpbGJv
+eChtZC0+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEtPnN0YWdlLAogCQkJICAgICAgIG1kLT5z
+aXplLCBmbGFnLCBuZmxhZ3MsCiAJCQkgICAgICAgbXlkYXRhLT5hdXRodXNlciwgbXlkYXRhLT5h
+dXRoc3RhdGUsIG1kLT5pZCwKIAkJCSAgICAgICBOVUxMLCBteWRhdGEtPm5vdGlmeWhlYWRlciwK
+IAkJCSAgICAgICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAwKTsKKyAgICAgICBpZiAocmV0ID09
+IDAgKSAgeworICAgICAgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJlZCBpbnRvIHNoYXJl
+ZCAgbWFpbGJveCAlcyIsIG5hbWVidWYpOworICAgICAgIH0gCisgICAgICAgcmV0dXJuIHJldDsK
+ICAgICB9CiAKICAgICAvKiBjYXNlIDI6IG9yZGluYXJ5IHVzZXIgKi8KICAgICByZXQgPSAoKm15
+ZGF0YS0+bmFtZXNwYWNlLT5tYm94bmFtZV90b2ludGVybmFsKShteWRhdGEtPm5hbWVzcGFjZSwK
+IAkJCQkJCSAgICAiSU5CT1giLAogCQkJCQkJICAgIHVzZXJuYW1lLCBuYW1lYnVmKTsKKyAgICBp
+ZiAoIHJldCAhPSAwICkgeworICAgICAgcmV0dXJuIHJldDsKKyAgICB9CisgICAgCisgICAgc3Ry
+dWN0IGF1dGhfc3RhdGUgKmF1dGhzdGF0ZSA9IGF1dGhfbmV3c3RhdGUodXNlcm5hbWUpOworICAg
+IHRhaWwgPSBuYW1lYnVmICsgc3RybGVuKG5hbWVidWYpOwogCi0gICAgaWYgKCFyZXQpIHsKLQlp
+bnQgcmV0MiA9IDE7CisgICAgaWYgKCAhbWFpbGJveG5hbWUgKSB7CisJZ290byBub3JtYWxkZWxp
+dmVyeTsKKyAgICB9CiAKLQl0YWlsID0gbmFtZWJ1ZiArIHN0cmxlbihuYW1lYnVmKTsKLQlpZiAo
+bWFpbGJveG5hbWUpIHsKLQkgICAgc3RybGNhdChuYW1lYnVmLCAiLiIsIHNpemVvZihuYW1lYnVm
+KSk7Ci0JICAgIHN0cmxjYXQobmFtZWJ1ZiwgbWFpbGJveG5hbWUsIHNpemVvZihuYW1lYnVmKSk7
+Ci0KLQkgICAgcmV0MiA9IGRlbGl2ZXJfbWFpbGJveChtZC0+ZiwgbXlkYXRhLT5jb250ZW50LCBt
+eWRhdGEtPnN0YWdlLAotCQkJCSAgIG1kLT5zaXplLCBmbGFnLCBuZmxhZ3MsCi0JCQkJICAgbXlk
+YXRhLT5hdXRodXNlciwgbXlkYXRhLT5hdXRoc3RhdGUsIG1kLT5pZCwKLQkJCQkgICB1c2VybmFt
+ZSwgbXlkYXRhLT5ub3RpZnloZWFkZXIsCi0JCQkJICAgbmFtZWJ1ZiwgcXVvdGFvdmVycmlkZSwg
+MCk7Ci0JfQotCWlmIChyZXQyID09IElNQVBfTUFJTEJPWF9OT05FWElTVEVOVCAmJiBtYWlsYm94
+bmFtZSAmJgotCSAgICBjb25maWdfZ2V0c3dpdGNoKElNQVBPUFRfTE1UUF9GVVpaWV9NQUlMQk9Y
+X01BVENIKSAmJgotCSAgICBmdXp6eV9tYXRjaChuYW1lYnVmKSkgewotCSAgICAvKiB0cnkgZGVs
+aXZlcnkgdG8gYSBmdXp6eSBtYXRjaGVkIG1haWxib3ggKi8KLQkgICAgcmV0MiA9IGRlbGl2ZXJf
+bWFpbGJveChtZC0+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEtPnN0YWdlLAotCQkJCSAgIG1k
+LT5zaXplLCBmbGFnLCBuZmxhZ3MsCi0JCQkJICAgbXlkYXRhLT5hdXRodXNlciwgbXlkYXRhLT5h
+dXRoc3RhdGUsIG1kLT5pZCwKLQkJCQkgICB1c2VybmFtZSwgbXlkYXRhLT5ub3RpZnloZWFkZXIs
+Ci0JCQkJICAgbmFtZWJ1ZiwgcXVvdGFvdmVycmlkZSwgMCk7Ci0JfQotCWlmIChyZXQyKSB7Ci0J
+ICAgIC8qIG5vcm1hbCBkZWxpdmVyeSB0byBJTkJPWCAqLwotCSAgICBzdHJ1Y3QgYXV0aF9zdGF0
+ZSAqYXV0aHN0YXRlID0gYXV0aF9uZXdzdGF0ZSh1c2VybmFtZSk7CiAKLQkgICAgKnRhaWwgPSAn
+XDAnOworICAgIC8qIGlmIHRoZSBwcmVmaXggaXMgYWxyZWFkeSBleGlzdGluZyBpbiB0aGUgbWFp
+bGJveCBuYW1lLCB0aGVuIGRvIG5vdCBhdHRhY2ggaGltICovCisgICAgaWYgKCBzdHJuY21wKG1h
+aWxib3huYW1lLG5hbWVidWYsc3RybGVuKG5hbWVidWYpKSA9PSAwICkgeworICAgICAgc3RybmNw
+eShuYW1lYnVmLG1haWxib3huYW1lLHN0cmxlbihtYWlsYm94bmFtZSkpOworICAgIH0gZWxzZSAg
+eworICAgICAgc3RybGNhdChuYW1lYnVmLCAiLiIsIHNpemVvZihuYW1lYnVmKSk7CisgICAgICBz
+dHJsY2F0KG5hbWVidWYsIG1haWxib3huYW1lLCBzaXplb2YobmFtZWJ1ZikpOworICAgIH0KKwor
+ICAgIHJldCA9IGRlbGl2ZXJfbWFpbGJveChtZC0+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEt
+PnN0YWdlLAorICAJCQkgICBtZC0+c2l6ZSwgZmxhZywgbmZsYWdzLAorIAkJCSAgIChjaGFyICop
+IHVzZXJuYW1lLCBhdXRoc3RhdGUsIG1kLT5pZCwKKwkJCSAgIHVzZXJuYW1lLCBteWRhdGEtPm5v
+dGlmeWhlYWRlciwKKwkJCSAgIG5hbWVidWYsIHF1b3Rhb3ZlcnJpZGUsIDApOyAgCisgICAgaWYg
+KHJldCA9PSAwICkgIHsKKyAgICAgIHN5c2xvZyhMT0dfREVCVUcsICJkZWxpdmVyZWQgaW50byBt
+YWlsYm94ICVzIiwgbmFtZWJ1Zik7CisgICAgICByZXR1cm4gcmV0OyAKKyAgICB9CiAKLQkgICAg
+cmV0ID0gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3Rh
+Z2UsCisgICAgIC8qIHRyeSBkZWxpdmVyeSB0byBhIGZ1enp5IG1hdGNoZWQgbWFpbGJveCAsIGlm
+IGVuYWJsZWQqLworICAgIGlmICggcmV0ID09IElNQVBfTUFJTEJPWF9OT05FWElTVEVOVCAgCisJ
+ICYmIGNvbmZpZ19nZXRzd2l0Y2goSU1BUE9QVF9MTVRQX0ZVWlpZX01BSUxCT1hfTUFUQ0gpIAor
+CSAmJiBmdXp6eV9tYXRjaChuYW1lYnVmKSkgeworCQorCSByZXQgPSBkZWxpdmVyX21haWxib3go
+bWQtPmYsIG15ZGF0YS0+Y29udGVudCwgbXlkYXRhLT5zdGFnZSwKKwkgCQkgICAJbWQtPnNpemUs
+IGZsYWcsIG5mbGFncywKKwkJCQkoY2hhciAqKSB1c2VybmFtZSwgYXV0aHN0YXRlLCBtZC0+aWQs
+CisJCQkJdXNlcm5hbWUsIG15ZGF0YS0+bm90aWZ5aGVhZGVyLAorCQkJCW5hbWVidWYsIHF1b3Rh
+b3ZlcnJpZGUsIDApOworICAgIH0KKyAgICBpZiAocmV0ID09IDAgKSB7CisgICAgICBzeXNsb2co
+TE9HX0RFQlVHLCAiZGVsaXZlcmVkIHdpdGggZnV6enltYXRjaCBpbnRvIG1haWxib3giLCBuYW1l
+YnVmKTsKKyAgICAgIHJldHVybiByZXQ7CisgICAgfQorCitub3JtYWxkZWxpdmVyeToKKyAgICAv
+KiBub3JtYWwgZGVsaXZlcnkgdG8gSU5CT1ggKi8KKyAgICAqdGFpbCA9ICdcMCc7CisgICAgcmV0
+ID0gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3RhZ2Us
+CiAJCQkJICBtZC0+c2l6ZSwgZmxhZywgbmZsYWdzLAogCQkJCSAgKGNoYXIgKikgdXNlcm5hbWUs
+IGF1dGhzdGF0ZSwgbWQtPmlkLAogCQkJCSAgdXNlcm5hbWUsIG15ZGF0YS0+bm90aWZ5aGVhZGVy
+LAogCQkJCSAgbmFtZWJ1ZiwgcXVvdGFvdmVycmlkZSwgMSk7Ci0KLQkgICAgaWYgKGF1dGhzdGF0
+ZSkgYXV0aF9mcmVlc3RhdGUoYXV0aHN0YXRlKTsKLQl9CisgICAgaWYgKHJldCA9PSAwICkgewor
+ICAgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJlZCBpbnRvIGRlZmF1bHQgbWFpbGJveCAl
+cyIsbmFtZWJ1Zik7CiAgICAgfQorICAgIGlmIChhdXRoc3RhdGUpIGF1dGhfZnJlZXN0YXRlKGF1
+dGhzdGF0ZSk7CiAKICAgICByZXR1cm4gcmV0OwogfQotCiBpbnQgZGVsaXZlcihtZXNzYWdlX2Rh
+dGFfdCAqbXNnZGF0YSwgY2hhciAqYXV0aHVzZXIsCiAJICAgIHN0cnVjdCBhdXRoX3N0YXRlICph
+dXRoc3RhdGUpCiB7CkBAIC05ODIsNiArMTA0MiwyNCBAQAogICAgIGNoYXIgbmFtZWJ1ZltNQVhf
+TUFJTEJPWF9CVUZGRVJdID0gIiI7CiAgICAgaW50IHIgPSAwOwogCisKKyAgICBpZiAoIXVzZXIp
+IHsKKwlzeXNsb2coTE9HX0RFQlVHLCAidmVyaWZ5X3VzZXI6IHVzZXIgbm90IHNldCIpOworICAg
+IH0gZWxzZSB7CisJc3lzbG9nKExPR19ERUJVRywgInZlcmlmeV91c2VyOiB1c2VyICVzIix1c2Vy
+KTsKKyAgICB9CisgICAgaWYgKCFtYWlsYm94KSB7CisJc3lzbG9nKExPR19ERUJVRywgInZlcmlm
+eV91c2VyOiBtYWlsYm94IG5vdCBzZXQiKTsKKyAgICB9IGVsc2UgeworICAgICAgICBzeXNsb2co
+TE9HX0RFQlVHLCAidmVyaWZ5X3VzZXI6IG1haWxib3ggJXMiLG1haWxib3gpOworICAgIH0KKyAg
+ICBpZiAoIGRvbWFpbiAmJiAoc3RybGVuKGRvbWFpbikgKyAxID4gc2l6ZW9mKG5hbWVidWYpKSkg
+eworCXN5c2xvZyhMT0dfREVCVUcsICJ2ZXJpZnlfdXNlcjogZG9tYWluIG5hbWUgbG9uZ2VyIHRo
+YW4gbmFtZWJ1ZiIpOworICAgIH0gZWxzZSB7CisJc3lzbG9nKExPR19ERUJVRywgInZlcmlmeV91
+c2VyOiBkb21haW4gJXMiLCBkb21haW4pOworICAgIH0KKworCiAgICAgaWYgKCghdXNlciAmJiAh
+bWFpbGJveCkgfHwKIAkoZG9tYWluICYmIChzdHJsZW4oZG9tYWluKSArIDEgPiBzaXplb2YobmFt
+ZWJ1ZikpKSkgewogCXIgPSBJTUFQX01BSUxCT1hfTk9ORVhJU1RFTlQ7Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1384</attachid>
+            <date>2011-04-24 16:27 EDT</date>
+            <desc>V3.1 of patch, further refinement, and fixed typos and missing %s</desc>
+            <filename>patch3.1.diff</filename>
+            <type>text/plain</type>
+            <size>10161</size>
+            <attacher>baldur@email.de</attacher>
+            
+              <data encoding="base64">LS0tIEJVSUxEL2N5cnVzLWltYXBkLTIuNC44L2ltYXAvbG10cGQuYwkyMDExLTA0LTEzIDE2OjM1
+OjIyLjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQtMi40LjgubW9kaWZpZWQvaW1hcC9s
+bXRwZC5jCTIwMTEtMDQtMjQgMjI6MjQ6MzkuNTQ4NTI4OTYzICswMjAwCkBAIC00NzcsNiArNDc3
+LDYxIEBACiAgICAgcmV0dXJuIHI7CiB9CiAKKy8qIGhlbHBlciBmdW5jdGlvbiB3aGljaCBub3Rp
+ZmllcyB0aGUgdXNlcgorICoKKyAqLwordm9pZCBub3RpZnlfdXNlcihjb25zdCBjaGFyICp1c2Vy
+LCBjaGFyKm5vdGlmeWhlYWRlciwgY29uc3QgY2hhciogbWFpbGJveG5hbWUpCit7CisgIGlmICgh
+dXNlcikgeworICAgIHJldHVybjsgCisgIH0KKworICBjb25zdCBjaGFyICpub3RpZmllciA9IGNv
+bmZpZ19nZXRzdHJpbmcoSU1BUE9QVF9NQUlMTk9USUZJRVIpOworICBpZiAoIW5vdGlmaWVyKSB7
+CisgICAgcmV0dXJuOworICB9CisKKyAgY29uc3QgY2hhciAqbm90aWZ5X21haWxib3ggPSBtYWls
+Ym94bmFtZTsKKyAgY2hhciBpbmJveFtNQVhfTUFJTEJPWF9CVUZGRVJdOworICBpbnQgcjsKKwor
+ICAvKiB0cmFuc2xhdGUgdXNlci5mb28gdG8gSU5CT1ggKi8KKyAgciA9ICgqbG10cGRfbmFtZXNw
+YWNlLm1ib3huYW1lX3RvaW50ZXJuYWwpKCZsbXRwZF9uYW1lc3BhY2UsIAorCSJJTkJPWCIsIHVz
+ZXIsIGluYm94KTsKKyAKKyAgaWYgKCByICE9IDAgKSB7CisgICAgc2l6ZV90IGluYm94bGVuID0g
+c3RybGVuKGluYm94KTsKKyAgICBpZiAoc3RybGVuKG1haWxib3huYW1lKSA+PSBpbmJveGxlbiAm
+JgorCQkhc3RybmNtcChtYWlsYm94bmFtZSwgaW5ib3gsIGluYm94bGVuKSAmJgorCQkoIW1haWxi
+b3huYW1lW2luYm94bGVuXSB8fCBtYWlsYm94bmFtZVtpbmJveGxlbl0gPT0gJy4nKSkgeworCisJ
+CXN0cmxjcHkoaW5ib3gsICJJTkJPWCIsIHNpemVvZihpbmJveCkpOyAKKwkJc3RybGNhdChpbmJv
+eCwgbWFpbGJveG5hbWUraW5ib3hsZW4sIHNpemVvZihpbmJveCkpOworCQlub3RpZnlfbWFpbGJv
+eCA9IGluYm94OworCSAgICB9CisgIH0KKyAgCisgIGNoYXIgbmFtZWJ1ZltNQVhfTUFJTEJPWF9C
+VUZGRVJdOworCisgIC8qIHRyYW5zbGF0ZSBtYWlsYm94bmFtZSAqLworICByID0gKCpsbXRwZF9u
+YW1lc3BhY2UubWJveG5hbWVfdG9leHRlcm5hbCkoJmxtdHBkX25hbWVzcGFjZSwKKwkJCQkJCSAg
+ICBub3RpZnlfbWFpbGJveCwKKwkJCQkJCSAgICB1c2VyLCBuYW1lYnVmKTsKKyAgaWYgKHIgIT0g
+MCApIAorCXJldHVybjsKKworICBjaGFyIHVzZXJidWZbTUFYX01BSUxCT1hfQlVGRkVSXTsKKyAg
+c3RybGNweSh1c2VyYnVmLCB1c2VyLCBzaXplb2YodXNlcmJ1ZikpOworICAvKiB0cmFuc2xhdGUg
+YW55IHNlcGFyYXRvcnMgaW4gdXNlciAqLworICBtYm94bmFtZV9oaWVyc2VwX3RvZXh0ZXJuYWwo
+JmxtdHBkX25hbWVzcGFjZSwgdXNlcmJ1ZiwKKyAgIAkJCSAgICAgIGNvbmZpZ192aXJ0ZG9tYWlu
+cyA/CisJCQkgICAgICBzdHJjc3BuKHVzZXJidWYsICJAIikgOiAwKTsKKworICBub3RpZnkobm90
+aWZpZXIsICJNQUlMIiwgTlVMTCwgdXNlcmJ1ZiwgbmFtZWJ1ZiwgMCwgTlVMTCwKKwkJICAgbm90
+aWZ5aGVhZGVyID8gbm90aWZ5aGVhZGVyIDogIiIpOworIAorICByZXR1cm47Cit9CiAvKiBwbGFj
+ZXMgbXNnIGluIG1haWxib3ggbWFpbGJveG5hbWUuICAKICAqIGlmIHlvdSB3aXNoIHRvIHVzZSBz
+aW5nbGUgaW5zdGFuY2Ugc3RvcmUsIHBhc3Mgc3RhZ2UgYXMgbm9uLU5VTEwKICAqIGlmIHlvdSB3
+YW50IHRvIGRlbGl2ZXIgbWVzc2FnZSByZWdhcmRsZXNzIG9mIGR1cGxpY2F0ZXMsIHBhc3MgaWQg
+YXMgTlVMTApAQCAtNTAzLDg0ICs1NTgsNjEgQEAKICAgICBzdHJ1Y3QgYXBwZW5kc3RhdGUgYXM7
+CiAgICAgdW5zaWduZWQgbG9uZyB1aWQ7CiAgICAgY29uc3QgY2hhciAqbm90aWZpZXI7CisgICAg
+CisgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJfbWFpbGJveDogdXNlcj0lcyxtYWlsYm94
+bmFtZT0lcyxxdW90YW92ZXJyaWRlPSVpLGFjbG92ZXJyaWRlPSVpIiwgdXNlciwgbWFpbGJveG5h
+bWUscXVvdGFvdmVycmlkZSxhY2xvdmVycmlkZSk7CisKKyAgICByID0gYXBwZW5kX3NldHVwKCZh
+cywgbWFpbGJveG5hbWUsIGF1dGh1c2VyLCBhdXRoc3RhdGUsIAorCQkJYWNsb3ZlcnJpZGUgICA/
+ICAgICAgICAgMCA6IEFDTF9QT1NULCAKKwkJCXF1b3Rhb3ZlcnJpZGUgPyAobG9uZykgLTEgOiBj
+b25maWdfZ2V0c3dpdGNoKElNQVBPUFRfTE1UUF9TVFJJQ1RfUVVPVEEpID8gIChsb25nKSBzaXpl
+IDogMCk7CiAKLSAgICByID0gYXBwZW5kX3NldHVwKCZhcywgbWFpbGJveG5hbWUsCi0JCSAgICAg
+YXV0aHVzZXIsIGF1dGhzdGF0ZSwgYWNsb3ZlcnJpZGUgPyAwIDogQUNMX1BPU1QsIAotCQkgICAg
+IHF1b3Rhb3ZlcnJpZGUgPyAobG9uZykgLTEgOgotCQkgICAgIGNvbmZpZ19nZXRzd2l0Y2goSU1B
+UE9QVF9MTVRQX1NUUklDVF9RVU9UQSkgPwotCQkgICAgIChsb25nKSBzaXplIDogMCk7CisgICAg
+aWYgKCByICE9IDAgKSB7CisgICAgICByZXR1cm4gcjsKKyAgICB9CiAKICAgICAvKiBjaGVjayBm
+b3IgZHVwbGljYXRlIG1lc3NhZ2UgKi8KLSAgICBpZiAoIXIgJiYgaWQgJiYgZHVwZWxpbSAmJiAh
+KGFzLm1haWxib3gtPmkub3B0aW9ucyAmIE9QVF9JTUFQX0RVUERFTElWRVIpICYmCi0JZHVwbGlj
+YXRlX2NoZWNrKGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94bmFtZSwgc3RybGVuKG1haWxib3huYW1l
+KSkpIHsKKyAgICBpZiAoIGlkIAorCSYmIGR1cGVsaW0gCisJJiYgIShhcy5tYWlsYm94LT5pLm9w
+dGlvbnMgJiBPUFRfSU1BUF9EVVBERUxJVkVSKSAKKwkmJiBkdXBsaWNhdGVfY2hlY2soaWQsIHN0
+cmxlbihpZCksIG1haWxib3huYW1lLCBzdHJsZW4obWFpbGJveG5hbWUpKSkgeworCiAJZHVwbGlj
+YXRlX2xvZyhpZCwgbWFpbGJveG5hbWUsICJkZWxpdmVyeSIpOwogCWFwcGVuZF9hYm9ydCgmYXMp
+OwogCXJldHVybiAwOwogICAgIH0KIAotICAgIGlmICghciAmJiAhY29udGVudC0+Ym9keSkgewor
+ICAgIGlmICghY29udGVudC0+Ym9keSkgewogCS8qIHBhcnNlIHRoZSBtZXNzYWdlIGJvZHkgaWYg
+d2UgaGF2ZW4ndCBhbHJlYWR5LAogCSAgIGFuZCBrZWVwIHRoZSBmaWxlIG1tYXAnZWQgKi8KIAly
+ID0gbWVzc2FnZV9wYXJzZV9maWxlKGYsICZjb250ZW50LT5iYXNlLCAmY29udGVudC0+bGVuLCAm
+Y29udGVudC0+Ym9keSk7CisJaWYgKHIgIT0gMCkgeworCSAgcmV0dXJuIHI7CisgICAgICAgIH0K
+ICAgICB9CiAKLSAgICBpZiAoIXIpIHsKLQlyID0gYXBwZW5kX2Zyb21zdGFnZSgmYXMsICZjb250
+ZW50LT5ib2R5LCBzdGFnZSwgMCwKKyAgICByID0gYXBwZW5kX2Zyb21zdGFnZSgmYXMsICZjb250
+ZW50LT5ib2R5LCBzdGFnZSwgMCwKIAkJCSAgICAgKGNvbnN0IGNoYXIgKiopIGZsYWcsIG5mbGFn
+cywgIXNpbmdsZWluc3RhbmNlKTsKLQotCWlmIChyKSB7Ci0JICAgIGFwcGVuZF9hYm9ydCgmYXMp
+OwotCX0gZWxzZSB7Ci0JICAgIHN0cnVjdCBtYWlsYm94ICptYWlsYm94ID0gTlVMTDsKLQkgICAg
+LyogaG9sZCB0aGUgbWFpbGJveCBvcGVuIHVudGlsIHRoZSBkdXBsaWNhdGUgbWFyayBpcyBkb25l
+ICovCi0JICAgIHIgPSBhcHBlbmRfY29tbWl0KCZhcywgcXVvdGFvdmVycmlkZSA/IC0xIDogMCwg
+TlVMTCwgJnVpZCwKLQkJCSAgICAgIE5VTEwsICZtYWlsYm94KTsKLQkgICAgaWYgKCFyKSB7Ci0J
+CXN5c2xvZyhMT0dfSU5GTywgIkRlbGl2ZXJlZDogJXMgdG8gbWFpbGJveDogJXMiLAotCQkgICAg
+ICAgaWQsIG1haWxib3huYW1lKTsKLQkJaWYgKGR1cGVsaW0gJiYgaWQpIHsKLQkJICAgIGR1cGxp
+Y2F0ZV9tYXJrKGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94bmFtZSwgCi0JCQkJICAgc3RybGVuKG1h
+aWxib3huYW1lKSwgdGltZShOVUxMKSwgdWlkKTsKLQkJfQotCQltYWlsYm94X2Nsb3NlKCZtYWls
+Ym94KTsKLQkgICAgfQotCX0KLSAgICB9Ci0KLSAgICBpZiAoIXIgJiYgdXNlciAmJiAobm90aWZp
+ZXIgPSBjb25maWdfZ2V0c3RyaW5nKElNQVBPUFRfTUFJTE5PVElGSUVSKSkpIHsKLQljaGFyIGlu
+Ym94W01BWF9NQUlMQk9YX0JVRkZFUl07Ci0JY2hhciBuYW1lYnVmW01BWF9NQUlMQk9YX0JVRkZF
+Ul07Ci0JY2hhciB1c2VyYnVmW01BWF9NQUlMQk9YX0JVRkZFUl07Ci0JY29uc3QgY2hhciAqbm90
+aWZ5X21haWxib3ggPSBtYWlsYm94bmFtZTsKLQlpbnQgcjI7Ci0KLQkvKiB0cmFuc2xhdGUgdXNl
+ci5mb28gdG8gSU5CT1ggKi8KLQlpZiAoISgqbG10cGRfbmFtZXNwYWNlLm1ib3huYW1lX3RvaW50
+ZXJuYWwpKCZsbXRwZF9uYW1lc3BhY2UsCi0JCQkJCQkgICAgIklOQk9YIiwgdXNlciwgaW5ib3gp
+KSB7Ci0JICAgIHNpemVfdCBpbmJveGxlbiA9IHN0cmxlbihpbmJveCk7Ci0JICAgIGlmIChzdHJs
+ZW4obWFpbGJveG5hbWUpID49IGluYm94bGVuICYmCi0JCSFzdHJuY21wKG1haWxib3huYW1lLCBp
+bmJveCwgaW5ib3hsZW4pICYmCi0JCSghbWFpbGJveG5hbWVbaW5ib3hsZW5dIHx8IG1haWxib3hu
+YW1lW2luYm94bGVuXSA9PSAnLicpKSB7Ci0JCXN0cmxjcHkoaW5ib3gsICJJTkJPWCIsIHNpemVv
+ZihpbmJveCkpOyAKLQkJc3RybGNhdChpbmJveCwgbWFpbGJveG5hbWUraW5ib3hsZW4sIHNpemVv
+ZihpbmJveCkpOwotCQlub3RpZnlfbWFpbGJveCA9IGluYm94OwotCSAgICB9Ci0JfQotCi0JLyog
+dHJhbnNsYXRlIG1haWxib3huYW1lICovCi0JcjIgPSAoKmxtdHBkX25hbWVzcGFjZS5tYm94bmFt
+ZV90b2V4dGVybmFsKSgmbG10cGRfbmFtZXNwYWNlLAotCQkJCQkJICAgIG5vdGlmeV9tYWlsYm94
+LAotCQkJCQkJICAgIHVzZXIsIG5hbWVidWYpOwotCWlmICghcjIpIHsKLQkgICAgc3RybGNweSh1
+c2VyYnVmLCB1c2VyLCBzaXplb2YodXNlcmJ1ZikpOwotCSAgICAvKiB0cmFuc2xhdGUgYW55IHNl
+cGFyYXRvcnMgaW4gdXNlciAqLwotCSAgICBtYm94bmFtZV9oaWVyc2VwX3RvZXh0ZXJuYWwoJmxt
+dHBkX25hbWVzcGFjZSwgdXNlcmJ1ZiwKLQkJCQkJY29uZmlnX3ZpcnRkb21haW5zID8KLQkJCQkJ
+c3RyY3Nwbih1c2VyYnVmLCAiQCIpIDogMCk7Ci0JICAgIG5vdGlmeShub3RpZmllciwgIk1BSUwi
+LCBOVUxMLCB1c2VyYnVmLCBuYW1lYnVmLCAwLCBOVUxMLAotCQkgICBub3RpZnloZWFkZXIgPyBu
+b3RpZnloZWFkZXIgOiAiIik7Ci0JfQorICAgIGlmIChyICE9MCApIHsKKyAgICAgIGFwcGVuZF9h
+Ym9ydCgmYXMpOworICAgICAgcmV0dXJuIHI7IAorICAgIH0gCisKKyAgICBzdHJ1Y3QgbWFpbGJv
+eCAqbWFpbGJveCA9IE5VTEw7CisgICAgLyogaG9sZCB0aGUgbWFpbGJveCBvcGVuIHVudGlsIHRo
+ZSBkdXBsaWNhdGUgbWFyayBpcyBkb25lICovCisgICAgciA9IGFwcGVuZF9jb21taXQoJmFzLCBx
+dW90YW92ZXJyaWRlID8gLTEgOiAwLCBOVUxMLCAmdWlkLAorCQkgICAgICBOVUxMLCAmbWFpbGJv
+eCk7CisgICAgaWYgKCByICE9MCApIHsKKyAgICAgIHJldHVybiByOworICAgIH0KKworICAgIHN5
+c2xvZyhMT0dfSU5GTywgIkRlbGl2ZXJlZDogJXMgdG8gbWFpbGJveDogJXMiLCBpZCwgbWFpbGJv
+eG5hbWUpOworCisgICAgaWYgKGR1cGVsaW0gJiYgaWQpIHsKKyAgICAgIGR1cGxpY2F0ZV9tYXJr
+KGlkLCBzdHJsZW4oaWQpLCBtYWlsYm94bmFtZSwgCisgICAgICBzdHJsZW4obWFpbGJveG5hbWUp
+LCB0aW1lKE5VTEwpLCB1aWQpOwogICAgIH0KKyAgICBtYWlsYm94X2Nsb3NlKCZtYWlsYm94KTsK
+KyAgIAorICAgIG5vdGlmeV91c2VyKHVzZXIsbm90aWZ5aGVhZGVyLG1haWxib3huYW1lKTsgCiAK
+ICAgICByZXR1cm4gcjsKIH0KQEAgLTY3MSw2ICs3MDMsOSBAQAogICAgIH0KIH0KIAorCisKKwog
+aW50IGRlbGl2ZXJfbG9jYWwoZGVsaXZlcl9kYXRhX3QgKm15ZGF0YSwgY2hhciAqKmZsYWcsIGlu
+dCBuZmxhZ3MsCiAJCSAgY29uc3QgY2hhciAqdXNlcm5hbWUsIGNvbnN0IGNoYXIgKm1haWxib3hu
+YW1lKQogewpAQCAtNjc5LDY2ICs3MTQsOTEgQEAKICAgICBpbnQgcXVvdGFvdmVycmlkZSA9IG1z
+Z19nZXRyY3B0X2lnbm9yZXF1b3RhKG1kLCBteWRhdGEtPmN1cl9yY3B0KTsKICAgICBpbnQgcmV0
+OwogCisgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJfbG9jYWwgOiB1c2VyPSVzIG1haWxi
+b3g9JXMiLHVzZXJuYW1lLG1haWxib3huYW1lKTsKKwogICAgIC8qIGNhc2UgMTogc2hhcmVkIG1h
+aWxib3ggcmVxdWVzdCAqLwotICAgIGlmICghKnVzZXJuYW1lIHx8IHVzZXJuYW1lWzBdID09ICdA
+JykgewotCWlmICgqdXNlcm5hbWUpIHNucHJpbnRmKG5hbWVidWYsIHNpemVvZihuYW1lYnVmKSwg
+IiVzISIsIHVzZXJuYW1lKzEpOworICAgIGlmICghKnVzZXJuYW1lIHx8IHVzZXJuYW1lWzBdID09
+ICdAJykgCisgICAgeworCWlmICgqdXNlcm5hbWUpIAorCQlzbnByaW50ZihuYW1lYnVmLCBzaXpl
+b2YobmFtZWJ1ZiksICIlcyEiLCB1c2VybmFtZSsxKTsKIAlzdHJsY2F0KG5hbWVidWYsIG1haWxi
+b3huYW1lLCBzaXplb2YobmFtZWJ1ZikpOwogCi0JcmV0dXJuIGRlbGl2ZXJfbWFpbGJveChtZC0+
+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEtPnN0YWdlLAorCXJldCA9IGRlbGl2ZXJfbWFpbGJv
+eChtZC0+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEtPnN0YWdlLAogCQkJICAgICAgIG1kLT5z
+aXplLCBmbGFnLCBuZmxhZ3MsCiAJCQkgICAgICAgbXlkYXRhLT5hdXRodXNlciwgbXlkYXRhLT5h
+dXRoc3RhdGUsIG1kLT5pZCwKIAkJCSAgICAgICBOVUxMLCBteWRhdGEtPm5vdGlmeWhlYWRlciwK
+IAkJCSAgICAgICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAwKTsKKyAgICAgICBpZiAocmV0ID09
+IDAgKSAgeworICAgICAgICAgc3lzbG9nKExPR19ERUJVRywgImRlbGl2ZXJlZCBpbnRvIHNoYXJl
+ZCBtYWlsYm94ICVzIiwgbmFtZWJ1Zik7CisgICAgICAgfSAKKyAgICAgICByZXR1cm4gcmV0Owog
+ICAgIH0KIAogICAgIC8qIGNhc2UgMjogb3JkaW5hcnkgdXNlciAqLwogICAgIHJldCA9ICgqbXlk
+YXRhLT5uYW1lc3BhY2UtPm1ib3huYW1lX3RvaW50ZXJuYWwpKG15ZGF0YS0+bmFtZXNwYWNlLAog
+CQkJCQkJICAgICJJTkJPWCIsCiAJCQkJCQkgICAgdXNlcm5hbWUsIG5hbWVidWYpOworICAgIGlm
+ICggcmV0ICE9IDAgKSB7CisgICAgICByZXR1cm4gcmV0OworICAgIH0KKyAgICAKKyAgICBzdHJ1
+Y3QgYXV0aF9zdGF0ZSAqYXV0aHN0YXRlID0gYXV0aF9uZXdzdGF0ZSh1c2VybmFtZSk7CisgICAg
+dGFpbCA9IG5hbWVidWYgKyBzdHJsZW4obmFtZWJ1Zik7CiAKLSAgICBpZiAoIXJldCkgewotCWlu
+dCByZXQyID0gMTsKKyAgICBpZiAoICFtYWlsYm94bmFtZSApIHsKKwlnb3RvIG5vcm1hbGRlbGl2
+ZXJ5OworICAgIH0KIAotCXRhaWwgPSBuYW1lYnVmICsgc3RybGVuKG5hbWVidWYpOwotCWlmICht
+YWlsYm94bmFtZSkgewotCSAgICBzdHJsY2F0KG5hbWVidWYsICIuIiwgc2l6ZW9mKG5hbWVidWYp
+KTsKLQkgICAgc3RybGNhdChuYW1lYnVmLCBtYWlsYm94bmFtZSwgc2l6ZW9mKG5hbWVidWYpKTsK
+LQotCSAgICByZXQyID0gZGVsaXZlcl9tYWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15
+ZGF0YS0+c3RhZ2UsCi0JCQkJICAgbWQtPnNpemUsIGZsYWcsIG5mbGFncywKLQkJCQkgICBteWRh
+dGEtPmF1dGh1c2VyLCBteWRhdGEtPmF1dGhzdGF0ZSwgbWQtPmlkLAotCQkJCSAgIHVzZXJuYW1l
+LCBteWRhdGEtPm5vdGlmeWhlYWRlciwKLQkJCQkgICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAw
+KTsKLQl9Ci0JaWYgKHJldDIgPT0gSU1BUF9NQUlMQk9YX05PTkVYSVNURU5UICYmIG1haWxib3hu
+YW1lICYmCi0JICAgIGNvbmZpZ19nZXRzd2l0Y2goSU1BUE9QVF9MTVRQX0ZVWlpZX01BSUxCT1hf
+TUFUQ0gpICYmCi0JICAgIGZ1enp5X21hdGNoKG5hbWVidWYpKSB7Ci0JICAgIC8qIHRyeSBkZWxp
+dmVyeSB0byBhIGZ1enp5IG1hdGNoZWQgbWFpbGJveCAqLwotCSAgICByZXQyID0gZGVsaXZlcl9t
+YWlsYm94KG1kLT5mLCBteWRhdGEtPmNvbnRlbnQsIG15ZGF0YS0+c3RhZ2UsCi0JCQkJICAgbWQt
+PnNpemUsIGZsYWcsIG5mbGFncywKLQkJCQkgICBteWRhdGEtPmF1dGh1c2VyLCBteWRhdGEtPmF1
+dGhzdGF0ZSwgbWQtPmlkLAotCQkJCSAgIHVzZXJuYW1lLCBteWRhdGEtPm5vdGlmeWhlYWRlciwK
+LQkJCQkgICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAwKTsKLQl9Ci0JaWYgKHJldDIpIHsKLQkg
+ICAgLyogbm9ybWFsIGRlbGl2ZXJ5IHRvIElOQk9YICovCi0JICAgIHN0cnVjdCBhdXRoX3N0YXRl
+ICphdXRoc3RhdGUgPSBhdXRoX25ld3N0YXRlKHVzZXJuYW1lKTsKIAotCSAgICAqdGFpbCA9ICdc
+MCc7CisgICAgLyogaWYgdGhlIHByZWZpeCBpcyBhbHJlYWR5IGV4aXN0aW5nIGluIHRoZSBtYWls
+Ym94IG5hbWUsIHRoZW4gZG8gbm90IGF0dGFjaCBoaW0gKi8KKyAgICBpZiAoIHN0cm5jbXAobWFp
+bGJveG5hbWUsbmFtZWJ1ZixzdHJsZW4obmFtZWJ1ZikpID09IDAgKSB7CisgICAgICBzdHJuY3B5
+KG5hbWVidWYsbWFpbGJveG5hbWUsc3RybGVuKG1haWxib3huYW1lKSk7CisgICAgfSBlbHNlICB7
+CisgICAgICBzdHJsY2F0KG5hbWVidWYsICIuIiwgc2l6ZW9mKG5hbWVidWYpKTsKKyAgICAgIHN0
+cmxjYXQobmFtZWJ1ZiwgbWFpbGJveG5hbWUsIHNpemVvZihuYW1lYnVmKSk7CisgICAgfQogCi0J
+ICAgIHJldCA9IGRlbGl2ZXJfbWFpbGJveChtZC0+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEt
+PnN0YWdlLAorICAgIHJldCA9IGRlbGl2ZXJfbWFpbGJveChtZC0+ZiwgbXlkYXRhLT5jb250ZW50
+LCBteWRhdGEtPnN0YWdlLAorICAJCQkgICBtZC0+c2l6ZSwgZmxhZywgbmZsYWdzLAorIAkJCSAg
+IChjaGFyICopIHVzZXJuYW1lLCBhdXRoc3RhdGUsIG1kLT5pZCwKKwkJCSAgIHVzZXJuYW1lLCBt
+eWRhdGEtPm5vdGlmeWhlYWRlciwKKwkJCSAgIG5hbWVidWYsIHF1b3Rhb3ZlcnJpZGUsIDApOyAg
+CisgICAgaWYgKHJldCA9PSAwICkgIHsKKyAgICAgIHN5c2xvZyhMT0dfREVCVUcsICJkZWxpdmVy
+ZWQgaW50byBtYWlsYm94ICVzIiwgbmFtZWJ1Zik7CisgICAgICByZXR1cm4gcmV0OyAKKyAgICB9
+CisKKyAgICAgLyogdHJ5IGRlbGl2ZXJ5IHRvIGEgZnV6enkgbWF0Y2hlZCBtYWlsYm94ICwgaWYg
+ZW5hYmxlZCovCisgICAgaWYgKCByZXQgPT0gSU1BUF9NQUlMQk9YX05PTkVYSVNURU5UICAKKwkg
+JiYgY29uZmlnX2dldHN3aXRjaChJTUFQT1BUX0xNVFBfRlVaWllfTUFJTEJPWF9NQVRDSCkgCisJ
+ICYmIGZ1enp5X21hdGNoKG5hbWVidWYpKSB7CisJCisJIHJldCA9IGRlbGl2ZXJfbWFpbGJveCht
+ZC0+ZiwgbXlkYXRhLT5jb250ZW50LCBteWRhdGEtPnN0YWdlLAorCSAJCSAgIAltZC0+c2l6ZSwg
+ZmxhZywgbmZsYWdzLAorCQkJCShjaGFyICopIHVzZXJuYW1lLCBhdXRoc3RhdGUsIG1kLT5pZCwK
+KwkJCQl1c2VybmFtZSwgbXlkYXRhLT5ub3RpZnloZWFkZXIsCisJCQkJbmFtZWJ1ZiwgcXVvdGFv
+dmVycmlkZSwgMCk7CisgICAgfQorICAgIGlmIChyZXQgPT0gMCApIHsKKyAgICAgIHN5c2xvZyhM
+T0dfREVCVUcsICJkZWxpdmVyZWQgd2l0aCBmdXp6eW1hdGNoIGludG8gbWFpbGJveCAlcyIsIG5h
+bWVidWYpOworICAgICAgcmV0dXJuIHJldDsKKyAgICB9CisKK25vcm1hbGRlbGl2ZXJ5OgorICAg
+IC8qIG5vcm1hbCBkZWxpdmVyeSB0byBJTkJPWCAqLworICAgICp0YWlsID0gJ1wwJzsKKyAgICBy
+ZXQgPSBkZWxpdmVyX21haWxib3gobWQtPmYsIG15ZGF0YS0+Y29udGVudCwgbXlkYXRhLT5zdGFn
+ZSwKIAkJCQkgIG1kLT5zaXplLCBmbGFnLCBuZmxhZ3MsCiAJCQkJICAoY2hhciAqKSB1c2VybmFt
+ZSwgYXV0aHN0YXRlLCBtZC0+aWQsCiAJCQkJICB1c2VybmFtZSwgbXlkYXRhLT5ub3RpZnloZWFk
+ZXIsCiAJCQkJICBuYW1lYnVmLCBxdW90YW92ZXJyaWRlLCAxKTsKLQotCSAgICBpZiAoYXV0aHN0
+YXRlKSBhdXRoX2ZyZWVzdGF0ZShhdXRoc3RhdGUpOwotCX0KKyAgICBpZiAocmV0ID09IDAgKSB7
+CisgICAgICBzeXNsb2coTE9HX0RFQlVHLCAiZGVsaXZlcmVkIGludG8gZGVmYXVsdCBtYWlsYm94
+ICVzIixuYW1lYnVmKTsKICAgICB9CisgICAgaWYgKGF1dGhzdGF0ZSkgYXV0aF9mcmVlc3RhdGUo
+YXV0aHN0YXRlKTsKIAogICAgIHJldHVybiByZXQ7CiB9Ci0KIGludCBkZWxpdmVyKG1lc3NhZ2Vf
+ZGF0YV90ICptc2dkYXRhLCBjaGFyICphdXRodXNlciwKIAkgICAgc3RydWN0IGF1dGhfc3RhdGUg
+KmF1dGhzdGF0ZSkKIHsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

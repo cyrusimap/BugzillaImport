@@ -1,0 +1,87 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3363</bug_id>
+          
+          <creation_ts>2010-12-03 07:49 EDT</creation_ts>
+          <short_desc>Proxy does not correctly get backend disk freespace</short_desc>
+          <delta_ts>2010-12-03 07:49:47 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-12-03 07:49:47 EDT</bug_when>
+            <thetext>When using a list of configured backend servers and creating a new account through the proxy, the available free space is retrieved by requesting the special &quot;/vendor/cmu/cyrus-imapd/freespace&quot; annotation on each backend.
+This is done in the function find_free_server in the file imap_proxy.c.
+
+However, the &quot;chomp&quot; tool function which is used to start parsing the response reads one character ahead of the string to match, and the code parsing the numerical value does not take into account that fact. The first numerical character is thus not processed, resulting in invalid final value: e.g. if the backend returned a value of 123456, the proxy actually uses 23456 (leading 1 not taken into account).
+
+The issue is present in version 2.3.16, and appears to be still present in 2.4.x versions.
+
+
+A solution could be to replace this piece of code (inside the for loop that processes each annotation response):
+
+		    c = chomp(be-&gt;in,
+			      &quot;ANNOTATION \&quot;\&quot; &quot;
+			      &quot;\&quot;/vendor/cmu/cyrus-imapd/freespace\&quot; &quot;
+			      &quot;(\&quot;value.shared\&quot; \&quot;&quot;);
+		    if (c == EOF) {
+			/* we don&apos;t care about this response */
+			eatline(be-&gt;in, c);
+			continue;
+		    }
+
+by
+
+		    c = chomp(be-&gt;in,
+			      &quot;ANNOTATION \&quot;\&quot; &quot;
+			      &quot;\&quot;/vendor/cmu/cyrus-imapd/freespace\&quot; &quot;
+			      &quot;(\&quot;value.shared\&quot; &quot;);
+		    if ((c == EOF) || (c != &apos;\&quot;&apos;)) {
+			/* we don&apos;t care about this response */
+			eatline(be-&gt;in, c);
+			continue;
+		    }</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,196 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3401</bug_id>
+          
+          <creation_ts>2011-02-14 20:36 EDT</creation_ts>
+          <short_desc>sasldir and plugindir in Makefile.am</short_desc>
+          <delta_ts>2016-03-24 18:42:53 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dilyan Palauzov">dilyan.palauzov@aegee.org</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>jan.parcel@oracle.com</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2011-02-14 20:36:39 EDT</bug_when>
+            <thetext>cyrus-sasl-2.1.23/Makefile.am defines plugindir as $(prefix)/lib/sasl2, but it shall be defined as $(libdir)/sasl2 .
+
+Likewise plugins/Makefile.am defines sasldir = $(prefix)/lib/sasl2, but it shall be $(libdir)/sasl2 .
+
+Motivation: when building on 64bit, libdir is /usr/lib64, prefix is /usr and I want to install the plugins in /usr/lib64/sasl2 &lt;=&gt; $(libdir)/sasl2 != $(prefix)/lib/sasl2 .</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-02-15 06:19:52 EDT</bug_when>
+            <thetext>I would actually say the plugins may need to go into /usr/libexec/, what do you think?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2011-02-16 10:06:54 EDT</bug_when>
+            <thetext>About plugindir under /usr/libexec:
+
+Keep in mind, that on mixed 32/64 bit systems you need distinct plugin binaries for 32 and 64 bit code, and the best way to manage this is with two different directories.
+
+libexec is not mentioned in the Filesystem Hierarchy Standard.
+
+I think libexec is just for executables that are not invoked by the users, the libsasl2 plugins are not executables.
+
+That is why I consider libexec as supoptimal in this case.
+
+Apart from this, http://cyrusimap.org/docs/cyrus-sasl/2.1.23/sysadmin.php#saslconf says that the sasl2 application configuration files are checked (only) in /usr/lib/sasl2 and does not mention /etc/sasl2 .  According to the NEWS file bug #2796 as of cyrus sasl 2.1.22 the /etc/sasl2 directory is searched as well (and I think this is much better so, in order to avoid configuration files in /usr/lib/sasl2 or /usr/lib64/sasl2 , depending on the 32/64bits of the application).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-02-16 18:27:07 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; About plugindir under /usr/libexec:
+&gt; 
+&gt; Keep in mind, that on mixed 32/64 bit systems you need distinct plugin binaries
+&gt; for 32 and 64 bit code, and the best way to manage this is with two different
+&gt; directories.
+&gt; 
+
+Just like with {,/usr}/{,s}bin/, a mixed architecture system on a single / shared root filesystem is cumbersome at best. /usr/sbin for example is not to be shared between a x86_64 and ppc64 simultaneously either (think GFS(2) over iSCSI, or NFS root filesystem). Likewise, the 32/64 bit doesn&apos;t pose a problem for plugins being located in /usr/libexec/.
+
+Should the plugins be moved, I suppose one would want to avoid moving them to another libdir and pay dynamic linker overhead whereas the plugins are dlopen()&apos;ed (iirc).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jan Parcel">jan.parcel@oracle.com</who>
+            <bug_when>2016-03-24 18:41:28 EDT</bug_when>
+            <thetext>Created an attachment (id=1567)
+Patch to allow multiarch placement of plugins, based on distrib bundle
+
+This is not a patch suitable for the git source, it is based upon the
+2.1.26 distribution tarball.  Example only.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jan Parcel">jan.parcel@oracle.com</who>
+            <bug_when>2016-03-24 18:42:53 EDT</bug_when>
+            <thetext>In the distributed 2.1.26, I was having trouble configuring plugindir and
+sasldir.  Unlike the comments in README.andrew, I could find no way to set
+sasldir, and it had initially looked like plugindir meant something
+different, because it seemed to be hard-coded to be $(PREFIX)/lib/sasl2 and
+would complain if it wasn&apos;t.
+
+On Solaris systems, the install path and search path are different.  For
+installing, a 32-bit library goes into $(PREFIX)/usr/lib, and the 64-bit goes
+into  $(PREFIX/usr/lib/$(MACH64), but for searching we do NOT append the
+$(MACH64).
+
+So I had to patch configure.in to create a --with-sasldir option, and
+patch Makefile.am to make the complaints match the realities of searching,
+and patch plugins/Makefile.am to not hardcode sasldir.
+
+I have attached my patch, which is NOT a code patch from your viewpoint, but
+it shows what I did, as an example.
+
+If the fixes that are decided upon allow our library design to be configurable
+with configure options, then I don&apos;t need to file a bug, I&apos;ll just wait for a
+fix
+in a future update.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1567</attachid>
+            <date>2016-03-24 18:41 EDT</date>
+            <desc>Patch to allow multiarch placement of plugins, based on distrib bundle</desc>
+            <filename>sasldir-fix-dist.patch</filename>
+            <type>text/plain</type>
+            <size>2643</size>
+            <attacher>jan.parcel@oracle.com</attacher>
+            
+              <data encoding="base64">RGV2ZWxvcGVkIGluLWhvdXNlIGF0IE9yYWNsZSAKc2FzbCBpbnN0YWxsIGRlc3RpbmF0aW9uIGZv
+ciBwbHVnaW5zIG5lZWRzIHRvIGJlIGNvbmZpZ3VyYWJsZQpJbnRlbmRlZCB0byBnbyB1cHN0cmVh
+bQoKZGlmZiAtcnVwTiBvbGQvY29uZmlndXJlLmluIG5ldy9jb25maWd1cmUuaW4KLS0tIG9sZC9j
+b25maWd1cmUuaW4JMjAxNS0wMS0xNiAxNjowNjo1MS45NTM2OTUyMzQgLTA4MDAKKysrIG5ldy9j
+b25maWd1cmUuaW4JMjAxNS0wMS0xNiAxNjowOTozNS45NzAwNTI2NzggLTA4MDAKQEAgLTEwMTks
+NiArMTAxOSwxMiBAQCBBQ19BUkdfV0lUSChjb25maWdkaXIsIFsgICAtLXdpdGgtY29uZmlnCiBB
+Q19ERUZJTkVfVU5RVU9URUQoQ09ORklHRElSLCAiJGNvbmZpZ2RpciIsIFtSdW50aW1lIGNvbmZp
+ZyBmaWxlIGxvY2F0aW9uXSkKIEFDX1NVQlNUKGNvbmZpZ2RpcikKIAorQUNfQVJHX1dJVEgoc2Fz
+bGRpciwgWyAgLS13aXRoLXNhc2xkaXI9RElSICAgIHNldCB0aGUgZGlyZWN0b3J5IHdoZXJlIHBs
+dWdpbnMKKwkgICAgIHdpbGwgYmUgaW5zdGFsbGVkLCBwb3NzaWJseSAzMiB2cyA2NCBbWy91c3Iv
+bGliL3Nhc2wyXV0gXSwKKwkgICAgIHNhc2xkaXI9JHdpdGh2YWwsIHNhc2xkaXI9L3Vzci9saWIv
+c2FzbDIpCitBQ19ERUZJTkVfVU5RVU9URUQoU0FTTERJUiwgIiRzYXNsZGlyIiwgW0luc3RhbGx0
+aW1lIHBsdWdpbiBsb2NhdGlvbl0pCitBQ19TVUJTVChzYXNsZGlyKQorCiBkbmwgbG9vayBmb3Ig
+cmM0IGxpYnJhcmllcy4gd2UgYWNjZXB0IHRoZSBDTVUgb25lIG9yIG9uZSBmcm9tIG9wZW5TU0wK
+IEFDX0FSR19XSVRIKHJjNCwgWyAgLS13aXRoLXJjNCAgICAgICAgICAgICAgdXNlIGludGVybmFs
+IHJjNCByb3V0aW5lcyBbW3llc11dIF0sCiAJd2l0aF9yYzQ9JHdpdGh2YWwsCmRpZmYgLXJ1cE4g
+b2xkL01ha2VmaWxlLmFtIG5ldy9NYWtlZmlsZS5hbQotLS0gb2xkL01ha2VmaWxlLmFtCTIwMTUt
+MDEtMTYgMTY6MTE6MDguOTgwNjk4NzkxIC0wODAwCisrKyBuZXcvTWFrZWZpbGUuYW0JMjAxNS0w
+MS0xNiAxNjoxNjoyOC42NzAyODE3MTYgLTA4MDAKQEAgLTgzLDE0ICs4MywxNSBAQCBkaXN0LWhv
+b2s6CiAKIGZyYW1lZGlyID0gL0xpYnJhcnkvRnJhbWV3b3Jrcy9TQVNMMi5mcmFtZXdvcmsKIGlu
+c3RhbGwtZXhlYy1sb2NhbDogJChJTlNUQUxMT1NYKQotCUBpZiB0ZXN0ICIkKHBsdWdpbmRpciki
+ICE9ICIkKHByZWZpeCkvbGliL3Nhc2wyIjsgdGhlbiBcCisJQGlmIHRlc3QgIiQocGx1Z2luZGly
+KSIgIT0gIiQoc2FzbGRpcikiOyB0aGVuIFwKIAkgIGVjaG8gIioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIjsgXAogCSAgZWNobyAiKiBXQVJO
+SU5HOiI7IFwKLQkgIGVjaG8gIiogUGx1Z2lucyBhcmUgYmVpbmcgaW5zdGFsbGVkIGludG8gJChw
+cmVmaXgpL2xpYi9zYXNsMiwiOyBcCisJICBlY2hvICIqIFBsdWdpbnMgYXJlIGJlaW5nIGluc3Rh
+bGxlZCBpbnRvICQoc2FzbGRpciksIjsgXAogCSAgZWNobyAiKiBidXQgdGhlIGxpYnJhcnkgd2ls
+bCBsb29rIGZvciB0aGVtIGluICQocGx1Z2luZGlyKS4iOyBcCi0JICBlY2hvICIqIFlvdSBuZWVk
+IHRvIG1ha2Ugc3VyZSB0aGF0IHRoZSBwbHVnaW5zIHdpbGwgZXZlbnR1YWxseSI7IFwKKwkgIGVj
+aG8gIiogSWYgdGhpcyBpcyBub3QgZGVsaWJlcmF0ZSAoZm9yIDMyLzY0IGJpdHMpLCBtYWtlICIg
+OyBcCisJICBlY2hvICIqIHN1cmUgdGhhdCB0aGUgcGx1Z2lucyB3aWxsIGV2ZW50dWFsbHkiOyBc
+CiAJICBlY2hvICIqIGJlIGluICQocGx1Z2luZGlyKSAtLSB0aGUgZWFzaWVzdCB3YXkgaXMgdG8g
+bWFrZSBhIjsgXAotCSAgZWNobyAiKiBzeW1ib2xpYyBsaW5rIGZyb20gJChwbHVnaW5kaXIpIHRv
+ICQocHJlZml4KS9saWIvc2FzbDIsIjsgXAorCSAgZWNobyAiKiBzeW1ib2xpYyBsaW5rIGZyb20g
+JChwbHVnaW5kaXIpIHRvICQoc2FzbGRpciksIjsgXAogCSAgZWNobyAiKiBidXQgdGhpcyBtYXkg
+bm90IGJlIGFwcHJvcHJpYXRlIGZvciB5b3VyIHNpdGUsIHNvIHRoaXMiOyBcCiAJICBlY2hvICIq
+IGluc3RhbGxhdGlvbiBwcm9jZWR1cmUgd29uJ3QgZG8gaXQgZm9yIHlvdS4iOyBcCiAJICBlY2hv
+ICIqIjsgXApkaWZmIC1ydXBOIG9sZC9wbHVnaW5zL01ha2VmaWxlLmFtIG5ldy9wbHVnaW5zL01h
+a2VmaWxlLmFtCi0tLSBvbGQvcGx1Z2lucy9NYWtlZmlsZS5hbQkyMDE1LTAxLTE2IDE2OjE3OjE2
+LjExMzQ2NTk5OSAtMDgwMAorKysgbmV3L3BsdWdpbnMvTWFrZWZpbGUuYW0JMjAxNS0wMS0xNiAx
+NjoxODowMi4zNDc4NTA5OTEgLTA4MDAKQEAgLTYzLDcgKzYzLDcgQEAgcGx1Z2luZGlyID0gQHBs
+dWdpbmRpckAKIAogY29tbW9uX3NvdXJjZXMgPSBwbHVnaW5fY29tbW9uLmMgcGx1Z2luX2NvbW1v
+bi5oCiAKLXNhc2xkaXIgPSAkKHByZWZpeCkvbGliL3Nhc2wyCitzYXNsZGlyID0gQHNhc2xkaXJA
+CiBzYXNsX0xUTElCUkFSSUVTID0gQFNBU0xfTUVDSFNACiBFWFRSQV9MVExJQlJBUklFUyA9IGxp
+YnBsYWluLmxhIGxpYmFub255bW91cy5sYSBsaWJrZXJiZXJvczQubGEgbGliY3JhbW1kNS5sYSBc
+CiAJbGliZ3MyLmxhIGxpYmdzc2FwaXYyLmxhIGxpYmRpZ2VzdG1kNS5sYSBsaWJsb2dpbi5sYSBs
+aWJzcnAubGEgbGlib3RwLmxhIFwK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

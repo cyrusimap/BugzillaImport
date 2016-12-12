@@ -1,0 +1,105 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2621</bug_id>
+          
+          <creation_ts>2005-02-10 06:13 EDT</creation_ts>
+          <short_desc>[master] Numerous places where missing parameters results in segfault</short_desc>
+          <delta_ts>2010-10-18 12:43:07 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>2620</dup_id>
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Torsten Hilbrich">torsten.hilbrich@secunet.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-02-10 06:13:47 EDT</bug_when>
+            <thetext>I found quite some places in the current version 2.2.10 (checked CVS repository
+as well) where missing parameters in the cyrus.conf master configuration file
+will result in a segfault.
+
+All calls to masterconf_getstring with a default value of NULL can produce this
+bug.  Let give me an example.  In the function add_start (beginning in
+master/master.c:1281) there is the following code:
+
+    char *cmd = xstrdup(masterconf_getstring(e, &quot;cmd&quot;, NULL));
+    char buf[256];
+    char **tok;
+
+    if (!cmd) {
+	snprintf(buf, sizeof(buf), &quot;unable to find command for %s&quot;, name);
+	fatal(buf, EX_CONFIG);
+    }
+
+If masterconf_getstring returns NULL (which is its default value) the xstrdup
+will be given a NULL pointer as parameter.  However, in lib/xmalloc.c xstrdup is
+defined in the following way:
+
+char *xstrdup(const char* str)
+{
+    char *p = xmalloc(strlen(str)+1);
+    strcpy(p, str);
+    return p;
+}
+
+strlen will not survive a call with a NULL pointer.
+
+A quick check found 4 places in master.c which will trigger this bug.
+
+As I don&apos;t know if these 4 calls should be fixed or if xstrdup should be able to
+handle NULL pointer I&apos;m sending no patch along with this bug report, the bugs
+are easy to fix anyway, just check the result of masterconf_getstring before
+calling xstrdup.
+
+Please fix this bug in the next release.
+
+Regards,
+
+Torsten</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-02-10 10:15:00 EDT</bug_when>
+            <thetext>Somehow this bug report got duplicated.
+
+*** This bug has been marked as a duplicate of 2620 ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

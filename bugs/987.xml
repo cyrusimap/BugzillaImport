@@ -1,0 +1,193 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>987</bug_id>
+          
+          <creation_ts>2001-09-21 15:07 EDT</creation_ts>
+          <short_desc>provide &quot;OldFiles&quot; support</short_desc>
+          <delta_ts>2010-10-20 16:21:50 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Deployment</component>
+          <version>2.0.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DEFERRED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Walter Wong">wcw+bugz@cmu.edu</reporter>
+          <assigned_to name="Walter Wong">wcw+bugz@cmu.edu</assigned_to>
+          <cc>ken@oceana.com</cc>
+    
+    <cc>leg+cyrus@andrew.cmu.edu</cc>
+    
+    <cc>rjs3@andrew.cmu.edu</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Walter Wong">wcw+bugz@cmu.edu</who>
+            <bug_when>2001-09-21 15:07:39 EDT</bug_when>
+            <thetext>AFS has this feature commonly known as &quot;OldFiles&quot;.  The idea is that a
+copy-on-write image is created periodically that is made available to the user
+on a read-only basis. 
+
+In the event the user accidentally deletes something, he can copy it out of
+OldFiles and back into his read/write area. Since we are doing copy-on-write,
+this generally will not take up a bunch of disk space.  This also means that the
+number of restores generally goes way down... especially in this case where a
+user accidentally runs a POP client, downloads and erases all his mail and now
+wants a restoral.
+
+In general the backup process does the updating of the read-only copy. We
+probably should also provide a utility to do this so people can run it out of
+cron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-10-11 11:17:37 EDT</bug_when>
+            <thetext>Larry and I discused this a little yesterday and I was thinking about it some 
+more last night.  If the main objective of this is to reduce the number of 
+restores or deleted messages, is there any need to do a complete snapshot of 
+the folder vs. just keeping a read-only copy of deleted messages for a period 
+of time?
+
+I&apos;m thinking that we can tweak EXPUNGE so that it copies deleted messages into 
+the OldFiles sibling mailbox before actually deleting them.  Then an ipurge 
+event could be run to remove OldFiles messages older than X days.
+
+Does this sound reasonable, or should we go back to the complete snapshot idea?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-10-11 12:41:57 EDT</bug_when>
+            <thetext>i personally find the concept of the snapshot somewhat easier for the user to
+understand.  it has both good sides and bad sides.  since it&apos;s a snapshot from
+the previous night (or whatever) it won&apos;t have any mail that came in today and
+was immediately deleted---but then again, it might not be a good use of system
+resources to save stuff that users don&apos;t think is valuable enough to save for a day.
+
+another possible direction for this to go is to try to generalize it to
+&quot;on-line&quot; backups.  instead of just making a snapshot on the same server
+(obviously disk efficient) imagine doing the &quot;weekly&quot; snapshot to a different
+server---thus having a weekly backup available for immediate use and also
+disaster recovery.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-10-11 12:52:08 EDT</bug_when>
+            <thetext>i&apos;m not so sure that the snapshot idea is easier to understand.  i spent an 
+hour the other day trying to explain the concept of a filesystem snapshot to 
+one of salesman the other day :^)
+
+my idea is more like a &quot;persistent trash folder&quot; which any IMAP user should be 
+able to understand.  i proposed this because we are concerned about 
+performance, and there isn&apos;t really any need to make copies (or hardlinks, etc) 
+of messages which the user hasn&apos;t deleted.
+
+i think snapshotting to another server can already be done by other means like 
+rsync or some of the &quot;network RAID&quot; software out there.
+
+so, do we proceed, and if so, how?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-10-15 17:06:33 EDT</bug_when>
+            <thetext>thinking about this some more...
+
+one big problem with the snapshot idea is that if a user receives a new message 
+and EXPUNGES it before the next snapshot, its gone forever.  by using my idea 
+of copying the message before it is expunged, we have a real-time backup
+
+maybe this is outside the scope of what OldFiles is supposed to accomplish</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="External User">wcw@cmu.edu</who>
+            <bug_when>2001-10-22 00:51:21 EDT</bug_when>
+            <thetext>cc&apos;ing in case replying to bugzilla doesn&apos;t work. hopefully it won&apos;t
+have any bad side effects.
+
+yet another half assed idea follows.
+
+what about using snapshots as a way to replicate the mail store?
+
+One possible way of doing this is doing single master for write and
+multiple read servers.  An incoming message gets delivered to the write
+master. The write master replicates the message into the read servers&apos;
+FUTURE snapshot. After all reads give the ok the write master then
+pushes the FUTURE snapshot to the CURRENT view where the CURRENT view is
+what is shown when INBOX is SELECT&apos;d. 
+
+I guess the big problem is with the interactive updates, like for flags
+as this would significantly increase latency.
+
+Then again, if we can get ubik semantics in Berkeley DB maybe the flag
+foo can be taken care of that way (or maybe not as the read:write ratio
+may be too heavily skewed to the write).
+
+I guess another question is can performance be sacrified for
+availability and just how bad of a performance hit will there really be?
+
+
+Walter
+
+
+
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="External User">leg+@andrew.cmu.edu</who>
+            <bug_when>2001-10-22 09:17:24 EDT</bug_when>
+            <thetext>i think it&apos;s fine to lose a message if a user deletes it right after 
+receiving it.  this is just a good use of resources: we don&apos;t devote disk 
+space to a message that the user didn&apos;t even think was important enough to 
+keep even one day.
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-08-07 11:36:50 EDT</bug_when>
+            <thetext>adding myself as a cc</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-20 16:21:50 EDT</bug_when>
+            <thetext>It seems the delayed EXPUNGE has seen the broadest implementation. I&apos;ll close this bug in light of the bugzilla cleanup, please reopen if the concept of snapshotting/OldFiles is current still.
+
+http://www.cyrusimap.org/mediawiki/index.php/Bugzilla_Cleanup_Guidelines</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

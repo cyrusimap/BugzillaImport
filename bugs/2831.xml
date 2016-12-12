@@ -1,0 +1,425 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2831</bug_id>
+          
+          <creation_ts>2006-05-18 10:58 EDT</creation_ts>
+          <short_desc>Problem with %u token in LDAP filter when using Cyrus IMAP with LDAP SASLAUTHD</short_desc>
+          <delta_ts>2014-10-21 09:56:05 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Virtual Domains</component>
+          <version>2.4.8</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Samuel Tran">stlist@gmail.com</reporter>
+          <assigned_to name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</assigned_to>
+          <cc>arus@poczta.onet.pl</cc>
+    
+    <cc>dwhite@olp.net</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Samuel Tran">stlist@gmail.com</who>
+            <bug_when>2006-05-18 10:58:59 EDT</bug_when>
+            <thetext>Context:
+1. Cyrus IMAP configured with virtual domains: the user login is the user&apos;s
+email address (e.g. test@domain.ltd).
+2. IMAP authentication using saslauthd (sasl_pwcheck_method: saslauthd in
+/etc/imapd.conf).
+3. Saslauthd uses an LDAP directory for authentication/authorization.
+
+Problem:
+According to the LDAP_SASLAUTHD doc file in the Cyrus SASL source distribution,
+the tokens that can be used in the LDAP filter are the following:
+        %%   = %
+        %u   = user
+        %U   = user portion of %u (%U = test when %u = test@domain.tld)
+        %d   = domain portion of %u if available (%d = domain.tld when %u =
+               %test@domain.tld), otherwise same as %r
+        %1-9 = domain tokens (%1 = tld, %2 = domain when %d = domain.tld)
+        %s   = service
+        %r   = realm
+        %D   = user DN (available for group checks)
+
+For instance, when trying to login to Cyrus IMAP using &apos;test@domain.ltd&apos; and the
+corresponding password, Cyrus IMAP passes the username part of the login as %u
+(e.g. test) instead of the whole login (e.g. test@domain.ltd). In order to get
+it to work I had to use the combination of tokens %u%R insaslauthd.conf in order
+to represent the correct login.
+
+I am not sure if it is a bug. But when Postfix is configured to use SASLAUTHD +
+LDAP for SMTP AUTH, it does pass the whole login (e.g. test@domain.ltd) as %u.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-09-04 11:20:55 EDT</bug_when>
+            <thetext>Have you set the defaultdomain to domain.tld, by any chance?
+
+If this is still current, please reopen this bug.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Artur">arus@poczta.onet.pl</who>
+            <bug_when>2011-08-01 11:15:41 EDT</bug_when>
+            <thetext>I am reopening this, because the report is still valid for cyrus-imapd 2.4.8 (and newer versions I suppose). This applies also for bugs #2841 and #2290, but this one has probably most clear description. (BTW: bug #2290 was reported by me, and OMG! I got an answer 7 years later!). Honestly, it is hard to believe, that NONE of developers sees any problem with defaultdomain setting in cyrus-imapd.
+
+OK, I&apos;ll give an example, which should exactly show, what the problem is. Pretty please: either fix it OR describe in manual what is the proper usage of defaultdomain.
+
+Components:
+-----------
+- cyrus-imapd 2.4.8
+- cyrus-sasl 2.1.23
+- postfix 2.8.3
+
+imapd.conf:
+------------
+servername: mail.defaultdomain.tld
+configdirectory: /var/lib/imap
+partition-default: /var/spool/imap
+admins: cyrus admin
+sievedir: /var/lib/imap/sieve
+sendmail: /usr/sbin/sendmail
+hashimapspool: true
+unixhierarchysep: yes
+altnamespace: yes
+expunge_mode: delayed
+virtdomains: userid
+defaultdomain: defaultdomain.tld
+allowplaintext: 1
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN LOGIN
+normalizeuid: 1
+
+saslauthd.conf:
+---------------
+ldap_servers: ldap://127.0.0.1/
+ldap_search_base: ou=mailaccounts,dc=defaultdomain,dc=tld
+ldap_version: 3
+ldap_filter: mail=%u,ou=mailaccounts,dc=defaultdomain,dc=tld
+ldap_auth_method: fastbind
+
+saslauthd is started as:
+------------------------
+/usr/sbin/saslauthd -m /var/run/saslauthd -a ldap -r -d
+
+required entries in LDAP directory:
+------------------------------------
+dn: dc=defaultdomain,dc=tld
+objectclass: dcObject
+objectclass: organization
+objectclass: top
+o: Test Company
+dc: defaultdomain
+description: Test Company
+
+dn: ou=mailaccounts,dc=defaultdomain,dc=tld
+objectClass: top
+objectClass: organizationalUnit
+ou: mailaccounts
+description: Top node, email accounts.
+
+dn: mail=default@defaultdomain.tld,ou=mailaccounts,dc=defaultdomain,dc=tld
+mail: default@defaultdomain.tld
+userPassword:: e1NTSEF9RkRmT3h1RGgyUHEwUXV6d2RnUy9wS0E1Qy9ZelNGeDE=
+homeDirectory: /defaultdomain.tld/default
+sn: Account
+givenName: Default
+cn: Default Account
+mailForwardingAddress: default@defaultdomain.tld
+mailForwardingAddress: defaultdomain.tld!default
+gidNumber: 102
+uid: 502
+uidNumber: 502
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+objectClass: qmailUser
+objectClass: CourierMailAccount
+
+dn: mail=other@otherdomain.tld,ou=mailaccounts,dc=defaultdomain,dc=tld
+mail: other@otherdomain.tld
+userPassword:: e1NTSEF9ZlAvcERDQWgyTEpwTDBCWjVVNXdJSEdYOGs1c2VuRms=
+homeDirectory: /otherdomain.tld/other
+sn: Account
+givenName: Other
+cn: Other Account
+mailForwardingAddress: other@otherdomain.tld
+mailForwardingAddress: otherdomain.tld!other
+gidNumber: 102
+uid: 502
+uidNumber: 502
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+objectClass: qmailUser
+objectClass: CourierMailAccount
+
+(Of course LDAP schema can be different, it does not matter, I used the one compatible with the above example)
+
+relevant Postfix settings:
+--------------------------
+
+smtpd_recipient_restrictions = permit_sasl_authenticated
+                reject_unauth_destination
+smtpd_sasl_auth_enable = yes
+smtpd_sasl_local_domain = defaultdomain.tld
+smtpd_sasl_security_options  = noanonymous
+
+
+When all is running on localhost, we do smtptest first using account in otherdomain.tld:
+---------------------
+
+smtptest -a other@otherdomain.tld
+WARNING: no hostname supplied, assuming localhost
+
+S: 220 mail.defaultdomain.tld ESMTP Postfix
+C: EHLO smtptest
+S: 250-arus.support-online.pl
+S: 250-PIPELINING
+S: 250-SIZE 10240000
+S: 250-VRFY
+S: 250-ETRN
+S: 250-AUTH LOGIN PLAIN
+S: 250-ENHANCEDSTATUSCODES
+S: 250-8BITMIME
+S: 250 DSN
+C: AUTH LOGIN
+S: 334 VXNlcm5hbWU6
+Please enter your password: 
+C: b3RoZXJAb3RoZXJkb21haW4udGxk
+S: 334 UGFzc3dvcmQ6
+C: MTBxcGE7ei4=
+S: 235 2.7.0 Authentication successful
+Authenticated.
+Security strength factor: 0
+
+Relevant saslauthd debug info:
+--------------------------------
+saslauthd[15039] :do_auth         : auth success: [user=other@otherdomain.tld] [service=smtp] [realm=otherdomain.tld] [mech=ldap]
+saslauthd[15039] :do_request      : response: OK
+
+now smtptest using defaultdomain.tld:
+--------------------------
+smtptest -a default@defaultdomain.tld
+WARNING: no hostname supplied, assuming localhost
+
+S: 220 mail.defaultdomain.tld ESMTP Postfix
+C: EHLO smtptest
+S: 250-arus.support-online.pl
+S: 250-PIPELINING
+S: 250-SIZE 10240000
+S: 250-VRFY
+S: 250-ETRN
+S: 250-AUTH LOGIN PLAIN
+S: 250-ENHANCEDSTATUSCODES
+S: 250-8BITMIME
+S: 250 DSN
+C: AUTH LOGIN
+S: 334 VXNlcm5hbWU6
+Please enter your password: 
+C: ZGVmYXVsdA==
+S: 334 UGFzc3dvcmQ6
+C: MTBxcGE7ei4=
+S: 235 2.7.0 Authentication successful
+Authenticated.
+Security strength factor: 0
+
+And saslauthd shows this:
+--------------------------
+saslauthd[15031] :do_auth         : auth success: [user=default@defaultdomain.tld] [service=smtp] [realm=defaultdomain.tld] [mech=ldap]
+saslauthd[15031] :do_request      : response: OK
+
+
+NOW, the same with imtest, first otherdomain.tld:
+------------------------------------------
+
+imtest -a other@otherdomain.tld
+WARNING: no hostname supplied, assuming localhost
+
+S: * OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE AUTH=LOGIN AUTH=PLAIN SASL-IR] mail.defaultdomain.tld Cyrus IMAP v2.4.8-Fedora-RPM-2.4.8-2.fc15 server ready
+C: A01 AUTHENTICATE LOGIN
+S: + VXNlcm5hbWU6
+Please enter your password: 
+C: b3RoZXJAb3RoZXJkb21haW4udGxk
+S: + UGFzc3dvcmQ6
+C: MTBxcGE7ei4=
+S: A01 OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY CATENATE CONDSTORE ESEARCH SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE LIST-EXTENDED WITHIN QRESYNC SCAN XLIST URLAUTH URLAUTH=BINARY X-NETSCAPE LOGINDISABLED COMPRESS=DEFLATE IDLE] Success (no protection)
+Authenticated.
+Security strength factor: 0
+
+saslauthd showed the following:
+---------------------------
+
+saslauthd[15037] :do_auth         : auth success: [user=other@otherdomain.tld] [service=imap] [realm=otherdomain.tld] [mech=ldap]
+saslauthd[15037] :do_request      : response: OK
+
+AND FINALLY, imtest with defaultdomain.tld:
+---------------------------------------
+
+imtest -a default@defaultdomain.tld
+WARNING: no hostname supplied, assuming localhost
+
+S: * OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE AUTH=LOGIN AUTH=PLAIN SASL-IR] mail.defaultdomain.tld Cyrus IMAP v2.4.8-Fedora-RPM-2.4.8-2.fc15 server ready
+C: A01 AUTHENTICATE LOGIN
+S: + VXNlcm5hbWU6
+Please enter your password: 
+C: ZGVmYXVsdEBkZWZhdWx0ZG9tYWluLnRsZA==
+S: + UGFzc3dvcmQ6
+C: MTBxcGE7ei4=
+S: A01 NO authentication failure
+Authentication failed. generic failure
+Security strength factor: 0
+
+saslauthd shows this:
+----------------------
+
+saslauthd[15038] :do_auth         : auth failure: [user=default] [service=imap] [realm=] [mech=ldap] [reason=Unknown]
+saslauthd[15038] :do_request      : response: NO
+
+
+Healthy logic says, that the purpose of &quot;defaultdomain&quot; setting is to PROVIDE default domain (default realm), when it is not provided by client. Postfix does this correctly, SMTP authentication works even if I give plain username (i.e. &quot;default&quot; without @domain part) as a login name. Cyrus-imapd does the opposite - it strips the domain from username if domain=defaultdomain and it even sets realm to empty string. Is it really correct behaviour ? It DO causes headakes.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Artur">arus@poczta.onet.pl</who>
+            <bug_when>2011-08-01 11:18:02 EDT</bug_when>
+            <thetext>Ah, it is not only about IMAP, but also POP3, so I just change component to Virtual Domains.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-08-01 13:11:21 EDT</bug_when>
+            <thetext>Could you please try the same setup but without the defaultdomain option set in /etc/imapd.conf?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Artur">arus@poczta.onet.pl</who>
+            <bug_when>2011-08-01 14:38:50 EDT</bug_when>
+            <thetext>Bah! Of course it works, when defaultdomain is not set:
+
+saslauthd[15037] :do_auth         : auth success: [user=default@defaultdomain.tld]
+[service=imap] [realm=defaultdomain.tld] [mech=ldap]
+saslauthd[15037] :do_request      : response: OK
+
+But the domain defaultdomain.tld is no longer &quot;default&quot; and is treated like any other &quot;regular&quot; virtual domain. So what is the real purpose of &quot;defaultdomain&quot; setting ? imapd.conf manual simply says:
+
+&quot;defaultdomain: &lt;none&gt;
+     The default domain for virtual domain support&quot;
+
+It says nothing about implications regarding authentication. I think (judging from posts on mailing lists etc.) that many people had hard time because of it (including me). So, if all works like it is supposed to, please add appropriate description in manual, like:
+
+&quot;defaultdomain: &lt;none&gt;
+     The default domain for virtual domain support. DO NOT TOUCH THIS IF YOU ARE NOT ABSOLUTELY SURE WHAT YOU ARE DOING.&quot;
+
+(I&apos;m joking of course).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-08-01 15:02:09 EDT</bug_when>
+            <thetext>What value, if any, do you have set for &apos;loginrealms&apos;?
+
+My presumption is this functionality is by design, and was probably done so because virtual domain support was an add on, and was intended to be backwards compatible for existing installations.
+
+Consider a mail spool where all mailboxes are &apos;domainless&apos; (prior to the existence of virtualdomain suport). That is:
+
+/var/spool/imap/mail/a/user/andrew
+
+represents the mailbox for user &apos;andrew&apos;. If an existing installation then upgraded and configured virtualdomain support of:
+
+virtdomains: userid
+defaultdomain: example.org
+loginrealms: example.org example.com
+
+Then existing users would continue to operate without trouble, and the site could transition or introduce @example.com users, in which case, &apos;andrew@example.com&apos; would be distinctly located somewhere like:
+
+/var/spool/imap/mail/domain/e/example.com/a/user/andrew
+
+and &apos;andrew&apos; and &apos;andrew@example.org&apos; would continue to be domainless.
+
+The proper way to deal with this, in my opinion, is to make use of a sasl canonicalization plugin. SASL CSV HEAD contains such a plugin for ldapdb.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Artur">arus@poczta.onet.pl</who>
+            <bug_when>2011-08-02 04:02:30 EDT</bug_when>
+            <thetext>&gt;  My presumption is this functionality is by design, and was probably done so
+&gt; because virtual domain support was an add on, and was intended to be backwards
+&gt; compatible for existing installations. (...)
+
+Hmmm... I get it. I understand it. But there is a flaw in this functionality. It requires using different way of authentication for accounts in default domain. Login names must have different form in password database. In sasldb2 they must be in default SASL library realm, which means user@hostname (I don&apos;t see any way of changing default realm for the SASL library). In my example above a plain user name, without domain part, must be set as a &quot;mail&quot; attribute. etc. etc. Additionally, you need to store 2 sets of credentials, one for MTA, second for Cyrus. This all requires, that all applications used for account management, all webmail clients, all applications using imap authentication, have to be aware of defaultdomain setting in imapd.conf. This in turn requires administrator to alter code of those apps to make accounts in default domain work. It is VERY inconvenient. IMO it would be MUCH easier to rebuild password database ONCE at the time of switching to virtual domains and put all old accounts in defaultdomain, then for users providing login name without @domain part automatically ADD @defaultdomain part. &quot;defaultdomain&quot; setting should only affect the place in directory tree where mailboxes are placed (in main imap spool dir instead of &quot;domain&quot; subdir).
+And I know, that probably it is too late to make such big changes now, after years of current behaviour.
+
+&gt;The proper way to deal with this, in my opinion, is to make use of a sasl
+canonicalization plugin.
+
+Maybe. But there is NO DOCUMENTATION for canon_user_plugin option of SASL library. I have no idea how (whether) I could use it.
+
+&gt;What value, if any, do you have set for &apos;loginrealms&apos;?
+
+No setting (my example shows the whole imapd.conf). Yes, I tried to add domains to loginrealms, but without any positive effect. And this is another feature with ambiguous description. I really can&apos;t figure out, what is the purpose of this parameter. Probably it is unrelated to THIS problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-08-02 10:01:50 EDT</bug_when>
+            <thetext>You could view defaultdomain as a convenience for older installations, and is perhaps unnecessary if you&apos;re building a server from scratch, depending on your environment. You *could* build all your domains as virtual domains, which is the approach I&apos;ve taken.
+
+That logic does not need to necessarily coincide with the Postfix concept of local domain vs virtual domain.
+
+Not using a defaultdomain is going to be more flexible, but more of a pain if you&apos;re converting an existing server, because your mailboxes would probably need to exist under a domain hierarchy.
+
+A canon_user plugin is going to give you the ability to &apos;map&apos; authentication identities to mailboxes, so to speak. In your scenario, you would want to authenticate multiple forms of an identity (such as andrew, and andrew@example.org) within your sasl configuration, and then map that identity with the canon_user plugin to andrew@example.org (or even &apos;andrew&apos;).
+
+Brief usage documentation for the ldapdb canon_user plugin can be found in doc/options.html within the sasl source (CVS), which is admittedly slim. There is also a SQL canon_user plugin in bugzilla. See:
+
+http://lists.andrew.cmu.edu/pipermail/cyrus-sasl/2010-May/002058.html
+
+for an example.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Artur">arus@poczta.onet.pl</who>
+            <bug_when>2011-08-04 06:46:33 EDT</bug_when>
+            <thetext>Thank You for Your suggestions, I appreciate all attempts to help me. But all those things are workarounds, I know how to make workarounds, I was using them for the past few years. I&apos;m simply a bit tired of inventing new workarounds every time I try new kind of configuration. If it must be like it is now, I can live with it.
+
+I have 2 suggestions:
+a) an additional configuration option, which would &quot;reverse&quot; meaning of &quot;defaultdomain&quot; - ONLY for authentication purposes - to have one uniform password database for default and virtual domains
+b) updated documentation (imapd.conf manual), which better explains when to use &quot;defaultdomain&quot; setting and how it works, and what are the implications to authentication process
+
+Please update attributes of the bug report accordingly (component: documentation, or importance: enhancement)
+Thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 09:56:05 EDT</bug_when>
+            <thetext>Batch moving bugs that won&apos;t be in 2.5</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

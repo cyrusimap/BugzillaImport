@@ -1,0 +1,88 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3538</bug_id>
+          
+          <creation_ts>2011-08-28 21:07 EDT</creation_ts>
+          <short_desc>CID 427: UNINIT in mailbox_compare_update</short_desc>
+          <delta_ts>2011-08-28 21:07:48 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-08-28 21:07:48 EDT</bug_when>
+            <thetext>Found by Coverity.  There&apos;s a codepath through mailbox_compare_update() in the sync_server where rrecord.modseq on the stack appears like it might be used uninitialised.  Looking at the code it seems the magic value of rrecord.uid should always fail to match mrecord.uid and so avoid the problem, but the logic here is a bit too subtle for automated tools :)  Perhaps we could initialise rrecord.
+
+Event var_decl: Declaring variable &quot;rrecord&quot; without initializer.
+1187 	    struct index_record rrecord;
+...
+At conditional (1): &quot;ki&quot; taking true path
+1196 	    for (ki = kr-&gt;head; ki; ki = ki-&gt;next) {
+1197 		sync_annot_list_free(&amp;mannots);
+1198 		sync_annot_list_free(&amp;rannots);
+1199 	
+1200 		r = parse_upload(ki, mailbox, &amp;mrecord, &amp;mannots);
+...
+At conditional (3): &quot;rrecord.uid &lt; mrecord.uid&quot; taking true path
+1206 		while (rrecord.uid &lt; mrecord.uid) {
+1207 		    /* hit the end?  Magic marker */
+At conditional (4): &quot;recno &gt; mailbox-&gt;i.num_records&quot; taking true path
+1208 		    if (recno &gt; mailbox-&gt;i.num_records) {
+1209 			rrecord.uid = UINT32_MAX;
+1210 			break;
+1211 		    }
+1212 	
+1213 		    /* read another record */
+1214 		    r = mailbox_read_index_record(mailbox, recno, &amp;rrecord);
+...
+1221 		}
+1222 	
+1223 		/* found a match, check for updates */
+At conditional (5): &quot;rrecord.uid == mrecord.uid&quot; taking true path
+1224 		if (rrecord.uid == mrecord.uid) {
+1225 		    /* higher modseq on the replica is an error */
+Event uninit_use: Using uninitialized value &quot;rrecord.modseq&quot;.
+1226 		    if (rrecord.modseq &gt; mrecord.modseq) {</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

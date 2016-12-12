@@ -1,0 +1,280 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3836</bug_id>
+          
+          <creation_ts>2014-01-14 19:38 EDT</creation_ts>
+          <short_desc>Positive-prefixed TRIGGER VALARM components are being ignored</short_desc>
+          <delta_ts>2014-01-16 08:59:41 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>CalDAV</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>DEFERRED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alfie John">alfiej@fastmail.fm</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2014-01-14 19:38:33 EDT</bug_when>
+            <thetext>From the RFC, the TRIGGER is a DURATION value type so it&apos;s format is:
+
+  dur-value  = ([&quot;+&quot;] / &quot;-&quot;) &quot;P&quot; (dur-date / dur-time / dur-week)
+
+  dur-date   = dur-day [dur-time]
+  dur-time   = &quot;T&quot; (dur-hour / dur-minute / dur-second)
+  dur-week   = 1*DIGIT &quot;W&quot;
+  dur-hour   = 1*DIGIT &quot;H&quot; [dur-minute]
+  dur-minute = 1*DIGIT &quot;M&quot; [dur-second]
+  dur-second = 1*DIGIT &quot;S&quot;
+  dur-day    = 1*DIGIT &quot;D&quot;
+
+The following TRIGGER values do what is expected:
+
+  -P3W4DT5H6M7S
+  P3W4DT5H6M7S
+
+When TRIGGER is &quot;+P3W4DT5H6M7S&quot;, the TRIGGER calendar component is missing from the response.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-14 19:48:25 EDT</bug_when>
+            <thetext>I&apos;m not sure I understand what/where the problem is.  Which response?
+
+As far as I recall, the Cyrus code doesn&apos;t explicitly touch any of the VALARM properties.  Perhaps this is a bug in libical?
+
+Can you provide more context?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2014-01-14 20:07:04 EDT</bug_when>
+            <thetext>When I do a PUT using the following data:
+
+  BEGIN:VCALENDAR
+  VERSION:2.0
+  CALSCALE:GREGORIAN
+  PRODID:-//FastMail/1.0/EN
+  BEGIN:VEVENT
+  DESCRIPTION:
+  DTSTAMP:20140114T002112Z
+  DTSTART:20140114T002111
+  LAST-MODIFIED:20140117T170000Z
+  LOCATION:
+  SEQUENCE:0
+  SUMMARY:Test event
+  TRANSP:OPAQUE
+  UID:test123
+  BEGIN:VALARM
+  UID:test123Alarm
+  TRIGGER:-P3W4DT5H6M7S
+  ACTION:EMAIL
+  END:VALARM
+  END:VEVENT
+  END:VCALENDAR
+
+I get the same data back when doing the following REPORT:
+
+&lt;C:calendar-query xmlns:A=&apos;http://apple.com/ns/ical/&apos; xmlns:C=&apos;urn:ietf:params:xml:ns:caldav&apos; xmlns:M=&apos;http://messagingengine.com/ns/calsync&apos; xmlns:D=&apos;DAV:&apos;&gt;&lt;D:prop&gt;&lt;C:calendar-data/&gt;&lt;/D:prop&gt;&lt;C:filter&gt;&lt;C:comp-filter name=&apos;VCALENDAR&apos;&gt;&lt;C:comp-filter name=&apos;VEVENT&apos;/&gt;&lt;/C:comp-filter&gt;&lt;/C:filter&gt;&lt;/C:calendar-query&gt;
+
+When changing the TRIGGER calendar component to:
+
+  TRIGGER:P3W4DT5H6M7S
+
+I get the following calendar data from the REPORT:
+
+  BEGIN:VCALENDAR
+  VERSION:2.0
+  CALSCALE:GREGORIAN
+  PRODID:-//FastMail/1.0/EN
+  BEGIN:VEVENT
+  DESCRIPTION:
+  DTSTAMP:20140114T002112Z
+  DTSTART:20140114T002111
+  LAST-MODIFIED:20140117T170000Z
+  LOCATION:
+  SEQUENCE:0
+  SUMMARY:Test event
+  TRANSP:OPAQUE
+  UID:test123
+  BEGIN:VALARM
+  UID:test123Alarm
+  TRIGGER:-P3W4DT5H6M7S
+  ACTION:EMAIL
+  END:VALARM
+  END:VEVENT
+  END:VCALENDAR
+
+So far, everything is what is expected. However, if the TRIGGER is changed to:
+
+  TRIGGER:+P3W4DT5H6M7S
+
+then the REPORT returns the following:
+
+  BEGIN:VCALENDAR
+  VERSION:2.0
+  CALSCALE:GREGORIAN
+  PRODID:-//FastMail/1.0/EN
+  BEGIN:VEVENT
+  DESCRIPTION:
+  DTSTAMP:20140114T002112Z
+  DTSTART:20140114T002111
+  LAST-MODIFIED:20140117T170000Z
+  LOCATION:
+  SEQUENCE:0
+  SUMMARY:Test event
+  TRANSP:OPAQUE
+  UID:test123
+  BEGIN:VALARM
+  UID:test123Alarm
+  ACTION:EMAIL
+  END:VALARM
+  END:VEVENT
+  END:VCALENDAR
+
+Notice now that the TRIGGER line is now missing.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2014-01-14 20:09:21 EDT</bug_when>
+            <thetext>Typo (changing sign in the calendar component). That should have been:
+
+When changing the TRIGGER calendar component to:
+
+  TRIGGER:P3W4DT5H6M7S
+
+I get the following calendar data from the REPORT:
+
+  BEGIN:VCALENDAR
+  VERSION:2.0
+  CALSCALE:GREGORIAN
+  PRODID:-//FastMail/1.0/EN
+  BEGIN:VEVENT
+  DESCRIPTION:
+  DTSTAMP:20140114T002112Z
+  DTSTART:20140114T002111
+  LAST-MODIFIED:20140117T170000Z
+  LOCATION:
+  SEQUENCE:0
+  SUMMARY:Test event
+  TRANSP:OPAQUE
+  UID:test123
+  BEGIN:VALARM
+  UID:test123Alarm
+  TRIGGER:P3W4DT5H6M7S
+  ACTION:EMAIL
+  END:VALARM
+  END:VEVENT
+  END:VCALENDAR</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-14 20:13:09 EDT</bug_when>
+            <thetext>Hmm.  That&apos;s odd.  I&apos;m assuming that libical is removing it, but I will do some testing.
+
+Can you check the actual data stored on disk to see if the TRIGGER property is missing?  I&apos;m wondering if its getting removed via the ical/xcal/jcal translation layer.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2014-01-14 20:20:43 EDT</bug_when>
+            <thetext>&gt; Can you check the actual data stored on disk to see if the TRIGGER property is missing?  I&apos;m wondering if its getting removed via the ical/xcal/jcal translation layer.
+
+Sure thing.
+
+When the TRIGGER is -P3W4DT5H6M7S or P3W4DT5H6M7S, the TRIGGER is stored on disk.
+
+When the TRIGGER is +P3W4DT5H6M7S, the TRIGGER is missing on disk.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-15 10:27:23 EDT</bug_when>
+            <thetext>Here&apos;s what I found so far.  Its definitely libical (v0.48 in my case) that doesn&apos;t like the TRIGGER value.  Here&apos;s what&apos;s get stored if I leave the libical error properties in the data:
+
+BEGIN:VCALENDAR
+VERSION:2.0
+CALSCALE:GREGORIAN
+PRODID:-//FastMail/1.0/EN
+BEGIN:VEVENT
+X-LIC-ERROR;X-LIC-ERRORTYPE=VALUE-PARSE-ERROR:No value for DESCRIPTION 
+ property. Removing entire property:
+DTSTAMP:20140114T002112Z
+DTSTART:20140114T002111
+LAST-MODIFIED:20140117T170000Z
+X-LIC-ERROR;X-LIC-ERRORTYPE=VALUE-PARSE-ERROR:No value for LOCATION 
+ property. Removing entire property:
+SEQUENCE:0
+SUMMARY:Test event
+TRANSP:OPAQUE
+UID:test123-1
+BEGIN:VALARM
+UID:test123Alarm
+X-LIC-ERROR;X-LIC-ERRORTYPE=VALUE-PARSE-ERROR:Can&apos;t parse as TRIGGER 
+ value in TRIGGER property. Removing entire property: +P3W4DT5H6M7S
+ACTION:EMAIL
+END:VALARM
+END:VEVENT
+END:VCALENDAR
+
+
+The following (untested) patch to icalduration.c should fix it:
+
+--- icalduration.c.orig	2014-01-15 10:23:46.546643215 -0500
++++ icalduration.c	2014-01-15 10:24:27.668682294 -0500
+@@ -93,6 +93,12 @@
+ 	
+ 	switch(p) 
+ 	    {
++	    case &apos;+&apos;: {
++		if(i != 0 || begin_flag == 1) goto error;
++
++		break;
++	    }
++
+ 	    case &apos;-&apos;: {
+ 		if(i != 0 || begin_flag == 1) goto error;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2014-01-16 00:52:15 EDT</bug_when>
+            <thetext>Thanks for the patch. Tested and yes it fixed the issue :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-16 08:59:41 EDT</bug_when>
+            <thetext>Thanks Alfie.  I have reported the bug and the patch to the libical folks.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

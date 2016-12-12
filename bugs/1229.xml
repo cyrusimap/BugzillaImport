@@ -1,0 +1,173 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1229</bug_id>
+          
+          <creation_ts>2002-04-01 15:00 EDT</creation_ts>
+          <short_desc>notifyd crashes during high load?</short_desc>
+          <delta_ts>2010-10-18 12:42:56 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</reporter>
+          <assigned_to name="Ken Murchison">ken@oceana.com</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-01 15:00:24 EDT</bug_when>
+            <thetext>log messages like:
+
+Apr  1 03:22:11 mail1.andrew.cmu.edu notifyd[7843]: [ID 858570 local6.error]
+do_notify read failed: Bad file number
+Apr  1 03:22:11 mail1.andrew.cmu.edu master[13658]: [ID 970914 local6.error]
+process 7735 exited, signaled to death by 11
+
+we also have 943 notifyds, which seems like an awful lot.
+no core file left, unfortunately.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-01 15:03:19 EDT</bug_when>
+            <thetext>not good.  can you do an strace to see what the 943 are doing?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-01 16:29:35 EDT</bug_when>
+            <thetext>most of them are hanging on a read() system call waiting for input from the
+socket.  who the socket is connected to i don&apos;t know.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-01 17:25:29 EDT</bug_when>
+            <thetext>I just wrote a shell script to run 1000 notifytests in the background, and they 
+all seemed to work OK.  But, I did get a bunch (32) of notifyd spawned.  I&apos;m 
+guessing that this is because it takes longer for master to figure out that the 
+process can be reused than it does for the actual work to be done by notifyd.
+
+Is running notifyd as an event the &quot;right&quot; thing for this.  Should it be more 
+like saslauthd and just spawn threads?
+
+Would UDP be better than TCP?  Any other ideas?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-01 19:03:19 EDT</bug_when>
+            <thetext>i think notifyd is functioning correctly as a cyrus service.  i don&apos;t know why
+we&apos;re getting so many &quot;stuck&quot; notifyds (nor do i know why they&apos;re crashing).
+are any of the writes being done in non-blocking mode?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-03 15:20:00 EDT</bug_when>
+            <thetext>so the original problem were the writes being done in non-blocking mode.  i
+fixed this but we&apos;re still experiencing crashes:
+
+Apr  3 15:15:03 mail1.andrew.cmu.edu lmtpd[15862]: [ID 732277 local6.error]
+unable to connect to notify socket(): Operation now in progress
+Apr  3 15:15:03 mail1.andrew.cmu.edu notifyd[16482]: [ID 219384 local6.error]
+do_notify() read failed: Bad file number
+Apr  3 15:15:03 mail1.andrew.cmu.edu master[1018]: [ID 970914 local6.error]
+process 16482 exited, signaled to death by 11
+
+i suspect that this still has to do with the non-blocking connect() but that
+shoudln&apos;t cause the crash.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-03 15:40:54 EDT</bug_when>
+            <thetext>here&apos;s the information from the core file:
+#0  do_notify () at notifyd.c:223
+223         if (!*method)
+(gdb) bt
+#0  do_notify () at notifyd.c:223
+#1  0x238c0 in service_main (argc=1, argv=0xffbef7ec, envp=0xffbef7f4) at
+notifyd.c:344
+#2  0x22e84 in main (argc=1, argv=0xffbef7ec, envp=0xffbef7f4) at service.c:444
+(gdb) l
+218     
+219         if (rc) {
+220             syslog(LOG_ERR, &quot;do_notify() read failed: %m&quot;);
+221         }
+222     
+223         if (!*method)
+224             nmethod = default_method;
+225         else {
+226             nmethod = methods;
+227             while (nmethod-&gt;name) {
+(gdb) p method
+$1 = 0x0
+(gdb) 
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-07 00:02:10 EDT</bug_when>
+            <thetext>changed notifyd to use udp datagrams</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-13 21:02:32 EDT</bug_when>
+            <thetext>How is the new UDP code working on mail1?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-22 16:58:43 EDT</bug_when>
+            <thetext>everything seems fine though we do get a number of
+
+Apr 22 16:56:33 mail1.andrew.cmu.edu lmtpd[12640]: [ID 504181 local6.error]
+notify datagram too large
+
+messages.  Should I worry about them?  if so, we should open a new bug; i&apos;m
+marking this one fixed.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-22 21:04:54 EDT</bug_when>
+            <thetext>Howe many of these errors?  This means that the combined size of the stuff 
+we&apos;re packaging into a datagram is &gt; 8K.  Unless there is a bug in the code 
+which is miscalculating the size, how is the data getting so large?  Some 
+to:/cc: header with a ton of addresses?
+
+You can open a new case on this if you want.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

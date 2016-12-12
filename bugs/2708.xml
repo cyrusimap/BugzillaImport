@@ -1,0 +1,136 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2708</bug_id>
+          
+          <creation_ts>2005-09-20 07:54 EDT</creation_ts>
+          <short_desc>saslauthd fails to build on Solaris 7</short_desc>
+          <delta_ts>2007-05-17 16:23:18 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>s.e.grier@qmul.ac.uk</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>s.e.grier@qmul.ac.uk</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">s.e.grier@qmul.ac.uk</who>
+            <bug_when>2005-09-20 07:54:43 EDT</bug_when>
+            <thetext>Building cyrus-sasl-2.1.21 on Solaris 7 fails with:
+
+In file included from auth_pam.c:50:
+../config.h:307:1: warning: &quot;PACKAGE&quot; redefined
+In file included from mechanisms.h:35,
+                 from auth_pam.c:46:
+saslauthd.h:166:1: warning: this is the location of the previous definition
+In file included from auth_pam.c:50:
+../config.h:513: redefinition of `struct sockaddr_storage&apos;
+auth_pam.c: In function `auth_pam&apos;:
+auth_pam.c:204: warning: assignment from incompatible pointer type
+make[3]: *** [auth_pam.o] Error 1
+make[3]: Leaving directory `/usr/local/src/cyrus-sasl-2.1.21/saslauthd&apos;
+make[2]: *** [all] Error 2
+make[2]: Leaving directory `/usr/local/src/cyrus-sasl-2.1.21/saslauthd&apos;
+make[1]: *** [all-recursive] Error 1
+make[1]: Leaving directory `/usr/local/src/cyrus-sasl-2.1.21&apos;
+make: *** [all] Error 2
+
+This appears to be caused by the inclusion of config.h from the main build tree
+by auth_pam.c. My Solaris 7 system does not have the sockarr_storage structure
+available in libsocket, and consequently both config.h and saslauthd.h try to
+define this, which seems to be causing the above failure.
+
+I notice from the CVS that auth_pam.c was changed on 15 May 2005 to include
+config.h, apparently to reference the HAVE_*_PAM_APPL macros that the main
+configure script sets. I fixed this by changing saslauthd/configure.in to set
+these macros in saslauthd.h instead (will attach patch).
+
+Steps to reproduce:
+
+$ uname -a
+SunOS upsilon 5.7 Generic_106541-19 sun4u sparc SUNW,Ultra-250
+$ ./configure --enable-plain --disable-anon --disable-digest --disable-cram
+--disable-otp --disable-srp --disable-krb4 --disable-gssapi --disable-login
+--disable-ntlm --disable-checkapop
+$ make</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">s.e.grier@qmul.ac.uk</who>
+            <bug_when>2005-09-20 08:03:57 EDT</bug_when>
+            <thetext>Created an attachment (id=377)
+Patch to make saslauthd/configure set HAVE_*_PAM_APPL macros in saslauthd.h
+
+This patch adds a AC_CHECK_HEADERS function to saslauthd/configure.in to make
+saslauthd/configure set the appropriate HAVE_*_PAM_APPL macros in
+saslauthd/saslauthd.h. Don&apos;t include config.h in auth_pam.c.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>377</attachid>
+            <date>2005-09-20 08:03 EDT</date>
+            <desc>Patch to make saslauthd/configure set HAVE_*_PAM_APPL macros in saslauthd.h</desc>
+            <filename>pam_appl.patch</filename>
+            <type>text/plain</type>
+            <size>949</size>
+            <attacher>s.e.grier@qmul.ac.uk</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTmF1ciBjeXJ1cy1zYXNsLTIuMS4yMS5vbGQvc2FzbGF1dGhkL2F1dGhfcGFtLmMgY3ly
+dXMtc2FzbC0yLjEuMjEvc2FzbGF1dGhkL2F1dGhfcGFtLmMKLS0tIGN5cnVzLXNhc2wtMi4xLjIx
+Lm9sZC9zYXNsYXV0aGQvYXV0aF9wYW0uYwkyMDA1LTA1LTE1IDA3OjM0OjQzLjAwMDAwMDAwMCAr
+MDEwMAorKysgY3lydXMtc2FzbC0yLjEuMjEvc2FzbGF1dGhkL2F1dGhfcGFtLmMJMjAwNS0wOS0x
+NCAxNjo0ODo0MS4xMTQwNzkwMDAgKzAxMDAKQEAgLTQ2LDEwICs0Niw2IEBACiAjaW5jbHVkZSAi
+bWVjaGFuaXNtcy5oIgogI2luY2x1ZGUgPHN0ZGlvLmg+CiAKLSNpZmRlZiBIQVZFX0NPTkZJR19I
+Ci0jaW5jbHVkZSA8Y29uZmlnLmg+Ci0jZW5kaWYKLQogI2lmZGVmIEFVVEhfUEFNCiAKICMgaW5j
+bHVkZSA8c3RyaW5nLmg+CmRpZmYgLU5hdXIgY3lydXMtc2FzbC0yLjEuMjEub2xkL3Nhc2xhdXRo
+ZC9jb25maWd1cmUuaW4gY3lydXMtc2FzbC0yLjEuMjEvc2FzbGF1dGhkL2NvbmZpZ3VyZS5pbgot
+LS0gY3lydXMtc2FzbC0yLjEuMjEub2xkL3Nhc2xhdXRoZC9jb25maWd1cmUuaW4JMjAwNS0wNS0w
+NyAwNTo1NDoxOC4wMDAwMDAwMDAgKzAxMDAKKysrIGN5cnVzLXNhc2wtMi4xLjIxL3Nhc2xhdXRo
+ZC9jb25maWd1cmUuaW4JMjAwNS0wOS0xNCAxNzoyNDo0OC4yOTc1ODE1NDAgKzAxMDAKQEAgLTg4
+LDYgKzg4LDcgQEAKICAgICBDUFBGTEFHUz0iJENQUEZMQUdTIC1JJHt3aXRoX3BhbX0vaW5jbHVk
+ZSIKICAgICBMREZMQUdTPSIkTERGTEFHUyAtTCR7d2l0aF9wYW19L2xpYiIKICAgZmkKKyAgQUNf
+Q0hFQ0tfSEVBREVSUyhzZWN1cml0eS9wYW1fYXBwbC5oIHBhbS9wYW1fYXBwbC5oKQogICBjbXVf
+c2F2ZV9MSUJTPSIkTElCUyIKICAgQUNfQ0hFQ0tfTElCKHBhbSwgcGFtX3N0YXJ0LCBbCiAJICBB
+Q19DSEVDS19IRUFERVIoc2VjdXJpdHkvcGFtX2FwcGwuaCwsCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

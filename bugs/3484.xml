@@ -1,0 +1,141 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3484</bug_id>
+          
+          <creation_ts>2011-06-20 15:02 EDT</creation_ts>
+          <short_desc>build-time warnings</short_desc>
+          <delta_ts>2012-10-19 16:33:47 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Rosenbaum">lmr@ornl.gov</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Larry Rosenbaum">lmr@ornl.gov</who>
+            <bug_when>2011-06-20 15:02:19 EDT</bug_when>
+            <thetext>SunOS ornl71 5.9 Generic_118558-39 sun4u sparc SUNW,UltraAX-i2
+OpenSSL 1.0.0d 8 Feb 2011
+
+I get the following warnings when building 2.4.9beta1 and beta2 (and earlier 2.4.x versions):
+
+I&apos;m getting the following warnings on the link steps:
+
+ld: warning: global symbol `_END_&apos; has non-global binding:
+        (file /usr/local/ssl/lib/libssl.so value=LOCL);
+ld: warning: global symbol `_START_&apos; has non-global binding:
+        (file /usr/local/ssl/lib/libssl.so value=LOCL);
+ld: warning: global symbol `_END_&apos; has non-global binding:
+        (file /usr/local/ssl/lib/libcrypto.so value=LOCL);
+ld: warning: global symbol `_START_&apos; has non-global binding:
+        (file /usr/local/ssl/lib/libcrypto.so value=LOCL);
+
+
+and also this compile warning:
+
+imclient.c
+imclient.c: In function `tls_start_clienttls&apos;:
+imclient.c:1955: warning: assignment discards qualifiers from pointer target type</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-21 02:21:49 EDT</bug_when>
+            <thetext>This is reminding me of something:
+
+http://www.mail-archive.com/info-cyrus@lists.andrew.cmu.edu/msg41156.html
+http://www.mail-archive.com/info-cyrus@lists.andrew.cmu.edu/msg41159.html
+
+Ahh, there we go - you again :)
+
+So it looks like this never got fixed up for you.  I still think it&apos;s an issue with 32 and 64 bit library mismatches on your system - possibly changing the order in which you link in library paths will fix it for you.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-28 07:29:36 EDT</bug_when>
+            <thetext>Are you able to reproduce this in a &quot;clean&quot; build environment?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-06-30 01:36:51 EDT</bug_when>
+            <thetext>Hi Larry,
+
+some googling seems to indicate that your problem is most likely a
+badly built libssl.so and libcrypto.so.  In particular, the symbols
+_START_ and _END_ which are inserted by the linker, are always present,
+and are locally scoped (*), are correctly marked in the DSO&apos;s symbol
+table as being LOCL scope but are also incorrectly present in the DSO&apos;s
+hash table of global symbols.  That smells like a toolchain bug, but
+it might be a problem caused or triggered by something specific to
+the OpenSSL build.
+
+If you built OpenSSL from source, I suggest it might be a good idea to
+use the Sun FreeWare install instead.  If you&apos;re already using SFW OpenSSL,
+take it up with the SFW folks or Oracle support.
+
+(*) http://download.oracle.com/docs/cd/E19963-01/html/819-0690/chapter2-13.html</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Rosenbaum">lmr@ornl.gov</who>
+            <bug_when>2011-06-30 16:10:58 EDT</bug_when>
+            <thetext>I&apos;m already using SunFreeeware&apos;s OpenSSL.  I just tried building OpenSSL from source.  That gets rid of the global symbol warnings.  (I&apos;m still getting the &quot;assignment discards qualifiers&quot; compile warnings.)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-10-19 16:33:47 EDT</bug_when>
+            <thetext>For 2.4
+
+commit 0e51c0fbca80f52553e5e605c49c03603595d5c5
+Author: Bron Gondwana &lt;brong@opera.com&gt;
+Date:   Fri Oct 19 22:30:53 2012 +0200
+
+    Bug #3484 - fix sasl property type
+
+For 2.5:
+
+commit 4eaf31626ea302e8461f6c08c355cbb378f906d3
+Author: Bron Gondwana &lt;brong@opera.com&gt;
+Date:   Fri Oct 19 22:30:53 2012 +0200
+
+Fixed the type for the sasl return :)
+
+Thanks for the report - sorry I was so slack fixing it!</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

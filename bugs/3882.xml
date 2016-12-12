@@ -1,0 +1,130 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3882</bug_id>
+          
+          <creation_ts>2015-01-27 17:54 EDT</creation_ts>
+          <short_desc>Segmentation fault imapd on badlogin</short_desc>
+          <delta_ts>2015-02-13 05:25:27 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Daniel Hoffend">dh@dotlan.net</reporter>
+          <assigned_to name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-01-27 17:54:33 EDT</bug_when>
+            <thetext>I&apos;m using the a git version from end of decemeber (from Kolab:Development branch). 
+
+The imapd process is segfaulting when someone tries to login using a username that doesn&apos;t exist and doesn&apos;t match username@example.org
+
+
+### /var/log/mail.log
+
+Jan 27 23:20:39 kolab imap[478]: starttls: TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits new) no authentication
+Jan 27 23:20:49 kolab imap[478]: SASL Password verification failed
+Jan 27 23:20:49 kolab imap[478]: badlogin: localhost [::1] PLAIN [SASL(-13): authentication failure: Password verification failed]
+Jan 27 23:21:09 kolab master[30031]: process type:SERVICE name:imap path:/usr/lib/cyrus-imapd/imapd age:228.210s pid:478 signaled to death by signal 11 (Segmentation fault)
+
+### IMAP Login Test with username without @domain (info: ptloader not loaded, due to multidomain setup)
+
+root@kolab:~# imtest -t &quot;&quot; -u username.example.org -a username.example.org localhost
+S: * OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE STARTTLS LOGINDISABLED] kolab Cyrus IMAP git2.5+0-Debian-2.5~dev2014120901-0~kolab1 server ready
+C: S01 STARTTLS
+S: S01 OK Begin TLS negotiation now
+verify error:num=19:self signed certificate in certificate chain
+TLS connection established: TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits)
+C: C01 CAPABILITY
+S: * CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE ACL RIGHTS=kxten QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY CATENATE CONDSTORE ESEARCH SORT SORT=MODSEQ SORT=DISPLAY SORT=UID THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE ANNOTATE-EXPERIMENT-1 METADATA LIST-EXTENDED LIST-STATUS WITHIN QRESYNC SCAN XLIST XMOVE MOVE SPECIAL-USE CREATE-SPECIAL-USE URLAUTH URLAUTH=BINARY AUTH=PLAIN AUTH=LOGIN SASL-IR COMPRESS=DEFLATE X-QUOTA=STORAGE X-QUOTA=MESSAGE X-QUOTA=X-ANNOTATION-STORAGE X-QUOTA=X-NUM-FOLDERS IDLE
+S: C01 OK Completed
+Please enter your password: 
+C: A01 AUTHENTICATE PLAIN dXNlcm5hbWUuZXhhbXBsZS5vcmcAdXNlcm5hbWUuZXhhbXBsZS5vcmcAZGFzZHNhZHNh
+
+S: A01 NO authentication failure
+Authentication failed. generic failure
+Security strength factor: 256
+* BAD Invalid tag
+^CC: Q01 LOGOUT
+Connection closed.
+
+### GDB backtrace
+
+Program received signal SIGSEGV, Segmentation fault.
+cmdloop () at imap/imapd.c:1607
+1607	imap/imapd.c: No such file or directory.
+(gdb) bt
+#0  cmdloop () at imap/imapd.c:1607
+#1  0x0000000000423852 in service_main (argc=&lt;optimized out&gt;, argv=&lt;optimized out&gt;, envp=envp@entry=0x7fff9b3e9c90) at imap/imapd.c:970
+#2  0x0000000000415590 in main (argc=&lt;optimized out&gt;, argv=&lt;optimized out&gt;, envp=0x7fff9b3e9c90) at master/service.c:622
+
+
+### imap/imapd.c:1607
+
+ 1606                 // Translate the name to external
+ 1607                 mboxname_hiersep_toexternal(&amp;imapd_namespace, imapd_userid, config_virtdomains ? strcspn(imapd_userid, &quot;@&quot;) : 0);
+ 1608                 telemetry_rusage(imapd_userid);
+ 1609                 mboxname_hiersep_tointernal(&amp;imapd_namespace, imapd_userid, config_virtdomains ? strcspn(imapd_userid, &quot;@&quot;) : 0);
+
+### GIT COMMIT
+
+It&apos;s possible that the segfault was cause by the follwing commit
+
+http://git.cyrusimap.org/cyrus-imapd/commit/imap/imapd.c?id=b20b142c6ce0ee58e4e47da84a2ce099310b2dcb
+
+Convert usernames to external before attempting to use authn/authz or logging about them
+
+### Background information
+
+I don&apos;t have ptloader loaded, nor do I&apos;ve ldap_* parameters configured. Authentication is done via saslauthd</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-01-27 17:55:16 EDT</bug_when>
+            <thetext>Bug reported first on Kolab Bugzilla
+https://issues.kolab.org/show_bug.cgi?id=4367</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2015-02-13 05:25:27 EDT</bug_when>
+            <thetext>[master e9158f3] Avoid triggering namespace conversions on unauthenticated connections upon logout (#3882)
+ 1 file changed, 6 insertions(+), 4 deletions(-)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

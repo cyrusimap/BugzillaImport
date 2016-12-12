@@ -1,0 +1,245 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2787</bug_id>
+          
+          <creation_ts>2006-01-25 05:32 EDT</creation_ts>
+          <short_desc>Replication problem with virtual domains</short_desc>
+          <delta_ts>2010-10-25 18:46:37 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Simon Matter">simon.matter@invoca.ch</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2006-01-25 05:32:22 EDT</bug_when>
+            <thetext>According to reports on the cyrus list, there is an issue with replication and
+virtual domains. Mailboxes are not replicated because the &apos;!&apos; char is used to
+separate domain and mailbox and it&apos;s not allowed in GOODCHARS. The attached
+patch tries to fix this (not tested by me).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2006-01-25 05:33:02 EDT</bug_when>
+            <thetext>Created an attachment (id=415)
+cyrus-imapd-2.3.1-replication_policycheck.patch
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2006-01-25 06:55:14 EDT</bug_when>
+            <thetext>Even if this patch works it does just fix one part of the problem. This is from
+the list:
+discovered it&apos;s probably not the full answer and just solves one particular
+problem.   another problem seems to be when you create a new virtual domain,
+imapd will write a USER entry to the /var/lib/imap/sync/log file but the
+function it uses in mboxname.c to get the username strips the domain
+information off it.   the sync_client reads the log and attempts a USER
+operation but complains that the mail box doesn&apos;t exist - presumably because
+it&apos;s looking for a mailbox in the default domain??
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="jason neil">jason@cs.auckland.ac.nz</who>
+            <bug_when>2006-01-31 22:31:24 EDT</bug_when>
+            <thetext>Created an attachment (id=416)
+cyrus-2.3.1 imapd virtual domain and replication patch
+
+hi,  just a big disclaimer here... i know nothing of c and was just bumbling
+about trying to get the replication going for virtual domains.	it seems to
+work ok but i expect my patches are pretty clumsy and wrong in many ways!
+
+i identified three problems 1. the goodchars thing,  and the other two below.
+
+
+2.  Creating a mailbox for a new virtual domain user fails when sync_client
+attempts a &quot;USER userid&quot; and failing with an &quot;IOERROR ... Mailbox does not
+exist&quot;.
+   -  imapd writes &quot;USER userid&quot; to the sync log not &quot;USER userid&lt;at&gt;domain&quot;
+   -  i think this is because imapd passes mailboxname (form: domain!useridid)
+to mboxname_isusermailbox which strips off &quot;domain!&quot; to leave an unqualified
+userid.     
+   -  sync_client attempts a USER function with,  i assume, the default domain
+for which the virtual domain user does not exist in... and fails.    
+   -  unsure of any knock on affects of changing  mboxname_isusermailbox... i
+fixed it by taking the domain from mailboxname and appending it to userid.  
+   -  because i don&apos;t know what i&apos;m doing my fix leaves mailboxname in a funny
+state but as far as i can see it&apos;s not used after this.  
+
+3.   When deleting the top of a mailbox tree imapd writes &quot;MAILBOX
+domain!user.userid&lt;at&gt;domain&quot; to the sync log.	this fails because it is not a
+valid mailbox format.	my solution was to change what&apos;s written to the sync
+log by stripping the &quot;&lt;at&gt;domain&quot; part off.  the proper solution,  i guess, 
+would be to fix how it got in this state in the first place.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David S. Madole">david@madole.net</who>
+            <bug_when>2006-02-13 15:12:45 EDT</bug_when>
+            <thetext>Created an attachment (id=418)
+Workaround for ADDSUB/DELSUB domain issue
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David S. Madole">david@madole.net</who>
+            <bug_when>2006-02-13 15:16:10 EDT</bug_when>
+            <thetext>I found another problem with replication with virtual domains. On 
+ADDSUB/DELSUB, an additional domain! prefix is added when you run sync_client.
+When syncing back and forth between two servers, an additional domain! prefix 
+gets added on each turnaround.
+
+Another hacked patch. I don&apos;t have the familiarity yet with the code yet to 
+fix this right, however, this does avoid the problem. It removes the first 
+domain! prefix if there is more than one.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-06-13 13:27:45 EDT</bug_when>
+            <thetext>I just committed a handful of fixes for virtdomains and replication.  Please
+test in your environment and let me know if it solves your problems.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2006-07-03 11:54:10 EDT</bug_when>
+            <thetext>Ken, I don&apos;t have a real test case but I included the updates from CVS into my
+rpms. The package has been downloaded &gt;100 times and I didn&apos;t get any report
+from people who have problems with it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-07-03 15:32:47 EDT</bug_when>
+            <thetext>OK.  Thanks for the update.  Closing the bug.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>415</attachid>
+            <date>2006-01-25 05:33 EDT</date>
+            <desc>cyrus-imapd-2.3.1-replication_policycheck.patch</desc>
+            <filename>cyrus-imapd-2.3.1-replication_policycheck.patch</filename>
+            <type>text/plain</type>
+            <size>836</size>
+            <attacher>simon.matter@invoca.ch</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTmF1ciBjeXJ1cy1pbWFwZC0yLjMuMS5vcmlnL2ltYXAvc3luY19jb21taXQuYyBjeXJ1
+cy1pbWFwZC0yLjMuMS9pbWFwL3N5bmNfY29tbWl0LmMKLS0tIGN5cnVzLWltYXBkLTIuMy4xLm9y
+aWcvaW1hcC9zeW5jX2NvbW1pdC5jCTIwMDUtMTItMTMgMTY6MzE6MTAuMDAwMDAwMDAwICswMTAw
+CisrKyBjeXJ1cy1pbWFwZC0yLjMuMS9pbWFwL3N5bmNfY29tbWl0LmMJMjAwNi0wMS0yNSAxMDox
+ODo1MC4wMDAwMDAwMDAgKzAxMDAKQEAgLTgzNCw5ICs4MzQsMTUgQEAKICAgICAvKiBNdXN0IGJl
+IGF0bGVhc3QgTUFYX1BBUlRJVElPTl9MRU4gKyAzMCBmb3IgcGFydGl0aW9uLCBuZWVkCiAgICAg
+ICogTUFYX1BBUlRJVElPTl9MRU4gKyBIT1NUTkFNRV9TSVpFICsgMiBmb3IgbXVwZGF0ZSBsb2Nh
+dGlvbiAqLwogICAgIGNoYXIgYnVmW01BWF9QQVJUSVRJT05fTEVOICsgSE9TVE5BTUVfU0laRSAr
+IDJdOworICAgIGNoYXIgKm1ib3ggPSBuYW1lOworICAgIGNoYXIgKnA7CiAKICAgICAvKiBOZWVk
+IGFuIGV4dHJhIHNhbml0eSBjaGVjayBoZXJlIGFzIG5vcm1hbCBBQ0wgbG9naWMgaXMgYnlwYXNz
+ZWQgKi8KLSAgICByID0gbWJveG5hbWVfcG9saWN5Y2hlY2sobmFtZSk7CisgICAgaWYgKGNvbmZp
+Z192aXJ0ZG9tYWlucyAmJiAocCA9IHN0cmNocihuYW1lLCAnIScpKSkgeworICAgICAgICAvKiBw
+b2ludGVyIHRvIG1haWxib3ggdy9vIGRvbWFpbiBwcmVmaXggKi8KKyAgICAgICAgbWJveCA9IHAg
+KyAxOworICAgIH0KKyAgICByID0gbWJveG5hbWVfcG9saWN5Y2hlY2sobWJveCk7CiAgICAgaWYg
+KHIpIHJldHVybiByOwogCiAgICAgaWYgKCF1bmlxdWVpZCkgewo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>416</attachid>
+            <date>2006-01-31 22:31 EDT</date>
+            <desc>cyrus-2.3.1 imapd virtual domain and replication patch</desc>
+            <filename>imapd.c.patch</filename>
+            <type>text/plain</type>
+            <size>1104</size>
+            <attacher>jason@cs.auckland.ac.nz</attacher>
+            
+              <data encoding="base64">NDU2N2E0NTY4Cj4gICAgIGNoYXIgKmRvbWFpbjsKNDY5Myw0Njk0YzQ2OTQsNDcwNQo8IAlpZiAo
+KHVzZXJpZCA9IG1ib3huYW1lX2lzdXNlcm1haWxib3gobWFpbGJveG5hbWUsIDEpKSkKPCAJICAg
+IHN5bmNfbG9nX3VzZXIodXNlcmlkKTsKLS0tCj4gCWlmICgodXNlcmlkID0gbWJveG5hbWVfaXN1
+c2VybWFpbGJveChtYWlsYm94bmFtZSwgMSkpKSB7Cj4gCQkvKiBxdWFsaWZ5IHVzZXJpZCBpZiB2
+aXJ0dWFsIGRvbWFpbi4gIGF0IHRoaXMgcG9pbnQKPiAJCSAgIGEgdmlydHVhbGRvbWFpbiB1c2Vy
+aWQgaXMgbm90IHF1YWxpZmllZCBhbmQgbmVlZHMgCj4gCQkgICB0byBiZS4gc28gdXNlIG1haWxi
+b3huYW1lIHRvIGdldCB1c2VyaWQgdG8gYmUgdXNlcjxhdD5kb21haW4uCj4gCQkgICB0aGlzIGxl
+YXZlcyBtYm94bmFtZSBpbiBhbiBpbmNvcnJlY3QgZm9ybWF0IGJ1dCBpdCBkb2VzbnQKPiAJCSAg
+IGxvb2sgbGlrZSBpdHMgdXNlZCBhZnRlciB0aGlzICovCj4gCQlpZiAoY29uZmlnX3ZpcnRkb21h
+aW5zICYmIChkb21haW4gPSBzdHJjaHIobWFpbGJveG5hbWUsICchJykpKSB7Cj4gICAgICAgICAg
+ICAgICAgICAgICAgICAgKmRvbWFpbiA9ICdcMCc7ICAvKiBzcGxpdCBkb21haW4hbWJveCAqLwo+
+ICAgICAgICAgICAgICAgICAgICAgICAgIHN0cmNhdCh1c2VyaWQsICJAIik7Cj4gICAgICAgICAg
+ICAgICAgICAgICAgICAgc3RyY2F0KHVzZXJpZCwgbWFpbGJveG5hbWUpOwo+ICAgICAgICAgfQo+
+IAkgICAgc3luY19sb2dfdXNlcih1c2VyaWQpOyB9CjQ3MzNhNDc0NQo+ICAgICBjaGFyICpkb21h
+aW47CjQ4MzljNDg1MSw0ODU0CjwgCS8qIFhYWCBzaG91bGQgc2VudCBhIFJFU0VUIGhlcmUgdG8g
+Y2xlYW51cCBtZXRhLWRhdGEgKi8KLS0tCj4gICAgICAgICAvKiBjbGVhbiB1cCBtYWlsYm94bmFt
+ZSB3aGljaCBpcyBpbiB3cm9uZyBmb3JtYXQKPiAJICAgb2YgZG9tYWluIXVzZXIudWlkQGRvbWFp
+biAgKi8KPiAgICAgICAgIGlmIChjb25maWdfdmlydGRvbWFpbnMgJiYgKGRvbWFpbiA9IHN0cmNo
+cihtYWlsYm94bmFtZSwgJ0AnKSkpCj4gICAgICAgICAgICAgICpkb21haW4gPSAnXDAnOyAgLyog
+c3BsaXQgdXNlckBkb21haW4gKi8K
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>418</attachid>
+            <date>2006-02-13 15:12 EDT</date>
+            <desc>Workaround for ADDSUB/DELSUB domain issue</desc>
+            <filename>cyrus-imapd-2.3.1_addsub_delsub_replication.patch</filename>
+            <type>text/plain</type>
+            <size>555</size>
+            <attacher>david@madole.net</attacher>
+            
+              <data encoding="base64">LS0tIHN5bmNfY2xpZW50LmMub3JpZwlNb24gRmViIDEzIDExOjU3OjQyIDIwMDYKKysrIHN5bmNf
+Y2xpZW50LmMJTW9uIEZlYiAxMyAxMTo1ODowNyAyMDA2CkBAIC02NzIsNiArNjcyLDExIEBACiAK
+IHN0YXRpYyBpbnQgdXNlcl9hZGRzdWIoY2hhciAqdXNlciwgY2hhciAqbmFtZSkKIHsKKyAgICBj
+aGFyICpwOworCisgICAgaWYgKChwID0gc3RyY2hyKG5hbWUsICchJykpICYmIHN0cmNocihwICsg
+MSwgJyEnKSkKKwluYW1lID0gcCArIDE7CisKICAgICBpZiAodmVyYm9zZSkgCiAgICAgICAgIHBy
+aW50ZigiQUREU1VCICVzICVzXG4iLCB1c2VyLCBuYW1lKTsKIApAQCAtNjkwLDYgKzY5NSwxMSBA
+QAogCiBzdGF0aWMgaW50IHVzZXJfZGVsc3ViKGNoYXIgKnVzZXIsIGNoYXIgKm5hbWUpCiB7Cisg
+ICAgY2hhciAqcDsKKworICAgIGlmICgocCA9IHN0cmNocihuYW1lLCAnIScpKSAmJiBzdHJjaHIo
+cCArIDEsICchJykpCisJbmFtZSA9IHAgKyAxOworCiAgICAgaWYgKHZlcmJvc2UpIAogICAgICAg
+ICBwcmludGYoIkRFTFNVQiAlcyAlc1xuIiwgdXNlciwgbmFtZSk7CiAK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

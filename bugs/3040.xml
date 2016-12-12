@@ -1,0 +1,456 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3040</bug_id>
+          
+          <creation_ts>2008-02-20 12:46 EDT</creation_ts>
+          <short_desc>SEARCH BEFORE returns wrong values</short_desc>
+          <delta_ts>2010-10-25 18:46:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Timo Sirainen">tss@iki.fi</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-20 12:46:43 EDT</bug_when>
+            <thetext>1 fetch 9 internaldate
+* 9 FETCH (INTERNALDATE &quot;20-Feb-2008 00:00:00 +0200&quot;)
+1 OK Completed (0.000 sec)
+
+2 search 9 before 20-feb-2008
+* SEARCH 9
+2 OK Completed (1 msgs in 0.000 secs)
+
+rfc 3501:
+
+      BEFORE &lt;date&gt;
+         Messages whose internal date (disregarding time and timezone)
+         is earlier than the specified date.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-20 13:00:24 EDT</bug_when>
+            <thetext>Which Cyrus version?  I get this with the current 2.3.x code.
+
+1 fetch 9 internaldate
+* 9 FETCH (INTERNALDATE &quot;26-Sep-2007 11:50:50 -0400&quot;)
+1 OK Completed (0.000 sec)
+2 search 9 before 26-Sep-2007
+* SEARCH
+2 OK Completed (0 msgs in 0.000 secs)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-20 13:06:10 EDT</bug_when>
+            <thetext>v2.3.9. I think the problem is related to timezones. With +0200 timezone moving time backwards 2 hours changes the date to one day earlier.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-20 13:07:37 EDT</bug_when>
+            <thetext>Good point.  I&apos;ll take a look and make sure that the timezone is being ignored.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-21 12:56:17 EDT</bug_when>
+            <thetext>Can you try this patch?  Right now its only for BEFORE.
+
+
+--- index.c.~1.242.~	2008-02-14 09:46:56.000000000 -0500
++++ index.c	2008-02-21 12:54:50.000000000 -0500
+@@ -3078,8 +3078,17 @@
+ 
+     if (searchargs-&gt;after &amp;&amp; (time_t) INTERNALDATE(msgno) &lt; searchargs-&gt;after)
+       return 0;
+-    if (searchargs-&gt;before &amp;&amp; (time_t) INTERNALDATE(msgno) &gt; searchargs-&gt;before)
+-      return 0;
++    if (searchargs-&gt;before) {
++	time_t date = INTERNALDATE(msgno);
++	struct tm *tm = localtime(&amp;date);
++
++	/* disregard time and timezone */
++	tm-&gt;tm_hour = tm-&gt;tm_min = tm-&gt;tm_sec = 0;
++	tm-&gt;tm_isdst = -1;
++
++	date = mktime(tm);
++	if (date &gt;= searchargs-&gt;before) return 0;
++    }
+     if (searchargs-&gt;sentafter &amp;&amp; (time_t) SENTDATE(msgno) &lt; searchargs-&gt;sentafter)
+       return 0;
+     if (searchargs-&gt;sentbefore &amp;&amp; (time_t) SENTDATE(msgno) &gt; searchargs-&gt;sentbefore)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-21 13:47:17 EDT</bug_when>
+            <thetext>Seems to work ok, although you can probably fix it a bit more easily. Dovecot has pretty similar code and I did the same fix by adding:
+
+		tm = localtime(&amp;date);
+		date += utc_offset(tm, date)*60;
+
+Where utc_offset() is similar to Cyrus&apos;s gmtoff_of().
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-21 14:15:08 EDT</bug_when>
+            <thetext>Don&apos;t we still have to wipe out the time?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-21 14:33:02 EDT</bug_when>
+            <thetext>I didn&apos;t look too closely what the variables in Cyrus contain .. But it&apos;s possible to do this without worrying about the time if the SEARCH parameter timestamps always point to beginning of the day in UTC. Then by changing the message&apos;s UTC time_t to &quot;local time_t&quot; by adding the timezone seconds, the comparing works correctly. For example:
+
+search date 20-feb-2008 -&gt; 20 feb 2008 00:00:00 UTC
+
+msg date 20-feb-2008 00:00:00 +0200 == 19-feb-2008 22:00:00 UTC
+ + 2 hours == 20-feb-2008 00:00:00 UTC
+
+msg date 20-feb-2008 06:00:00 +0200 == 20-feb-2008 04:00:00 UTC
+ + 2 hours == 20-feb-2008 06:00:00 UTC
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-21 14:39:05 EDT</bug_when>
+            <thetext>Ahh, right.  Much more elegant than what I had.  This will work for BEFORE and ON.  I need to check SINCE which is supposed to include the given date as well as any after.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-26 12:28:25 EDT</bug_when>
+            <thetext>Created an attachment (id=991)
+Patch to normalize internaldate/sentdate to GMT
+
+Can you test this hopefully complete patch?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-27 23:20:00 EDT</bug_when>
+            <thetext>sentbefore/sentsince/senton works correctly, but before/since/on still gives wrong replies. Messages:
+
+* 1 FETCH (INTERNALDATE &quot;24-Mar-2007 23:00:00 +0200&quot;)
+* 2 FETCH (INTERNALDATE &quot;25-Mar-2007 00:00:00 +0200&quot;)
+* 3 FETCH (INTERNALDATE &quot;25-Mar-2007 01:00:00 +0200&quot;)
+* 4 FETCH (INTERNALDATE &quot;25-Mar-2007 02:00:00 +0200&quot;)
+* 5 FETCH (INTERNALDATE &quot;25-Mar-2007 04:00:00 +0300&quot;)
+* 6 FETCH (INTERNALDATE &quot;25-Mar-2007 23:00:00 +0300&quot;)
+* 7 FETCH (INTERNALDATE &quot;26-Mar-2007 00:00:00 +0300&quot;)
+
+imaptest test case was:
+
+# 1) Timezone changes from EET +0200 -&gt; EEST +0300
+# 1a) BEFORE
+ok search before 24-mar-2007
+* search
+ok search before 25-mar-2007
+* search 1
+ok search before 26-mar-2007
+* search 1 2 3 4 5 6
+ok search before 27-mar-2007
+* search 1 2 3 4 5 6 7
+
+# 1b) ON
+ok search on 23-mar-2007
+* search
+ok search on 24-mar-2007
+* search 1
+ok search on 25-mar-2007
+* search 2 3 4 5 6
+ok search on 26-mar-2007
+* search 7
+
+# 1c) SINCE
+ok search 1:7 since 24-mar-2007
+* search 1 2 3 4 5 6 7
+ok search 1:7 since 25-mar-2007
+* search 2 3 4 5 6 7
+ok search 1:7 since 26-mar-2007
+* search 7
+ok search 1:7 since 27-mar-2007
+* search
+
+Cyrus 2.3.11 + patch replied:
+
+1.21 search before 24-mar-2007
+* SEARCH
+1.21 OK Completed (0 msgs in 0.000 secs)
+1.22 search before 25-mar-2007
+* SEARCH 1 2 3 4 5
+1.22 OK Completed (5 msgs in 0.000 secs)
+1.23 search before 26-mar-2007
+* SEARCH 1 2 3 4 5 6 7
+1.23 OK Completed (7 msgs in 0.000 secs)
+1.24 search before 27-mar-2007
+* SEARCH 1 2 3 4 5 6 7
+1.24 OK Completed (7 msgs in 0.000 secs)
+
+1.25 search on 23-mar-2007
+* SEARCH
+1.25 OK Completed (0 msgs in 0.000 secs)
+1.26 search on 24-mar-2007
+* SEARCH 1 2 3
+1.26 OK Completed (3 msgs in 0.000 secs)
+1.27 search on 25-mar-2007
+* SEARCH 4 5 6 7
+1.27 OK Completed (4 msgs in 0.000 secs)
+1.28 search on 26-mar-2007
+* SEARCH
+1.28 OK Completed (0 msgs in 0.000 secs)
+
+1.29 search 1:7 since 24-mar-2007
+* SEARCH 1 2 3 4 5 6 7
+1.29 OK Completed (7 msgs in 0.000 secs)
+1.30 search 1:7 since 25-mar-2007
+* SEARCH 4 5 6 7
+1.30 OK Completed (4 msgs in 0.000 secs)
+1.31 search 1:7 since 26-mar-2007
+* SEARCH
+1.31 OK Completed (0 msgs in 0.000 secs)
+1.32 search 1:7 since 27-mar-2007
+* SEARCH
+1.32 OK Completed (0 msgs in 0.000 secs)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-28 10:53:01 EDT</bug_when>
+            <thetext>I don&apos;t know how the Date header searches can work as you expect, but the INTERNALDATE ones don&apos;t, as they are both using the same logic.
+
+Using your ON tests, it doesn&apos;t look like you are normalizing the times to GMT as I thought you were, otherwise, the first three messages would be ON 24-mar-2007, correct?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-28 11:57:38 EDT</bug_when>
+            <thetext>Created an attachment (id=992)
+Patch to fix SEARCH BEFORE &amp; ON
+
+The problem wasn&apos;t with timezones, the problem was with not excluding 00:00:00 from BEFORE.  Once I fixed this, I had to tweak the ON logic.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-28 13:00:13 EDT</bug_when>
+            <thetext>Almost works now. Only one problem left:
+
+25. day changes timezone from +0200 to +0300:
+
+x fetch 7,8 internaldate
+* 7 FETCH (INTERNALDATE &quot;26-Mar-2007 00:00:00 +0300&quot;)
+* 8 FETCH (INTERNALDATE &quot;26-Mar-2007 01:00:00 +0300&quot;)
+x OK Completed (0.000 sec)
+x search 7,8 on 25-mar-2007
+* SEARCH 7
+x OK Completed (1 msgs in 0.000 secs)
+
+27. day is nothing special and works as expected:
+
+x fetch 7,8 internaldate
+* 7 FETCH (INTERNALDATE &quot;27-Mar-2007 00:00:00 +0300&quot;)
+* 8 FETCH (INTERNALDATE &quot;27-Mar-2007 01:00:00 +0300&quot;)
+x OK Completed (0.000 sec)
+
+x search 7,8 on 25-mar-2007
+* SEARCH
+x OK Completed (0 msgs in 0.000 secs)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-28 14:31:11 EDT</bug_when>
+            <thetext>Created an attachment (id=993)
+v2 Patch to fix SEARCH BEFORE &amp; ON
+
+I mistakenly removed a line which was cuasing a 25 hour window for ON.  Please try again (hopefully for the last time).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-28 17:18:39 EDT</bug_when>
+            <thetext>Yes, both SEARCH tests pass now.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-28 17:20:06 EDT</bug_when>
+            <thetext>Did you happen to check the Date searches?  I&apos;m using the same logic, which SHOULD work.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Timo Sirainen">tss@iki.fi</who>
+            <bug_when>2008-02-28 18:05:23 EDT</bug_when>
+            <thetext>Yes, date searches work also (that&apos;s what I meant with &quot;both tests&quot;).
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-02-28 20:37:50 EDT</bug_when>
+            <thetext>Applied patch to CVS</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>991</attachid>
+            <date>2008-02-26 12:28 EDT</date>
+            <desc>Patch to normalize internaldate/sentdate to GMT</desc>
+            <filename>search_before.diff</filename>
+            <type>text/plain</type>
+            <size>1765</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGluZGV4LmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2
+cy9zcmMvY3lydXMvaW1hcC9pbmRleC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjI0MgpkaWZm
+IC11IC1yMS4yNDIgaW5kZXguYwotLS0gaW5kZXguYwkxOCBKYW4gMjAwOCAxOToxNzowOCAtMDAw
+MAkxLjI0MgorKysgaW5kZXguYwkyNiBGZWIgMjAwOCAxNzoyMTozNSAtMDAwMApAQCAtNjIsNiAr
+NjIsNyBAQAogI2luY2x1ZGUgImFzc2VydC5oIgogI2luY2x1ZGUgImNoYXJzZXQuaCIKICNpbmNs
+dWRlICJleGl0Y29kZXMuaCIKKyNpbmNsdWRlICJnbXRvZmYuaCIKICNpbmNsdWRlICJoYXNoLmgi
+CiAjaW5jbHVkZSAiaW1hcF9lcnIuaCIKICNpbmNsdWRlICJnbG9iYWwuaCIKQEAgLTMwNzYsMTQg
+KzMwNzcsMjYgQEAKICAgICBpZiAoc2VhcmNoYXJncy0+c21hbGxlciAmJiBTSVpFKG1zZ25vKSA+
+PSBzZWFyY2hhcmdzLT5zbWFsbGVyKSByZXR1cm4gMDsKICAgICBpZiAoc2VhcmNoYXJncy0+bGFy
+Z2VyICYmIFNJWkUobXNnbm8pIDw9IHNlYXJjaGFyZ3MtPmxhcmdlcikgcmV0dXJuIDA7CiAKLSAg
+ICBpZiAoc2VhcmNoYXJncy0+YWZ0ZXIgJiYgKHRpbWVfdCkgSU5URVJOQUxEQVRFKG1zZ25vKSA8
+IHNlYXJjaGFyZ3MtPmFmdGVyKQotICAgICAgcmV0dXJuIDA7Ci0gICAgaWYgKHNlYXJjaGFyZ3Mt
+PmJlZm9yZSAmJiAodGltZV90KSBJTlRFUk5BTERBVEUobXNnbm8pID4gc2VhcmNoYXJncy0+YmVm
+b3JlKQotICAgICAgcmV0dXJuIDA7Ci0gICAgaWYgKHNlYXJjaGFyZ3MtPnNlbnRhZnRlciAmJiAo
+dGltZV90KSBTRU5UREFURShtc2dubykgPCBzZWFyY2hhcmdzLT5zZW50YWZ0ZXIpCi0gICAgICBy
+ZXR1cm4gMDsKLSAgICBpZiAoc2VhcmNoYXJncy0+c2VudGJlZm9yZSAmJiAodGltZV90KSBTRU5U
+REFURShtc2dubykgPiBzZWFyY2hhcmdzLT5zZW50YmVmb3JlKQotICAgICAgcmV0dXJuIDA7Cisg
+ICAgaWYgKHNlYXJjaGFyZ3MtPmFmdGVyIHx8IHNlYXJjaGFyZ3MtPmJlZm9yZSkgeworCXRpbWVf
+dCBkYXRlID0gSU5URVJOQUxEQVRFKG1zZ25vKTsKKwlzdHJ1Y3QgdG0gKnRtID0gbG9jYWx0aW1l
+KCZkYXRlKTsKKworCS8qIG5vcm1hbGl6ZSB0byBHTVQgKi8KKwlkYXRlIC09IGdtdG9mZl9vZih0
+bSwgZGF0ZSk7CisKKwlpZiAoc2VhcmNoYXJncy0+YWZ0ZXIgJiYgZGF0ZSA8IHNlYXJjaGFyZ3Mt
+PmFmdGVyKSByZXR1cm4gMDsKKwlpZiAoc2VhcmNoYXJncy0+YmVmb3JlICYmIGRhdGUgPiBzZWFy
+Y2hhcmdzLT5iZWZvcmUpIHJldHVybiAwOworICAgIH0KKyAgICBpZiAoc2VhcmNoYXJncy0+c2Vu
+dGFmdGVyIHx8IHNlYXJjaGFyZ3MtPnNlbnRiZWZvcmUpIHsKKwl0aW1lX3QgZGF0ZSA9IFNFTlRE
+QVRFKG1zZ25vKTsKKwlzdHJ1Y3QgdG0gKnRtID0gbG9jYWx0aW1lKCZkYXRlKTsKKworCS8qIG5v
+cm1hbGl6ZSB0byBHTVQgKi8KKwlkYXRlIC09IGdtdG9mZl9vZih0bSwgZGF0ZSk7CisKKwlpZiAo
+c2VhcmNoYXJncy0+c2VudGFmdGVyICYmIGRhdGUgPCBzZWFyY2hhcmdzLT5zZW50YWZ0ZXIpIHJl
+dHVybiAwOworCWlmIChzZWFyY2hhcmdzLT5zZW50YmVmb3JlICYmIGRhdGUgPiBzZWFyY2hhcmdz
+LT5zZW50YmVmb3JlKSByZXR1cm4gMDsKKyAgICB9CiAKICAgICBpZiAoc2VhcmNoYXJncy0+bW9k
+c2VxICYmIE1PRFNFUShtc2dubykgPCBzZWFyY2hhcmdzLT5tb2RzZXEpIHJldHVybiAwOwogCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>992</attachid>
+            <date>2008-02-28 11:57 EDT</date>
+            <desc>Patch to fix SEARCH BEFORE &amp; ON</desc>
+            <filename>search_before.diff</filename>
+            <type>text/plain</type>
+            <size>1441</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXBkLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2
+cy9zcmMvY3lydXMvaW1hcC9pbWFwZC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjU0MApkaWZm
+IC11IC1yMS41NDAgaW1hcGQuYwotLS0gaW1hcGQuYwkxOCBKYW4gMjAwOCAxOToxNzowNyAtMDAw
+MAkxLjU0MAorKysgaW1hcGQuYwkyOCBGZWIgMjAwOCAxNjo1NDoyNyAtMDAwMApAQCAtODc0Niw5
+ICs4NzQ2LDcgQEAKICAgICB0bS50bV9pc2RzdCA9IC0xOwogICAgICpzdGFydCA9IG1rdGltZSgm
+dG0pOwogCi0gICAgdG0udG1fc2VjID0gdG0udG1fbWluID0gNTk7Ci0gICAgdG0udG1faG91ciA9
+IDIzOwotICAgIHRtLnRtX2lzZHN0ID0gLTE7CisgICAgdG0udG1faG91ciA9IDI0OwogICAgICpl
+bmQgPSBta3RpbWUoJnRtKTsKIAogICAgIHJldHVybiBjOwpJbmRleDogaW5kZXguYwo9PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0vY3ZzL3NyYy9jeXJ1cy9pbWFwL2luZGV4
+LmMsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMjQyCmRpZmYgLXUgLXIxLjI0MiBpbmRleC5jCi0t
+LSBpbmRleC5jCTE4IEphbiAyMDA4IDE5OjE3OjA4IC0wMDAwCTEuMjQyCisrKyBpbmRleC5jCTI4
+IEZlYiAyMDA4IDE2OjU0OjI3IC0wMDAwCkBAIC0zMDc4LDExICszMDc4LDExIEBACiAKICAgICBp
+ZiAoc2VhcmNoYXJncy0+YWZ0ZXIgJiYgKHRpbWVfdCkgSU5URVJOQUxEQVRFKG1zZ25vKSA8IHNl
+YXJjaGFyZ3MtPmFmdGVyKQogICAgICAgcmV0dXJuIDA7Ci0gICAgaWYgKHNlYXJjaGFyZ3MtPmJl
+Zm9yZSAmJiAodGltZV90KSBJTlRFUk5BTERBVEUobXNnbm8pID4gc2VhcmNoYXJncy0+YmVmb3Jl
+KQorICAgIGlmIChzZWFyY2hhcmdzLT5iZWZvcmUgJiYgKHRpbWVfdCkgSU5URVJOQUxEQVRFKG1z
+Z25vKSA+PSBzZWFyY2hhcmdzLT5iZWZvcmUpCiAgICAgICByZXR1cm4gMDsKICAgICBpZiAoc2Vh
+cmNoYXJncy0+c2VudGFmdGVyICYmICh0aW1lX3QpIFNFTlREQVRFKG1zZ25vKSA8IHNlYXJjaGFy
+Z3MtPnNlbnRhZnRlcikKICAgICAgIHJldHVybiAwOwotICAgIGlmIChzZWFyY2hhcmdzLT5zZW50
+YmVmb3JlICYmICh0aW1lX3QpIFNFTlREQVRFKG1zZ25vKSA+IHNlYXJjaGFyZ3MtPnNlbnRiZWZv
+cmUpCisgICAgaWYgKHNlYXJjaGFyZ3MtPnNlbnRiZWZvcmUgJiYgKHRpbWVfdCkgU0VOVERBVEUo
+bXNnbm8pID49IHNlYXJjaGFyZ3MtPnNlbnRiZWZvcmUpCiAgICAgICByZXR1cm4gMDsKIAogICAg
+IGlmIChzZWFyY2hhcmdzLT5tb2RzZXEgJiYgTU9EU0VRKG1zZ25vKSA8IHNlYXJjaGFyZ3MtPm1v
+ZHNlcSkgcmV0dXJuIDA7Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>993</attachid>
+            <date>2008-02-28 14:31 EDT</date>
+            <desc>v2 Patch to fix SEARCH BEFORE &amp; ON</desc>
+            <filename>search_before.diff</filename>
+            <type>text/plain</type>
+            <size>1426</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXBkLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2
+cy9zcmMvY3lydXMvaW1hcC9pbWFwZC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjU0MApkaWZm
+IC11IC1yMS41NDAgaW1hcGQuYwotLS0gaW1hcGQuYwkxOCBKYW4gMjAwOCAxOToxNzowNyAtMDAw
+MAkxLjU0MAorKysgaW1hcGQuYwkyOCBGZWIgMjAwOCAxOToyODo0OCAtMDAwMApAQCAtODc0Niw4
+ICs4NzQ2LDcgQEAKICAgICB0bS50bV9pc2RzdCA9IC0xOwogICAgICpzdGFydCA9IG1rdGltZSgm
+dG0pOwogCi0gICAgdG0udG1fc2VjID0gdG0udG1fbWluID0gNTk7Ci0gICAgdG0udG1faG91ciA9
+IDIzOworICAgIHRtLnRtX2hvdXIgPSAyNDsKICAgICB0bS50bV9pc2RzdCA9IC0xOwogICAgICpl
+bmQgPSBta3RpbWUoJnRtKTsKIApJbmRleDogaW5kZXguYwo9PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAv
+YWZzL2FuZHJldy9zeXN0ZW0vY3ZzL3NyYy9jeXJ1cy9pbWFwL2luZGV4LmMsdgpyZXRyaWV2aW5n
+IHJldmlzaW9uIDEuMjQyCmRpZmYgLXUgLXIxLjI0MiBpbmRleC5jCi0tLSBpbmRleC5jCTE4IEph
+biAyMDA4IDE5OjE3OjA4IC0wMDAwCTEuMjQyCisrKyBpbmRleC5jCTI4IEZlYiAyMDA4IDE5OjI4
+OjQ4IC0wMDAwCkBAIC0zMDc4LDExICszMDc4LDExIEBACiAKICAgICBpZiAoc2VhcmNoYXJncy0+
+YWZ0ZXIgJiYgKHRpbWVfdCkgSU5URVJOQUxEQVRFKG1zZ25vKSA8IHNlYXJjaGFyZ3MtPmFmdGVy
+KQogICAgICAgcmV0dXJuIDA7Ci0gICAgaWYgKHNlYXJjaGFyZ3MtPmJlZm9yZSAmJiAodGltZV90
+KSBJTlRFUk5BTERBVEUobXNnbm8pID4gc2VhcmNoYXJncy0+YmVmb3JlKQorICAgIGlmIChzZWFy
+Y2hhcmdzLT5iZWZvcmUgJiYgKHRpbWVfdCkgSU5URVJOQUxEQVRFKG1zZ25vKSA+PSBzZWFyY2hh
+cmdzLT5iZWZvcmUpCiAgICAgICByZXR1cm4gMDsKICAgICBpZiAoc2VhcmNoYXJncy0+c2VudGFm
+dGVyICYmICh0aW1lX3QpIFNFTlREQVRFKG1zZ25vKSA8IHNlYXJjaGFyZ3MtPnNlbnRhZnRlcikK
+ICAgICAgIHJldHVybiAwOwotICAgIGlmIChzZWFyY2hhcmdzLT5zZW50YmVmb3JlICYmICh0aW1l
+X3QpIFNFTlREQVRFKG1zZ25vKSA+IHNlYXJjaGFyZ3MtPnNlbnRiZWZvcmUpCisgICAgaWYgKHNl
+YXJjaGFyZ3MtPnNlbnRiZWZvcmUgJiYgKHRpbWVfdCkgU0VOVERBVEUobXNnbm8pID49IHNlYXJj
+aGFyZ3MtPnNlbnRiZWZvcmUpCiAgICAgICByZXR1cm4gMDsKIAogICAgIGlmIChzZWFyY2hhcmdz
+LT5tb2RzZXEgJiYgTU9EU0VRKG1zZ25vKSA8IHNlYXJjaGFyZ3MtPm1vZHNlcSkgcmV0dXJuIDA7
+Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,110 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3585</bug_id>
+          
+          <creation_ts>2011-10-18 07:36 EDT</creation_ts>
+          <short_desc>Problem with new flags added in concurrent connections</short_desc>
+          <delta_ts>2014-10-20 17:04:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.18</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-10-18 07:36:12 EDT</bug_when>
+            <thetext>In cyrus 2.3, when a new flag is added, it is not correctly taken into account in concurrent connections on the same folder. To do so, the folder has to be reopened (SELECT/EXAMINE).
+
+For example, connections A and B are in the same folder. Connection B adds a new flag on first message:
+
+C: . store 1 +flags test1
+S: * FLAGS (\Answered \Flagged \Draft \Deleted \Seen test1)
+S: * OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen test1 \*)]  
+S: * 1 FETCH (FLAGS (\Recent test1))
+S: . OK Completed
+
+Connection A then tries to fetch flags on the first message:
+
+C: . fetch 1 flags
+S: * FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+S: * OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen \*)]  
+S: * 1 FETCH (FLAGS (\Recent))
+S: * FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+S: * OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen \*)]  
+S: * 1 FETCH (FLAGS (\Recent))
+S: . OK Completed (0.000 sec)
+
+The new flag was not retrieved as expected, even if we retry:
+
+C: . fetch 1 flags
+S: * FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+S: * OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen \*)]  
+S: * 1 FETCH (FLAGS (\Recent))
+S: . OK Completed (0.000 sec)
+
+If we try to copy the mail, the new flag is also not taken into account:
+
+C: . copy 1 INBOX
+S: * FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+S: * OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen \*)]  
+S: * 2 EXISTS
+S: * 2 RECENT
+S: . OK [COPYUID 1318928552 1 2] Completed
+
+C: . fetch 2 flags
+S: * 2 FETCH (FLAGS (\Recent))
+S: . OK Completed (0.000 sec)
+
+
+The current code do actually spot that a (still) unknown flag is set on the message, but it (re)reads the header file it has already opened. This fails to take into account the new flag because it has been written to a newly created header file, not the one still opened by concurrent connections.
+With the proposed patch, the code now checks whether the header files has changed (inode) and reopens it in that case.
+Patch available in the &apos;2.3/reload_header&apos; branch on the git repository &apos;git://github.com/worldline-messaging/cyrus-imapd.git&apos;; commit &apos;e9552421dec165733b0894611273c1cbe0d19cf7&apos;.
+
+
+Note that this issue does not exist in cyrus 2.4, mainly because the code has been heavily refactored.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-20 17:04:45 EDT</bug_when>
+            <thetext>Not interested in 2.3 bugs any more, wontfix.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

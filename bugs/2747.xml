@@ -1,0 +1,166 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2747</bug_id>
+          
+          <creation_ts>2005-11-03 10:27 EDT</creation_ts>
+          <short_desc>LIST and LSUB commands don&apos;t return &quot;INBOX&quot; and subfolders correctly</short_desc>
+          <delta_ts>2007-05-17 16:31:56 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alexander Drozdov">dzal_mail@mtu-net.ru</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>kvk@elbrus.ru</cc>
+    
+    <cc>sorcerer@elbrus.ru</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-11-03 10:27:32 EDT</bug_when>
+            <thetext>LIST and LSUB commands don&apos;t return &quot;INBOX&quot; and subfolders if
+userid have dot (&quot;.&quot;) in the name and unixhierarchysep config
+variable is not set.
+
+My imapd.conf file is simple:
+
+configdirectory: &lt;somedir&gt;
+partition-default: &lt;somedir&gt;
+loginrealms: domain.ru
+
+I have some test users on the server.
+
+Let we send some commands to IMAP server.
+
+. login u3@domain.ru q
+. OK User logged in
+. list &quot;&quot; *
+* LIST (\HasChildren) &quot;.&quot; &quot;sf1&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;sf1.subfolder&quot;
+* LIST (\HasChildren) &quot;.&quot; &quot;sf2&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;sf2.subfolder&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;user.u2@domain^ru.sssssss&quot;
+* LIST (\HasChildren) &quot;.&quot; &quot;user.u3@domain^ru&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;user.u3@domain^ru.te^st1&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;user.u3@domain^ru.te^st2&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;user.u3@domain^ru.te^st3&quot;
+. OK Completed (0.010 secs 10 calls)
+
+We can see that server didn&apos;t return INBOX and subfolders. Instead,
+user.u3@domain^ru* is returned. You can see my patch.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-11-03 10:28:22 EDT</bug_when>
+            <thetext>Created an attachment (id=389)
+A patch.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-11-03 12:32:37 EDT</bug_when>
+            <thetext>You cannot use &apos;.&apos; in userids unless you have unixhierarchysep set.  You&apos;re 
+trying to make the server do something that it was not designed to do.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-11-03 14:40:27 EDT</bug_when>
+            <thetext>Sorry, but I&apos;ve seen the documentation
+(http://asg.web.cmu.edu/cyrus/download/imapd/altnamespace.html#unixhiersep):
+
+[quote]
+When the UNIX hierarchy convention is used, the &quot;.&quot; character MAY be used in
+mailbox names, including user names. In order to maintain backwards
+compatibility with the internal namespace, all &quot;.&quot; characters are translated to
+a benign character (currently &quot;^&quot;) before any data is stored to disk. For
+example, if user &quot;elmer.fudd&quot; had a personal &quot;rabbit.holes&quot; mailbox, it would be
+stored as &quot;user.elmer^fud.rabbit^holes&quot; in the internal namespace. It is
+important to remember this phenomenon if/when reverting back to the netnews
+hierarchy convention.
+[/quote]
+
+When I turn on or turn off unixhierarchysep variable, user _login_ is not
+changed (because of using SASL). Therefore, if &quot;.&quot; in usernames is possible when
+unixhierarchysep is set, and if I can unset it in any time, then the server
+shall process userids with &quot;.&quot; correctly. My patch just converts userid to an
+internal namespace before using it in any commands.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>389</attachid>
+            <date>2005-11-03 10:28 EDT</date>
+            <desc>A patch.</desc>
+            <filename>dottedid_inbox.diff</filename>
+            <type>text/plain</type>
+            <size>1462</size>
+            <attacher>dzal_mail@mtu-net.ru</attacher>
+            
+              <data encoding="base64">ZGlmZiAtQyAzIC1yIC4uL2N5cnVzLWltYXBkLTIuMi4xMi5jbGVhbi9pbWFwL2ltYXBkLmMgLi9p
+bWFwL2ltYXBkLmMKKioqIC4uL2N5cnVzLWltYXBkLTIuMi4xMi5jbGVhbi9pbWFwL2ltYXBkLmMJ
+MjAwNS0wMi0xNCAwOTozOTo1NSArMDMwMAotLS0gLi9pbWFwL2ltYXBkLmMJMjAwNS0xMC0xMCAx
+OTo0MjowMyArMDQwMAoqKioqKioqKioqKioqKioKKioqIDE2OTIsMTY5NyAqKioqCi0tLSAxNjky
+LDE3MDggLS0tLQogICAgICB9CiAgfQogIAorIHN0YXRpYyB2b2lkIHVzZXJpZF90b2ludGVybmFs
+KHN0cnVjdCBuYW1lc3BhY2UgKm5hbWVzcGFjZSwgY2hhciAqdXNlcmlkKQorIHsKKyAgICAgY2hh
+ciBoaWVyc2VwX29yaWcgPSBuYW1lc3BhY2UtPmhpZXJfc2VwOworIAorICAgICBuYW1lc3BhY2Ut
+PmhpZXJfc2VwPScvJzsKKyAgICAgbWJveG5hbWVfaGllcnNlcF90b2ludGVybmFsKG5hbWVzcGFj
+ZSwgdXNlcmlkLAorIAkJCQljb25maWdfdmlydGRvbWFpbnMgPworIAkJCQlzdHJjc3BuKHVzZXJp
+ZCwgIkAiKSA6IDApOworICAgICBuYW1lc3BhY2UtPmhpZXJfc2VwPWhpZXJzZXBfb3JpZzsKKyB9
+CisgCiAgLyoKICAgKiBQZXJmb3JtIGEgTE9HSU4gY29tbWFuZAogICAqLwoqKioqKioqKioqKioq
+KioKKioqIDE4NDMsMTg1MSAqKioqCiAgICAgIH0KICAKICAgICAgLyogVHJhbnNsYXRlIGFueSBz
+ZXBhcmF0b3JzIGluIHVzZXJpZCAqLwohICAgICBtYm94bmFtZV9oaWVyc2VwX3RvaW50ZXJuYWwo
+JmltYXBkX25hbWVzcGFjZSwgaW1hcGRfdXNlcmlkLAohIAkJCQljb25maWdfdmlydGRvbWFpbnMg
+PwohIAkJCQlzdHJjc3BuKGltYXBkX3VzZXJpZCwgIkAiKSA6IDApOwogIAogICAgICBmcmVlYnVm
+KCZwYXNzd2RidWYpOwogICAgICByZXR1cm47Ci0tLSAxODU0LDE4NjAgLS0tLQogICAgICB9CiAg
+CiAgICAgIC8qIFRyYW5zbGF0ZSBhbnkgc2VwYXJhdG9ycyBpbiB1c2VyaWQgKi8KISAgICAgdXNl
+cmlkX3RvaW50ZXJuYWwoJmltYXBkX25hbWVzcGFjZSwgaW1hcGRfdXNlcmlkKTsKICAKICAgICAg
+ZnJlZWJ1ZigmcGFzc3dkYnVmKTsKICAgICAgcmV0dXJuOwoqKioqKioqKioqKioqKioKKioqIDE5
+ODksMTk5NyAqKioqCiAgICAgIH0KICAKICAgICAgLyogVHJhbnNsYXRlIGFueSBzZXBhcmF0b3Jz
+IGluIHVzZXJpZCAqLwohICAgICBtYm94bmFtZV9oaWVyc2VwX3RvaW50ZXJuYWwoJmltYXBkX25h
+bWVzcGFjZSwgaW1hcGRfdXNlcmlkLAohIAkJCQljb25maWdfdmlydGRvbWFpbnMgPwohIAkJCQlz
+dHJjc3BuKGltYXBkX3VzZXJpZCwgIkAiKSA6IDApOwogIAogICAgICByZXR1cm47CiAgfQotLS0g
+MTk5OCwyMDA0IC0tLS0KICAgICAgfQogIAogICAgICAvKiBUcmFuc2xhdGUgYW55IHNlcGFyYXRv
+cnMgaW4gdXNlcmlkICovCiEgICAgIHVzZXJpZF90b2ludGVybmFsKCZpbWFwZF9uYW1lc3BhY2Us
+IGltYXBkX3VzZXJpZCk7CiAgCiAgICAgIHJldHVybjsKICB9Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,170 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3386</bug_id>
+          
+          <creation_ts>2011-01-18 13:07 EDT</creation_ts>
+          <short_desc>Incomplete LMTP header cache collision management ?</short_desc>
+          <delta_ts>2011-02-06 20:51:31 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.4.6</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-01-18 13:07:17 EDT</bug_when>
+            <thetext>When cyrus receives a new mail through LMTP, its headers are parsed on-the-fly and stored in memory (hdrcache field of the message_data structure), so that they are accessible upon SIEVE filtering (e.g.: header value testing).
+
+The code managing this memory cache is located in imap/spool.{h,c}.
+Header values are stored in a fixed-size array (4009 entries).
+An hashcode is computed for each header name, indicating the preferred array index to store the header value in. If some header is found more than once, all occurrences are stored in the array entry.
+In case of name collision (that is the preferred entry is already used by another header name) the code tries the next entry (and so on) until it finds the correct one or an empty one.
+
+However if all entries are in use by other headers, the spool_cache_header function still adds the new header value to the array while it should not (the chosen entry is used by another header).
+Fortunately, mails having more than 4009 unique header names are quite rare (and possibly inexistant). But, for sanity reasons, shouldn&apos;t this new header value be bypassed, or the fixed-size array be replaced by a variable-size one (like linked-list) ?
+
+
+Note: both 2.3.x and 2.4.x versions have this behaviour.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-01-19 00:06:31 EDT</bug_when>
+            <thetext>Just the other day I rewrote that code to use a more sensible set
+of library data structures, the hash table in lib/hash.c and a new
+string array data structure I&apos;ve been working on.  Those changes not
+only solve this bug but make the code a whole lot smaller.  For
+example, here&apos;s the new spool_getheader() code:
+
+const char **spool_getheader(hdrcache_t cache, const char *phead)
+{
+    char *head;
+    strarray_t *contents;
+
+    assert(cache &amp;&amp; phead);
+
+    head = xstrdup(phead);
+    lcase(head);
+
+    /* check the cache */
+    contents = (strarray_t *)hash_lookup(head, cache);
+
+    free(head);
+
+    return contents ? (const char **)contents-&gt;data : NULL;
+}</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-01-19 04:32:53 EDT</bug_when>
+            <thetext>Great. I like refactoring :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-01-19 20:59:18 EDT</bug_when>
+            <thetext>Ken, I hope you don&apos;t mind if I take this one?  I&apos;m almost ready
+to push out a minimal set of commits which cover this bug.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-01-20 02:13:12 EDT</bug_when>
+            <thetext>The following changes since commit 02ec33943b008e0cc36a4424c5be278b22ff0c95:
+
+  timsieved: fix crash in cmd_authenticate (2011-01-14 15:02:55 +1100)
+
+are available in the git repository at:
+  ssh://git@github.com/gnb/cyrus-imapd.git bz3386
+
+Greg Banks (4):
+      Add strarray_t - an expanding string array
+      unit: add tests for strarray_t
+      Use strarray_t, hash_table in spool.c
+      unit: test the header caching in spool.c
+
+ cunit/Makefile.in |    3 +-
+ cunit/spool.c     |  229 +++++++++++++++++++
+ cunit/strarray.c  |  659 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ imap/spool.c      |  104 +--------
+ imap/spool.h      |    3 +-
+ lib/Makefile.in   |    4 +-
+ lib/strarray.c    |  265 +++++++++++++++++++++
+ lib/strarray.h    |   89 +++++++
+ 8 files changed, 1261 insertions(+), 95 deletions(-)
+ create mode 100644 cunit/spool.c
+ create mode 100644 cunit/strarray.c
+ create mode 100644 lib/strarray.c
+ create mode 100644 lib/strarray.h</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-02-02 21:23:46 EDT</bug_when>
+            <thetext>So...is anyone going to pull this, or is it just going to sit there?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-02-03 14:18:29 EDT</bug_when>
+            <thetext>Cherry-picked 6d254ec43431b34c187aa966ee8ac781942aa79d, d1454d8d84db960929401578cc1d06bfdd91d4c7, 9fde9d73dffc51297bb22178b5aee1ef9cd123c8 and 161e5786805656e0ef5de243cc2419cb997038da, pushed out to origin/master. Does this need to get back-ported to 2.4.x?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-02-03 19:13:13 EDT</bug_when>
+            <thetext>Thanks Jeroen!
+
+Re the backport, it&apos;s a gray area.  The bug is easy to trigger once you
+know how, but the impact is fairly light: header values get misfiled.
+The bug has existed in the wild for a very long time without any apparent
+trauma.  I&apos;d say it&apos;s up to you.
+
+(Also: officially took the BZ).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-02-04 04:31:02 EDT</bug_when>
+            <thetext>I say we leave it as is for now, unless somebody can make the argument we do need to back-port the fix.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-02-06 20:51:31 EDT</bug_when>
+            <thetext>Works for me.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,137 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3705</bug_id>
+          
+          <creation_ts>2012-06-09 18:13 EDT</creation_ts>
+          <short_desc>cmulocal/sasl2.m4 has broken gssapi logic</short_desc>
+          <delta_ts>2016-03-24 18:48:17 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Carson Gaspar">carson@taltos.org</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>schulz@adi.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Carson Gaspar">carson@taltos.org</who>
+            <bug_when>2012-06-09 18:13:30 EDT</bug_when>
+            <thetext>This is so broken I&apos;d love to know who thought it was a good idea...
+
+  if test &quot;$ac_cv_header_gssapi_h&quot; = &quot;yes&quot; -o &quot;$ac_cv_header_gssapi_gssapi_h&quot; = 
+&quot;yes&quot;; then
+    AC_DEFINE(HAVE_GSSAPI_H,,[Define if you have the gssapi.h header file])
+  fi
+
+If you have &lt;gssapi/gssapi.h&gt;, but don&apos;t have &lt;gssapi.h&gt;, this causes the build to break because sasl attempts to include &lt;gssapi.h&gt;, which fails.
+
+While I&apos;m at it, the code in gssapi.c is also bad:
+
+#ifdef HAVE_GSSAPI_H
+#include &lt;gssapi.h&gt;
+#else
+#include &lt;gssapi/gssapi.h&gt;
+#endif
+
+It just assumes &lt;gssapi/gssapi.h&gt; exists, without checking HAVE_GSSAPI_GSSAPI_H. Of course cmulocal/sasl2.m4 doesn&apos;t _define_ HAVE_GSSAPI_GSSAPI_H, so...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Tom Schulz">schulz@adi.com</who>
+            <bug_when>2013-03-07 11:35:50 EDT</bug_when>
+            <thetext>I think that I am seeing the same problem.I am trying to build cyrus-sasl-2.1.25
+on both Solaris 8 sparc and Solaris 10 i386. The configure command is:
+./configure --prefix=/opt/local --with-openssl=/opt/local --enable-login \
+CC=cc CFLAGS=&apos;-xO4&apos;
+
+After configure is complete, config.h contains #define HAVE_GSSAPI_H /**/
+This causes plugins/gssapi.c to try to include &lt;gssapi.h&gt; when it needs to
+include &lt;gssapi/gssapi.h&gt;. Commenting out #define HAVE_GSSAPI_H /**/ in
+config.h fixes the problem and the build now completes.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jan Parcel">jan.parcel@oracle.com</who>
+            <bug_when>2016-03-24 18:48:17 EDT</bug_when>
+            <thetext>Created an attachment (id=1568)
+Patch to fix gssapi/gssapi.h in distributed 2.1.26
+
+I would not expect configure.in to normally need to be patched, this presumably needs some work.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1568</attachid>
+            <date>2016-03-24 18:48 EDT</date>
+            <desc>Patch to fix gssapi/gssapi.h in distributed 2.1.26</desc>
+            <filename>gssapi-gssapi-h.patch</filename>
+            <type>text/plain</type>
+            <size>1470</size>
+            <attacher>jan.parcel@oracle.com</attacher>
+            
+              <data encoding="base64">RGV2ZWxvcGVkIGluLWhvdXNlIGF0IE9yYWNsZSAKc2FzbCBhZGp1c3RtZW50IGZvciBsb2NhdGlv
+biBvZiBnc3NhcGkuaCBpbmNvcnJlY3RseSBpbXBsZW1lbnRlZC4KSW50ZW5kZWQgdG8gZ28gdXBz
+dHJlYW0KCmRpZmYgLXJ1cE4gb2xkL2NtdWxvY2FsL3Nhc2wyLm00IG5ldy9jbXVsb2NhbC9zYXNs
+Mi5tNAotLS0gb2xkL2NtdWxvY2FsL3Nhc2wyLm00CTIwMTUtMDEtMTYgMTU6MTg6MDIuMDQ3OTQ2
+MjgyIC0wODAwCisrKyBuZXcvY211bG9jYWwvc2FzbDIubTQJMjAxNS0wMS0xNiAxNTozMToyMi43
+MTY2NDY3NTcgLTA4MDAKQEAgLTczLDEwICs3MywxMiBAQCBpZiB0ZXN0ICIkZ3NzYXBpIiAhPSBu
+bzsgdGhlbgogCiBmaQogCi1pZiB0ZXN0ICIkZ3NzYXBpIiAhPSBubzsgdGhlbgotICBpZiB0ZXN0
+ICIkYWNfY3ZfaGVhZGVyX2dzc2FwaV9oIiA9ICJ5ZXMiIC1vICIkYWNfY3ZfaGVhZGVyX2dzc2Fw
+aV9nc3NhcGlfaCIgPSAieWVzIjsgdGhlbgotICAgIEFDX0RFRklORShIQVZFX0dTU0FQSV9ILCxb
+RGVmaW5lIGlmIHlvdSBoYXZlIHRoZSBnc3NhcGkuaCBoZWFkZXIgZmlsZV0pCi0gIGZpCisgaWYg
+dGVzdCAiJGdzc2FwaSIgIT0gbm87IHRoZW4KKyAgICBpZiB0ZXN0ICIkYWNfY3ZfaGVhZGVyX2dz
+c2FwaV9oIiA9ICJ5ZXMiIDsgdGhlbgorICAgICAgQUNfREVGSU5FKEhBVkVfR1NTQVBJX0gsLFtE
+ZWZpbmUgaWYgeW91IGhhdmUgdGhlIGdzc2FwaS5oIGhlYWRlciBmaWxlXSkKKyAgICBlbGlmIHRl
+c3QgIiRhY19jdl9oZWFkZXJfZ3NzYXBpX2dzc2FwaV9oIiA9ICJ5ZXMiOyB0aGVuCisgICAgICBB
+Q19ERUZJTkUoSEFWRV9HU1NBUElfR1NTQVBJX0gsLFtEZWZpbmUgZm9yIGdzc2FwaS9nc3NhcGku
+aCBoZWFkZXIgZmlsZV0pCisgICAgZmkKIAogICAjIFdlIG5lZWQgdG8gZmluZCBvdXQgd2hpY2gg
+Z3NzYXBpIGltcGxlbWVudGF0aW9uIHdlIGFyZQogICAjIHVzaW5nLiBTdXBwb3J0ZWQgYWx0ZXJu
+YXRpdmVzIGFyZTogTUlUIEtlcmJlcm9zIDUsCmRpZmYgLXJ1cE4gb2xkL2NvbmZpZy5oLmluIG5l
+dy9jb25maWcuaC5pbgotLS0gb2xkL2NvbmZpZy5oLmluCTIwMTUtMDEtMTYgMTU6MTQ6NTQuOTQx
+NjQ5ODk2IC0wODAwCisrKyBuZXcvY29uZmlnLmguaW4JMjAxNS0wMS0xNiAxNToxNjoxNi44ODQy
+MTI2ODQgLTA4MDAKQEAgLTEyMiw2ICsxMjIsOSBAQAogLyogRGVmaW5lIGlmIHlvdSBoYXZlIHRo
+ZSBnc3NhcGkuaCBoZWFkZXIgZmlsZSAqLwogI3VuZGVmIEhBVkVfR1NTQVBJX0gKIAorLyogRGVm
+aW5lIGlmIHlvdSBoYXZlIHRoZSBnc3NhcGkvZ3NzYXBpLmggaGVhZGVyIGZpbGUgKi8KKyN1bmRl
+ZiBIQVZFX0dTU0FQSV9HU1NBUElfSAorCiAvKiBEZWZpbmUgdG8gMSBpZiB5b3UgaGF2ZSB0aGUg
+YGdzc2tyYjVfcmVnaXN0ZXJfYWNjZXB0b3JfaWRlbnRpdHknIGZ1bmN0aW9uLgogICAgKi8KICN1
+bmRlZiBIQVZFX0dTU0tSQjVfUkVHSVNURVJfQUNDRVBUT1JfSURFTlRJVFkK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

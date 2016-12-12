@@ -1,0 +1,277 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3130</bug_id>
+          
+          <creation_ts>2009-01-07 23:41 EDT</creation_ts>
+          <short_desc>Glibc segfaults or reports &quot;double free or corruption&quot; when using the default &apos;quota_db: quotalegacy&apos; setting and certain patterns occur within the user namespace.</short_desc>
+          <delta_ts>2011-08-03 10:54:56 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.10</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Raphael Jaffey">rjaffey@artic.edu</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>rjaffey@artic.edu</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Raphael Jaffey">rjaffey@artic.edu</who>
+            <bug_when>2009-01-07 23:41:57 EDT</bug_when>
+            <thetext>When there are a large number of entries in a branch of the quota hierarchy which share a common set of leading characters in the usernames and a new entry is created which matches the common set of leading characters exactly, the user cannot be replicated to the sync server, as synchronization stalls until the associated &quot;USER&quot; record is removed from the replication log, and the user&apos;s inbox cannot be deleted from the sync client without crashing the IMAP process handling the delete.
+
+Example:
+
+There are 51 users ranging from aa0 to aa50 all of which have a quota on their inbox (mailboxes user.aa0, user.aa1, ..., and quota/a/user.aa0, quota/a/user.aa1, ...).
+
+Replication is active.
+
+Creating a user aa (cm user.aa) on the sync client causes replication to fail repeatedly with various errors on the sync server until the &quot;USER aa&quot; record is removed from the replication log.
+
+Deleting the mailbox (&quot;sam user.aa cyrus all&quot;, &quot;dm user.aa&quot;) from the sync client causes various errors on the sync client.
+
+Although these appear to be two different problems, it&apos;s likely they have the same cause and they are definitely remedied using the same method.  Therefore I think it&apos;s appropriate to include the entire discussion in one report. 
+
+The deletion problem can be reproduced in a standalone environment using the following configuration:
+
+Vanilla cyrus-imapd-2.3.13.tar.gz installation.
+
+Empty, initialized config directory and mail store.
+
+The following configs:
+
+/etc/imapd.conf:
+
+configdirectory: /var/lib/imap
+partition-default: /var/spool/imap
+admins: cyrus
+hashimapspool: true
+
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN
+allowplaintext: yes
+
+
+
+/etc/cyrus.conf:
+
+START {
+  recover       cmd=&quot;ctl_cyrusdb -r&quot;
+}
+
+SERVICES {
+  imap          cmd=&quot;imapd&quot; listen=&quot;imap&quot; prefork=0 maxchild=1
+}
+
+
+Testing was performed on a Dell 2850 server running RHEL AS 4.6, an Optiplex 745 workstation running RHEL AS 4.6, a VMware server running RHEL AS 4.6, and a VMware server running RHEL AS 5.2.
+
+
+
+On RHEL AS 5.2:
+
+Cyrus was started.
+
+/var/lib/imap/ and /var/spool/imap were populated with the command:
+
+seq 0 50 | xargs --replace=num echo -e &quot;cm user.aanum\nsq user.aanum&quot; | cyradm -user cyrus localhost
+
+
+The following cyradm commands were issued while gdb was attached to the imapd process serving the cyradm instance:
+
+cm user.aa
+sam user.aa cyrus all
+dm user.aa
+
+
+The last command (dm user.aa) produced the unexpected response:
+
+deletemailbox:
+
+by itself on one line.
+
+An error similar to the following, a stack trace, and a memory map were output on the terminal from which /usr/cyrus/bin/master was launched:
+
+*** glibc detected *** imapd: double free or corruption (!prev): 0x088f4408 ***
+
+Output similar to the following was displayed on the terminal running gdb:
+
+Program received signal SIGABRT, Aborted.
+[Switching to Thread -1208641840 (LWP 31256)]
+0x00efd402 in __kernel_vsyscall ()
+
+
+The second time those same &quot;cm&quot;, &quot;sam&quot;, and &quot;dm&quot; commands were issued, there was no output on the terminal from which /usr/cyrus/bin/master was launched, and gdb output something similar to following:
+
+Program received signal SIGSEGV, Segmentation fault.
+[Switching to Thread -1209076016 (LWP 31279)]
+0x00ba9253 in _int_malloc () from /lib/libc.so.6
+
+
+On RHEL AS 4.6:
+
+The same setup and steps described above were used.
+
+The same behavior was observed except there was no stack trace or memory map on the terminal from which /usr/cyrus/bin/master was launched.
+
+
+The observed failures disappeared after &quot;quota_db&quot; was changed from &quot;quotalegacy&quot; to &quot;skiplist&quot; and the same sequence of steps were followed.
+
+
+Replication was tested using RHEL AS 4.6 as the client and RHEL AS 5.2 as the server both were running on VMware servers.
+
+Vanilla cyrus-imapd-2.3.13.tar.gz installations on both servers.
+
+Empty, initialized config directory and mail store on both servers.
+
+The following configs were used on the sync client:
+
+/etc/imapd.conf:
+
+configdirectory: /var/lib/imap
+partition-default: /var/spool/imap
+admins: cyrus
+hashimapspool: true
+
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN
+allowplaintext: yes
+
+guid_mode: sha1
+sync_host: some.ip.add.ress
+sync_authname: cyrus
+sync_password: somepassword
+sync_log: 1
+
+
+/etc/cyrus.conf:
+
+START {
+  recover       cmd=&quot;ctl_cyrusdb -r&quot;
+  syncclient    cmd=&quot;sync_client -r&quot;
+}
+
+SERVICES {
+  imap          cmd=&quot;imapd&quot; listen=&quot;imap&quot; prefork=0 maxchild=1
+}
+
+
+
+The following configs were used on the sync server:
+
+
+/etc/imapd.conf:
+
+configdirectory: /var/lib/imap
+partition-default: /var/spool/imap
+admins: cyrus
+hashimapspool: true
+
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN
+allowplaintext: yes
+
+
+
+/etc/cyrus.conf:
+
+START {
+  recover       cmd=&quot;ctl_cyrusdb -r&quot;
+}
+
+SERVICES {
+  imap          cmd=&quot;imapd&quot; listen=&quot;imap&quot; prefork=0 maxchild=1
+  syncserver    cmd=&quot;sync_server&quot; listen=&quot;csync&quot;
+}
+
+
+
+Cyrus was started on both servers.
+
+/var/lib/imap/ and /var/spool/imap were populated on the sync client with the command:
+
+seq 0 50 | xargs --replace=num echo -e &quot;cm user.aanum\nsq user.aanum&quot; | cyradm -user cyrus localhost
+
+Confirmed that everything replicated to the sync server.
+
+The following cyradm commands were issued on the sync client while tailing the log on the sync server:
+
+cm user.aa
+
+An error similar to the following, a stack trace, and a memory map were output on the terminal from which /usr/cyrus/bin/master was launched on the sync server:
+
+*** glibc detected *** sync_server: corrupted double-linked list: 0x081a9fe8 ***
+
+
+The following abnormal messages appeared in log on the sync server:
+
+Jan  7 21:15:38 cyrus-test-as5 master[4142]: process 4145 exited, signaled to death by 6
+...
+Jan  7 21:15:44 cyrus-test-as5 master[4142]: process 4155 exited, signaled to death by 11
+...
+Jan  7 21:15:50 cyrus-test-as5 master[4142]: process 4156 exited, signaled to death by 11
+...
+
+The first message (&quot;death by 6&quot;) occurred at the same time that the glibc error was output on the terminal from which /usr/cyrus/bin/master was launched.  There were no glibc (or any other errors) output on the terminal when the subsequent messages (&quot;death by 11&quot;) appeared in the log; the sync server process was probably segfaulting at this point.
+
+Other IMAP operations performed on the sync client failed to replicate to the sync server until the &quot;USER aa&quot; record was removed from the sync log.
+
+The failures were eliminated by switching the &quot;quota_db&quot; from &quot;quotalegacy&quot; to &quot;skiplist&quot; on the sync server.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-18 09:49:42 EDT</bug_when>
+            <thetext>Taking over all quota-related tickets</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-30 04:43:29 EDT</bug_when>
+            <thetext>I have a nasty feeling this related to sort order.  Do you have improved_mboxlist_sort turned on?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-01 03:19:41 EDT</bug_when>
+            <thetext>Pushing out past 2.4.9 - will fix with a full quota layer fixup</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-28 05:27:28 EDT</bug_when>
+            <thetext>Should be fixed in 2.4.10.  I&apos;ve extended cyrusdb_quotalegacy to support sorting quotas with the same sort function as the mailbox list.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

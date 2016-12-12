@@ -1,0 +1,260 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3470</bug_id>
+          
+          <creation_ts>2011-05-25 09:49 EDT</creation_ts>
+          <short_desc>LIST behaviour changed from 2.3 and ignores some mailboxes</short_desc>
+          <delta_ts>2011-06-21 17:20:13 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.9</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alan Robertson">alanjrobertson@gmail.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alan Robertson">alanjrobertson@gmail.com</who>
+            <bug_when>2011-05-25 09:49:36 EDT</bug_when>
+            <thetext>The following is using virtdomains: userid, unixhierarchysep: on
+
+If a user has a subfolder created with parents that don&apos;t exist as mailboxes the list commands no longer behave as they did in the 2.3.x system.
+
+To replicate: 
+Create &quot;2011/05/wk20&quot; within a mailbox. So only wk20 ends up with cyrus.index etc. eg ending up with a filesystem like:
+
+./2011:
+total 4
+drwx------ 5 cyrus mail 2048 May 16 18:17 05
+
+./2011/05:
+total 12
+drwx------ 2 cyrus mail 2048 May  7 13:23 wk18
+drwx------ 2 cyrus mail 2048 May 25 13:11 wk19
+drwx------ 2 cyrus mail 2048 May 25 13:11 wk20
+
+./2011/05/wk20:
+total 36
+-rw------- 1 cyrus mail 1365 May 16 18:17 1.
+-rw------- 1 cyrus mail 1365 May 16 18:21 2.
+-rw------- 1 cyrus mail 2904 May 18 11:06 3.
+-rw------- 1 cyrus mail 4660 May 18 15:41 cyrus.cache
+-rw------- 1 cyrus mail 2528 May 18 15:41 4.
+-rw------- 1 cyrus mail  512 May 25 13:11 cyrus.index
+-rw------- 1 cyrus mail  181 May 25 13:11 cyrus.header
+
+Cyrus 2.3 returns:
+
+. list &quot;&quot; &quot;%&quot;
+* LIST (\Noinferiors) &quot;/&quot; &quot;INBOX&quot;
+* LIST (\NonExistent \Noselect \HasChildren) &quot;/&quot; &quot;2011&quot;
+* LIST (\HasNoChildren) &quot;/&quot; &quot;Drafts&quot;
+* LIST (\HasNoChildren) &quot;/&quot; &quot;Sent Items&quot;
+* LIST (\HasNoChildren) &quot;/&quot; &quot;Spam&quot;
+* LIST (\HasNoChildren) &quot;/&quot; &quot;Trash&quot;
+. OK Completed (0.000 secs 48 calls)
+. LIST &quot;&quot; 2011
+* LIST (\NonExistent \Noselect \HasChildren) &quot;/&quot; &quot;2011&quot;
+. OK Completed (0.000 secs 30 calls)
+
+
+On 2.4.8:
+
+. list &quot;&quot; &quot;%&quot;
+* LIST (\Noinferiors \HasChildren) &quot;/&quot; INBOX
+* LIST (\HasNoChildren) &quot;/&quot; Drafts
+* LIST (\HasNoChildren) &quot;/&quot; &quot;Sent Items&quot;
+* LIST (\HasNoChildren) &quot;/&quot; Spam
+* LIST (\HasNoChildren) &quot;/&quot; Trash
+. LIST &quot;&quot; 2011
+. OK Completed (0.000 secs 1 calls)
+
+Rgds,
+Alan.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alan Robertson">alanjrobertson@gmail.com</who>
+            <bug_when>2011-05-26 07:46:41 EDT</bug_when>
+            <thetext>In addition if I add a subscription to the existent mailbox at the lowest point of the tree and use LSUB on v2.3.16 I get:
+
+. LSUB &quot;&quot; 2011
+* LSUB (\NonExistent \Noselect \HasChildren) &quot;/&quot; &quot;2011&quot;
+
+on 2.4.8 (and on the current version pulled from Git yesterday) I get:
+
+. LSUB &quot;&quot; 2011
+. OK Completed (0.000 secs 3 calls)
+
+Rgds,
+Alan.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 16:07:07 EDT</bug_when>
+            <thetext>Yeah, the list code is hairy as anything.  I did all this to avoid LSUB showing non-existent records in the first place...
+
+I will see if I can make this work.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-31 09:34:16 EDT</bug_when>
+            <thetext>So these messages are all part of one thread, as follows:
+
+missing parent:  &lt;57E6ED712CD80847B272D4DE9CF3DBB201103266057B@HV3KD026.ad.rikshospitalet.no&gt; (mentioned by all other emails in references, but not present in folder)
+
+5: &lt;7A5F57FD436E6648AAA27478B1CF09C1CA90C1CDC0@HV3KD026.ad.rikshospitalet.no&gt;
+4: &lt;86DD6BD7881AE1418C0E6907C2361B5101A5968F2596@HV3KC026.ad.rikshospitalet.no&gt;
+3: &lt;7A5F57FD436E6648AAA27478B1CF09C1CA90CD3186@HV3KD026.ad.rikshospitalet.no&gt;
+2: &lt;61F03CD81C6119419EBA24B05F3E3A5B0113FF61@mr3k6001.ad.medicalresearch.no&gt;
+1: &lt;57E6ED712CD80847B272D4DE9CF3DBB201103266057E@HV3KD026.ad.rikshospitalet.no&gt;
+
+And the thread is
+
+(missing (5 (4 (1)(2 (3)))))
+
+3 is a child of 2
+2 and 1 are children of 4
+4 is a child of 5
+5 is a child of the missing message
+
+One problem is that references headers aren&apos;t properly decoded over line wraps:
+
+(gdb) p msgdata-&gt;ref[0]
+$19 = 0x180f150 &quot;&lt;57E6ED712CD80847B272D4DE9CF3DBB201103266057B@HV3KD026.ad.riksho\r\n\tspitalet.no&gt;&quot;
+(gdb) p msgdata-&gt;ref[1]
+$20 = 0x180f1b0 &quot;&lt;7A5F57FD436E6648AAA27478B1CF09C1CA90C1CDC0@HV3KD026.ad.rikshos\r\n\tpitalet.no&gt;&quot;
+(gdb) p msgdata-&gt;ref[2]
+$21 = 0x180f210 &quot;&lt;86DD6BD7881AE1418C0E6907C2361B5101A5968F2596@HV3KC026.ad.rikshospitalet.no&gt;&quot;
+
+
+I don&apos;t know if this is the only cause - but later the is lots of code which assumes that every node in the Thread will have either a msgdata or a child with a msgdata.  If that condition fails, Cyrus will crash in multiple places.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-31 09:36:43 EDT</bug_when>
+            <thetext>Please ignore that incorrectly placed update for another bug!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-01 03:22:10 EDT</bug_when>
+            <thetext>Yes, this is a horrible bug - but it&apos;s not a regression in the 2.4 series.  It&apos;s a remaining regression from the change to the new LIST-EXT code that happened in development for 2.4.
+
+I will fix this, but it&apos;s not an easy fix and I don&apos;t want to block the other bugfixes in 2.4.9, so I&apos;m pushing it back.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alan Robertson">alanjrobertson@gmail.com</who>
+            <bug_when>2011-06-01 11:42:35 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+
+OK Thanks Bron - appreciate it.
+
+&gt; Yes, this is a horrible bug - but it&apos;s not a regression in the 2.4 series. 
+&gt; It&apos;s a remaining regression from the change to the new LIST-EXT code that
+&gt; happened in development for 2.4.
+&gt; I will fix this, but it&apos;s not an easy fix and I don&apos;t want to block the other
+&gt; bugfixes in 2.4.9, so I&apos;m pushing it back.
+
+Is it possible for me to hack out the &quot;IMAP_MAILBOX_NONEXISTENT&quot; in the LIST section to force listing everything ? Saves me having to regress back to 2.3 on this particular setup.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-01 12:11:28 EDT</bug_when>
+            <thetext>(In reply to comment #6)
+&gt; Is it possible for me to hack out the &quot;IMAP_MAILBOX_NONEXISTENT&quot; in the LIST
+&gt; section to force listing everything ? Saves me having to regress back to 2.3 on
+&gt; this particular setup.
+
+I don&apos;t think so I&apos;m sorry - the problem is that the mailbox listing isn&apos;t even being triggered correctly for the LSUB part.
+
+Regressing to 2.3 is hard too.
+
+With 2.4.9beta1 I can&apos;t recreate the LIST issue, only the LSUB issue.  The LIST issue was fixed by another bugfix I think.
+
+http://www.cyrusimap.org/releases/snapshots/cyrus-imapd-2.4.9beta1.tar.gz</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alan Robertson">alanjrobertson@gmail.com</who>
+            <bug_when>2011-06-01 17:52:34 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+
+&gt; With 2.4.9beta1 I can&apos;t recreate the LIST issue, only the LSUB issue.  The LIST
+&gt; issue was fixed by another bugfix I think.
+&gt; 
+&gt; http://www.cyrusimap.org/releases/snapshots/cyrus-imapd-2.4.9beta1.tar.gz
+
+2.4.9beta1 has improved the first of the two list cases. The second direct list on the 2011 mailbox still exits as OK Completed.
+
+. list &quot;&quot; &quot;%&quot;
+* LIST (\Noinferiors \HasChildren) &quot;/&quot; INBOX
+* LIST (\Noselect \NonExistent \HasChildren) &quot;/&quot; 2011
+* LIST (\HasNoChildren) &quot;/&quot; Drafts
+* LIST (\HasNoChildren) &quot;/&quot; &quot;Sent Items&quot;
+* LIST (\HasNoChildren) &quot;/&quot; Spam
+* LIST (\HasNoChildren) &quot;/&quot; Trash
+. OK Completed (0.000 secs 9 calls)
+
+This type of list still has issues...
+
+. list &quot;&quot; 2011
+. OK Completed (0.000 secs 3 calls)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-14 02:00:50 EDT</bug_when>
+            <thetext>I&apos;ve pushed a fix for this to stable and master.  Yes, it was hairy!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alan Robertson">alanjrobertson@gmail.com</who>
+            <bug_when>2011-06-15 08:09:19 EDT</bug_when>
+            <thetext>Looks good - thank you. Much appreciated in the coming version.
+
+Not sure if this still qualifies as an issue but LSUB still behaves differently to 2.3 when called on the top level non-existent folder that has children, but this does not seem to be stopping the clients seeing everything now.
+
+On 2.4.9beta2:
+
+. LSUB &quot;&quot; 2011
+. OK Completed (0.000 secs 5 calls)
+
+On 2.3.26:
+
+. LSUB &quot;&quot; 2011
+* LSUB (\NonExistent \Noselect \HasChildren) &quot;/&quot; &quot;2011&quot;
+. OK Completed (0.000 secs 35 calls)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

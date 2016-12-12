@@ -1,0 +1,628 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2458</bug_id>
+          
+          <creation_ts>2004-07-06 10:56 EDT</creation_ts>
+          <short_desc>ANNOTATEMORE Multiple vendor support</short_desc>
+          <delta_ts>2010-10-18 12:43:06 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Buys">s.buys@codefusion.co.za</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>andreas.mack@mediales.com</cc>
+    
+    <cc>andres@anarazel.de</cc>
+    
+    <cc>faure@kde.org</cc>
+    
+    <cc>ken@oceana.com</cc>
+    
+    <cc>konold@kde.org</cc>
+    
+    <cc>martin.konold@erfrakon.de</cc>
+    
+    <cc>p@rdus.de</cc>
+    
+    <cc>tjanouse@redhat.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Stephan Buys">s.buys@codefusion.co.za</who>
+            <bug_when>2004-07-06 10:56:13 EDT</bug_when>
+            <thetext>Cyrus IMAPd ANNOTATEMORE currently only has support for /vendor/cyrus, 
+multiple vendors should be supported (/vendor/*) 
+ 
+Herewith a patch that adds support for multiple vendors to ANNOTATEMORE. 
+ 
+--- annotate.c.old	2004-07-02 18:13:13.000000000 +0200 
++++ annotate.c	2004-07-03 10:20:17.000000000 +0200 
+@@ -1598,6 +1598,11 @@ 
+     { NULL, 0, ANNOTATION_PROXY_T_INVALID, 0, 0, NULL, NULL } 
+ }; 
+  
++const struct annotate_st_entry vendor_entry = 
++    { NULL, ATTRIB_TYPE_STRING, BACKEND_ONLY, 
++      ATTRIB_VALUE_SHARED | ATTRIB_VALUE_PRIV, 
++      ACL_ADMIN, annotation_set_todb, NULL }; 
++ 
+ int annotatemore_store(char *mailbox, 
+ 		       struct entryattlist *l, 
+ 		       struct namespace *namespace, 
+@@ -1610,6 +1615,7 @@ 
+     struct attvaluelist *av; 
+     struct storedata sdata; 
+     const struct annotate_st_entry *entries; 
++    struct annotate_st_entry * working_entry; 
+     time_t now = time(0); 
+  
+     memset(&amp;sdata, 0, sizeof(struct storedata)); 
+@@ -1631,37 +1637,55 @@ 
+     while (e) { 
+ 	int entrycount, attribs; 
+ 	struct annotate_st_entry_list *nentry = NULL; 
++	struct annotate_st_entry *ientry = NULL; 
+  
+ 	/* See if we support this entry */ 
++	working_entry = NULL; 
+ 	for (entrycount = 0; 
+ 	     entries[entrycount].name; 
+ 	     entrycount++) { 
+ 	    if (!strcmp(e-&gt;entry, entries[entrycount].name)) { 
++	        working_entry = &amp;(entries[entrycount]); 
+ 		break; 
+ 	    } 
+ 	} 
+-	if (!entries[entrycount].name) { 
+-	    /* unknown annotation */ 
+-	    return IMAP_PERMISSION_DENIED; 
++	if (working_entry==NULL) { 
++	    /* test for generic vendor annotation */ 
++	    if ((strncmp(&quot;/vendor/&quot;, e-&gt;entry, strlen(&quot;/vendor/&quot;))==0) &amp;&amp; 
++	        (strlen(e-&gt;entry)&gt;strlen(&quot;/vendor/&quot;))) { 
++	      working_entry = &amp;(vendor_entry); 
++	    } 
++	    else { 
++	        /* unknown annotation */ 
++	        return IMAP_PERMISSION_DENIED; 
++	    } 
+ 	} 
+  
+ 	/* Add this entry to our list only if it 
+ 	   applies to our particular server type */ 
+-	if (entries[entrycount].proxytype == PROXY_AND_BACKEND 
++	if (working_entry-&gt;proxytype == PROXY_AND_BACKEND 
+ 	    || (proxy_store_func &amp;&amp; 
+-		entries[entrycount].proxytype == PROXY_ONLY) 
++		working_entry-&gt;proxytype == PROXY_ONLY) 
+ 	    || (!proxy_store_func &amp;&amp; 
+-		entries[entrycount].proxytype == BACKEND_ONLY)) { 
++		working_entry-&gt;proxytype == BACKEND_ONLY)) { 
++            ientry = xzmalloc(sizeof(struct annotate_st_entry)); 
++            ientry-&gt;name = e-&gt;entry; 
++            ientry-&gt;type = working_entry-&gt;type; 
++            ientry-&gt;proxytype = working_entry-&gt;proxytype; 
++            ientry-&gt;attribs = working_entry-&gt;attribs; 
++            ientry-&gt;acl = working_entry-&gt;acl; 
++            ientry-&gt;set = working_entry-&gt;set; 
++            ientry-&gt;rock = working_entry-&gt;rock;	 
+ 	    nentry = xzmalloc(sizeof(struct annotate_st_entry_list)); 
+ 	    nentry-&gt;next = sdata.entry_list; 
+-	    nentry-&gt;entry = &amp;(entries[entrycount]); 
++	    nentry-&gt;entry = ientry; 
+ 	    nentry-&gt;shared.modifiedsince = now; 
+ 	    nentry-&gt;priv.modifiedsince = now; 
+ 	    sdata.entry_list = nentry; 
+ 	} 
+  
+ 	/* See if we are allowed to set the given attributes. */ 
+-	attribs = entries[entrycount].attribs; 
++	attribs = working_entry-&gt;attribs; 
+ 	av = e-&gt;attvalues; 
+ 	while (av) { 
+ 	    const char *value; 
+@@ -1671,7 +1695,7 @@ 
+ 		    goto cleanup; 
+ 		} 
+ 		value = annotate_canon_value(av-&gt;value, 
+-					     entries[entrycount].type); 
++					     working_entry-&gt;type); 
+ 		if (!value) { 
+ 		    r = IMAP_ANNOTATION_BADVALUE; 
+ 		    goto cleanup; 
+@@ -1697,7 +1721,7 @@ 
+ 		    goto cleanup; 
+ 		} 
+ 		value = annotate_canon_value(av-&gt;value, 
+-					     entries[entrycount].type); 
++					     working_entry-&gt;type); 
+ 		if (!value) { 
+ 		    r = IMAP_ANNOTATION_BADVALUE; 
+ 		    goto cleanup; 
+@@ -1797,6 +1821,12 @@ 
+     /* Free the entry list */ 
+     while (sdata.entry_list) { 
+ 	struct annotate_st_entry_list *freeme = sdata.entry_list; 
++	if (freeme != NULL){ 
++	    struct annotate_st_entry *freeme2 = freeme-&gt;entry; 
++	    if (freeme2 != NULL) { 
++	        free( freeme2 ); 
++	    } 
++	} 
+ 	sdata.entry_list = sdata.entry_list-&gt;next; 
+ 	free(freeme); 
+     }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Faure">faure@kde.org</who>
+            <bug_when>2004-12-13 06:58:40 EDT</bug_when>
+            <thetext>Please consider this patch for inclusion - it is very much needed for the Kolab 
+project. We have support for this in clients already (kmail) - using patched 
+cyrus-imapd servers, but that&apos;s inconvenient. </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-02-20 04:52:57 EDT</bug_when>
+            <thetext>Can we get it as an attached diff, rather than inline in the report?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan Buys">s.buys@codefusion.co.za</who>
+            <bug_when>2005-02-21 02:36:21 EDT</bug_when>
+            <thetext>Created an attachment (id=333)
+Add multi-vendor support to ANNOTATEMORE
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2005-04-04 14:34:03 EDT</bug_when>
+            <thetext>My biggest problem with this patch is that it forces ALL /vendor annotations to
+have the same type and access controls, not to mention the fact that an admin
+has no control over what annotations s/he wants to support.  With this patch in
+place, a client could store ANY /vendor annotation it wants and bloat the
+database considerably.
+
+Ideally, we&apos;d have a parsable text file which lists the /vendor annotations that
+should be supported (with appropriate type and ACL) which would be read at
+runtime.  This seems to give us the most flexibility.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">konold@kde.org</who>
+            <bug_when>2005-06-11 07:32:53 EDT</bug_when>
+            <thetext>I think that the patch is sane as authenticated users are able to abuse the 
+system anyway. 
+ 
+What is really needed in the future is that the annotation db is related to 
+the mailbox or folders not to the entire imapd server. 
+ 
+In addition support for ACLs and quotas on annotations is useful for a generic 
+annotation facility.  
+ 
+Basically imap annotations have the potential of being extremly useful for 
+scalable solution which want to use imap for much more than plain email. Doing 
+so needs an efficient, secure and flexible mechanism to add metadata to an 
+imap folder and an imap mailbox. </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">ahasenack@terra.com.br</who>
+            <bug_when>2006-04-17 17:08:04 EDT</bug_when>
+            <thetext>Any news on this?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-17 17:53:41 EDT</bug_when>
+            <thetext>Nope.  My concerns about limiting the scope of what the client is allowed to store still exists.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">gyurco@freemail.hu</who>
+            <bug_when>2006-09-26 16:22:54 EDT</bug_when>
+            <thetext>Created an attachment (id=462)
+Just 3 /vendor/ annotations, enough for Kolab2 clients.
+
+Just attached a very simple, non-intrusive patch, can this be accepted?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">tv@beamnet.de</who>
+            <bug_when>2006-11-22 18:40:37 EDT</bug_when>
+            <thetext>There is a very preliminary patch implementing run-time configuration of
+annotation names at http://vman.de/cyrus/
+It&apos;s very likely nowhere close to being suitable, but in case anyone else has
+the same problem I had...
+
+Kind regards
+
+Thomas</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">gyurco@freemail.hu</who>
+            <bug_when>2007-03-07 09:08:05 EDT</bug_when>
+            <thetext>I tested Thomas&apos; patch in a production environment, with version 2.3.8 of the
+imapd, using Toltec Connector as a kolab client, and it works perfectly! What
+does it need to merge this patch?
+
+I added
+annotation_definitions: /etc/kolab.cyrus.txt
+to imapd.conf, and used the attached file as the definitions.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">gyurco@freemail.hu</who>
+            <bug_when>2007-03-07 09:09:39 EDT</bug_when>
+            <thetext>Created an attachment (id=525)
+Annotation definitions for using cyrus-imapd as a kolab server
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-03-07 09:22:05 EDT</bug_when>
+            <thetext>The patch looks reasonable to me, but I need to give it a closer look before I
+commit it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gunnar Wrobel">p@rdus.de</who>
+            <bug_when>2007-05-21 12:26:38 EDT</bug_when>
+            <thetext>Any progress on this patch? Any help needed?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andres Freund">andres@anarazel.de</who>
+            <bug_when>2009-02-10 12:27:49 EDT</bug_when>
+            <thetext>Anything users of this patch can do to increase the adoption probability?
+
+Andres</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Mack">andreas.mack@mediales.com</who>
+            <bug_when>2009-11-30 08:48:45 EDT</bug_when>
+            <thetext>Any chances that this patch goes in soon? We have it in production for some time now on a patched centos imapd with the kolab annotations without any problems.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2009-11-30 09:23:41 EDT</bug_when>
+            <thetext>Created an attachment (id=1242)
+Annotation definitions for using cyrus-imapd as a kolab server (a suitable default which does not hurt)
+
+Updated annotation definitions for using cyrus-imapd as a kolab server</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2009-11-30 09:28:09 EDT</bug_when>
+            <thetext>(In reply to comment #12)
+&gt; The patch looks reasonable to me, but I need to give it a closer look before I
+&gt; commit it.
+
+Hi Ken,
+
+please have a look at patch. This stuff is in production without any problem reports since many years now.
+
+Regards,
+-- martin</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gunnar Wrobel">p@rdus.de</who>
+            <bug_when>2009-11-30 11:00:47 EDT</bug_when>
+            <thetext>@andreas, martin: Nice to see some activity here. Nevertheless after years of inactivity I doubt anyone on the Cyrus team is really interested. As we got the same stuff into dovecot and it is easier to maintain it there I&apos;d suggest we focus our activities on that server. Or is there anything dovecot is still missing concerning Kolab?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-11-30 11:41:13 EDT</bug_when>
+            <thetext>Are we talking about Thomas&apos; patch which allows external annotation definitions, with yours as the defaults needed for Kolab?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Mack">andreas.mack@mediales.com</who>
+            <bug_when>2009-11-30 11:50:38 EDT</bug_when>
+            <thetext>Hi Ken, 
+
+yes, I meant Thomas&apos; patch, comment #12 from you seems to reference it.
+ </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2009-12-01 00:24:06 EDT</bug_when>
+            <thetext>@Gunnar: I have seen very interesting recent developments in Cyrus Imapd which are really worth a closer look.
+
+@Ken: Yes, it is about allowing annotations beyond the already existing. For your understanding the following points are important:
+
+1. These third party vendor annotations like &quot;/vendor/kolab/folder-type,mailbox,string,backend,value.shared value.priv,a&quot; are not for controlling the server like &quot;/vendor/cmu/cyrus-imapd/sharedseen&quot; but intended for clients to add metadata to a mailbox. 
+
+As an exampple in the above case the client can store the purpose of the mailbox e.g. if it is used to store groupware data like addresses (vcard or XML), events, notes,....
+
+2. The server administrator has full control about which 3rd party vendor annotations are allowed.
+
+3. The Kolab patches to Cyrus Imapd are available from http://kolab.org/cgi-bin/viewcvs-kolab.cgi/server/imapd/patches/cyrus-imapd-2.3.14/
+
+The current Kolab patches which are potentially relevant to Cyrus Imapd are:
+
+KOLAB_Groups2.patch
+ Cyrus Imapd makes a useless reference to /etc/groups which does not make sense
+ simply because the cyrus user database is not related to /etc/passwd either.
+ This trivial patch adds support for an optional /etc/imapd.group with a
+ backwards compatible fall-back to /etc/group if /etc/imapd.group is not
+ available.
+ This patch is in production since more than 6 years.
+ Download: http://kolab.org/cgi-bin/viewcvs-kolab.cgi/*checkout*/server/imapd/patches/cyrus-imapd-2.3.14/KOLAB_cyrus-imapd-2.3.14_Groups2.patch?rev=HEAD&amp;content-type=text/plain
+
+ I consider moving groups to a imapd db to be the best approach for the future
+ but still applying the above patch makes imho a lot of sense.
+
+KOLAB_Annotations2.patch
+ This patch supports server and mailbox scopes. It allows the server
+ administrator to define which 3rd party annotations are explicitly
+ allowed, which scope they refer to and if they are to be relevant to
+ proxy, server or both.
+ Download: http://kolab.org/cgi-bin/viewcvs-kolab.cgi/*checkout*/server/imapd/patches/cyrus-imapd-2.3.14/KOLAB_cyrus-imapd-2.3.14_Annotations2.patch?rev=HEAD&amp;content-type=text/plain
+
+KOLAB_Cyradm_Annotations.patch
+ This patch adds support to set annotations with cyradm.
+ Download: http://kolab.org/cgi-bin/viewcvs-kolab.cgi/*checkout*/server/imapd/patches/cyrus-imapd-2.3.14/KOLAB_cyrus-imapd-2.3.14_Cyradm_Annotations.patch?rev=1.1
+ 
+KOLAB_Logging.patch
+ This patch adds some further logging to LOG_DEBUG which proved to be useful
+ in the past.
+ Download: http://kolab.org/cgi-bin/viewcvs-kolab.cgi/*checkout*/server/imapd/patches/cyrus-imapd-2.3.14/KOLAB_cyrus-imapd-2.3.14_Logging.patch?rev=1.1
+
+KOLAB_Folder-names.patch
+ Cyrus Imapd is over zealous in defining GOODCHARS for foldernames. This patch
+ adds further charactes which are safe.
+ Download: http://kolab.org/cgi-bin/viewcvs-kolab.cgi/*checkout*/server/imapd/patches/cyrus-imapd-2.3.14/KOLAB_cyrus-imapd-2.3.14_Folder-names.patch?rev=1.1
+
+KOLAB_UID.patch
+ This patch adds ldap support to allow login using an email address/uid stored
+ in ldap. I guess you do not like this patch.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2009-12-08 06:40:41 EDT</bug_when>
+            <thetext>Hi Ken,
+
+what needs to be done to avaid having this issue being delayed for another 5 years?
+
+Yours,
+-- martin</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-12-08 07:03:06 EDT</bug_when>
+            <thetext>I will take a look before the holidays</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-12-18 13:27:26 EDT</bug_when>
+            <thetext>I have the patch integrated with more verbosity for imapd.conf(5).  I&apos;m waiting for Thomas to get back to me on his Copyright notice before I can commit</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2009-12-21 02:03:06 EDT</bug_when>
+            <thetext>(In reply to comment #24)
+
+&gt;  I&apos;m waiting for Thomas to get back to me on his Copyright notice before I can commit
+
+Thomas: Can you please resolve this asap.
+
+Thanks,
+-- martin
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-12-21 06:27:26 EDT</bug_when>
+            <thetext>Applied to CVS.  Will be in upcoming 2.3.16 release.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>333</attachid>
+            <date>2005-02-21 02:36 EDT</date>
+            <desc>Add multi-vendor support to ANNOTATEMORE</desc>
+            <filename>annotate.patch</filename>
+            <type>text/plain</type>
+            <size>4671</size>
+            <attacher>s.buys@codefusion.co.za</attacher>
+            
+              <data encoding="base64">LS0tIGFubm90YXRlLmMub2xkICAgICAgMjAwNC0wNy0wMiAxODoxMzoxMy4wMDAwMDAwMDAgKzAy
+MDAgCisrKyBhbm5vdGF0ZS5jICAyMDA0LTA3LTAzIDEwOjIwOjE3LjAwMDAwMDAwMCArMDIwMCAK
+QEAgLTE1OTgsNiArMTU5OCwxMSBAQCAKICAgICB7IE5VTEwsIDAsIEFOTk9UQVRJT05fUFJPWFlf
+VF9JTlZBTElELCAwLCAwLCBOVUxMLCBOVUxMIH0gCiB9OyAKICAKK2NvbnN0IHN0cnVjdCBhbm5v
+dGF0ZV9zdF9lbnRyeSB2ZW5kb3JfZW50cnkgPSAKKyAgICB7IE5VTEwsIEFUVFJJQl9UWVBFX1NU
+UklORywgQkFDS0VORF9PTkxZLCAKKyAgICAgIEFUVFJJQl9WQUxVRV9TSEFSRUQgfCBBVFRSSUJf
+VkFMVUVfUFJJViwgCisgICAgICBBQ0xfQURNSU4sIGFubm90YXRpb25fc2V0X3RvZGIsIE5VTEwg
+fTsgCisgCiBpbnQgYW5ub3RhdGVtb3JlX3N0b3JlKGNoYXIgKm1haWxib3gsIAogICAgICAgICAg
+ICAgICAgICAgICAgIHN0cnVjdCBlbnRyeWF0dGxpc3QgKmwsIAogICAgICAgICAgICAgICAgICAg
+ICAgIHN0cnVjdCBuYW1lc3BhY2UgKm5hbWVzcGFjZSwgCkBAIC0xNjEwLDYgKzE2MTUsNyBAQCAK
+ICAgICBzdHJ1Y3QgYXR0dmFsdWVsaXN0ICphdjsgCiAgICAgc3RydWN0IHN0b3JlZGF0YSBzZGF0
+YTsgCiAgICAgY29uc3Qgc3RydWN0IGFubm90YXRlX3N0X2VudHJ5ICplbnRyaWVzOyAKKyAgICBz
+dHJ1Y3QgYW5ub3RhdGVfc3RfZW50cnkgKiB3b3JraW5nX2VudHJ5OyAKICAgICB0aW1lX3Qgbm93
+ID0gdGltZSgwKTsgCiAgCiAgICAgbWVtc2V0KCZzZGF0YSwgMCwgc2l6ZW9mKHN0cnVjdCBzdG9y
+ZWRhdGEpKTsgCkBAIC0xNjMxLDM3ICsxNjM3LDU1IEBAIAogICAgIHdoaWxlIChlKSB7IAogICAg
+ICAgIGludCBlbnRyeWNvdW50LCBhdHRyaWJzOyAKICAgICAgICBzdHJ1Y3QgYW5ub3RhdGVfc3Rf
+ZW50cnlfbGlzdCAqbmVudHJ5ID0gTlVMTDsgCisgICAgICAgc3RydWN0IGFubm90YXRlX3N0X2Vu
+dHJ5ICppZW50cnkgPSBOVUxMOyAKICAKICAgICAgICAvKiBTZWUgaWYgd2Ugc3VwcG9ydCB0aGlz
+IGVudHJ5ICovIAorICAgICAgIHdvcmtpbmdfZW50cnkgPSBOVUxMOyAKICAgICAgICBmb3IgKGVu
+dHJ5Y291bnQgPSAwOyAKICAgICAgICAgICAgIGVudHJpZXNbZW50cnljb3VudF0ubmFtZTsgCiAg
+ICAgICAgICAgICBlbnRyeWNvdW50KyspIHsgCiAgICAgICAgICAgIGlmICghc3RyY21wKGUtPmVu
+dHJ5LCBlbnRyaWVzW2VudHJ5Y291bnRdLm5hbWUpKSB7IAorICAgICAgICAgICAgICAgd29ya2lu
+Z19lbnRyeSA9ICYoZW50cmllc1tlbnRyeWNvdW50XSk7IAogICAgICAgICAgICAgICAgYnJlYWs7
+IAogICAgICAgICAgICB9IAogICAgICAgIH0gCi0gICAgICAgaWYgKCFlbnRyaWVzW2VudHJ5Y291
+bnRdLm5hbWUpIHsgCi0gICAgICAgICAgIC8qIHVua25vd24gYW5ub3RhdGlvbiAqLyAKLSAgICAg
+ICAgICAgcmV0dXJuIElNQVBfUEVSTUlTU0lPTl9ERU5JRUQ7IAorICAgICAgIGlmICh3b3JraW5n
+X2VudHJ5PT1OVUxMKSB7IAorICAgICAgICAgICAvKiB0ZXN0IGZvciBnZW5lcmljIHZlbmRvciBh
+bm5vdGF0aW9uICovIAorICAgICAgICAgICBpZiAoKHN0cm5jbXAoIi92ZW5kb3IvIiwgZS0+ZW50
+cnksIHN0cmxlbigiL3ZlbmRvci8iKSk9PTApICYmIAorICAgICAgICAgICAgICAgKHN0cmxlbihl
+LT5lbnRyeSk+c3RybGVuKCIvdmVuZG9yLyIpKSkgeyAKKyAgICAgICAgICAgICB3b3JraW5nX2Vu
+dHJ5ID0gJih2ZW5kb3JfZW50cnkpOyAKKyAgICAgICAgICAgfSAKKyAgICAgICAgICAgZWxzZSB7
+IAorICAgICAgICAgICAgICAgLyogdW5rbm93biBhbm5vdGF0aW9uICovIAorICAgICAgICAgICAg
+ICAgcmV0dXJuIElNQVBfUEVSTUlTU0lPTl9ERU5JRUQ7IAorICAgICAgICAgICB9IAogICAgICAg
+IH0gCiAgCiAgICAgICAgLyogQWRkIHRoaXMgZW50cnkgdG8gb3VyIGxpc3Qgb25seSBpZiBpdCAK
+ICAgICAgICAgICBhcHBsaWVzIHRvIG91ciBwYXJ0aWN1bGFyIHNlcnZlciB0eXBlICovIAotICAg
+ICAgIGlmIChlbnRyaWVzW2VudHJ5Y291bnRdLnByb3h5dHlwZSA9PSBQUk9YWV9BTkRfQkFDS0VO
+RCAKKyAgICAgICBpZiAod29ya2luZ19lbnRyeS0+cHJveHl0eXBlID09IFBST1hZX0FORF9CQUNL
+RU5EIAogICAgICAgICAgICB8fCAocHJveHlfc3RvcmVfZnVuYyAmJiAKLSAgICAgICAgICAgICAg
+IGVudHJpZXNbZW50cnljb3VudF0ucHJveHl0eXBlID09IFBST1hZX09OTFkpIAorICAgICAgICAg
+ICAgICAgd29ya2luZ19lbnRyeS0+cHJveHl0eXBlID09IFBST1hZX09OTFkpIAogICAgICAgICAg
+ICB8fCAoIXByb3h5X3N0b3JlX2Z1bmMgJiYgCi0gICAgICAgICAgICAgICBlbnRyaWVzW2VudHJ5
+Y291bnRdLnByb3h5dHlwZSA9PSBCQUNLRU5EX09OTFkpKSB7IAorICAgICAgICAgICAgICAgd29y
+a2luZ19lbnRyeS0+cHJveHl0eXBlID09IEJBQ0tFTkRfT05MWSkpIHsgCisgICAgICAgICAgICBp
+ZW50cnkgPSB4em1hbGxvYyhzaXplb2Yoc3RydWN0IGFubm90YXRlX3N0X2VudHJ5KSk7IAorICAg
+ICAgICAgICAgaWVudHJ5LT5uYW1lID0gZS0+ZW50cnk7IAorICAgICAgICAgICAgaWVudHJ5LT50
+eXBlID0gd29ya2luZ19lbnRyeS0+dHlwZTsgCisgICAgICAgICAgICBpZW50cnktPnByb3h5dHlw
+ZSA9IHdvcmtpbmdfZW50cnktPnByb3h5dHlwZTsgCisgICAgICAgICAgICBpZW50cnktPmF0dHJp
+YnMgPSB3b3JraW5nX2VudHJ5LT5hdHRyaWJzOyAKKyAgICAgICAgICAgIGllbnRyeS0+YWNsID0g
+d29ya2luZ19lbnRyeS0+YWNsOyAKKyAgICAgICAgICAgIGllbnRyeS0+c2V0ID0gd29ya2luZ19l
+bnRyeS0+c2V0OyAKKyAgICAgICAgICAgIGllbnRyeS0+cm9jayA9IHdvcmtpbmdfZW50cnktPnJv
+Y2s7ICAgICAgICAgCiAgICAgICAgICAgIG5lbnRyeSA9IHh6bWFsbG9jKHNpemVvZihzdHJ1Y3Qg
+YW5ub3RhdGVfc3RfZW50cnlfbGlzdCkpOyAKICAgICAgICAgICAgbmVudHJ5LT5uZXh0ID0gc2Rh
+dGEuZW50cnlfbGlzdDsgCi0gICAgICAgICAgIG5lbnRyeS0+ZW50cnkgPSAmKGVudHJpZXNbZW50
+cnljb3VudF0pOyAKKyAgICAgICAgICAgbmVudHJ5LT5lbnRyeSA9IGllbnRyeTsgCiAgICAgICAg
+ICAgIG5lbnRyeS0+c2hhcmVkLm1vZGlmaWVkc2luY2UgPSBub3c7IAogICAgICAgICAgICBuZW50
+cnktPnByaXYubW9kaWZpZWRzaW5jZSA9IG5vdzsgCiAgICAgICAgICAgIHNkYXRhLmVudHJ5X2xp
+c3QgPSBuZW50cnk7IAogICAgICAgIH0gCiAgCiAgICAgICAgLyogU2VlIGlmIHdlIGFyZSBhbGxv
+d2VkIHRvIHNldCB0aGUgZ2l2ZW4gYXR0cmlidXRlcy4gKi8gCi0gICAgICAgYXR0cmlicyA9IGVu
+dHJpZXNbZW50cnljb3VudF0uYXR0cmliczsgCisgICAgICAgYXR0cmlicyA9IHdvcmtpbmdfZW50
+cnktPmF0dHJpYnM7IAogICAgICAgIGF2ID0gZS0+YXR0dmFsdWVzOyAKICAgICAgICB3aGlsZSAo
+YXYpIHsgCiAgICAgICAgICAgIGNvbnN0IGNoYXIgKnZhbHVlOyAKQEAgLTE2NzEsNyArMTY5NSw3
+IEBAIAogICAgICAgICAgICAgICAgICAgIGdvdG8gY2xlYW51cDsgCiAgICAgICAgICAgICAgICB9
+IAogICAgICAgICAgICAgICAgdmFsdWUgPSBhbm5vdGF0ZV9jYW5vbl92YWx1ZShhdi0+dmFsdWUs
+IAotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbnRyaWVzW2Vu
+dHJ5Y291bnRdLnR5cGUpOyAKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgd29ya2luZ19lbnRyeS0+dHlwZSk7IAogICAgICAgICAgICAgICAgaWYgKCF2YWx1ZSkg
+eyAKICAgICAgICAgICAgICAgICAgICByID0gSU1BUF9BTk5PVEFUSU9OX0JBRFZBTFVFOyAKICAg
+ICAgICAgICAgICAgICAgICBnb3RvIGNsZWFudXA7IApAQCAtMTY5Nyw3ICsxNzIxLDcgQEAgCiAg
+ICAgICAgICAgICAgICAgICAgZ290byBjbGVhbnVwOyAKICAgICAgICAgICAgICAgIH0gCiAgICAg
+ICAgICAgICAgICB2YWx1ZSA9IGFubm90YXRlX2Nhbm9uX3ZhbHVlKGF2LT52YWx1ZSwgCi0gICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGVudHJpZXNbZW50cnljb3Vu
+dF0udHlwZSk7IAorICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB3
+b3JraW5nX2VudHJ5LT50eXBlKTsgCiAgICAgICAgICAgICAgICBpZiAoIXZhbHVlKSB7IAogICAg
+ICAgICAgICAgICAgICAgIHIgPSBJTUFQX0FOTk9UQVRJT05fQkFEVkFMVUU7IAogICAgICAgICAg
+ICAgICAgICAgIGdvdG8gY2xlYW51cDsgCkBAIC0xNzk3LDYgKzE4MjEsMTIgQEAgCiAgICAgLyog
+RnJlZSB0aGUgZW50cnkgbGlzdCAqLyAKICAgICB3aGlsZSAoc2RhdGEuZW50cnlfbGlzdCkgeyAK
+ICAgICAgICBzdHJ1Y3QgYW5ub3RhdGVfc3RfZW50cnlfbGlzdCAqZnJlZW1lID0gc2RhdGEuZW50
+cnlfbGlzdDsgCisgICAgICAgaWYgKGZyZWVtZSAhPSBOVUxMKXsgCisgICAgICAgICAgIHN0cnVj
+dCBhbm5vdGF0ZV9zdF9lbnRyeSAqZnJlZW1lMiA9IGZyZWVtZS0+ZW50cnk7IAorICAgICAgICAg
+ICBpZiAoZnJlZW1lMiAhPSBOVUxMKSB7IAorICAgICAgICAgICAgICAgZnJlZSggZnJlZW1lMiAp
+OyAKKyAgICAgICAgICAgfSAKKyAgICAgICB9IAogICAgICAgIHNkYXRhLmVudHJ5X2xpc3QgPSBz
+ZGF0YS5lbnRyeV9saXN0LT5uZXh0OyAKICAgICAgICBmcmVlKGZyZWVtZSk7IAogICAgIH0K
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>462</attachid>
+            <date>2006-09-26 16:22 EDT</date>
+            <desc>Just 3 /vendor/ annotations, enough for Kolab2 clients.</desc>
+            <filename>annotations.diff</filename>
+            <type>text/plain</type>
+            <size>1141</size>
+            <attacher>gyurco@freemail.hu</attacher>
+            
+              <data encoding="base64">PyBhbm5vdGF0aW9ucy5kaWZmCkluZGV4OiBpbWFwL2Fubm90YXRlLmMKPT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1Mg
+ZmlsZTogL2N2cy9zcmMvY3lydXMvaW1hcC9hbm5vdGF0ZS5jLHYKcmV0cmlldmluZyByZXZpc2lv
+biAxLjE2LjIuMTYKZGlmZiAtdSAtcCAtdSAtcjEuMTYuMi4xNiBhbm5vdGF0ZS5jCi0tLSBpbWFw
+L2Fubm90YXRlLmMJMSBKdW4gMjAwNiAxMzoyMzoyMyAtMDAwMAkxLjE2LjIuMTYKKysrIGltYXAv
+YW5ub3RhdGUuYwkxNyBTZXAgMjAwNiAxMDoyOToxNyAtMDAwMApAQCAtMTc5MCw2ICsxNzkwLDE1
+IEBAIGNvbnN0IHN0cnVjdCBhbm5vdGF0ZV9zdF9lbnRyeSBtYWlsYm94X3IKICAgICB7ICIvdmVu
+ZG9yL2NtdS9jeXJ1cy1pbWFwZC9jb25kc3RvcmUiLCBBVFRSSUJfVFlQRV9CT09MRUFOLCBCQUNL
+RU5EX09OTFksCiAgICAgICBBVFRSSUJfVkFMVUVfU0hBUkVEIHwgQVRUUklCX0NPTlRFTlRUWVBF
+X1NIQVJFRCwKICAgICAgIEFDTF9BRE1JTiwgYW5ub3RhdGlvbl9zZXRfY29uZHN0b3JlLCBOVUxM
+IH0sCisgICAgeyAiL3ZlbmRvci9rb2xhYi9mb2xkZXItdGVzdCIsIEFUVFJJQl9UWVBFX1NUUklO
+RywgQkFDS0VORF9PTkxZLAorICAgICAgQVRUUklCX1ZBTFVFX1NIQVJFRCB8IEFUVFJJQl9WQUxV
+RV9QUklWLAorICAgICAgQUNMX0FETUlOLCBhbm5vdGF0aW9uX3NldF90b2RiLCBOVUxMIH0sCisg
+ICAgeyAiL3ZlbmRvci9rb2xhYi9mb2xkZXItdHlwZSIsIEFUVFJJQl9UWVBFX1NUUklORywgQkFD
+S0VORF9PTkxZLAorICAgICAgQVRUUklCX1ZBTFVFX1NIQVJFRCB8IEFUVFJJQl9WQUxVRV9QUklW
+LAorICAgICAgQUNMX0FETUlOLCBhbm5vdGF0aW9uX3NldF90b2RiLCBOVUxMIH0sCisgICAgeyAi
+L3ZlbmRvci9rb2xhYi9pbmNpZGVuY2VzLWZvciIsIEFUVFJJQl9UWVBFX1NUUklORywgQkFDS0VO
+RF9PTkxZLAorICAgICAgQVRUUklCX1ZBTFVFX1NIQVJFRCB8IEFUVFJJQl9WQUxVRV9QUklWLAor
+ICAgICAgQUNMX0FETUlOLCBhbm5vdGF0aW9uX3NldF90b2RiLCBOVUxMIH0sCiAgICAgeyBOVUxM
+LCAwLCBBTk5PVEFUSU9OX1BST1hZX1RfSU5WQUxJRCwgMCwgMCwgTlVMTCwgTlVMTCB9CiB9Owog
+Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>525</attachid>
+            <date>2007-03-07 09:09 EDT</date>
+            <desc>Annotation definitions for using cyrus-imapd as a kolab server</desc>
+            <filename>kolab.cyrus.txt</filename>
+            <type>text/plain</type>
+            <size>299</size>
+            <attacher>gyurco@freemail.hu</attacher>
+            
+              <data encoding="base64">L3ZlbmRvci9rb2xhYi9mb2xkZXItdGVzdCxtYWlsYm94LHN0cmluZyxiYWNrZW5kLHZhbHVlLnNo
+YXJlZCB2YWx1ZS5wcml2LGEKL3ZlbmRvci9rb2xhYi9mb2xkZXItdHlwZSxtYWlsYm94LHN0cmlu
+ZyxiYWNrZW5kLHZhbHVlLnNoYXJlZCB2YWx1ZS5wcml2LGEKL3ZlbmRvci9rb2xhYi9pbmNpZGVu
+Y2VzLWZvcixtYWlsYm94LHN0cmluZyxiYWNrZW5kLHZhbHVlLnNoYXJlZCB2YWx1ZS5wcml2LGEK
+L3ZlbmRvci94LXRvbHRlYy90ZXN0LG1haWxib3gsc3RyaW5nLGJhY2tlbmQsdmFsdWUuc2hhcmVk
+IHZhbHVlLnByaXYsYQo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1242</attachid>
+            <date>2009-11-30 09:23 EDT</date>
+            <desc>Annotation definitions for using cyrus-imapd as a kolab server (a suitable default which does not hurt)</desc>
+            <filename>imapd.annotation_definitions</filename>
+            <type>text/plain</type>
+            <size>537</size>
+            <attacher>martin.konold@erfrakon.de</attacher>
+            
+              <data encoding="base64">L3ZlbmRvci9rb2xhYi9mb2xkZXItdGVzdCxtYWlsYm94LHN0cmluZyxiYWNrZW5kLHZhbHVlLnNo
+YXJlZCB2YWx1ZS5wcml2LGEKL3ZlbmRvci9rb2xhYi9mb2xkZXItdHlwZSxtYWlsYm94LHN0cmlu
+ZyxiYWNrZW5kLHZhbHVlLnNoYXJlZCB2YWx1ZS5wcml2LGEKL3ZlbmRvci9rb2xhYi9pbmNpZGVu
+Y2VzLWZvcixtYWlsYm94LHN0cmluZyxiYWNrZW5kLHZhbHVlLnNoYXJlZCB2YWx1ZS5wcml2LGEK
+L3ZlbmRvci9rb2xhYi9weGZiLXJlYWRhYmxlLWZvcixtYWlsYm94LHN0cmluZyxiYWNrZW5kLHZh
+bHVlLnNoYXJlZCB2YWx1ZS5wcml2LGEKL3ZlbmRvci9rb2xhYi9oLXNoYXJlLWF0dHItZGVzYyxt
+YWlsYm94LHN0cmluZyxiYWNrZW5kLHZhbHVlLnNoYXJlZCB2YWx1ZS5wcml2LGEKL3ZlbmRvci9o
+b3JkZS9zaGFyZS1wYXJhbXMsbWFpbGJveCxzdHJpbmcsYmFja2VuZCx2YWx1ZS5zaGFyZWQgdmFs
+dWUucHJpdixhCi92ZW5kb3IveC10b2x0ZWMvdGVzdCxtYWlsYm94LHN0cmluZyxiYWNrZW5kLHZh
+bHVlLnNoYXJlZCB2YWx1ZS5wcml2LGEK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,137 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>504</bug_id>
+          
+          <creation_ts>2001-06-29 14:38 EDT</creation_ts>
+          <short_desc>realms in digest-md5 should be simplified</short_desc>
+          <delta_ts>2001-07-30 13:52:11 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>digestmd5</component>
+          <version>2.0</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-06-29 14:38:42 EDT</bug_when>
+            <thetext>currently, we support sending different realms with DIGEST-MD5.  commercial
+implementations of DIGEST-MD5 always send out the same (arbitrary) realm, and
+then accept usernames of the form user@realm.
+
+making this change will simplify how realms work vs. CRAM-MD5 or PLAIN and
+doesn&apos;t seem to lose much (if any) functionality.
+
+?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2001-07-20 15:30:00 EDT</bug_when>
+            <thetext>It&apos;s unclear to me how much this &quot;simplifies&quot;
+
+The default currently is for the server to fallback to serverFQDN if user_realm
+is not provided, other than that, I can&apos;t see many changes that would take
+place.  As it is, we can accept usernames in the form of foo@bar.com</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-07-20 15:50:08 EDT</bug_when>
+            <thetext>the complication is that specifying &quot;user@realm&quot; as your username works in CRAM
+and PLAIN but not DIGEST.  in DIGEST, you specify &quot;user&quot; and then set the realm
+to &quot;realm&quot;.  this means that the client UI has to be designed differently
+depending on whether you&apos;re authenticating with CRAM or DIGEST.
+
+since using the realm parameter doesn&apos;t add any security, it&apos;s easier to just
+make it a constant and have the user use &quot;user@realm&quot; as their username</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2001-07-20 16:38:07 EDT</bug_when>
+            <thetext>Okay. I guess all that really required was pulling out the getrealm callback
+*requirement*.  I can now do authentications using foo@bar.com to authenticate
+to the realm bar.com (just like in plain) so I&apos;ll leave it at that.
+
+However, I don&apos;t think disableing the use of the callback entirely is necessary.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-07-21 22:34:49 EDT</bug_when>
+            <thetext>whoa, this bug is meant to only apply to the _server-side_ of the DIGEST-MD5 
+code.  the client-side should be unaffected or perhaps the callback should be 
+made optional.
+
+the important changes are in the server side.  has this work been done?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2001-07-22 01:13:47 EDT</bug_when>
+            <thetext>The current behavior on the server side is that the serverFQDN or user-supplied
+realm is passed as the &quot;realm&quot; token to the remote.  The password lookup is
+done against the canonified username, which will either be unqualfied
+(serverFQDN as the realm) or be in the user@realm syntax.  The sasldb auxprop
+plugin, atleast, handles all this correctly for every plugin that uses it.
+
+What I am unsure of is what happens if the client passes back a different realm
+in the realm parameter than the one that is supplied to it, though I am pretty
+sure this works too.  I&apos;ll have to verify on monday.
+
+What most likely happened is that this situation went away in some of the
+rewrites (most likely the one that made digest use plaintext passwords).  I&apos;ll
+recheck that this is doing the right thing on monday.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2001-07-23 10:43:14 EDT</bug_when>
+            <thetext>I believe the behavior is currently correct, with the possible exception that we
+(as in SASLv1) reject a client-supplied realm if we did not offer it, which
+seems to be allowed by the RFC but doesn&apos;t make much sense.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-07-23 12:45:38 EDT</bug_when>
+            <thetext>i don&apos;t think this is fixed.
+the get_realm() function is still doing wacky things seeing if user_realm is 
+set to &quot;&quot; or &quot;foo&quot; or &quot;bar&quot;.
+
+i think if get_realm() always returns params-&gt;serverFQDN things would be better.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

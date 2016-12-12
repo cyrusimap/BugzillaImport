@@ -1,0 +1,115 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3568</bug_id>
+          
+          <creation_ts>2011-10-04 20:33 EDT</creation_ts>
+          <short_desc>Builds on OSX create the plugins incorrectly</short_desc>
+          <delta_ts>2012-06-11 05:55:58 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>plugins</component>
+          <version>2.1.x</version>
+          <rep_platform>Macintosh</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.1-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Quanah Gibson-Mount">quanah@zimbra.com</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@zimbra.com</who>
+            <bug_when>2011-10-04 20:33:04 EDT</bug_when>
+            <thetext>As reported back in January of 2008, when you build cyrus-sasl on OSX, all the plugins are created incorrectly, which has various consequences, one of which is causing OSX to leak memory.
+
+Problem #1: .so files are created instead of .dylibs.  This isn&apos;t critical, as OSX can still use .so files ok.  But most things have moved to using the OSX style .dylibs.
+
+Problem #2: Incorrectly created and named .so files.  For example:
+-rwxr-xr-x  1 root  wheel  22464 Oct  4 13:49 libanonymous.2.so
+
+Problem #3: Incorrect .so links:
+
+lrwxr-xr-x  1 root  wheel     17 Oct  4 13:49 libanonymous.2.0.25.so -&gt; libanonymous.2.so
+
+Problem #4: Invalid .so file creation causes memory leak.  Because multiple &quot;*.so&quot; files are created, they are *all* loaded in to memory by the OSX OS:
+
+Testing sasl_listmech()...
+ [EXTERNAL,ANONYMOUS,ANONYMOUS,ANONYMOUS,CRAM-MD5,CRAM-MD5,CRAM-MD5,DIGEST-MD
+5,DIGEST-MD5,DIGEST-MD5,GSSAPI,GSSAPI,GSSAPI,LOGIN,LOGIN,LOGIN,OTP,OTP,OTP,PLAIN,PLAIN,PLAIN]
+Client mechlist:
+ [PLAIN,PLAIN,PLAIN,OTP,OTP,OTP,LOGIN,LOGIN,LOGIN,GSSAPI,GSSAPI,GSSAPI,DIGEST
+-MD5,DIGEST-MD5,DIGEST-MD5,CRAM-MD5,CRAM-MD5,CRAM-MD5,ANONYMOUS,ANONYMOUS,ANONYMOUS,EXTERNAL]
+We have the following mechs:
+ [PLAIN,PLAIN,PLAIN,LOGIN,LOGIN,LOGIN,GSSAPI,GSSAPI,GSSAPI,DIGEST-MD5,DIGEST-
+MD5,DIGEST-MD5,CRAM-MD5,CRAM-MD5,CRAM-MD5,ANONYMOUS,ANONYMOUS,ANONYMOUS,EXTERNAL]
+  Currently Still Allocated:
+    302EE0 (  360)      00  00  00  00  00  00  00  00  00  00  00  00  ...
+    302EA0 (   20)      01  00  00  00  00  00  00  00  D0  &apos;.&apos; &apos;0&apos; 00  ...
+    302CC0 (  360)      00  00  00  00  00  00  00  00  00  00  00  00  ...
+    302C80 (   20)      01  00  00  00  00  00  00  00  B0  &apos;,&apos; &apos;0&apos; 00  ...
+    300AE0 (   20)      00  00  00  00  00  00  00  00  00  00  00  00  ...
+    300A40 (   20)      00  00  00  00  00  00  00  00  00  00  00  00  ...
+Failed with: memory error</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-05-29 14:11:27 EDT</bug_when>
+            <thetext>I think problems 2-4 are solved in the latest version of Cyrus SASL (you might need to check out the GIT version). Can you please confirm?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@zimbra.com</who>
+            <bug_when>2012-05-29 16:59:27 EDT</bug_when>
+            <thetext>I&apos;ve got git checked out, and will take a look.
+
+--Quanah</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@zimbra.com</who>
+            <bug_when>2012-05-29 20:09:31 EDT</bug_when>
+            <thetext>Unfortunately git checkout generates an unusable configure, so I can&apos;t test at this time.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@zimbra.com</who>
+            <bug_when>2012-05-29 20:13:00 EDT</bug_when>
+            <thetext>Specifically:
+
+checking whether to build shared libraries... yes
+checking whether to build static libraries... no
+./configure: line 11146: CMU_SOCKETS: command not found
+checking DB path to use... /etc/sasldb2
+./configure: line 11179: syntax error near unexpected token `SASL_DB_LIB=&quot;&quot;&apos;
+./configure: line 11179: `SASL_DB_LIB=&quot;&quot;&apos;</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

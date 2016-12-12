@@ -1,0 +1,167 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2705</bug_id>
+          
+          <creation_ts>2005-09-08 10:50 EDT</creation_ts>
+          <short_desc>Rentrancy violation in auth_krb5.c kills mupdate</short_desc>
+          <delta_ts>2010-10-18 12:43:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>2720</dup_id>
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="paul r turgyan">pturgyan@umich.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="paul r turgyan">pturgyan@umich.edu</who>
+            <bug_when>2005-09-08 10:50:30 EDT</bug_when>
+            <thetext>There is a reentrancy violation in auth_krb5 when used in a multi-threaded
+application like the mupdater.  At auth_krb5.c line 97 is a static
+pointer that is being returned to the caller.  This pointer points to
+a malloc&apos;d buffer that is freed and possibly re-malloc&apos;d.  The problem
+happens when one thread frees the buffer that was previously returned 
+to a different thread.  When this happens, you&apos;ll see a core file with a 
+stack backtrace like:
+
+(gdb) bt
+#0  0x403195d8 in strcmp () at strcmp:-1
+#1  0x0806f340 in auth_memberof (auth_state=0x41f15678,
+    identifier=0xbf1f9f9c &quot;imap/mail.umich.edu&quot;) at auth_krb5.c:83
+#2  0x0805c8a9 in global_authisa (authstate=0x41f15678, opt=IMAPOPT_ZERO)
+    at global.c:335
+#3  0x0805cf7b in mysasl_proxy_policy (conn=0x820a5c8, context=0x0,
+    requested_user=0x820aed8 &quot;imap/test.mail.umich.edu&quot;, rlen=24,
+    auth_identity=0x820afd9 &quot;imap/test.mail.umich.edu&quot;, alen=24,
+    def_realm=0x0, urlen=0, propctx=0x81f9958) at global.c:539
+#4  0x4002767e in do_authorization (s_conn=0x820a5c8) at server.c:1160
+#5  0x40027c8f in sasl_server_step (conn=0x820a5c8, clientin=0x0,
+    clientinlen=65, serverout=0xbf1fa480, serveroutlen=0x0) at server.c:1417
+#6  0x0805dcfe in saslserver (conn=0x820a5c8, mech=0x0,
+    init_resp=0x820a5c8 &quot;\001&quot;, resp_prefix=0x8093c61 &quot;&quot;,
+    continuation=0x8093c61 &quot;&quot;, empty_chal=0x8093c61 &quot;&quot;, pin=0x81f1500,
+    pout=0x81fd9d8, sasl_result=0xbf1ffa34, success_data=0x0)
+    at saslserver.c:134
+#7  0x0804f18a in cmd_authenticate (C=0x0, tag=0x41fc6300 &quot;A01&quot;,
+    mech=0x820a5c8 &quot;\001&quot;, clientstart=0x0) at mupdate.c:1365
+#8  0x0804dbc7 in docmd (c=0x8210b58) at mupdate.c:675
+#9  0x0804ec0a in thread_main (rock=0x0) at mupdate.c:1235
+#10 0x40255d03 in pthread_start_thread (arg=0xbf1ffbe0) at manager.c:300
+
+I can reproduce this problem using 2 backends, a mupdater,  and a
+client machine.  On the client machine I start up 2 cyradm processes.
+Each cyradm process tries to create about 350,000 mailboxes.  After
+a couple of hours you would find a mupdate core file.
+
+This is how I fixed this problem.  In cmd_authenticate I added the 
+usual mutex locks.
+
+*** mupdate.c-  Fri Dec 17 11:32:16 2004
+--- mupdate.c   Thu Sep  8 09:57:56 2005
+***************
+*** 1361,1368 ****
+--- 1361,1370 ----
+  {   
+      int r, sasl_result;
+
++     pthread_mutex_lock(&amp;mailboxes_mutex); /* LOCK */
+      r = saslserver(C-&gt;saslconn, mech, clientstart, &quot;&quot;, &quot;&quot;, &quot;&quot;,
+                   C-&gt;pin, C-&gt;pout, &amp;sasl_result, NULL);
++     pthread_mutex_unlock(&amp;mailboxes_mutex); /* UNLOCK */
+
+      if (r) {
+        const char *errorstring = NULL;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2005-10-27 10:40:10 EDT</bug_when>
+            <thetext>Created an attachment (id=386)
+Alternate (more localized) patch
+
+Please test the alternate patch to make sure that it still functions correctly.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-10-31 13:07:27 EDT</bug_when>
+            <thetext>
+
+*** This bug has been marked as a duplicate of 2720 ***</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>386</attachid>
+            <date>2005-10-27 10:40 EDT</date>
+            <desc>Alternate (more localized) patch</desc>
+            <filename>mupdate.patch</filename>
+            <type>text/plain</type>
+            <size>1421</size>
+            <attacher>ken@oceana.com</attacher>
+            
+              <data encoding="base64">KioqIG11cGRhdGUuYy5+MS44OS5+CTIwMDQtMTItMTcgMTM6MTk6MjkuMDAwMDAwMDAwIC0wNTAw
+DQotLS0gbXVwZGF0ZS5jCTIwMDUtMTAtMjcgMTA6MzY6MDkuMDAwMDAwMDAwIC0wNDAwDQoqKioq
+KioqKioqKioqKioNCioqKiA0NjAsNDY4ICoqKioNCiAgICAgIHJldHVybiAwOw0KICB9DQogIA0K
+ICBzdGF0aWMgc3RydWN0IHNhc2xfY2FsbGJhY2sgbXlzYXNsX2NiW10gPSB7DQogICAgICB7IFNB
+U0xfQ0JfR0VUT1BULCAmbXlzYXNsX2NvbmZpZywgTlVMTCB9LA0KISAgICAgeyBTQVNMX0NCX1BS
+T1hZX1BPTElDWSwgJm15c2FzbF9wcm94eV9wb2xpY3ksIE5VTEwgfSwNCiAgICAgIHsgU0FTTF9D
+Ql9MSVNUX0VORCwgTlVMTCwgTlVMTCB9DQogIH07DQogIA0KLS0tIDQ2MCw0OTUgLS0tLQ0KICAg
+ICAgcmV0dXJuIDA7DQogIH0NCiAgDQorIA0KKyAvKg0KKyAgKiBUaGUgYXV0aF8qLmMgYmFja2Vu
+ZHMgY2FsbGVkIGJ5IG15c2FzbF9wcm94eV9wb2xpY3koKQ0KKyAgKiB1c2Ugc3RhdGljIHZhcmlh
+YmxlcyB3aGljaCB3ZSBuZWVkIHRvIHByb3RlY3Qgd2l0aCBhIG11dGV4Lg0KKyAgKi8NCisgc3Rh
+dGljIHB0aHJlYWRfbXV0ZXhfdCBwcm94eV9wb2xpY3lfbXV0ZXggPSBQVEhSRUFEX01VVEVYX0lO
+SVRJQUxJWkVSOw0KKyANCisgc3RhdGljIGludCBtdXBkYXRlX3Byb3h5X3BvbGljeShzYXNsX2Nv
+bm5fdCAqY29ubiwNCisgCQkJCXZvaWQgKmNvbnRleHQsDQorIAkJCQljb25zdCBjaGFyICpyZXF1
+ZXN0ZWRfdXNlciwgdW5zaWduZWQgcmxlbiwNCisgCQkJCWNvbnN0IGNoYXIgKmF1dGhfaWRlbnRp
+dHksIHVuc2lnbmVkIGFsZW4sDQorIAkJCQljb25zdCBjaGFyICpkZWZfcmVhbG0sDQorIAkJCQl1
+bnNpZ25lZCB1cmxlbiwNCisgCQkJCXN0cnVjdCBwcm9wY3R4ICpwcm9wY3R4KQ0KKyB7DQorICAg
+ICBpbnQgcjsNCisgDQorICAgICBwdGhyZWFkX211dGV4X2xvY2soJnByb3h5X3BvbGljeV9tdXRl
+eCk7IC8qIExPQ0sgKi8NCisgDQorICAgICByID0gbXlzYXNsX3Byb3h5X3BvbGljeShjb25uLCBj
+b250ZXh0LCByZXF1ZXN0ZWRfdXNlciwgcmxlbiwNCisgCQkJICAgIGF1dGhfaWRlbnRpdHksIGFs
+ZW4sIGRlZl9yZWFsbSwgdXJsZW4sIHByb3BjdHgpOw0KKyANCisgICAgIHB0aHJlYWRfbXV0ZXhf
+dW5sb2NrKCZwcm94eV9wb2xpY3lfbXV0ZXgpOyAvKiBVTkxPQ0sgKi8NCisgDQorICAgICByZXR1
+cm4gcjsNCisgfQ0KKyANCiAgc3RhdGljIHN0cnVjdCBzYXNsX2NhbGxiYWNrIG15c2FzbF9jYltd
+ID0gew0KICAgICAgeyBTQVNMX0NCX0dFVE9QVCwgJm15c2FzbF9jb25maWcsIE5VTEwgfSwNCiEg
+ICAgIHsgU0FTTF9DQl9QUk9YWV9QT0xJQ1ksICZtdXBkYXRlX3Byb3h5X3BvbGljeSwgTlVMTCB9
+LA0KICAgICAgeyBTQVNMX0NCX0xJU1RfRU5ELCBOVUxMLCBOVUxMIH0NCiAgfTsNCiAgDQo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

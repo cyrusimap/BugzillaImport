@@ -1,0 +1,184 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3742</bug_id>
+          
+          <creation_ts>2012-09-26 05:17 EDT</creation_ts>
+          <short_desc>replication does not work on RENAME</short_desc>
+          <delta_ts>2012-12-01 15:01:54 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.17</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Deniss Gaplevsky">slim@inbox.lv</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dpc22@cam.ac.uk</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-09-26 05:17:15 EDT</bug_when>
+            <thetext>I have the user that cannot be replicated second time. First time (while destination server has no copy of mailbox) replication works well, running same command second time right after dies:
+
+write(5, &quot;APPLY RENAME %(OLDMBOXNAME user.brexsis NEWMBOXNAME user.brexsis.Boot PARTITION default)\r\n&quot;, 90) = 90
+read(5, &quot;NO Operation is not supported on mailbox\r\n&quot;, 4096) = 42
+
+no error in logs of client/server</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-09-26 05:42:55 EDT</bug_when>
+            <thetext>there is strange thing about the user - cyrus.header has same Mailbox Unique ID String on both folders.
+how this can happen ?
+how this may be fixed ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-09-26 07:08:32 EDT</bug_when>
+            <thetext>Yeah, that&apos;s bogus.  Reconstruct used to be able to fix this.. I&apos;m not sure if it still does... if not, that&apos;s a bug, it probably should keep a list of uniqueids and fix that.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-09-26 08:05:24 EDT</bug_when>
+            <thetext>reconstruct from 2.4.16 does not fix the issue with same Mailbox Unique IDs in different folders</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Carter">dpc22@cam.ac.uk</who>
+            <bug_when>2012-09-27 07:19:38 EDT</bug_when>
+            <thetext>(In reply to comment #1)
+&gt; there is strange thing about the user - cyrus.header has same Mailbox Unique ID
+&gt; String on both folders.
+&gt; how this can happen ?
+&gt; how this may be fixed ?
+
+It can happen if two separate IMAP processes try to rename the same
+mailbox at the same time: we ran into the same problem a few weeks back.
+
+Looks like some kind of race condition which is new in 2.4 (or at
+least we didn&apos;t used to have this problem with 2.3, but I was using
+a FAST_RENAME patch there which just did a single rename() rather than
+copying all of the messages across and then deleting the original folder).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Carter">dpc22@cam.ac.uk</who>
+            <bug_when>2012-10-02 16:06:51 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; (In reply to comment #1)
+&gt; &gt; there is strange thing about the user - cyrus.header has same Mailbox Unique ID
+&gt; &gt; String on both folders.
+&gt; &gt; how this can happen ?
+&gt; &gt; how this may be fixed ?
+&gt; 
+&gt; It can happen if two separate IMAP processes try to rename the same
+&gt; mailbox at the same time: we ran into the same problem a few weeks back.
+
+And again this week: someone renamed a couple of hundred folders in
+rapid succession. We really need some kind of lock to stop a single mailbox
+being renamed twice in different IMAP sessions.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Carter">dpc22@cam.ac.uk</who>
+            <bug_when>2012-10-03 02:23:16 EDT</bug_when>
+            <thetext>&gt; 
+&gt; And again this week: someone renamed a couple of hundred folders in
+&gt; rapid succession. We really need some kind of lock to stop a single mailbox
+&gt; being renamed twice in different IMAP sessions.
+
+...and three cases so far this week where sync_client has segfaulted
+immediately after a mailbox rename by imapd (Cyrus 2.4.14)
+
+I suspect that this is a related bug to do with the fact that mailbox
+rename is quite a slow operation. I will do some digging to see if I
+can reproduce the problem in a test environment.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Carter">dpc22@cam.ac.uk</who>
+            <bug_when>2012-10-03 10:16:05 EDT</bug_when>
+            <thetext>Created an attachment (id=1499)
+Fix segfault from sync_client
+
+We need to check whether remote is NULL before we try to dereference it.
+
+I wrote a little test script which renamed a single mailbox back and forth
+between two names in order to find this bug. I observe that this causes
+sync_client to bail out reliably after a few iterations: it gets freaked by mailboxes moving around under its feet. That is still better than a segfault,
+and should be rare in normal operation.
+
+We still need to do something about the original problem of duplicate
+UniqueIDs causing sync_client to explode after a single mailbox gets
+RENAMEd twice in different imap sessions.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-11-30 07:43:56 EDT</bug_when>
+            <thetext>Ok, I&apos;m going to look at fixing this before 2.4.17, it shouldn&apos;t be too hard.  We definitely want reconstruct to be able to fix the UniqueID issue.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-11-30 11:06:29 EDT</bug_when>
+            <thetext>Ok - used your patch with a small modification - making the case without remote return 0 rather than the old &apos;r&apos;.
+
+The underlying rename bug is now fixed (#3696) for 2.4.17 as well, and reconstruct is patched to detect and fix the problem.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1499</attachid>
+            <date>2012-10-03 10:16 EDT</date>
+            <desc>Fix segfault from sync_client</desc>
+            <filename>sync_client.diff</filename>
+            <type>text/plain</type>
+            <size>592</size>
+            <attacher>dpc22@cam.ac.uk</attacher>
+            
+              <data encoding="base64">SW5kZXg6IHN5bmNfY2xpZW50LmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2RhdGEvdWN2cy9oZXJt
+ZXMvc3JjL2N5cnVzLWltYXBkLTIuNC9pbWFwL3N5bmNfY2xpZW50LmMsdgpyZXRyaWV2aW5nIHJl
+dmlzaW9uIDEuMTUKZGlmZiAtdSAtZCAtcjEuMTUgc3luY19jbGllbnQuYwotLS0gc3luY19jbGll
+bnQuYwkxOCBKYW4gMjAxMiAxNToyMzowMyAtMDAwMAkxLjE1CisrKyBzeW5jX2NsaWVudC5jCTMg
+T2N0IDIwMTIgMTM6Mzg6MTIgLTAwMDAKQEAgLTEzMDcsNiArMTMwNyw5IEBACiAgICAgciA9IG1h
+aWxib3hfb3Blbl9pcmwobG9jYWwtPm5hbWUsICZtYWlsYm94KTsKICAgICBpZiAociA9PSBJTUFQ
+X01BSUxCT1hfTk9ORVhJU1RFTlQpIHsKIAkvKiBiZWVuIGRlbGV0ZWQgaW4gdGhlIG1lYW53aGls
+ZS4uLiAqLworICAgICAgICBpZiAoIXJlbW90ZSkKKyAgICAgICAgICAgIGdvdG8gZG9uZTsgIC8q
+IFByb21vdGUgYW5kIHJldHJ5ICovCisKIAlyID0gZm9sZGVyX2RlbGV0ZShyZW1vdGUtPm5hbWUp
+OwogCWdvdG8gZG9uZTsKICAgICB9Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,186 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2620</bug_id>
+          
+          <creation_ts>2005-02-10 03:30 EDT</creation_ts>
+          <short_desc>[master] Numerous places where missing parameters results in segfault</short_desc>
+          <delta_ts>2010-10-18 12:43:07 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Torsten Hilbrich">torsten.hilbrich@secunet.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>felix.ogris@dts.de</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-02-10 03:30:54 EDT</bug_when>
+            <thetext>I found quite some places in the current version 2.2.10 (checked CVS repository
+as well) where missing parameters in the cyrus.conf master configuration file
+will result in a segfault.
+
+All calls to masterconf_getstring with a default value of NULL can produce this
+bug.  Let give me an example.  In the function add_start (beginning in
+master/master.c:1281) there is the following code:
+
+    char *cmd = xstrdup(masterconf_getstring(e, &quot;cmd&quot;, NULL));
+    char buf[256];
+    char **tok;
+
+    if (!cmd) {
+	snprintf(buf, sizeof(buf), &quot;unable to find command for %s&quot;, name);
+	fatal(buf, EX_CONFIG);
+    }
+
+If masterconf_getstring returns NULL (which is its default value) the xstrdup
+will be given a NULL pointer as parameter.  However, in lib/xmalloc.c xstrdup is
+defined in the following way:
+
+char *xstrdup(const char* str)
+{
+    char *p = xmalloc(strlen(str)+1);
+    strcpy(p, str);
+    return p;
+}
+
+strlen will not survive a call with a NULL pointer.
+
+A quick check found 4 places in master.c which will trigger this bug.
+
+As I don&apos;t know if these 4 calls should be fixed or if xstrdup should be able to
+handle NULL pointer I&apos;m sending no patch along with this bug report, the bugs
+are easy to fix anyway, just check the result of masterconf_getstring before
+calling xstrdup.
+
+Please fix this bug in the next release.
+
+Regards,
+
+Torsten</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-02-10 10:15:10 EDT</bug_when>
+            <thetext>*** Bug 2621 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-03-06 23:37:55 EDT</bug_when>
+            <thetext>Created an attachment (id=335)
+fix master
+
+candidate fix.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-03-07 02:13:55 EDT</bug_when>
+            <thetext>I think you missed line 1284 in master.c/add_start:
+
+void add_start(const char *name, struct entry *e,
+	       void *rock __attribute__((unused)))
+{
+    char *cmd = xstrdup(masterconf_getstring(e, &quot;cmd&quot;, NULL));
+    char buf[256];
+    char **tok;
+
+It will segfault as well if masterconf_getstring returns NULL.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-03-07 15:44:12 EDT</bug_when>
+            <thetext>Fixed. All committed.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-28 13:17:53 EDT</bug_when>
+            <thetext>*** Bug 2655 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>335</attachid>
+            <date>2005-03-06 23:37 EDT</date>
+            <desc>fix master</desc>
+            <filename>diff.master</filename>
+            <type>text/plain</type>
+            <size>1959</size>
+            <attacher>shadow@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IG1hc3Rlci5jCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9hZnMvYW5kcmV3L3N5c3RlbS9j
+dnMvc3JjL2N5cnVzL21hc3Rlci9tYXN0ZXIuYyx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS4xMDAK
+ZGlmZiAtdSAtcjEuMTAwIG1hc3Rlci5jCi0tLSBtYXN0ZXIuYwkxNyBEZWMgMjAwNCAxNjozMjoy
+NCAtMDAwMAkxLjEwMAorKysgbWFzdGVyLmMJNyBNYXIgMjAwNSAwNDozNDoyOCAtMDAwMApAQCAt
+MTMwNSwxMSArMTMwNSwxMSBAQAogdm9pZCBhZGRfc2VydmljZShjb25zdCBjaGFyICpuYW1lLCBz
+dHJ1Y3QgZW50cnkgKmUsIHZvaWQgKnJvY2spCiB7CiAgICAgaW50IGlnbm9yZV9lcnIgPSAoaW50
+KSByb2NrOwotICAgIGNoYXIgKmNtZCA9IHhzdHJkdXAobWFzdGVyY29uZl9nZXRzdHJpbmcoZSwg
+ImNtZCIsIE5VTEwpKTsKKyAgICBjaGFyICpjbWQgPSB4c3RyZHVwKG1hc3RlcmNvbmZfZ2V0c3Ry
+aW5nKGUsICJjbWQiLCAiIikpOwogICAgIGludCBwcmVmb3JrID0gbWFzdGVyY29uZl9nZXRpbnQo
+ZSwgInByZWZvcmsiLCAwKTsKICAgICBpbnQgYmFieXNpdCA9IG1hc3RlcmNvbmZfZ2V0c3dpdGNo
+KGUsICJiYWJ5c2l0IiwgMCk7CiAgICAgaW50IG1heGZvcmtyYXRlID0gbWFzdGVyY29uZl9nZXRp
+bnQoZSwgIm1heGZvcmtyYXRlIiwgMCk7Ci0gICAgY2hhciAqbGlzdGVuID0geHN0cmR1cChtYXN0
+ZXJjb25mX2dldHN0cmluZyhlLCAibGlzdGVuIiwgTlVMTCkpOworICAgIGNoYXIgKmxpc3RlbiA9
+IHhzdHJkdXAobWFzdGVyY29uZl9nZXRzdHJpbmcoZSwgImxpc3RlbiIsICIiKSk7CiAgICAgY2hh
+ciAqcHJvdG8gPSB4c3RyZHVwKG1hc3RlcmNvbmZfZ2V0c3RyaW5nKGUsICJwcm90byIsICJ0Y3Ai
+KSk7CiAgICAgY2hhciAqbWF4ID0geHN0cmR1cChtYXN0ZXJjb25mX2dldHN0cmluZyhlLCAibWF4
+Y2hpbGQiLCAiLTEiKSk7CiAgICAgcmxpbV90IG1heGZkcyA9IChybGltX3QpIG1hc3RlcmNvbmZf
+Z2V0aW50KGUsICJtYXhmZHMiLCAyNTYpOwpAQCAtMTMxOSw3ICsxMzE5LDcgQEAKICAgICBpZihi
+YWJ5c2l0ICYmIHByZWZvcmsgPT0gMCkgcHJlZm9yayA9IDE7CiAgICAgaWYoYmFieXNpdCAmJiBt
+YXhmb3JrcmF0ZSA9PSAwKSBtYXhmb3JrcmF0ZSA9IDEwOyAvKiByZWFzb25hYmxlIHNhZmV0eSAq
+LwogCi0gICAgaWYgKCFjbWQgfHwgIWxpc3RlbikgeworICAgIGlmICghc3RyY21wKGNtZCwiIikg
+fHwgIXN0cmNtcChsaXN0ZW4sIiIpKSB7CiAJY2hhciBidWZbMjU2XTsKIAlzbnByaW50ZihidWYs
+IHNpemVvZihidWYpLAogCQkgInVuYWJsZSB0byBmaW5kIGNvbW1hbmQgb3IgcG9ydCBmb3Igc2Vy
+dmljZSAnJXMnIiwgbmFtZSk7CkBAIC0xNDM5LDEzICsxNDM5LDEzIEBACiB2b2lkIGFkZF9ldmVu
+dChjb25zdCBjaGFyICpuYW1lLCBzdHJ1Y3QgZW50cnkgKmUsIHZvaWQgKnJvY2spCiB7CiAgICAg
+aW50IGlnbm9yZV9lcnIgPSAoaW50KSByb2NrOwotICAgIGNoYXIgKmNtZCA9IHhzdHJkdXAobWFz
+dGVyY29uZl9nZXRzdHJpbmcoZSwgImNtZCIsIE5VTEwpKTsKKyAgICBjaGFyICpjbWQgPSB4c3Ry
+ZHVwKG1hc3RlcmNvbmZfZ2V0c3RyaW5nKGUsICJjbWQiLCAiIikpOwogICAgIGludCBwZXJpb2Qg
+PSA2MCAqIG1hc3RlcmNvbmZfZ2V0aW50KGUsICJwZXJpb2QiLCAwKTsKICAgICBpbnQgYXQgPSBt
+YXN0ZXJjb25mX2dldGludChlLCAiYXQiLCAtMSksIGhvdXIsIG1pbjsKICAgICB0aW1lX3Qgbm93
+ID0gdGltZShOVUxMKTsKICAgICBzdHJ1Y3QgZXZlbnQgKmV2dDsKIAotICAgIGlmICghY21kKSB7
+CisgICAgaWYgKCFzdHJkdXAoY21kLCIiKSkgewogCWNoYXIgYnVmWzI1Nl07CiAJc25wcmludGYo
+YnVmLCBzaXplb2YoYnVmKSwKIAkJICJ1bmFibGUgdG8gZmluZCBjb21tYW5kIG9yIHBvcnQgZm9y
+IGV2ZW50ICclcyciLCBuYW1lKTsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,154 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3530</bug_id>
+          
+          <creation_ts>2011-08-25 05:20 EDT</creation_ts>
+          <short_desc>Quota storage usage underflow management issues</short_desc>
+          <delta_ts>2011-08-26 05:53:48 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-08-25 05:20:40 EDT</bug_when>
+            <thetext>Created an attachment (id=1418)
+Quota usage underflow management patch
+
+For &apos;annotate&apos; branch on git://github.com/gnb/cyrus-imapd.git.
+
+There are two issues regarding storage usage underflow management:
+
+1. Underflow is not managed for annotation storage usage
+
+How to reproduce:
+ - create a user folder
+ - set X-ANNOTATION-STORAGE quota resource
+ - set a non-empty annotation on the folder
+ - alter the quota file, setting the annotation storage usage to 0
+ - update the folder annotation to NIL
+ - look at the X-ANNOTATION-STORAGE usage: it got underflow, e.g. 18446744073709551611
+
+The issue lies in the quota_db.c:quota_use function.
+
+
+2. Underflow management for other resources (mailbox storage) incorrect when usage is over 2^63-1, even though usage should be able to go up to 2^64-1
+
+How to reproduce:
+ - create a user folder
+ - set infinite quota resource
+   -&gt; IMAP command: SETQUOTA user.folder ()
+ - add a mail
+ - alter the quota file, setting the storage usage to 2^63-1 (9223372036854775807)
+ - copy mail in folder
+ - look at the storage usage in the quota file: it is now 0
+
+The issue lies in the quota_db.c:quota_update_used function.
+
+
+Proposed patch, for both cases, attached.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-08-26 05:53:48 EDT</bug_when>
+            <thetext>Thanks Julien,
+
+I&apos;ve applied your patch to my annotate branch, cleaned some other problems in the quota code, and added a reasonably thorough unit test for the quota API.  I&apos;ll push these into cmu master once someone reviews it.
+
+Be warned though that I&apos;ve also massively rejigged the annotate branch, it now has almost exactly the same code as yesterday but the history is considerably shorter and less convoluted.
+
+The following changes since commit 8681cf535be05def81e980f8c2abdeb0946e6b3b:
+
+  Fix /private/specialuse (2011-08-24 15:29:13 +1000)
+
+are available in the git repository at:
+  ssh://git@github.com/gnb/cyrus-imapd.git annotate
+
+Greg Banks (4):
+      Remove dead declaration in quota.h
+      Fix quota_deleteroot() behaviour
+      quota consistently treats root=NULL like root=&quot;&quot;
+      unit: tests for quota API
+
+Julien Coloos (1):
+      Bug #3530 - avoid underflow of quota usage
+
+ cunit/Makefile.in |    1 +
+ cunit/quota.c     |  992 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ imap/quota.h      |    2 -
+ imap/quota_db.c   |   39 ++-
+ 4 files changed, 1021 insertions(+), 13 deletions(-)
+ create mode 100644 cunit/quota.c</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1418</attachid>
+            <date>2011-08-25 05:20 EDT</date>
+            <desc>Quota usage underflow management patch</desc>
+            <filename>quota_usage_underflow.patch</filename>
+            <type>text/plain</type>
+            <size>839</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL2ltYXAvcXVvdGFfZGIuYyBiL2ltYXAvcXVvdGFfZGIuYwppbmRleCBlNzhl
+NTVkLi5hYjE3NjVjIDEwMDY0NAotLS0gYS9pbWFwL3F1b3RhX2RiLmMKKysrIGIvaW1hcC9xdW90
+YV9kYi5jCkBAIC0yMzEsNyArMjMxLDEzIEBAIGludCBxdW90YV9jaGVjayhjb25zdCBzdHJ1Y3Qg
+cXVvdGEgKnEsCiB2b2lkIHF1b3RhX3VzZShzdHJ1Y3QgcXVvdGEgKnEsCiAJICAgICAgIGVudW0g
+cXVvdGFfcmVzb3VyY2UgcmVzLCBxdW90YV90IGRlbHRhKQogewotICAgIHEtPnVzZWRzW3Jlc10g
+Kz0gZGVsdGE7CisgICAgLyogcHJldmVudCB1bmRlcmZsb3cgKi8KKyAgICBpZiAoKGRlbHRhIDwg
+MCkgJiYgKCh1cXVvdGFfdCktZGVsdGEgPiBxLT51c2Vkc1tyZXNdKSkgeworCXEtPnVzZWRzW3Jl
+c10gPSAwOworICAgIH0KKyAgICBlbHNlIHsKKwlxLT51c2Vkc1tyZXNdICs9IGRlbHRhOworICAg
+IH0KIH0KIAogc3RydWN0IHF1b3RhX2ZvcmVhY2hfdCB7CkBAIC0zNTksMTAgKzM2NSw3IEBAIGlu
+dCBxdW90YV91cGRhdGVfdXNlZChjb25zdCBjaGFyICpxdW90YXJvb3QsIGVudW0gcXVvdGFfcmVz
+b3VyY2UgcmVzLCBxdW90YV90IGRpCiAgICAgciA9IHF1b3RhX3JlYWQoJnEsICZ0aWQsIDEpOwog
+CiAgICAgaWYgKCFyKSB7Ci0JcXVvdGFfdCB1c2VkID0gKHF1b3RhX3QpcS51c2Vkc1tyZXNdICsg
+ZGlmZjsKLQlpZiAodXNlZCA8IDApCi0JICAgIHVzZWQgPSAwOwkgICAgLyogcHJldmVudCB1bmRl
+cmZsb3cgKi8KLQlxLnVzZWRzW3Jlc10gPSB1c2VkOworCXF1b3RhX3VzZSgmcSwgcmVzLCBkaWZm
+KTsKIAlyID0gcXVvdGFfd3JpdGUoJnEsICZ0aWQpOwogICAgIH0KIAo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

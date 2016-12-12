@@ -1,0 +1,136 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2110</bug_id>
+          
+          <creation_ts>2003-07-14 17:14 EDT</creation_ts>
+          <short_desc>Admin.pm: listquota ends with error, when quota is unlimited or folder name contains spaces</short_desc>
+          <delta_ts>2010-10-18 12:43:02 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>perl</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>arus@polbox.com</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">arus@polbox.com</who>
+            <bug_when>2003-07-14 17:14:53 EDT</bug_when>
+            <thetext>The case described below also applies to Admin.pm in versions 2.1.x 
+ 
+Let&apos;s create two mailboxes: &quot;testmbx&quot; and &quot;test folder&quot; (the second one has 
+space in name). 
+Then let&apos;s create quota roots for those mailboxes by setting quota. 
+Then, let&apos;s set unlimited quota for testmbx (&quot;sq testmbx none&quot;). 
+Then lets run following perl script (replace &apos;localhost&apos;, &apos;cram-md5&apos;, &apos;admin&apos; and 
+&apos;pass&apos; with other values if needed): 
+ 
+#------------------------------------------ 
+use Cyrus::IMAP::Admin 
+$CYRUS=Cyrus::IMAP::Admin-&gt;new(&apos;localhost&apos;); 
+$CYRUS-&gt;authenticate (-mechanism =&gt; &apos;cram-md5&apos;, 
+        -user =&gt; &apos;admin&apos;, -password =&gt; &apos;pass&apos;); 
+$CYRUS-&gt;listquota(&apos;testmbx&apos;); 
+print &quot;Hello, Cyrus! :-)&quot; 
+#-------------------------------------------- 
+ 
+The result is: 
+Can&apos;t &quot;next&quot; outside a loop block at 
+/usr/lib/perl5/site_perl/5.8.0/i386-linux-thread-multi/Cyrus/IMAP/Admin.pm line 
+386. 
+ 
+The same same result appears after changing &apos;testmbx&apos; to &apos;test folder&apos; in above 
+script. 
+ 
+The regex in line 386 is invalid, it disregards some results of imap GETQUOTA 
+command and presence of spaces in folder names. 
+Error disappears after applying following patch (probably the proposed regex 
+is not entirely correct either): 
+ 
+-- Admin.pm    2002-12-19 19:33:52.000000000 +0100 
++++ Admin.pm.OK 2003-06-15 10:43:47.000000000 +0200 
+@@ -383,7 +383,7 @@ 
+                      -callback =&gt; sub { 
+                        my %d = @_; 
+                        next unless 
+-                         $d{-text} =~ s/^\S+ \((\S+) (\S+) (\S+)\)//; 
++                         $d{-text} =~ s/^\S+.* \((\S*) *?(\S*) *?(\S*)\)//; 
+                        push @{$d{-rock}}, $1, [$2, $3]; 
+                      }, 
+                      -rock =&gt; \@info});</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-14 19:03:37 EDT</bug_when>
+            <thetext>I believe that
+
+s/^.*+ \((\S+) (\S+) (\S+)\)$//;
+
+may also fix your problem.
+
+I suppose that since we&apos;re just throwing the mailbox name away, we can get away
+with this but it still looks ugly.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-14 19:06:16 EDT</bug_when>
+            <thetext>Hmmm,
+
+s/^\S+.* \((\S+) (\S+) (\S+)\)$//;
+
+is probably even more correct.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">arus@polbox.com</who>
+            <bug_when>2003-07-15 02:27:44 EDT</bug_when>
+            <thetext>When quota root exists, but quota is unlimited, &quot;. GETQUOTA testmbx&quot; returns: 
+ 
+* QUOTA testmbx () 
+ 
+The pattern, that You propose still doesn&apos;t fit it. 
+ </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-15 09:36:29 EDT</bug_when>
+            <thetext>yup, you&apos;re right.
+
+applied your original patch to cvs.  closing bug.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

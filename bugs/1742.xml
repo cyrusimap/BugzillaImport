@@ -1,0 +1,423 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1742</bug_id>
+          
+          <creation_ts>2003-01-05 23:30 EDT</creation_ts>
+          <short_desc>contrib/sieve-spamassasin</short_desc>
+          <delta_ts>2014-10-21 09:55:57 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.2.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Christian Schulte">cs@schulte.it</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>cs@schulte.it</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Christian Schulte">cs@schulte.it</who>
+            <bug_when>2003-01-05 23:30:36 EDT</bug_when>
+            <thetext>I tried to install the contrib/sieve-spamassassin patches but they did not work
+out of the box with cvs-2.2! These are the diffs to all involved files for a
+cvs-2.2 installation! In order to get the whole thing compiled after applying
+these changes, one has to specify -DSPAMASSASSIN=1 to the compiler except for
+sieve-lex.l, sieve.y and imapoptions.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Christian Schulte">cs@schulte.it</who>
+            <bug_when>2003-01-05 23:35:19 EDT</bug_when>
+            <thetext>===================================================================
+RCS file: /cvs/src/cyrus/imap/lmtpd.c,v
+retrieving revision 1.99.2.19
+diff -r1.99.2.19 lmtpd.c
+113a114,123
+&gt; #ifdef SPAMASSASSIN
+&gt; 
+&gt;     /* spam stuff */
+&gt; 
+&gt;     /* This is in script_data, but the spam callback can&apos;t get to it */
+&gt;     /* so we put a copy here */
+&gt;     char *username;		/* Username of mailbox */
+&gt;     int spam_result_valid;	/* != 0 iff spam result is valid */
+&gt;     int spam_result;		/* != iff message is spam */
+&gt; #endif /* SPAMASSASSIN */
+893a904,1066
+&gt; #ifdef SPAMASSASSIN
+&gt; /* spam support */
+&gt; 
+&gt; static int
+&gt; getline (int s, char *buf, int len)
+&gt; {
+&gt;     char *bp = buf;
+&gt;     int ret = 1;
+&gt;     char ch;
+&gt; 
+&gt;     while ((ret = read (s, &amp;ch, 1)) == 1 &amp;&amp; ch != &apos;\n&apos;) {
+&gt;       if (len &gt; 0) {
+&gt;           *bp++ = ch;
+&gt;           len--;
+&gt;       }
+&gt;     }
+&gt;     if (len &gt; 0)
+&gt;       *bp = &apos;\0&apos;;
+&gt;     return (buf != bp);
+&gt; }
+&gt; 
+&gt; 
+&gt; static int
+&gt; full_write (int s, char *buf, int len)
+&gt; {
+&gt;     int total;
+&gt;     int ret;
+&gt; 
+&gt;     for (total = 0; total &lt; len; total += ret) {
+&gt;       ret = write (s, buf + total, len - total);
+&gt;       if (ret &lt; 0)
+&gt;           return 0;
+&gt;     }
+&gt;     return total == len;
+&gt; }
+&gt; 
+&gt; static int
+&gt; read_response (int s, int *result)
+&gt; {
+&gt;     char is_spam[6];
+&gt;     char buf[1024];
+&gt;     int major;
+&gt;     int minor;
+&gt;     int response;
+&gt;     float score;
+&gt;     float threshold;
+&gt; 
+&gt;     if (! getline (s, buf, sizeof (buf))) {
+&gt;       syslog (LOG_ERR, &quot;read_response: response getline failed&quot;);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt;     if (sscanf (buf, &quot;SPAMD/%d.%d %d %*s&quot;, &amp;major, &amp;minor, &amp;response) != 3) {
+&gt;       syslog (LOG_ERR, &quot;read_response: response sscanf failed, buf: %s&quot;,
+&gt;               buf);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt;     if (major &lt; 1 || (major == 1 &amp;&amp; minor &lt; 1)) {
+&gt;       syslog (LOG_ERR, &quot;read_response: bad spamd version: %d.%d&quot;,
+&gt;               major, minor);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt;     if (! getline (s, buf, sizeof (buf))) {
+&gt;       syslog (LOG_ERR, &quot;read_response: header getline failed&quot;);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt;     if (sscanf (buf, &quot;Spam: %5s ; %f / %f&quot;, is_spam, &amp;score, &amp;threshold) != 3) {
+&gt;       syslog (LOG_ERR, &quot;read_response: header sscanf failed, buf: %s&quot;,
+&gt;               buf);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt; 
+&gt;     *result = ! strcmp(is_spam, &quot;True&quot;);
+&gt;     return SIEVE_OK;
+&gt; }
+&gt; 
+&gt; int spam (void *mc, int *is_spam)
+&gt; {
+&gt;     mydata_t *d = (mydata_t *) mc;
+&gt;     message_data_t *m = d-&gt;m;
+&gt;     int s;
+&gt;     struct sockaddr_in addr;
+&gt;     struct hostent *host;
+&gt;     char header[128];
+&gt;     int max_size = config_getint (IMAPOPT_SPAMD_MAX_SIZE);
+&gt;     const char *hostname = config_getstring (IMAPOPT_SPAMD_HOST);
+&gt;     int port = config_getint (IMAPOPT_SPAMD_PORT);
+&gt;     char *msg_buf;
+&gt;     int ret;
+&gt; 
+&gt;     /* Assume message isn&apos;t spam if it is larger than max_size */
+&gt;     if (m-&gt;size &gt; max_size) {
+&gt;       syslog (LOG_INFO, &quot;spam: skipping message bigger than %d&quot;, max_size);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt; 
+&gt;     memset (&amp;addr, 0, sizeof(addr));
+&gt;     addr.sin_family = AF_INET;
+&gt;     addr.sin_port = htons(port);
+&gt; 
+&gt;     if ((host = gethostbyname (hostname)) == NULL) {
+&gt;       syslog (LOG_ERR, &quot;spam: gethostbyname failed&quot;);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt;     memcpy (&amp;addr.sin_addr, host-&gt;h_addr, sizeof (addr.sin_addr));
+&gt; 
+&gt;     if((s = socket (PF_INET, SOCK_STREAM, 0)) &lt; 0) {
+&gt;       syslog (LOG_ERR, &quot;spam: socket failed&quot;);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt; 
+&gt;     if (connect (s, (const struct sockaddr *) &amp;addr, sizeof (addr)) &lt; 0) {
+&gt;       syslog (LOG_ERR, &quot;spam: connect failed&quot;);
+&gt;       close (s);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt; 
+&gt;     if ((msg_buf = malloc (m-&gt;size)) == NULL) {
+&gt;       syslog (LOG_ERR, &quot;spam: malloc(%d) failed&quot;, m-&gt;size);
+&gt;       close (s);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt;     rewind (m-&gt;f);
+&gt;     if (fread (msg_buf, 1, m-&gt;size, m-&gt;f) != m-&gt;size || ferror (m-&gt;f)) {
+&gt;       syslog (LOG_ERR, &quot;spam: read message failed&quot;);
+&gt;       free (msg_buf);
+&gt;       close (s);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt; 
+&gt;     if (d-&gt;username) {
+&gt;       snprintf (header, sizeof (header),
+&gt;                 &quot;CHECK SPAMC/1.2\r\nUser: %s\r\nContent-length: %d\r\n\r\n&quot;,
+&gt;                 d-&gt;username, m-&gt;size);
+&gt;     }
+&gt;     else {
+&gt;       snprintf (header, sizeof (header),
+&gt;                 &quot;CHECK SPAMC/1.2\r\nContent-length: %d\r\n\r\n&quot;, m-&gt;size);
+&gt;     }
+&gt;     if (! full_write (s, header, strlen (header))) {
+&gt;       syslog (LOG_ERR, &quot;spam: write header failed&quot;);
+&gt;       free (msg_buf);
+&gt;       close (s);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt;     if (! full_write (s, msg_buf, m-&gt;size)) {
+&gt;       syslog (LOG_ERR, &quot;spam: write message failed&quot;);
+&gt;       free (msg_buf);
+&gt;       close (s);
+&gt;       return SIEVE_FAIL;
+&gt;     }
+&gt; 
+&gt;     shutdown (s, SHUT_WR);
+&gt;     ret = read_response (s, is_spam);
+&gt;     shutdown (s, SHUT_RD);
+&gt; 
+&gt;     free (msg_buf);
+&gt;     close (s);
+&gt; 
+&gt;     syslog(LOG_DEBUG, &quot;spam result: %d\n&quot;, ret);
+&gt;     return ret;
+&gt; }
+&gt; #endif /* SPAMASSASSIN */
+&gt; 
+986a1160,1167
+&gt; #ifdef SPAMASSASSIN
+&gt;     res = sieve_register_spam(sieve_interp, &amp;spam);
+&gt;     if (res != SIEVE_OK) {
+&gt; 	syslog(LOG_ERR, &quot;sieve_register_spam() returns %d\n&quot;, res);
+&gt; 	fatal(&quot;sieve_register_spam()&quot;, EC_SOFTWARE);
+&gt;     }
+&gt;  
+&gt; #endif /* SPAMASSASSIN */
+1155c1336,1340
+
+&lt;     
+---
+&gt; #ifdef SPAMASSASSIN
+&gt;     mydata.username = NULL;
+&gt;     mydata.spam_result = 0;
+&gt;     mydata.spam_result_valid = 0;
+&gt; #endif /* SPAMASSASSIN */
+1205c1390,1393
+&lt; 
+---
+&gt; #ifdef SPAMASSASSIN
+&gt;                 /* Make a copy of mailbox username for spam stuff */
+&gt;                 mydata.username = sdata-&gt;username;
+&gt; #endif SPAMASSASSIN
+
+
+
+===================================================================
+RCS file: /cvs/src/cyrus/imap/Attic/imapoptions,v
+retrieving revision 1.1.4.14
+diff -r1.1.4.14 imapoptions
+537a538,546
+&gt; { &quot;spamd_host&quot;, &quot;127.0.0.1&quot;, STRING }
+&gt; /* The host on which spamassassins spamd listens */
+&gt; 
+&gt; { &quot;spamd_port&quot;, 783, INT }
+&gt; /* The port on which spamassassins spamd listens */
+&gt; 
+&gt; { &quot;spamd_max_size&quot;, 256000, INT }
+&gt; /* The maximum message size in bytes for which spamchecking will get bypassed */
+&gt;  
+
+
+===================================================================
+RCS file: /cvs/src/sieve/interp.c,v
+retrieving revision 1.22
+diff -r1.22 interp.c
+145a146,154
+&gt; #ifdef SPAMASSASSIN
+&gt; int sieve_register_spam(sieve_interp_t *interp, sieve_spam *f)
+&gt; {
+&gt;     interp-&gt;spam = f;
+&gt;  
+&gt;     return SIEVE_OK;
+&gt; }
+&gt; 
+&gt; #endif /* SPAMASSASSIN */
+
+
+===================================================================
+RCS file: /cvs/src/sieve/interp.h,v
+retrieving revision 1.7
+diff -r1.7 interp.h
+37a38,40
+&gt; #ifdef SPAMASSASSIN
+&gt;     sieve_spam *spam;
+&gt; #endif /* SPAMASSASSIN */
+
+
+===================================================================
+RCS file: /cvs/src/sieve/script.c,v
+retrieving revision 1.54.4.1
+diff -r1.54.4.1 script.c
+107a108,116
+&gt; #ifdef SPAMASSASSIN
+&gt;     } else if (!strcmp(&quot;spam&quot;,req)) {
+&gt;       if (s-&gt;interp.spam) {
+&gt;           s-&gt;support.spam = 1;
+&gt;           return 1;
+&gt;       } else {
+&gt;           return 0;
+&gt;       }
+&gt; #endif /* SPAMASSASSIN */
+440c449,452
+&lt;     }
+---
+&gt; #ifdef SPAMASSASSIN
+&gt;     case SPAM:
+&gt;     {
+&gt; 	int is_spam;
+441a454,459
+&gt; 	if (i-&gt;spam == NULL || i-&gt;spam (m, &amp;is_spam) != SIEVE_OK)
+&gt; 	    break;
+&gt; 	res = is_spam;
+&gt;     }
+&gt; #endif /* SPAMASSASSIN */
+&gt;     }
+
+
+===================================================================
+RCS file: /cvs/src/sieve/script.h,v
+retrieving revision 1.7.4.1
+diff -r1.7.4.1 script.h
+49a50,52
+&gt; #ifdef SPAMASSASSIN
+&gt; 	int spam	   : 1;
+&gt; #endif /* SPAMASSASSIN */
+
+
+===================================================================
+RCS file: /cvs/src/sieve/sieve-lex.l,v
+retrieving revision 1.20
+diff -r1.20 sieve-lex.l
+93a94
+&gt; &lt;INITIAL&gt;spam		return SPAM;
+
+
+===================================================================
+RCS file: /cvs/src/sieve/sieve.y,v
+retrieving revision 1.19.4.2
+diff -r1.19.4.2 sieve.y
+146a147
+&gt; %token SPAM
+415a417,421
+&gt; 	| SPAM			 { if (!parse_script-&gt;support.spam) {
+&gt; 				     yyerror(&quot;spam not required&quot;);
+&gt; 				     YYERROR;
+&gt; 				   }
+&gt; 				   $$ = new_test(SPAM); }
+
+
+===================================================================
+RCS file: /cvs/src/cyrus/timsieved/scripttest.c,v
+retrieving revision 1.18
+diff -r1.18 scripttest.c
+173a174,181
+&gt; #ifdef SPAMASSASSIN
+&gt;     res = sieve_register_spam(i, (sieve_spam *) &amp;foo);
+&gt;     if (res != SIEVE_OK) {
+&gt; 	syslog (LOG_ERR, &quot;sieve_register_spam() returns %d\n&quot;, res);
+&gt; 	return TIMSIEVE_FAIL;
+&gt;     }
+&gt;  
+&gt; #endif /* SPAMASSASSIN */
+
+
+===================================================================
+RCS file: /cvs/src/sieve/sieve_interface.h,v
+retrieving revision 1.17
+diff -r1.17 sieve_interface.h
+52a53,56
+&gt; #ifdef SPAMASSASSIN
+&gt; typedef int sieve_spam(void *message_context, int *is_spam);
+&gt; 
+&gt; #endif /* SPAMASSASSIN */
+123a128,130
+&gt; #ifdef SPAMASSASSIN
+&gt; int sieve_register_spam(sieve_interp_t *interp, sieve_spam *f);
+&gt; #endif /* SPAMASSASSIN */
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-21 12:56:21 EDT</bug_when>
+            <thetext>I don&apos;t think these patches work with 2.2, they don&apos;t support bytecode, for example.
+
+Also, I&apos;m not sure how to deal with the bytecode situation cleanly for a contrib
+patch like this, maybe it should just pick a high numbered opcode or something.
+
+Then again, there is a draft out for a sieve spam extention currently.  I&apos;m
+pretty sure its likely to fluctuate though.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 09:55:57 EDT</bug_when>
+            <thetext>Batch moving bugs that won&apos;t be in 2.5</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

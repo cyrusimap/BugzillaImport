@@ -1,0 +1,149 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3249</bug_id>
+          
+          <creation_ts>2010-08-06 05:25 EDT</creation_ts>
+          <short_desc>Cross-server RENAME command returns permission denied</short_desc>
+          <delta_ts>2011-08-17 13:19:26 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>1290</dup_id>
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Simon Beale">simon@minos.org.uk</reporter>
+          <assigned_to name="Wes Craig">wes@umich.edu</assigned_to>
+          <cc>dennis@kaarsemaker.net</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+    
+    <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Simon Beale">simon@minos.org.uk</who>
+            <bug_when>2010-08-06 05:25:20 EDT</bug_when>
+            <thetext>If a client (e.g. Outlook or Thunderbird) issues a RENAME command to a frontend that requires a cross-server folder transfer, it fails with &quot;Permission denied&quot;.
+
+. RENAME user.test.subfolder INBOX.Trash.subfolder
+. NO Permission denied
+
+Looking at the code, this would become a call in imap/imapd.c to cmd_rename with arguments of
+  tag=&apos;.&apos;
+  oldname=&apos;user.test.subfolder&apos;
+  newname=&apos;INBOX.Trash.subfolder&apos;
+  partition=0
+
+What should happen is that backend1 gets told to XFER to backend2, and then backend2 gets told to RENAME. But cmd_rename only triggers a XFER if the partition argument is specified, which email clients aren&apos;t ever likely to send.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Beale">simon@minos.org.uk</who>
+            <bug_when>2010-08-06 05:31:08 EDT</bug_when>
+            <thetext>Sorry, should have added that this was running on 2.3.16.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-08-06 13:36:14 EDT</bug_when>
+            <thetext>Can you get telemetry for this on the frontend, the backend, and the second backend?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Beale">simon@minos.org.uk</who>
+            <bug_when>2010-08-09 06:17:42 EDT</bug_when>
+            <thetext>Telemetry from the frontend:
+---------- simon Mon Aug  9 12:05:26 2010
+
+&gt;1281348326&gt;. OK [CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID MUPDATE=mupdate://dqs-imap-master.example.com/ LOGINDISABLED COMPRESS=DEFLATE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE CATENATE CONDSTORE SCAN IDLE LISTEXT LIST-SUBSCRIBED X-NETSCAPE URLAUTH] User logged in
+&lt;1281348328&lt;. LIST &quot;&quot; &quot;*&quot;
+&gt;1281348328&gt;* LIST (\HasChildren) &quot;.&quot; &quot;INBOX&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;INBOX.Trash&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;user.test1&quot;
+* LIST (\HasChildren) &quot;.&quot; &quot;user.test2&quot;
+* LIST (\HasChildren) &quot;.&quot; &quot;user.test2.subfolder&quot;
+* LIST (\HasNoChildren) &quot;.&quot; &quot;user.test2.subfolder.subfolder&quot;
+. OK Completed (0.000 secs 7 calls)
+&lt;1281348384&lt;. RENAME user.test2.subfolder INBOX.Trash.subfolder
+&gt;1281348384&gt;. NO Permission denied
+&lt;1281348611&lt;. LOGOUT
+&gt;1281348611&gt;* BYE LOGOUT received
+
+
+No telemetry was recorded on backend1 (where INBOX lives).
+
+Telemetry from backend2 (where user.test2.subfolder lives):
+---------- simon Mon Aug  9 12:06:24 2010
+
+&lt;1281348384&lt;C01 CAPABILITY
+&gt;1281348384&gt;* CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID MUPDATE=mupdate://dqs-imap-master.example.com/ LOGINDISABLED AUTH=LOGIN AUTH=PLAIN AUTH=DIGEST-MD5 COMPRESS=DEFLATE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE CATENATE CONDSTORE SCAN IDLE LISTEXT LIST-SUBSCRIBED X-NETSCAPE URLAUTH
+C01 OK Completed
+&lt;1281348384&lt;. RENAME {20+}
+user.test2.subfolder {21+}
+INBOX.Trash.subfolder
+&gt;1281348384&gt;. NO Permission denied
+&lt;1281348611&lt;Q01 LOGOUT
+&gt;1281348611&gt;* BYE LOGOUT received
+Q01 OK Completed
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Beale">simon@minos.org.uk</who>
+            <bug_when>2010-08-09 06:22:02 EDT</bug_when>
+            <thetext>And just to clarify the permissions currently in place, the following taken from running cyradm on the frontend:
+
+localhost.localdomain&gt; lam user*
+user.simon:
+  simon lrswipkxtecda
+user.simon.Trash:
+  simon lrswipkxtecda
+user.test2:
+  simon lrswipkxtecda
+  test2 lrswipkxtecda
+user.test2.subfolder:
+  simon lrswipkxtecda
+  test2 lrswipkxtecda
+user.test2.subfolder.subfolder:
+  simon lrswipkxtecda
+  test2 lrswipkxtecda
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-08-17 13:19:26 EDT</bug_when>
+            <thetext>
+
+*** This bug has been marked as a duplicate of bug 1290 ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

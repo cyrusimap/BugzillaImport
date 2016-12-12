@@ -1,0 +1,199 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3438</bug_id>
+          
+          <creation_ts>2011-04-11 04:56 EDT</creation_ts>
+          <short_desc>Authorization id specified on Cyrus Deliver (-a argument) is ignored</short_desc>
+          <delta_ts>2011-06-30 06:54:29 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.7</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.9</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="John Lane">cyrus@jelmail.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>iv+cyrusbug@usit.uio.no</cc>
+    
+    <cc>kolbu@usit.uio.no</cc>
+    
+    <cc>robbert@exx.nl</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="John Lane">cyrus@jelmail.com</who>
+            <bug_when>2011-04-11 04:56:05 EDT</bug_when>
+            <thetext>Following upgrade from Cyrus-IMAP 2.3.15 to 2.4.7 delivery of messages to specified mailboxes has stopped working.
+
+Investigations would indicate that the authorization ID specified as a &quot;-a&quot; parameter to Cyrus &quot;deliver&quot; is being ignored.
+
+System configuration information:
+
+configdirectory: /srv/mail/cyrus
+partition-default: /srv/mail/cyrus/mail
+admins: cyrus
+sasl_pwcheck_method: saslauthd
+altnamespace: yes
+unixhierarchysep: yes
+
+This uses &quot;altnamespace&quot; to give folders at the same level as INBOX and uses
+&quot;unixhierarchysep&quot; to give folder separator of &quot;/&quot; rather than &quot;.&quot; (the &quot;.&quot; is used in some folder names).
+
+This configuration worked fine for a very long time until the upgrade.
+
+The ACLs in place (for the auth id specified on &quot;deliver&quot;):
+
+localhost.localdomain&gt; lm user/john
+user/john (\HasChildren)
+localhost.localdomain&gt; lm user/john/folder.name/subfolder
+user/john/folder.name/subfolder (\HasChildren)
+localhost.localdomain&gt; lam user/john/folder.name/subfolder
+john lrswipcda
+localhost.localdomain&gt; lam user/john
+john lrswipcda
+localhost.localdomain&gt;
+
+So cyradm lam shows folder.name/subfolder has p rights (amongst others) for 
+user john.
+
+I have tested by applying &quot;anyone p&quot; to the ACL for some mailbox folders:
+
+localhost.localdomain&gt; sam user/john anyone p
+localhost.localdomain&gt; lam user/john
+john lrswipcda
+anyone p
+
+localhost.localdomain&gt; sam user/john/folder.name/subfolder anyone p
+localhost.localdomain&gt; lam user/john/folder.name/subfolder
+john lrswipcda
+anyone p
+
+Initially on doing the above I thought &quot;anyone p&quot; made no difference but since then it works with &quot;anyone p&quot; in place (probably late night testing!). 
+
+I have now been able to switch the behaviour on/off by adding/removing &quot;anyone p&quot; from specific folders. I will do more testing however and report back.
+
+Some mailbox folders have periods in the names, others don&apos;t. 
+
+The folder list is sane in imap client. Everything is working fine 
+except delivery into folders. All mail already delivered prior to 
+upgrade is in folders and perfectly readable as I would expect.
+
+My procmail log reports like this:
+procmail: Executing 
+&quot;/usr/cyrus/bin/deliver,-r,xxx@xxx.com,-a,john,-m,folder.name/subfolder,john&quot;
+
+To test from command line I used this command
+/usr/cyrus/bin/deliver -r xxx@xxx.com -a john,-m folder.name/subfolder john &lt; testmessage
+
+I will perform further tests to be sure, I will check
+* the problem exists for all folders (regardless of the presence of periods).
+* adding &quot;anyone p&quot; to any folder allows delivery to that folder.
+* removing &quot;anyone p&quot; from any folder causes mail to deliver to INBOX.
+
+Please let me know if I can provide any more information.
+
+(initially mailing list discussion http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.info-cyrus&amp;msg=52560)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-11 05:29:44 EDT</bug_when>
+            <thetext>I&apos;ll look at this one.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="John Lane">cyrus@jelmail.com</who>
+            <bug_when>2011-04-11 16:00:53 EDT</bug_when>
+            <thetext>Tested again this evening and can confirm that
+* the problem exists for all folders (regardless of the presence of periods).
+* adding &quot;anyone p&quot; to any folder allows delivery to that folder.
+* removing &quot;anyone p&quot; from any folder causes mail to deliver to INBOX.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ingar Vindenes">iv+cyrusbug@usit.uio.no</who>
+            <bug_when>2011-04-15 11:04:21 EDT</bug_when>
+            <thetext>We are experiencing the same bug in 2.4.8. 
+
+For users with spam-filtering activated we use exim to call the &quot;deliver&quot;-program with the &quot;-m&quot; and &quot;-a&quot; options to make a delivery to a &quot;spam&quot;-mailbox, and this does not work after upgrading to 2.4.8. I.e. the delivery is done to the inbox, unless an ACL with &quot;anyone p&quot; is set.
+
+A workaround/patch for this bug would be appreciated.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Øyvind Kolbu">kolbu@usit.uio.no</who>
+            <bug_when>2011-04-20 07:18:21 EDT</bug_when>
+            <thetext>We worked around this by letting exim deliver via lmtp over tcp instead of using
+deliver(1) and a lmtp socket. This was done by adding:
+   lmtp          cmd=&quot;lmtpd -a&quot; listen=&quot;IP:lmtp&quot; prefork=2
+to cyrus.conf and rerouting spam mails from username@domain to 
+username+spam@domain, and thus let lmtpd implicitly deliver it to the 
+user.username.spam folder.
+
+This solution does not require &quot;anyone p&quot; on the spam folder.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">robbert@exx.nl</who>
+            <bug_when>2011-05-04 15:11:08 EDT</bug_when>
+            <thetext>Just a FYI: I hit this bug too on 2.4.8 (Debian testing&apos;s 2.4.8-1 package), after upgrade from 2.2.13p1.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-28 06:00:12 EDT</bug_when>
+            <thetext>Can you please test with 2.4.9.  I believe this was fixed by:&apos;
+
+Bug #3438 - offer &quot;AUTH&quot; capability even if preauthed
+
+Thanks,
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Øyvind Kolbu">kolbu@usit.uio.no</who>
+            <bug_when>2011-06-30 06:32:53 EDT</bug_when>
+            <thetext>(In reply to comment #6)
+&gt; Can you please test with 2.4.9.  I believe this was fixed by:&apos;
+&gt; 
+&gt; Bug #3438 - offer &quot;AUTH&quot; capability even if preauthed
+
+It works fine now, thanks!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-06-30 06:54:29 EDT</bug_when>
+            <thetext>Updating milestone and status for the bug ;-) Thanks!</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

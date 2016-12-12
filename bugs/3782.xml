@@ -1,0 +1,98 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3782</bug_id>
+          
+          <creation_ts>2013-02-28 09:40 EDT</creation_ts>
+          <short_desc>Disabling unexisting active Sieve script is not an error</short_desc>
+          <delta_ts>2013-03-20 19:53:16 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dilyan.palauzov@aegee.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-28 09:40:11 EDT</bug_when>
+            <thetext>As the title says, and as per RFC, trying to disable the active Sieve script when there is none is not an error.
+
+In current master:
+listscripts
+&quot;test&quot;
+OK
+setactive &quot;&quot;
+NO &quot;Unable to unlink active script&quot;
+
+
+Commit that checks errno is not ENOENT (and does nothing if it is; no need to sync either since there is no active script): ba47f1a0fae5eab195faa9dd161ae87bf3866b80 (https://github.com/worldline-messaging/cyrus-imapd/commit/ba47f1a0fae5eab195faa9dd161ae87bf3866b80)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-03-20 19:53:16 EDT</bug_when>
+            <thetext>Thanks for finding this out.
+
+Fixed on master in commit f004aaf03d803b7a5e6647795bbeac8b04e3ee21 .
+
+
+
+    Bug 3782: allow disabling the active Sieve script, when no script is active
+
+    ... this behaviour is &quot;RFC 5804, Section 2.8 SETACTIVE command&quot;-conform.
+
+diff --git a/timsieved/actions.c b/timsieved/actions.c
+index ba9c309..43da342 100644
+--- a/timsieved/actions.c
++++ b/timsieved/actions.c
+@@ -460,6 +460,12 @@ int putscript(struct protstream *conn, mystring_t *name, mystring_t *data,
+ static int deleteactive(struct protstream *conn)
+ {
+     if (unlink(&quot;defaultbc&quot;) != 0) {
++       if (errno == ENOENT) {
++           /* RFC 5804, 2.8 SETACTIVE Command:
++            * Disabling an active script when there is no script active is
++            * not an error and MUST result in an OK reply. */
++           return TIMSIEVE_OK;
++       }
+        prot_printf(conn,&quot;NO \&quot;Unable to unlink active script\&quot;\r\n&quot;);
+        return TIMSIEVE_FAIL;
+     }</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

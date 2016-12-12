@@ -1,0 +1,281 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1179</bug_id>
+          
+          <creation_ts>2002-02-24 17:41 EDT</creation_ts>
+          <short_desc>tls trying to delete nonexistant keys?</short_desc>
+          <delta_ts>2010-10-18 12:42:54 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Ken Murchison">ken@oceana.com</assigned_to>
+          <cc>leg+cyrus@andrew.cmu.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-24 17:41:56 EDT</bug_when>
+            <thetext>Seeing a good number of these in the log.  We suspect it is SSL/TLS related 
+because our imapd is only using db3 for that (and this is a db3 error message).
+
+Feb 18 06:59:09 mail1.andrew.cmu.edu imapd[3516]: DBERROR: mydelete: error 
+deleting =\3035QB^^\264]$(\231\374\363^U\217E^L\353\324R\256=R\246\314
+\377F^N^Q\211\335\316: DB_NOTFOUND: No matching key/data pair found</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-24 20:38:17 EDT</bug_when>
+            <thetext>Hmm.  You&apos;re not using db3 for deliver.db?  Anyways, are these happening when 
+tls_prune is running, or during normal operation?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-24 21:14:55 EDT</bug_when>
+            <thetext>we are using db3.  Unsure about the tls_prune status.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-24 21:33:28 EDT</bug_when>
+            <thetext>I don&apos;t know what times that tls_prune is running, however we only run it once a
+day and we are getting these guys spread out all over the place, in no set pattern.
+
+e.g. log entries at:
+3:28, 3:34, 3:35, 3:40, 4:03, 4:10, 4:38, 4:39, 4:42, 4:43, 4:46.....(etc...)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-25 09:31:13 EDT</bug_when>
+            <thetext>I haven&apos;t been able to reproduce this here.  Could you set 
+var_imapd_tls_loglevel=1 in tls.c and set local6.debug in syslog.conf to see if 
+this helps us isolate the problem?
+
+The only thing that comes to mind might be that two different services are 
+both trying to expire the same session ID, and the second one fails for obvious 
+reasons.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-25 09:37:47 EDT</bug_when>
+            <thetext>I&apos;ll talk to larry, but I don&apos;t think that&apos;s something we can immediately do on
+mail1.  Sigh.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-25 11:34:04 EDT</bug_when>
+            <thetext>&lt;message,personal, rjs3@andrew&gt; 11:27:11
+here&apos;s what i think is happening:
+time T:
+- client (first thread) makes ssl/tls connection to imapd process A
+- process A stores the session id in its internal and external cache
+...
+time T + tls_session _timeout:
+- client (second thread) makes another ssl/tls connection to imapd process B
+- process B looks up this session in the external cache (its not in internal),
+finds that it is expired and removes it from external cache
+- client (first thread) reconnects to imapd process A
+- process A looks up the session id in its internal cache, find that it is
+expired and removes it from its internal AND external cache
+since the id is already gone from the external cache, db3 complains
+i think this would only happen in long-running clients.  in fact tls_prune
+could cause the same problem with a single threaded long running client
+solutions to follow...
+[Auth] Ken Murchison &lt;ken3&gt; on unix4.andrew
+
+&lt;message,personal, rjs3@andrew&gt; 11:30:54
+solution 1:
+always to a lookup of the session before trying to remove it
+solution 2:
+set the server to ignore the internal cache and always use the external
+see: http://www.openssl.org/docs/ssl/SSL_CTX_set_session_cache_mode.html
+solution 2 slows down lookups on those services which have the session in its
+internal cache.
+Note: i&apos;m currently using the default setting
+[Auth] Ken Murchison &lt;ken3&gt; on unix4.andrew
+
+&lt;message,personal, rjs3@andrew&gt; 11:33:10
+solution 3:
+only let the service which has the session id in its internal cache delete it
+from the external.  if this doesn&apos;t happen, tls_prune will get it
+[Auth] Ken Murchison &lt;ken3&gt; on unix4.andrew
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-25 11:50:03 EDT</bug_when>
+            <thetext>couldn&apos;t we have mydelete() ignore DB_NOTFOUND?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-25 11:50:41 EDT</bug_when>
+            <thetext>is there any reason to have the internal cache?  it just seems like a waste of
+memory in our architecture.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-25 11:55:42 EDT</bug_when>
+            <thetext>Probably not.  Obviously, its a little quicker lookup for whichever server 
+received the initial connection.  I have no problem disabling it if you want me 
+to.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-25 11:58:04 EDT</bug_when>
+            <thetext>either a server is busy enough that the chances of a client getting the same
+process are low, or the server won&apos;t notice the extra time to go to the external
+cache (and i bet that&apos;s hardly noticable anyway).
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-25 11:59:36 EDT</bug_when>
+            <thetext>ok.  consider it done</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-25 14:37:47 EDT</bug_when>
+            <thetext>Turns out I spoke too soon.  The problem is the internal cache, but not 
+(entirely) for the reason I gave before.  As it turns out, you can&apos;t completely 
+disable the internal cache.  Even if you don&apos;t do lookups against it, it is 
+still populated and purged as usual.
+
+So, I set the cache size to 1 (0 is unlimited size), and I was able to 
+reproduce your problem.  Basically, when the internal cache gets full, it has 
+to clear enough space for a new id.  This causes the remove_session_cb() to be 
+called, which removes stuff from the external cache.  I think it is this 
+removal that is causing my errors and your errors.  I even had the same process 
+try to remove a session id twice.
+
+I _think_ the only way to completely remove the db3 error is to not have a 
+remove_session_cb.  However, there might be a potential security problem here, 
+because this callback is used to remove session ids when a session is aborted, 
+etc.  Do we want to leave a session id floating around in the cache in this 
+case?
+
+Is there any harm in having mydelete() ignore the DB_NOTFOUND return code?  Or 
+at least change the loglevel to something less than LOG_ERR?
+
+Note: I have been using &apos;openssl s_client -reconnect&apos; to do my testing.  Its 
+possible that this is not the most friendly client.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-26 20:26:40 EDT</bug_when>
+            <thetext>Anyone care to share their thoughts on how I should proceed?  The existing code 
+is based on mod_ssl stuff.  Whether its is the &quot;right&quot; way to do things, I 
+don&apos;t know (the OpenSSL docs suck).  I&apos;d like to leave the code the way it is 
+(until proven otherwise) and either squash the DB_NOTFOUND error, or add a 
+flags option to db-&gt;delete() which allows us to squash it (ie, rm -f).
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-26 20:30:25 EDT</bug_when>
+            <thetext>+1 for the flag, I don&apos;t think we want to completely lose that log message.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-26 20:32:28 EDT</bug_when>
+            <thetext>would simply lowering the log level be sufficient, or do we want to squash it 
+completely?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-26 20:33:30 EDT</bug_when>
+            <thetext>given the response to the LOG_DEBUG messages in sasl that looked worrysome but
+weren&apos;t at all a concern, I&apos;d vote for squashing it completely, but I&apos;ll leave
+the final decision to larry.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-27 14:15:18 EDT</bug_when>
+            <thetext>sorry, i&apos;m confused.  how can there be an entry in the internal cache that isn&apos;t
+in the external cache?  shouldn&apos;t the internal cache be a subset of the external
+cache?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-27 14:34:13 EDT</bug_when>
+            <thetext>i&apos;m not entirely sure i can explain it.  i&apos;m fairly certain that the external 
+cache is just an extension of the internal, and whatever openssll does to the 
+internal happends to the external (additions/lookup/deletions).  i also think 
+that you can tell openssl to NOT do lookups in the internal cache, but it 
+still does the addtionas/deletions 
+ 
+there is some sequence(s) of events which causes a single process to delete 
+the same ID twice and/or multiple processes to delete the same ID from the 
+external cache 
+ 
+the latter is probably unavoidable, but the former is wierd 
+
+i also think that the frequency of these errors is related to the size of the 
+internal cache.  using the default of 128, I don&apos;t see any errors (but i onyl 
+have 2 regular SSL/TLS clients). 
+ 
+when i reduce the internal cache size to 1, i get the errors </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-27 14:49:54 EDT</bug_when>
+            <thetext>right, but the last thing i want to do is to increase the internal cache.
+
+ken and i decide that with a small internal cache is it deleting non-timed out
+sessions from the external cache, but we don&apos;t want large internal caches (they
+just take up memory).
+
+so we&apos;ll nuke remove_session_cb() and drop the internal cache size down and this
+will probably do what we want.
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-02-27 16:23:58 EDT</bug_when>
+            <thetext>current solution:
+
+- added &apos;force&apos; flag to DB-&gt;delete() to suppress DB_NOTFOUND errors
+
+also don&apos;t use internal cache (to the extent we are allowed via API), but this 
+has nothing to do with the solution
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,77 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3235</bug_id>
+          
+          <creation_ts>2010-06-03 18:43 EDT</creation_ts>
+          <short_desc>GSSAPI client plugin ignores the authentication name</short_desc>
+          <delta_ts>2010-06-08 22:36:52 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ian Anderson">iana@apple.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>iana@apple.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ian Anderson">iana@apple.com</who>
+            <bug_when>2010-06-03 18:43:54 EDT</bug_when>
+            <thetext>When the GSSAPI client goes to gss_init_sec_context, it uses GSS_C_NO_CREDENTIAL, which appears to just pick a random Kerberos credential from whatever ones happen to be active at the time.  It seems like it would be better if it consulted the SASL_CB_AUTHNAME and used that name (if any) for gss_import_name(GSS_C_NT_USER_NAME) and gss_acquire_cred(GSS_C_INDEFINITE, GSS_C_NO_OID_SET, GSS_C_INITIATE); ultimately passing that to gss_init_sec_context.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ian Anderson">iana@apple.com</who>
+            <bug_when>2010-06-06 06:25:17 EDT</bug_when>
+            <thetext>Hmm, there would need to be another callback to get the realm for the user principal though, the authentication name isn&apos;t sufficient.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ian Anderson">iana@apple.com</who>
+            <bug_when>2010-06-08 22:36:52 EDT</bug_when>
+            <thetext>Here&apos;s a clarification (apologies if the terminology isn&apos;t spot on).
+
+I&apos;m wanting to use a particular Kerberos client principal based on the authentication name the user enters in my application.  Right now the SASL library uses GSS_C_NO_CREDENTIAL as the credential argument to gss_init_sec_context, which tends to cause this sort of behavior.
+
+1. I have a TGT for user1@REALM and user2@REALM.
+2. I have (for example) an IMAP account for user2.
+3. SASL will use the TGT for user1@REALM and so I end up getting the email for user1 rather than user2.
+
+RFC 2743 section 1.1.1.3 seems to basically allow gss_init_sec_context + GSS_C_NO_CREDENTIAL to use any credential the system deems appropriate (especially in the ii and iii clauses).  At least on Mac OS X, that appears to choose the first TGT it has in its cache.
+
+What I would rather have happen is that SASL would call my SASL_CB_AUTHNAME callback, and probably a new SASL_CB_AUTHREALM callback.  From those it would construct a client principal which it would build up with gss_import_name(with GSS_C_NT_USER_NAME) and gss_acquire_cred( with GSS_C_INDEFINITE, GSS_C_NO_OID_SET, GSS_C_INITIATE), before ultimately passing that on to gss_init_sec_context in place of GSS_C_NO_CREDENTIAL.  (If SASL_CB_AUTHNAME or SASL_CB_AUTHREALM aren&apos;t there, then it should probably fall back on GSS_C_NO_CREDENTIAL as it does today.)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

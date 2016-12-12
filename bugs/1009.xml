@@ -1,0 +1,154 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1009</bug_id>
+          
+          <creation_ts>2001-10-16 16:11 EDT</creation_ts>
+          <short_desc>should prefer nonanonymous mechanisms</short_desc>
+          <delta_ts>2010-10-25 18:46:28 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.0</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P4</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>ken@oceana.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2001-10-16 16:11:48 EDT</bug_when>
+            <thetext>anonymous mechanisms should always be selected as a last resort.  Currently this
+is not guaranteed.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-12 17:56:17 EDT</bug_when>
+            <thetext>hey ken, this bug refers to what we&apos;ve been talking about lately.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-12 19:07:21 EDT</bug_when>
+            <thetext>Lawrence Greenfield wrote:
+&gt; 
+&gt;    Date: Thu, 11 Apr 2002 22:11:27 -0400
+&gt;    From: Ken Murchison &lt;ken@oceana.com&gt;
+&gt; 
+&gt;    Lawrence Greenfield wrote:
+&gt;    &gt;
+&gt;    &gt; Yeah, we can probably do something like this:
+&gt;    &gt;
+&gt;    &gt; if (bestm &amp;&amp; m-&gt;plug-&gt;max_ssf &lt;= bestssf) {
+&gt;    &gt;    /* this mechanism is no better than what we already have! */
+&gt;    &gt;    break;
+&gt;    &gt; }
+&gt;    &gt;
+&gt;    &gt; if (bestm &amp;&amp;
+&gt;    &gt;     ((m-&gt;plug-&gt;security_flags ^ bestm-&gt;plug-&gt;security_flags) &amp;
+&gt;    &gt;      bestm-&gt;plug-&gt;security_flags)) {
+&gt;    &gt;    /* this mechanism doesn&apos;t have some of the security features
+&gt;    &gt;       &apos;bestm&apos; has! */
+&gt;    &gt;    break;
+&gt;    &gt; }
+&gt;    &gt;
+&gt;    &gt; Thoughts?
+&gt; 
+&gt;    Hmm.  This &quot;more is better&quot; approach probably works in some cases but
+&gt;    not all.  Maybe its overkill, but I&apos;m thinking that each flag should
+&gt;    have some kind of weight or &quot;pseudo SSF&quot; associated with it.  Does this
+&gt;    make sense, or I&apos;m I out to lunch?
+&gt; 
+&gt; It seems like a lot more work (especially to maintain) and probably
+&gt; not worth it since in general these things really have to be
+&gt; configured anyway to guard against active attacks.
+
+I was bored and did some playing around.  Using the table of client-side
+security flags below (taken from the source and ordered in what I
+_think_ is a reasonable prioritized list), here&apos;s what I&apos;ve found:
+
+- the &quot;more flags is better&quot; approach yields the order below except that
+it doesn&apos;t differentiate between DIGEST-MD5/OTP, CRAM-MD5/EXTERNAL or
+PLAIN/LOGIN/ANONYMOUS (this might be good enough however)
+
+- if we simply compare the numeric value of the bitwise-OR&apos;d flags (M
+being MSB and P being LSB), we get the exact order below.  This might be
+completely dumb luck, but I think it has some merit.  In fact, if
+necessary we could probably change the order of the bits without
+breaking the API (since no app should be dependent on the actual value
+of the flags, just the names)
+
+Thoughts?
+
+
+              // P / A / D / F / Y / C / M /
+=============++===+===+===+===+===+===+===+
+ SRP         || x | x | x | x | x |   | x |
+-------------++---+---+---+---+---+---+---+
+ GSSAPI/KRB  || x | x |   |   | x |   | x |
+-------------++---+---+---+---+---+---+---+
+ DIGEST-MD5  || x |   |   |   | x |   | x |
+-------------++---+---+---+---+---+---+---+
+ OTP         || x |   |   | x | x |   |   |
+-------------++---+---+---+---+---+---+---+
+ CRAM-MD5    || x |   |   |   | x |   |   |
+-------------++---+---+---+---+---+---+---+
+ EXTERNAL    || x |   | x |   |   |   |   |
+-------------++---+---+---+---+---+---+---+
+ PLAIN/LOGIN ||   |   |   |   | x |   |   |
+-------------++---+---+---+---+---+---+---+
+ ANONYMOUS   || x |   |   |   |   |   |   |
+-------------++---+---+---+---+---+---+---+
+
+P = 0x01 = NOPLAINTEXT
+A = 0x02 = NOACTIVE
+D = 0x04 = NODICTIONARY
+F = 0x08 = FORWARD_SECRECY
+Y = 0x10 = NOANONYMOUS
+C = 0x20 = PASS_CREDENTIALS
+M = 0x40 = MUTUAL_AUTH
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-07-02 15:02:15 EDT</bug_when>
+            <thetext>I committed the # of security flags fix, since I don&apos;t want to be depending on
+the ordering of the flags to give us sensable behavior.  this is documented in a
+comment in the code.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

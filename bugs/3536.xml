@@ -1,0 +1,130 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3536</bug_id>
+          
+          <creation_ts>2011-08-28 20:37 EDT</creation_ts>
+          <short_desc>CID 430: USE_AFTER_FREE in mailbox_close</short_desc>
+          <delta_ts>2013-03-27 22:25:51 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-08-28 20:37:17 EDT</bug_when>
+            <thetext>Found by Coverity.  There are some obscure codepaths in which mailbox-&gt;uniqueid is left pointing to free()d memory, which is then free()d again in the cleanup path for mailbox_close().
+
+1013 	    /* get a re-read of the options field for cleanup purposes */
+1014 	    if (mailbox-&gt;index_fd != -1) {
+1015 		if (!mailbox-&gt;index_locktype)
+Event freed_arg: &quot;mailbox_lock_index&quot; frees &quot;mailbox-&gt;uniqueid&quot;. [details]
+1016 		    mailbox_lock_index(mailbox, LOCK_SHARED);
+1017 		/* drop the index lock here because we&apos;ll lose our right to it
+1018 		 * when try to upgrade the mboxlock anyway. */
+1019 		mailbox_unlock_index(mailbox, NULL);
+1020 	    }
+1021 	
+1022 	    /* do we need to try and clean up? (not if doing a shutdown,
+1023 	     * speed is probably more important!) */
+At conditional (1): &quot;!in_shutdown&quot; taking true path
+At conditional (2): &quot;mailbox-&gt;i.options &amp; 0xe0000000U&quot; taking true path
+1024 	    if (!in_shutdown &amp;&amp; (mailbox-&gt;i.options &amp; MAILBOX_CLEANUP_MASK)) {
+1025 		int r = mailbox_mboxlock_reopen(listitem, LOCK_NONBLOCKING);
+At conditional (3): &quot;!r&quot; taking true path
+1026 		if (!r) r = mailbox_open_index(mailbox);
+At conditional (4): &quot;!r&quot; taking false path
+1027 		if (!r) r = mailbox_lock_index(mailbox, LOCK_EXCLUSIVE);
+At conditional (5): &quot;!r&quot; taking false path
+1028 		if (!r) {
+1029 		    /* finish cleaning up */
+1030 		    if (mailbox-&gt;i.options &amp; OPT_MAILBOX_DELETED)
+1031 			mailbox_delete_cleanup(mailbox-&gt;part, mailbox-&gt;name);
+1032 		    else if (mailbox-&gt;i.options &amp; OPT_MAILBOX_NEEDS_REPACK)
+1033 			mailbox_index_repack(mailbox);
+1034 		    else if (mailbox-&gt;i.options &amp; OPT_MAILBOX_NEEDS_UNLINK)
+1035 			mailbox_index_unlink(mailbox);
+1036 		    /* or we missed out - someone else beat us to it */
+1037 		}
+1038 		/* otherwise someone else has the mailbox locked 
+1039 		 * already, so they can handle the cleanup in
+1040 		 * THEIR mailbox_close call */
+1041 	    }
+1042 	
+1043 	    mailbox_release_resources(mailbox);
+1044 	
+1045 	    free(mailbox-&gt;name);
+1046 	    free(mailbox-&gt;part);
+1047 	    free(mailbox-&gt;acl);
+Event double_free: Calling &quot;free&quot; frees pointer &quot;mailbox-&gt;uniqueid&quot; which has already been freed.
+1048 	    free(mailbox-&gt;uniqueid);
+
+
+That description from Coverity was less than completely helpful, but it does hint at this problem in mailbox_read_header()
+
+1159     /* read uniqueid (should always exist unless old format) */
+1160     free(mailbox-&gt;uniqueid);  &lt;--- dangling 
+1161     if (tab &lt; eol) {
+1162         p = tab + 1;
+1163         if (p == eol) {
+1164             r = IMAP_MAILBOX_BADFORMAT;
+1165             goto done;   &lt;---- leaves function
+1166         }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-08-28 20:40:01 EDT</bug_when>
+            <thetext>CID 429 also refers to a dangling mailbox-&gt;uniqueid pointer.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-01-24 19:29:38 EDT</bug_when>
+            <thetext>Moved this to ASSIGNED to silence the Bugzilla whinygrams.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-27 22:25:51 EDT</bug_when>
+            <thetext>Fixed in commit
+
+d646330 Fix double-free in mailbox_read_header</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

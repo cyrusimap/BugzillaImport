@@ -1,0 +1,180 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3588</bug_id>
+          
+          <creation_ts>2011-10-21 15:07 EDT</creation_ts>
+          <short_desc>xfer permanently stores non-FQDN in mupdate master</short_desc>
+          <delta_ts>2011-12-30 16:53:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.12</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.13</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Adrian Hosey">alh@warhound.org</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Adrian Hosey">alh@warhound.org</who>
+            <bug_when>2011-10-21 15:07:47 EDT</bug_when>
+            <thetext>If I use cyradm to initiate an xfer from server1 to server2 and I don&apos;t use the FQDN:
+
+cyradm&gt; xfer user.alh server2 server2-disk1
+
+The xfer succeeds but the folder will be in the mupdate master like this
+
+user.alh	1 server2!server2-disk1 alh	lrswipkxtecda	
+
+This is really bad because the next time server2 does a ctl_mboxlist -m it won&apos;t think user.alh is local (because server2 only knows itself by its FQDN) and it will DELETE user.alh from its local storage. (And send a DELETE to its replica if you are using replication - double whammy)
+
+In imapd.c, xfer_undump() is sending MUPDATEPUSH to the remote, then in xfer_reactivate(), the local is doing an activate using the xfer-&gt;toserver value, replacing the result of the MUPDATEPUSH. This is the killer if xfer-&gt;toserver is not a FQDN. I resolved this in my build by flipping those two operations - I made the MUPDATEPUSH happen last inside xfer_reactivate(). That&apos;s a solution, not sure if it&apos;s the best solution.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-10-21 17:46:41 EDT</bug_when>
+            <thetext>Y&apos;r doin it rong.
+
+The names should be set as &quot;servername&quot; in the imapd.conf, and that&apos;s what you should be using for the moves.  Maybe servers should reject a move that doesn&apos;t come in with their servername.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Hosey">alh@warhound.org</who>
+            <bug_when>2011-10-21 18:26:44 EDT</bug_when>
+            <thetext>I&apos;d rather leave the servernames as they are - we have a few hundred thousand folders in the mupdate master so changing the servernames is non-trivial. I&apos;m okay with telling the other admins that we need to start using full hostnames with cyradm, but yeah, it would be nice if it threw an error when someone forgets, as the consequence is potentially destructive. Whether it was by design or by accident, using the shortnames had worked since 2.0.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2011-10-21 20:35:54 EDT</bug_when>
+            <thetext>Certainly MUPDATEPUSH ought to have the last word, but denying is even better and avoids leaving bogus kruft in the mupdate master&apos;s DB when the xfer fails halfway through and can&apos;t back out.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-12-23 07:14:14 EDT</bug_when>
+            <thetext>Created an attachment (id=1448)
+Only use MUPDATEPUSH
+
+Wes, Adrian.
+
+I think the correct behaviour here is to actually save the MUPDATEPUSH until the final stage, which is xfer_reactivate.
+
+Which means stripping it from xfer_undump.
+
+I&apos;ve added a patch which I think does what&apos;s needed here - can you please take a look and tell me what you think?
+
+Thanks,
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Hosey">alh@warhound.org</who>
+            <bug_when>2011-12-27 14:43:17 EDT</bug_when>
+            <thetext>If I&apos;m reading the patch correctly, &quot;Step 6&quot; and &quot;Step 6.5&quot; are replaced by just one step which is the MUPDATEPUSH. That seems right.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2011-12-28 22:56:31 EDT</bug_when>
+            <thetext>Looks correct to me.  My main review was for recovery.  xfer&apos;s fail for a variety of reasons, typically leaving both backends and the mupdate master in a funky state.  It would be nice if something simple like ctl_mboxlist -m on one or at most both backends fixed the issue.  This doesn&apos;t appear to make the present situation any worse.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-12-29 06:00:59 EDT</bug_when>
+            <thetext>This patch will be in 2.4.13 then, since everyone likes it!</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1448</attachid>
+            <date>2011-12-23 07:14 EDT</date>
+            <desc>Only use MUPDATEPUSH</desc>
+            <filename>patch_3588.diff</filename>
+            <type>text/plain</type>
+            <size>2650</size>
+            <attacher>brong@fastmail.fm</attacher>
+            
+              <data encoding="base64">Y29tbWl0IDMxMzM3NzNlNTA5YjZjNGYzN2MyNDk3ZWUxZjhlMmYzZDkyNTdkYmEKQXV0aG9yOiBC
+cm9uIEdvbmR3YW5hIDxicm9uZ0BvcGVyYS5jb20+CkRhdGU6ICAgRnJpIERlYyAyMyAxMzoxMjow
+NSAyMDExICswMTAwCgogICAgQnVnICMzNTg4IC0gb25seSBkbyBtdXBkYXRlIGZyb20gdGhlIGRl
+c3RpbmF0aW9uIHNlcnZlcgogICAgCiAgICBCZWNhdXNlIHRoYXQgb25lIGtub3dzIHRoZSBjb3Jy
+ZWN0IHNlcnZlcm5hbWUKCmRpZmYgLS1naXQgYS9pbWFwL2ltYXBkLmMgYi9pbWFwL2ltYXBkLmMK
+aW5kZXggZTU2NTE4NS4uYjA4MDAwYSAxMDA2NDQKLS0tIGEvaW1hcC9pbWFwZC5jCisrKyBiL2lt
+YXAvaW1hcGQuYwpAQCAtODY4MSw2ICs4NjgxLDcgQEAgc3RhdGljIGludCB4ZmVyX3VuZHVtcChz
+dHJ1Y3QgeGZlcl9oZWFkZXIgKnhmZXIpCiAJICAgIHN5c2xvZyhMT0dfRVJSLAogCQkgICAiRmFp
+bGVkIHRvIG9wZW4gbWFpbGJveCAlcyBmb3IgZHVtcF9tYWlsYm94KCkgJXMiLAogCQkgICBpdGVt
+LT5uYW1lLCBlcnJvcl9tZXNzYWdlKHIpKTsKKwkgICAgcmV0dXJuIHI7CiAJfQogCiAJLyogU3Rl
+cCA0OiBEdW1wIGxvY2FsIC0+IHJlbW90ZSAqLwpAQCAtODcyMyw0MyArODcyNCwxMiBAQCBzdGF0
+aWMgaW50IHhmZXJfdW5kdW1wKHN0cnVjdCB4ZmVyX2hlYWRlciAqeGZlcikKIAkgICAgcmV0dXJu
+IHI7CiAJfQogCi0JLyogNi41KSBLaWNrIHJlbW90ZSBzZXJ2ZXIgdG8gY29ycmVjdCBtdXBkYXRl
+IGVudHJ5ICovCi0JLyogTm90ZSB0aGF0IHdlIGRvbid0IHJlYWxseSBjYXJlIGlmIHRoaXMgc3Vj
+Y2VlZHMgb3Igbm90ICovCi0JaWYgKHhmZXItPm11cGRhdGVfaCkgewotCSAgICBwcm90X3ByaW50
+Zih4ZmVyLT5iZS0+b3V0LCAiTVAxIE1VUERBVEVQVVNIIHsiIFNJWkVfVF9GTVQgIit9XHJcbiVz
+XHJcbiIsCi0JCQlzdHJsZW4oZXh0bmFtZSksIGV4dG5hbWUpOwotCSAgICByID0gZ2V0cmVzdWx0
+KHhmZXItPmJlLT5pbiwgIk1QMSIpOwotCSAgICBpZiAocikgewotCQlzeXNsb2coTE9HX0VSUiwK
+LQkJICAgICAgICJDb3VsZCBub3QgdHJpZ2dlciByZW1vdGUgcHVzaCB0byBtdXBkYXRlIHNlcnZl
+ciAiCi0JCSAgICAgICAiZHVyaW5nIG1vdmUgb2YgJXMiLCBpdGVtLT5uYW1lKTsKLQkgICAgfQot
+CX0KLSAgICB9CisJLyogTm8gbmVlZCB0byBwdXNoIHRoZSBNVVBEQVRFIGlmIHdlJ3JlIG5vdCBw
+YXJ0IG9mIGEgbXVyZGVyICovCisJaWYgKCF4ZmVyLT5tdXBkYXRlX2gpIGNvbnRpbnVlOwogCi0g
+ICAgcmV0dXJuIDA7Ci19Ci0KLXN0YXRpYyBpbnQgeGZlcl9yZWFjdGl2YXRlKHN0cnVjdCB4ZmVy
+X2hlYWRlciAqeGZlcikKLXsKLSAgICBzdHJ1Y3QgeGZlcl9pdGVtICppdGVtOwotICAgIGludCBy
+OwotCi0gICAgLyogU3RlcCA2OiBtdXBkYXRlLmFjdGl2YXRlKG1haWxib3gsIHJlbW90ZSkgKi8K
+LSAgICAvKiBXZSBkbyB0aGlzIGZyb20gdGhlIGxvY2FsIHNlcnZlciBmaXJzdCBzbyB0aGF0IHJl
+Y292ZXJ5IGlzIGVhc2llciAqLwotICAgIGZvciAoaXRlbSA9IHhmZXItPml0ZW1zOyBpdGVtOyBp
+dGVtID0gaXRlbS0+bmV4dCkgewotCWNvbnN0IGNoYXIgKnRvcGFydCA9IHhmZXItPnRvcGFydDsK
+LQkvKgotCSAqIElmIHdlIGRvbid0IGhhdmUgYSBwYXJ0aXRpb24gb24gdGhlIHRhcmdldCBzZXJ2
+ZXIsIHdlIHVzZQotCSAqIHRoZSBzdHJpbmcgIk1PVkVEIiBpbnN0ZWFkLiAgV2hlbiB3ZSBpc3N1
+ZSBNVVBEQVRFUFVTSCB0byB0aGUKLQkgKiB0YXJnZXQgc2VydmVyLCBpdCB3aWxsIGNvcnJlY3Rs
+eSB1cGRhdGUgdGhlIG11cGRhdGUgbWFzdGVyLgotCSAqIE5vdGUgdGhhdCAidG9zZXJ2ZXIiIGlz
+IGFsc28gYSBndWVzcywgc2luY2UgaXQncyBub3QgYWN0dWFsbHkKLQkgKiByZXF1aXJlZCB0byBt
+YXRjaCBjb25maWdfc2VydmVybmFtZSBvbiB0aGUgdGFyZ2V0IHNlcnZlci4gIFNvCi0JICogbXVj
+aCBmb3IgbWFraW5nIHJlY292ZXJ5IGVhc2llciEKLQkgKi8KLQlpZiAoIXRvcGFydCkgdG9wYXJ0
+ID0gIk1PVkVEIjsKLQlyID0geGZlcl9tdXBkYXRlKHhmZXIsIDEsIGl0ZW0tPm5hbWUsIHRvcGFy
+dCwKLQkJCSB4ZmVyLT50b3NlcnZlciwgaXRlbS0+YWNsKTsKKwlwcm90X3ByaW50Zih4ZmVyLT5i
+ZS0+b3V0LCAiTVAxIE1VUERBVEVQVVNIIHsiIFNJWkVfVF9GTVQgIit9XHJcbiVzXHJcbiIsCisJ
+CSAgICBzdHJsZW4oZXh0bmFtZSksIGV4dG5hbWUpOworCXIgPSBnZXRyZXN1bHQoeGZlci0+YmUt
+PmluLCAiTVAxIik7CiAJaWYgKHIpIHsKIAkgICAgc3lzbG9nKExPR19FUlIsICJNVVBEQVRFOiBj
+YW4ndCBhY3RpdmF0ZSBtYWlsYm94IGVudHJ5ICclcyciLAogCQkgICBpdGVtLT5uYW1lKTsKQEAg
+LTg4NDUsNyArODgxNSw2IEBAIHN0YXRpYyBpbnQgZG9feGZlcihzdHJ1Y3QgeGZlcl9oZWFkZXIg
+KnhmZXIpCiAgICAgciA9IHhmZXJfZGVhY3RpdmF0ZSh4ZmVyKTsKICAgICBpZiAoIXIpIHIgPSB4
+ZmVyX2xvY2FsY3JlYXRlKHhmZXIpOwogICAgIGlmICghcikgciA9IHhmZXJfdW5kdW1wKHhmZXIp
+OwotICAgIGlmICghcikgciA9IHhmZXJfcmVhY3RpdmF0ZSh4ZmVyKTsKICAgICAvKiBub3RlIC0g
+d2UgZG9uJ3QgcmVwb3J0IGVycm9ycyBpZiB0aGlzIG9uZQogICAgICAqIGZhaWxzISAqLwogICAg
+IGlmICghcikgeGZlcl9kZWxldGUoeGZlcik7Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,195 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3442</bug_id>
+          
+          <creation_ts>2011-04-13 17:50 EDT</creation_ts>
+          <short_desc>Regex in sieve broken in 2.4?</short_desc>
+          <delta_ts>2011-08-03 10:55:19 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>2.4.10</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Øyvind Kolbu">kolbu@usit.uio.no</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Øyvind Kolbu">kolbu@usit.uio.no</who>
+            <bug_when>2011-04-13 17:50:01 EDT</bug_when>
+            <thetext>We recently upgraded a few of our imap servers to 2.4.8beta1 from 2.3.16
+and found that sieve filters with regex are broken. The filtering rule is
+ignored and the message delivered to INBOX, so at least not gone.
+
+Example filter:
+
+    require  [&quot;fileinto&quot;,&quot;regex&quot;];
+
+    if
+    header :regex :comparator &quot;i;ascii-casemap&quot; &quot;X-UiO-Spam-score&quot; &quot;s{3,}&quot;
+    { fileinto &quot;INBOX.spam&quot;; stop; }
+
+This fails to compile on 2.4.8:
+    root@mail-utv2.uio.no tmp# sievec phpscript.script phpscript.bc
+    Unable to parse script: script errors:
+    line 4: bad argument at offset 0     
+while on 2.3.16 this is no problem:
+    root@mail-imap2.uio.no tmp# sievec phpscript.script phpscript.bc
+    root@mail-imap2.uio.no tmp# 
+
+The filter is generated using the avelsieve plugin in Squrrielmail. Neither
+of them have defined the option sieve_extensions in imapd.conf.
+
+./configure reported that it found pcre headers:
+    checking pcreposix.h usability... yes
+    checking pcreposix.h presence... yes
+    checking for pcreposix.h... yes
+    checking for utf8 enabled pcre... yes
+
+and sievec and other binaries are linked with libpcre.
+
+Any ideas?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-14 14:36:09 EDT</bug_when>
+            <thetext>I&apos;m going to look at this one now :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-14 14:56:19 EDT</bug_when>
+            <thetext>Hmm... works for me:
+
+Fresh build from 2.4.8beta1 tag.  I wonder if you have broken pcre libraries?  What OS/compiler?  Hmm... looks like we don&apos;t have the option to disable PCRE!
+
+root@launde:/tmp/ct-slot2/conf/sieve/f/foo# cat sieve.script 
+    require  [&quot;fileinto&quot;,&quot;regex&quot;];
+
+    if
+    header :regex :comparator &quot;i;ascii-casemap&quot; &quot;X-UiO-Spam-score&quot; &quot;s{3,}&quot;
+    { fileinto &quot;INBOX.spam&quot;; stop; }
+root@launde:/tmp/ct-slot2/conf/sieve/f/foo# /usr/cyrus/bin/sievec -C /tmp/ct-slot2/etc/imapd.conf sieve.script sievebc
+root@launde:/tmp/ct-slot2/conf/sieve/f/foo# ls -la
+total 16
+drwxr-xr-x 2 cyrus root 4096 2011-04-14 20:44 .
+drwxr-xr-x 3 cyrus root 4096 2011-04-14 20:44 ..
+lrwxrwxrwx 1 root  root    7 2011-04-14 20:44 defaultbc -&gt; sievebc
+-rw-r--r-- 1 cyrus root  128 2011-04-14 20:44 sievebc
+-rw-r--r-- 1 cyrus root  155 2011-04-14 20:38 sieve.script
+
+
+brong@launde:/extra/src/git/cmu/cyrus-imapd$ telnet slot2 2003
+Trying 127.0.0.52...
+Connected to slot2.
+Escape character is &apos;^]&apos;.
+220 test_slot2_30188 Cyrus LMTP git2.4.8beta1+0 server ready
+LHLO me
+250-test_slot2_30188
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-PIPELINING
+250-SIZE
+250 IGNOREQUOTA
+MAIL FROM:&lt;brong@fastmail.fm&gt;
+250 2.1.0 ok
+RCPT TO:&lt;foo&gt;
+250 2.1.5 ok
+DATA
+354 go ahead
+Subject: test email for SPAM folder
+X-UiO-Spam-score: sssss
+
+body
+.
+
+
+Apr 14 20:53:49 localhost test_slot2_30188/lmtp[30210]: auditlog: append sessionid=&lt;test_slot2_30188-30210-1302807197-1&gt; mailbox=&lt;user.foo.spam&gt; uniqueid=&lt;0ef92f0e4da74147&gt; uid=&lt;1&gt; guid=&lt;49645b7cba69943210d567da8735f9b83e2a2ed9&gt;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Øyvind Kolbu">kolbu@usit.uio.no</who>
+            <bug_when>2011-04-14 16:23:52 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; Fresh build from 2.4.8beta1 tag.  I wonder if you have broken pcre libraries? 
+
+Perhaps.. they are in fact locally compiled and not used for anything else.
+They are version 8.10.
+
+&gt; What OS/compiler?
+
+Red Hat EL 4
+gcc version 3.2.3 20030502 (Red Hat Linux 3.2.3-60)
+
+I&apos;ll try to remove the local installed pcre and try to build it again.
+
+Thanks for testing!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Øyvind Kolbu">kolbu@usit.uio.no</who>
+            <bug_when>2011-04-14 17:01:36 EDT</bug_when>
+            <thetext>Building without pcre installed did work! Strange that having pcre installed
+broke it. Did your build link with pcre?
+
+From configure:
+  checking pcreposix.h usability... no
+  checking pcreposix.h presence... no
+  checking for pcreposix.h... no
+and the binaries are not linked with pcre.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-22 15:46:00 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; Building without pcre installed did work! Strange that having pcre installed
+&gt; broke it. Did your build link with pcre?
+&gt; 
+&gt; From configure:
+&gt;   checking pcreposix.h usability... no
+&gt;   checking pcreposix.h presence... no
+&gt;   checking for pcreposix.h... no
+&gt; and the binaries are not linked with pcre.
+
+Yes my build links with PCRE.  I will add an option to disable PCRE to --configure.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-22 16:00:02 EDT</bug_when>
+            <thetext>There is now a way to disable PCRE by adding &apos;--disable-pcre&apos; to your configure script, so you don&apos;t need to uninstall it.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

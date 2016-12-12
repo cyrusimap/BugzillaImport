@@ -1,0 +1,142 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3777</bug_id>
+          
+          <creation_ts>2013-02-19 15:34 EDT</creation_ts>
+          <short_desc>Handle improved_mboxlist_sort in SQL backend implementations</short_desc>
+          <delta_ts>2013-02-27 19:05:22 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dzal_mail@mtu-net.ru</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-19 15:34:39 EDT</bug_when>
+            <thetext>Following ticket #3769 (which allowed SQL backend support for mboxlist), here is a set of commits to handle improved_mboxlist_sort:
+
+Repository: git://github.com/worldline-messaging/cyrus-imapd.git
+Branch: ticket/3769
+Commits:
+
+2fc8e96467fc77cc306c65f90d25645c6b7701e9 (https://github.com/worldline-messaging/cyrus-imapd/commit/2fc8e96467fc77cc306c65f90d25645c6b7701e9)
+This one is for MySQL.
+The idea is pretty simple: original code path does use mysql_store_result which loads the whole rows in memory, so we already consume some amount of memory.
+Even though most of the queries do get a limited number of results (listing a mailbox content), I also wanted to &apos;properly&apos; take care of the cases where we fetch the whole list of mailboxes known on the server.
+From here on, I could think of 3 ways to get improved_mboxlist_sort to work:
+
+1. Create a list to point to (index ?) result rows; use lsort with mysql_data_seek/etc to compare keys and order them; iterate over the sorted list and use again mysql_data_seek/etc to get key/value and call callback
+
+2. Duplicate the rows key/data in a list; sort the list with lsort; iterate over the list and call callback
+
+3. Replace mysql_store_result by mysql_use_result, which allows to load one row at a time; loop over each fetched row and add it to a list; sort the list with lsort; iterate over the list and call callback
+
+I didn&apos;t like 1. because it would do (too much ?) lots of mysql_xxx calls.
+I didn&apos;t like 2. because it would consume too much &apos;extra&apos; memory (especially if you fetch the whole DB content).
+In the end I decided to implement 3., which I though was a good compromise between the consumed memory (not much more than with mysql_store_result I hope) and the time/CPU spent to fetch the rows.
+
+The commit thus comes with a new datalist_t structure which handles a list of data pointers. I tried to mimic the xxxarray_t structures with some helper functions, and the ability to set a &apos;free&apos; and &apos;comparison&apos; callback for pointed data. Oh, and there is a cunit test too ;)
+If you find it useful enough, maybe you will feel like using it as a generic replacement for the places where there already are some kind of specific list management (dlist etc).
+
+
+0134ce1e7918df0d3f23f9d8b16c2d983984879e (https://github.com/worldline-messaging/cyrus-imapd/commit/0134ce1e7918df0d3f23f9d8b16c2d983984879e)
+This one is for PostgreSQL.
+Again, the idea is pretty simple: original code path also does load the whole rows in memory.
+But unlike MySQL, we also have to call PQunescapeBytea - which does allocate a buffer to convert the fetched data - on each key/value. Thus 1. was even less a good option.
+I took again the option 3., which here consists in declaring a CURSOR and fetch one row at a time to load the rows in a list.
+Note: code is based on example (http://www.postgresql.org/docs/9.2/static/libpq-example.html), with tweaking to fetch one row at a time
+
+
+f0da4711890b0a0ec848051616f20769a518a97f (https://github.com/worldline-messaging/cyrus-imapd/commit/f0da4711890b0a0ec848051616f20769a518a97f)
+This one is for SQLite.
+Luckily SQLite allows to register user-defined collation functions. So i just used this option :)
+The only thing I am unsure is whether it is a good idea to set the default collation upon creating the table (when it does not exist).
+Pros: if SQLite do have some kind of optimisations (stored data ordered according to the specified collation, other ?) then it&apos;s a good thing; otherwise there is no real use
+Cons: if you disable improved_mboxlist_sort, next time you FETCH SQLite will fail complaining about the unknown collation; but I believe one should still be able to remove it by ALTERing the table
+
+
+As a final note: I am no real expert with those SQL backends, so maybe someone will think of better alternatives, or argue that option 1. or 2. is better ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2013-02-19 15:57:04 EDT</bug_when>
+            <thetext>There&apos;s a fix which is about 10,000 times better than any of these, which is to replace the separator with a low character.  Any of TAB, CR, LF, or even the RS/FS etc ASCII chars.
+
+This means that improved_mboxlist_sort is not required.  Instead, everything naturally sorts correctly.
+
+It also means that both unixheirsep and regular dot separators have the same replacement schedule - you don&apos;t need ^ as DOTCHAR, because you can store raw dots in the on-disk format.
+
+The only downside I can see is the cost of converting existing installs to the new format, and of converting the code to deal with it (including potentially external utilities that others are using)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-19 17:01:14 EDT</bug_when>
+            <thetext>Indeed that would solve the issue with all backends, and also issues concerning userid with dots (or &apos;^&apos;).
+I was more focused on a quick/short-term solution on the SQL backends because I had them allowed for mboxlist in #3679, but your idea is better in the long run.
+
+And if you use a raw control character, and a future version of cyrus allows more characters to be used in mailbox names (unless mistaken the RFC allows all characters even control ones ... provided they are properly encoded) it wouldn&apos;t collide since the client has to encode them in MUTF-7.
+There may also be something to do about the filesystem naming though: not sure it&apos;s always possible or a good thing to use too exotic characters there.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-27 19:03:17 EDT</bug_when>
+            <thetext>(In reply to comment #1)
+&gt; replace the separator with a low character.
+
+I like this.  It has several obvious wins.
+
+&gt; The only downside I can see is the cost of converting existing installs to the
+&gt; new format, and of converting the code to deal with it (including potentially
+&gt; external utilities that others are using)
+
+If we do this, the least worst time to ship that pain point is at a major
+release boundary like 2.5 or 2.6.  So I propose we do it ASAP and before
+2.5 ships.  Who wants to do it?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-27 19:05:22 EDT</bug_when>
+            <thetext>*** Bug 2748 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

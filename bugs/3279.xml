@@ -1,0 +1,446 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3279</bug_id>
+          
+          <creation_ts>2010-10-19 06:39 EDT</creation_ts>
+          <short_desc>sync_client crashes with empty mech_list before TLS starts</short_desc>
+          <delta_ts>2011-08-03 11:02:13 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.4.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DEFERRED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.11</target_milestone>
+          <dependson>3174</dependson>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>baconm@email.unc.edu</cc>
+    
+    <cc>brong@fastmail.fm</cc>
+    
+    <cc>dave64@andrew.cmu.edu</cc>
+    
+    <cc>gyurco@freemail.hu</cc>
+    
+    <cc>steffo76@gmx.de</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+    
+    <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-19 06:39:30 EDT</bug_when>
+            <thetext>+++ This bug was initially created as a clone of Bug #3174 +++
+
+Hi there,
+
+with two nodes, one of them acting als sync_server, the other one as sync_client the sync_client crashes if on the sync_server side the following options are set in imapd.conf:
+
+sasl_mech_list: PLAIN
+syncserver_allowplaintext: 0
+
+In this case sync_server starts with an empty mech_list which leads to a crash in sync_client:
+
+Program received signal SIGSEGV, Segmentation fault.
+0x080967ef in xstrdup (str=0x0) at xmalloc.c:92
+92          char *p = xmalloc(strlen(str)+1);
+(gdb) bt
+#0  0x080967ef in xstrdup (str=0x0) at xmalloc.c:92
+#1  0x0805957d in backend_connect (ret_backend=0x0, 
+server=0xbfe4594d &quot;node1.zmnh.uni-hamburg.de&quot;, prot=0x811b760,
+     userid=0x80998e7 &quot;&quot;, cb=0x8135490, auth_status=0x0) at 
+backend.c:429
+#2  0x080530b6 in replica_connect (be=0x0, servername=0xbfe4594d 
+&quot;node1.zmnh.uni-hamburg.de&quot;, cb=0x8135490)
+     at sync_client.c:3392
+#3  0x080538d9 in main (argc=5, argv=0xbfe439c4) at sync_client.c:3682
+
+This trace is taken using version 2.3.14 where it says on line 429 of backend.c:
+
+char *mlist = xstrdup(mechlist);
+
+The greeting on the sync_server side looks like this:
+
+S: * STARTTLS
+S: * OK nod1.zmnh.uni-hamburg.de Cyrus sync server v2.3.14</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-19 10:52:26 EDT</bug_when>
+            <thetext>Cherry-picked to 2.4 stable.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-19 11:27:06 EDT</bug_when>
+            <thetext>Okay, well, just applying the patch via &apos;patch&apos; does not work:
+
+patching file imap/backend.c
+Hunk #1 FAILED at 515.
+Hunk #2 succeeded at 579 (offset 19 lines).
+
+So I applied it by hand, recompiled and...
+
+
+sync_client[25363]: couldn&apos;t authenticate to backend server: no mechanism available
+
+I still have some sources around here from the last time this issue came up, I have a diff in sync_client.c, too:
+
+--- cyrus-imapd-2.3.16/imap/sync_client.c       2009-12-16 03:54:14.000000000 +0100
++++ cyrus-imapd-2.3.16-wespatch/imap/sync_client.c      2010-01-21 14:31:13.937375327 +0100
+@@ -141,7 +141,7 @@
+     { { &quot;* SASL &quot;, CAPA_AUTH },
+       { &quot;* STARTTLS&quot;, CAPA_STARTTLS },
+       { NULL, 0 } } },
+-  { &quot;STARTTLS&quot;, &quot;OK&quot;, &quot;NO&quot;, 0 },
++  { &quot;STARTTLS&quot;, &quot;OK&quot;, &quot;NO&quot;, 1 },
+   { &quot;AUTHENTICATE&quot;, INT_MAX, 0, &quot;OK&quot;, &quot;NO&quot;, &quot;+ &quot;, &quot;*&quot;, NULL, 0 },
+   { NULL, NULL, NULL },
+   { &quot;NOOP&quot;, NULL, &quot;OK&quot; },
+
+If I apply this one also, everything seems fine.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-19 11:29:31 EDT</bug_when>
+            <thetext>Created an attachment (id=1309)
+This should hopefully fix it</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-10-19 13:51:43 EDT</bug_when>
+            <thetext>Yes, thanks for confirming (and keeping the rest of that patch!)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-25 18:34:30 EDT</bug_when>
+            <thetext>Applied to cyrus-imapd-2.4: http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.4&amp;id=fd390ad909cbe21a35eb813feece7240a795bc60</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-26 03:56:56 EDT</bug_when>
+            <thetext>*** Bug 3166 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-27 09:53:03 EDT</bug_when>
+            <thetext>Mmm, I recently get this a lot:
+
+*** glibc detected *** /usr/local/cyrus-imapd/bin/sync_client: free(): invalid pointer: 0x0962bba8 ***
+======= Backtrace: =========
+/lib/i686/libc.so.6[0xb72db024]
+/lib/i686/libc.so.6(cfree+0x96)[0xb72dd026]
+/usr/lib/libcrypto.so.0.9.8(CRYPTO_free+0x46)[0xb75dc086]
+======= Memory map: ========
+08048000-0817e000 r-xp 00000000 08:01 814804437  /usr/local/cyrus-imapd-2.4.1/bin/sync_client
+0817e000-0818b000 rw-p 00135000 08:01 814804437  /usr/local/cyrus-imapd-2.4.1/bin/sync_client
+[...]
+
+could this be related ? I tried to attach gdb but when sync_client crashes all I get from &apos;bt&apos; is the information that there is no stack. I&apos;m pretty sure that this didn&apos;t occur wihtout the patch.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-27 10:11:10 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; Mmm, I recently get this a lot:
+&gt; 
+&gt; *** glibc detected *** /usr/local/cyrus-imapd/bin/sync_client: free(): invalid
+&gt; pointer: 0x0962bba8 ***
+&gt; ======= Backtrace: =========
+&gt; /lib/i686/libc.so.6[0xb72db024]
+&gt; /lib/i686/libc.so.6(cfree+0x96)[0xb72dd026]
+&gt; /usr/lib/libcrypto.so.0.9.8(CRYPTO_free+0x46)[0xb75dc086]
+&gt; ======= Memory map: ========
+&gt; 08048000-0817e000 r-xp 00000000 08:01 814804437 
+&gt; /usr/local/cyrus-imapd-2.4.1/bin/sync_client
+&gt; 0817e000-0818b000 rw-p 00135000 08:01 814804437 
+&gt; /usr/local/cyrus-imapd-2.4.1/bin/sync_client
+&gt; [...]
+&gt; 
+&gt; could this be related ? I tried to attach gdb but when sync_client crashes all
+&gt; I get from &apos;bt&apos; is the information that there is no stack. I&apos;m pretty sure that
+&gt; this didn&apos;t occur wihtout the patch.
+
+&quot;pretty sure&quot; is not going to cut it without a full backtrace ;-)
+
+What does gdb give you on cyrus-master with a bt thread all?
+
+Also, please diff the original 2.4.1 release with the source tree you are compiling from.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-27 10:23:10 EDT</bug_when>
+            <thetext>;-)
+
+Should I have sync_client started by the master process via cyrus.conf ? And then attach gdb to the master process and say &quot;bt thread all&quot; ? BTW this occurs when sync_client restarts, I can shorten the time between the crashes using -t.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-27 10:40:55 EDT</bug_when>
+            <thetext>(In reply to comment #9)
+&gt; Should I have sync_client started by the master process via cyrus.conf ? And
+&gt; then attach gdb to the master process and say &quot;bt thread all&quot; ?
+
+I&apos;m not sure how exactly you can get a full back-trace, but it seems I need one to see which free() is at fault exactly.
+
+I suppose a sync_client from cyrus-master is only applicable if you use rolling replication with something like:
+
+  syncclient       cmd=&quot;sync_client -r&quot;
+
+in /etc/cyrus.conf
+
+(In reply to comment #9)
+&gt; BTW this occurs
+&gt; when sync_client restarts, I can shorten the time between the crashes using -t.
+
+I&apos;m assuming this means it happens when sync_client shuts down, and presumably because its using TLS - I very much doubt this occurs because we switched a default.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-27 10:48:42 EDT</bug_when>
+            <thetext>Created an attachment (id=1313)
+This is the diff between the original 2.4.1 and the patched one</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-27 10:58:25 EDT</bug_when>
+            <thetext>(In reply to comment #10)
+&gt; (In reply to comment #9)
+&gt; &gt; BTW this occurs
+&gt; &gt; when sync_client restarts, I can shorten the time between the crashes using -t.
+&gt; 
+&gt; I&apos;m assuming this means it happens when sync_client shuts down, and presumably
+&gt; because its using TLS - I very much doubt this occurs because we switched a
+&gt; default.
+
+Could it be imap/backend.c +711, where buf_free(&amp;s-&gt;last_result) points to an attribute that is never set on &apos;s&apos;? (s is a struct backend_connect from imap/backend.c)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-27 11:13:07 EDT</bug_when>
+            <thetext>Hmm, I tried something very primitive in backend.c
+
+     /* free last_result buffer */
++syslog( LOG_INFO, &quot;Trying to free &amp;s&quot;);
+     buf_free(&amp;s-&gt;last_result);
++syslog( LOG_INFO, &quot;Aaaand this would be after freeing &amp;s&quot;);
+
+syslog says:
+
+sync_client RESTART succeeded
+Trying to free &amp;s
+Aaaand this would be after freeing &amp;s
+
+Does this have any value at all ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-27 11:15:38 EDT</bug_when>
+            <thetext>(In reply to comment #13)
+&gt; Hmm, I tried something very primitive in backend.c
+&gt; 
+&gt;      /* free last_result buffer */
+&gt; +syslog( LOG_INFO, &quot;Trying to free &amp;s&quot;);
+&gt;      buf_free(&amp;s-&gt;last_result);
+&gt; +syslog( LOG_INFO, &quot;Aaaand this would be after freeing &amp;s&quot;);
+&gt; 
+&gt; syslog says:
+&gt; 
+&gt; sync_client RESTART succeeded
+&gt; Trying to free &amp;s
+&gt; Aaaand this would be after freeing &amp;s
+&gt; 
+&gt; Does this have any value at all ?
+
+Proves my suspicion was wrong, doesn&apos;t it? ;-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-10-27 11:21:22 EDT</bug_when>
+            <thetext>Not necessarily.  Heap corruptions don&apos;t always exhibit themselves at the time of a rogue free(), which sometimes makes them hard to track down.  If this is on Linux, setting MALLOC_CHECK_=2 in the environment before starting master (or sync_client if running standalone) will force an abort() when the heap gets corrupted.  You can then look at a backtrace of the core.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-27 11:40:10 EDT</bug_when>
+            <thetext>Errrr I&apos;m a bit confused to say the least- if I export MALLOC_CHECK_=2, sync_client doesn&apos;t crash, it keeps restarting every ten seconds like I told it to- if I unset MALLOC_CHECK_, stop and start sync_client again, it crashes after -t seconds... should this confuse me ?!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-10-27 12:18:36 EDT</bug_when>
+            <thetext>That is certainly unexpected.  Now I&apos;m confused.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-28 08:40:32 EDT</bug_when>
+            <thetext>This is really weird, but sync_client doesn&apos;t crash if I use another kernel. I recompiled and reinstalled the one that was running when the crashes happened and what should I say, sync_client is running without a problem. I&apos;m sorry for the confusion, I don&apos;t know what happened here since this is a vanilla kernel and everything else was running fine. Hgrmpf.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2010-11-05 08:32:15 EDT</bug_when>
+            <thetext>Is this actually fixed, or just hidden?  I want to keep track of this one... I suspect there&apos;s another bug hidden behind the first one you found.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-11-05 08:48:00 EDT</bug_when>
+            <thetext>sync_client has been running here with -t 10 since October 28. Logs show that it indeed restarts every ten seconds.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-11-05 18:41:06 EDT</bug_when>
+            <thetext>This is no longer a blocker, as it is open for follow-up only and the issue seems to have been resolved switching kernels.
+
+Stephan, could you please let us know what versions of kernels you had / have?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-11-08 10:55:30 EDT</bug_when>
+            <thetext>I think I had 2.6.33.2 when it crashed. After recompiling and rebooting 2.6.33.2 everything runs smoothly, so it looks more like some weird problem on this box.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-11-08 11:15:57 EDT</bug_when>
+            <thetext>(In reply to comment #22)
+&gt; I think I had 2.6.33.2 when it crashed. After recompiling and rebooting
+&gt; 2.6.33.2 everything runs smoothly, so it looks more like some weird problem on
+&gt; this box.
+
+For the sake of understanding what we are looking at here; What Linux distribution are you running?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-11-08 11:33:43 EDT</bug_when>
+            <thetext>Mandriva 2009.1 but with a self compiled kernel.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-12-16 05:38:18 EDT</bug_when>
+            <thetext>Since this seems to be resolved with a newer kernel, please allow me to close this bug and have it reopened if and when it is necessary</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-08-03 11:02:13 EDT</bug_when>
+            <thetext>Targeted for inclusion in 2.4.11</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1309</attachid>
+            <date>2010-10-19 11:29 EDT</date>
+            <desc>This should hopefully fix it</desc>
+            <filename>wespatch</filename>
+            <type>text/plain</type>
+            <size>1499</size>
+            <attacher>steffo76@gmx.de</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuNC4xL2ltYXAvYmFja2VuZC5jCTIwMTAtMTAtMTggMTQ6Mjg6MTQu
+MDAwMDAwMDAwICswMjAwCisrKyBjeXJ1cy1pbWFwZC0yLjQuMS13ZXNwYXRjaC9pbWFwL2JhY2tl
+bmQuYwkyMDEwLTEwLTE5IDE2OjQ4OjE5LjQ3MTUyOTUyNiArMDIwMApAQCAtNTMzLDcgKzUzMywx
+MSBAQAogICAgIGlmICgoc2VydmVyWzBdICE9ICcvJykgfHwKIAkoc3RyY21wKHByb3QtPnNhc2xf
+c2VydmljZSwgImxtdHAiKSAmJgogCSBzdHJjbXAocHJvdC0+c2FzbF9zZXJ2aWNlLCAiY3N5bmMi
+KSkpIHsKLQljaGFyICptbGlzdCA9IHhzdHJkdXAobWVjaGxpc3QpOyAvKiBiYWNrZW5kX2F1dGgg
+aXMgZGVzdHJ1Y3RpdmUgKi8KKwljaGFyICptbGlzdCA9IE5VTEw7CisKKwlpZiAoIG1lY2hsaXN0
+ICkgeworCSAgICBtbGlzdCA9IHhzdHJkdXAobWVjaGxpc3QpOyAvKiBiYWNrZW5kX2F1dGggaXMg
+ZGVzdHJ1Y3RpdmUgKi8KKwl9CiAJY29uc3QgY2hhciAqbXlfc3RhdHVzOwogCiAJaWYgKChyID0g
+YmFja2VuZF9hdXRoZW50aWNhdGUocmV0LCBwcm90LCAmbWxpc3QsIHVzZXJpZCwKQEAgLTU3NSw2
+ICs1NzksMTEgQEAKIAogCQluZXdfbWVjaGxpc3QgPSBhc2tfY2FwYWJpbGl0eShyZXQtPm91dCwg
+cmV0LT5pbiwgcHJvdCwKIAkJCQkJICAgICAgJnJldC0+Y2FwYWJpbGl0eSwgYXV0b19jYXBhKTsK
+KwkJLyoKKwkJICogQSBmbGF3ZWQgY2hlY2s6IGJhY2tlbmRfYXV0aGVudGljYXRlKCkgbWF5IGJl
+IGdpdmVuIGEKKwkJICogTlVMTCBtZWNobGlzdCwgbmVnb3RpYXRlIFNTTCwgYW5kIGdldCBhIG5l
+dyBtZWNobGlzdC4KKwkJICogVGhpcyBuZXcsIGNvcnJlY3QgbWVjaGxpc3Qgd29uJ3QgYmUgdmlz
+aWJsZSBoZXJlLgorCQkgKi8KIAkJaWYgKG5ld19tZWNobGlzdCAmJiBzdHJjbXAobmV3X21lY2hs
+aXN0LCBtZWNobGlzdCkpIHsKIAkJICAgIHN5c2xvZyhMT0dfRVJSLCAicG9zc2libGUgTUlUTSBh
+dHRhY2s6IgogCQkJICAgImxpc3Qgb2YgYXZhaWxhYmxlIFNBU0wgbWVjaGFuaXNtcyBjaGFuZ2Vk
+Iik7Ci0tLSBjeXJ1cy1pbWFwZC0yLjQuMS9pbWFwL3N5bmNfY2xpZW50LmMJMjAxMC0xMC0xOCAx
+NDoyODoxNC4wMDAwMDAwMDAgKzAyMDAKKysrIGN5cnVzLWltYXBkLTIuNC4xLXdlc3BhdGNoL2lt
+YXAvc3luY19jbGllbnQuYwkyMDEwLTEwLTE5IDE2OjQ4OjM0LjQzMDUzMzI2MiArMDIwMApAQCAt
+MTIxLDcgKzEyMSw3IEBACiAgICAgeyB7ICIqIFNBU0wgIiwgQ0FQQV9BVVRIIH0sCiAgICAgICB7
+ICIqIFNUQVJUVExTIiwgQ0FQQV9TVEFSVFRMUyB9LAogICAgICAgeyBOVUxMLCAwIH0gfSB9LAot
+ICB7ICJTVEFSVFRMUyIsICJPSyIsICJOTyIsIDAgfSwKKyAgeyAiU1RBUlRUTFMiLCAiT0siLCAi
+Tk8iLCAxIH0sCiAgIHsgIkFVVEhFTlRJQ0FURSIsIFVTSFJUX01BWCwgMCwgIk9LIiwgIk5PIiwg
+IisgIiwgIioiLCBOVUxMLCAwIH0sCiAgIHsgTlVMTCwgTlVMTCwgTlVMTCB9LAogICB7ICJOT09Q
+IiwgTlVMTCwgIk9LIiB9LAo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1313</attachid>
+            <date>2010-10-27 10:48 EDT</date>
+            <desc>This is the diff between the original 2.4.1 and the patched one</desc>
+            <filename>diff-2.4.1</filename>
+            <type>text/plain</type>
+            <size>1675</size>
+            <attacher>steffo76@gmx.de</attacher>
+            
+              <data encoding="base64">ZGlmZiAtcnUgY3lydXMtaW1hcGQtMi40LjEvaW1hcC9iYWNrZW5kLmMgY3lydXMtaW1hcGQtMi40
+LjEtd2VzcGF0Y2gvaW1hcC9iYWNrZW5kLmMKLS0tIGN5cnVzLWltYXBkLTIuNC4xL2ltYXAvYmFj
+a2VuZC5jCTIwMTAtMTAtMTggMTQ6Mjg6MTQuMDAwMDAwMDAwICswMjAwCisrKyBjeXJ1cy1pbWFw
+ZC0yLjQuMS13ZXNwYXRjaC9pbWFwL2JhY2tlbmQuYwkyMDEwLTEwLTE5IDE2OjQ4OjE5LjQ3MTUy
+OTUyNiArMDIwMApAQCAtNTMzLDcgKzUzMywxMSBAQAogICAgIGlmICgoc2VydmVyWzBdICE9ICcv
+JykgfHwKIAkoc3RyY21wKHByb3QtPnNhc2xfc2VydmljZSwgImxtdHAiKSAmJgogCSBzdHJjbXAo
+cHJvdC0+c2FzbF9zZXJ2aWNlLCAiY3N5bmMiKSkpIHsKLQljaGFyICptbGlzdCA9IHhzdHJkdXAo
+bWVjaGxpc3QpOyAvKiBiYWNrZW5kX2F1dGggaXMgZGVzdHJ1Y3RpdmUgKi8KKwljaGFyICptbGlz
+dCA9IE5VTEw7CisKKwlpZiAoIG1lY2hsaXN0ICkgeworCSAgICBtbGlzdCA9IHhzdHJkdXAobWVj
+aGxpc3QpOyAvKiBiYWNrZW5kX2F1dGggaXMgZGVzdHJ1Y3RpdmUgKi8KKwl9CiAJY29uc3QgY2hh
+ciAqbXlfc3RhdHVzOwogCiAJaWYgKChyID0gYmFja2VuZF9hdXRoZW50aWNhdGUocmV0LCBwcm90
+LCAmbWxpc3QsIHVzZXJpZCwKQEAgLTU3NSw2ICs1NzksMTEgQEAKIAogCQluZXdfbWVjaGxpc3Qg
+PSBhc2tfY2FwYWJpbGl0eShyZXQtPm91dCwgcmV0LT5pbiwgcHJvdCwKIAkJCQkJICAgICAgJnJl
+dC0+Y2FwYWJpbGl0eSwgYXV0b19jYXBhKTsKKwkJLyoKKwkJICogQSBmbGF3ZWQgY2hlY2s6IGJh
+Y2tlbmRfYXV0aGVudGljYXRlKCkgbWF5IGJlIGdpdmVuIGEKKwkJICogTlVMTCBtZWNobGlzdCwg
+bmVnb3RpYXRlIFNTTCwgYW5kIGdldCBhIG5ldyBtZWNobGlzdC4KKwkJICogVGhpcyBuZXcsIGNv
+cnJlY3QgbWVjaGxpc3Qgd29uJ3QgYmUgdmlzaWJsZSBoZXJlLgorCQkgKi8KIAkJaWYgKG5ld19t
+ZWNobGlzdCAmJiBzdHJjbXAobmV3X21lY2hsaXN0LCBtZWNobGlzdCkpIHsKIAkJICAgIHN5c2xv
+ZyhMT0dfRVJSLCAicG9zc2libGUgTUlUTSBhdHRhY2s6IgogCQkJICAgImxpc3Qgb2YgYXZhaWxh
+YmxlIFNBU0wgbWVjaGFuaXNtcyBjaGFuZ2VkIik7CmRpZmYgLXJ1IGN5cnVzLWltYXBkLTIuNC4x
+L2ltYXAvc3luY19jbGllbnQuYyBjeXJ1cy1pbWFwZC0yLjQuMS13ZXNwYXRjaC9pbWFwL3N5bmNf
+Y2xpZW50LmMKLS0tIGN5cnVzLWltYXBkLTIuNC4xL2ltYXAvc3luY19jbGllbnQuYwkyMDEwLTEw
+LTE4IDE0OjI4OjE0LjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQtMi40LjEtd2VzcGF0
+Y2gvaW1hcC9zeW5jX2NsaWVudC5jCTIwMTAtMTAtMTkgMTY6NDg6MzQuNDMwNTMzMjYyICswMjAw
+CkBAIC0xMjEsNyArMTIxLDcgQEAKICAgICB7IHsgIiogU0FTTCAiLCBDQVBBX0FVVEggfSwKICAg
+ICAgIHsgIiogU1RBUlRUTFMiLCBDQVBBX1NUQVJUVExTIH0sCiAgICAgICB7IE5VTEwsIDAgfSB9
+IH0sCi0gIHsgIlNUQVJUVExTIiwgIk9LIiwgIk5PIiwgMCB9LAorICB7ICJTVEFSVFRMUyIsICJP
+SyIsICJOTyIsIDEgfSwKICAgeyAiQVVUSEVOVElDQVRFIiwgVVNIUlRfTUFYLCAwLCAiT0siLCAi
+Tk8iLCAiKyAiLCAiKiIsIE5VTEwsIDAgfSwKICAgeyBOVUxMLCBOVUxMLCBOVUxMIH0sCiAgIHsg
+Ik5PT1AiLCBOVUxMLCAiT0siIH0sCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,130 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3699</bug_id>
+          
+          <creation_ts>2012-05-10 07:53 EDT</creation_ts>
+          <short_desc>cyrus library locations and command names</short_desc>
+          <delta_ts>2013-04-16 00:02:14 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Distribution</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Leena Heino">Leena.Heino@uta.fi</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>dilyan.palauzov@aegee.org</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2012-05-10 07:53:27 EDT</bug_when>
+            <thetext>Cyrus specific libraries (eg. libcyrus, libimap ..): $prefix/lib/cyrus
+Cyrus specific service processes (eg. imapd, pop3d..): $prefix/libexec/cyrus
+Cyrus specific commands (eg. master, quota..): $prefix/sbin and prefix the command name to be cyrus specific like: cyr_master or cyr_quota
+Cyrus other commands (eg. imtest, smtptest) $prefix/sbin</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-05-10 08:00:41 EDT</bug_when>
+            <thetext>Adding CC Dilian and Greg - let&apos;s work out the master plan here.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-04-15 17:58:35 EDT</bug_when>
+            <thetext>I have split in Makefile.am the Cyrus service processes and Cyrus programs to different variables with
+
+commit 0cf974bbd0b32c7e59f3f4841ebb9848f244318d
+Author: &amp;#1044;&amp;#1080;&amp;#1083;&amp;#1103;&amp;#1085; &amp;#1055;&amp;#1072;&amp;#1083;&amp;#1072;&amp;#1091;&amp;#1079;&amp;#1086;&amp;#1074; &lt;git-dpa@aegee.org&gt;
+Date:   Mon Apr 15 19:48:39 2013 +0000
+
+    autotools: split user and service programs
+
+    Split the executables into service programs, that can be started by the
+    master process (imapd, lmtpd, pop3d, smmapd, fud, mupdate, nntpd,
+    sync_server, notifyd, ptloader and timsieved), and user programs (arbitron,
+    chk_cyrus, ctl_cyrusdb, ctl_deliver, ctl_mboxlist, cvt_cyrusdb, cyr_df,
+    cyrdump, cyr_dbtool, cyr_deny, cyr_expire, cyr_info, cyr_sequence,
+    cyr_synclog, cyr_userseen, deliver, ipurge, mbexamine, mbpath, mbtool,
+    quota, reconstruct, squatter, fetchnews, idled, sync_client, sync_reset,
+    tls_prune, unexpunge, master, remoutepurge, ptdump, ptexpire, sievec,
+    and sieved), that can be started directly from the shell.
+
+    The idea is at a later moment to install the service programs in a
+    separate directory from the user programs.
+
+
+I suggest:
+  -- leaving cyrus user programs where they are
+  -- installing cyrus service proceeses under $libdir/cyrus-imapd .
+
+Motivation for the latter: The Linux Filesystem Hierarchy Standard v2.3 does not mention libexec and recommends instead to put the internal binaries under $libdir/cyrus-imapd .
+
+
+/usr/lib : Libraries for programming and packages
+Purpose
+  /usr/lib includes object files, libraries, and internal binaries that are 
+  not intended to be executed directly by users or shell scripts. [22]
+
+  Applications may use a single subdirectory under /usr/lib. If an application 
+  uses a subdirectory, all architecture-dependent data exclusively used by the 
+  application must be placed within that subdirectory. 
+
+I can 
+  - fix Makefile.am/configure.ac to install the services under $libdir/cyrus-imapd , 
+  - add to config.h(.in) a #define SERVICES_PATH (&lt;=&gt; $libdir/cyrus-imapd), 
+  - rename in configure.ac --with-service-path to something else (what?)
+
+and I prefer if somebody is willing to fix master to load the processes from cyrus.conf from that SERVCICES_PATH rather than /usr/cyrus/bin .</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-04-16 00:02:14 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; and I prefer if somebody is willing to fix master to load the processes from
+&gt; cyrus.conf from that SERVCICES_PATH rather than /usr/cyrus/bin .
+
+
+The function get_prog() in master/master.c does this, but it does it
+for all three of the classes of programs which master runs: services,
+startups, and scheduled events.  You would need to change the logic
+a little bit or add a 2nd function.
+
+http://git.cyrusimap.org/cyrus-imapd/tree/master/master.c#n229</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

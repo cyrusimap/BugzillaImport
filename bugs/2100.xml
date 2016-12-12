@@ -1,0 +1,259 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2100</bug_id>
+          
+          <creation_ts>2003-07-03 16:50 EDT</creation_ts>
+          <short_desc>altnamespace and XFER</short_desc>
+          <delta_ts>2010-10-18 12:43:02 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>ken@oceana.com</cc>
+    
+    <cc>Luc.Germain@USherbrooke.ca</cc>
+    
+    <cc>Marc-Andre.Gaudreau@USherbrooke.ca</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-03 16:50:46 EDT</bug_when>
+            <thetext>Luc Germain&gt;&gt;&gt;
+
+I installed 2.1.14 on all servers in the murder, and now I can successfully
+do a rename of a user between the backend servers (good!) BUT only if the
+user doesn&apos;t have subdirectories in his mailbox. 
+
+If the user has a subdirectory, here is what I see:
+
+In cyradm on the frontend:
+
+localhost.localdomain&gt; rename user/myuser1 user/myuser1 server1
+renamemailbox: The remote Server(s) denied the operation
+
+In the cyradm dialog on the server2 where the user is:
+
+---------- cyradm Thu Jul  3 16:23:45 2003
+
+&lt;1057263825&lt;C1 Capability
+&gt;1057263825&gt;* CAPABILITY IMAP4 IMAP4rev1 ACL QUOTA LITERAL+
+MAILBOX-REFERRALS NAMESPACE UIDPLUS ID NO_ATOMIC_RENAME UNSELECT CHILDREN
+MULTIAPPEND SORT THREAD=ORDEREDSUBJECT THREAD=REFERENCES IDLE LOGINDISABLED
+MUPDATE=mupdate://master.usherbrooke.ca/
+C1 OK Completed
+&lt;1057263825&lt;5 XFER {12+}
+user/myuser1 {9+}
+server1
+&gt;1057263826&gt;5 NO The remote Server(s) denied the operation
+
+And in the proxyuser dialog on the server1 where the user is to be moved:
+
+---------- cyrusxferproxy Thu Jul  3 16:23:45 2003
+
+&lt;1057263825&lt;C1 Capability
+&gt;1057263825&gt;* CAPABILITY IMAP4 IMAP4rev1 ACL QUOTA LITERAL+
+MAILBOX-REFERRALS NAMESPACE UIDPLUS ID NO_ATOMIC_RENAME UNSELECT CHILDREN
+MULTIAPPEND SORT THREAD=ORDEREDSUBJECT THREAD=REFERENCES IDLE LOGINDISABLED
+MUPDATE=mupdate://master.usherbrooke.ca/
+C1 OK Completed
+&lt;1057263826&lt;LC1 LOCALCREATE {30+}
+[Autres Usagers]/myuser1/test1
+&gt;1057263826&gt;LC1 NO Invalid mailbox name
+&lt;1057263826&lt;L01 LOGOUT
+&gt;1057263826&gt;* BYE LOGOUT received
+L01 OK Completed
+
+
+So the xfer seems to try to move a subdirectory first, before creating the
+user&apos;s INBOX and also, it tries to name it &quot;[Autres Usagers]/myuser1/test1&quot;
+instead of &quot;user/myuser1/test1&quot; (where the string &quot;[Autres Usagers]&quot; is what
+is defined in the &quot;userprefix:&quot; line of imapd.conf).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-03 16:54:50 EDT</bug_when>
+            <thetext>Hmmm, it appears that there is a problem in xfer_user_cb&apos;s handling of the
+to-external translation (its not rendering it as it should for an admin, only as
+it should for another user).
+
+This probably makes sense because the proxyserver isn&apos;t a full admin on the
+source server, its only a &apos;proxyadmin&apos; which has significantly fewer privliges.
+
+I don&apos;t offhand think that there is a real problem with changing:
+
+    /* Set namespace */
+    if ((r = mboxname_init_namespace(&amp;imapd_namespace, imapd_userisadmin)) != 0)
+        syslog(LOG_ERR, error_message(r));
+        fatal(error_message(r), EC_CONFIG);
+    }
+
+in imapd.c to
+
+    /* Set namespace */
+    if ((r = mboxname_init_namespace(&amp;imapd_namespace,
+                                     imapd_userisadmin ||                 
+                                     imapd_userisproxyadmin)) != 0)
+        syslog(LOG_ERR, error_message(r));
+        fatal(error_message(r), EC_CONFIG);
+    }
+
+since this will only affect people who the proxy claims are admins anyway (and
+they&apos;ll still have their reduced rights.
+
+Luc, does this change fix your problem?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Luc Germain">Luc.Germain@USherbrooke.ca</who>
+            <bug_when>2003-07-04 13:10:09 EDT</bug_when>
+            <thetext>Nope...
+
+Recompiled with the proposed patch on both backend and tried a rename, and I 
+have exactly the same error:
+
+On the frontend:
+&gt; rename user/myuser1 user/myuser1 server1
+renamemailbox: The remote Server(s) denied the operation
+
+On the source (server2):
+---------- cyradm Fri Jul  4 12:19:20 2003
+
+&lt;1057335560&lt;C1 Capability
+&gt;1057335560&gt;* CAPABILITY IMAP4 IMAP4rev1 ACL QUOTA LITERAL+ MAILBOX-REFERRALS 
+NAMESPACE UIDPLUS ID NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND SORT 
+THREAD=ORDEREDSUBJECT THREAD=REFERENCES IDLE LOGINDISABLED 
+MUPDATE=mupdate://master.usherbrooke.ca/
+C1 OK Completed
+&lt;1057335560&lt;5 XFER {12+}
+user/myuser1 {9+}
+courriel1
+&gt;1057335560&gt;5 NO The remote Server(s) denied the operation
+&lt;1057335860&lt;L01 LOGOUT
+&gt;1057335860&gt;* BYE LOGOUT received
+L01 OK Completed
+
+On the destination (server1)
+---------- cyrusxferproxy Fri Jul  4 12:19:20 2003
+
+&lt;1057335560&lt;C1 Capability
+&gt;1057335560&gt;* CAPABILITY IMAP4 IMAP4rev1 ACL QUOTA LITERAL+ MAILBOX-REFERRALS 
+NA
+MESPACE UIDPLUS ID NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND SORT 
+THREAD=OR
+DEREDSUBJECT THREAD=REFERENCES IDLE LOGINDISABLED 
+MUPDATE=mupdate://master.usherbrooke.ca/
+C1 OK Completed
+&lt;1057335560&lt;LC1 LOCALCREATE {30+}
+[Autres Usagers]/myuser1/test1
+&gt;1057335560&gt;LC1 NO Invalid mailbox name
+&lt;1057335560&lt;L01 LOGOUT
+&gt;1057335560&gt;* BYE LOGOUT received
+L01 OK Completed
+
+
+
+Note: there was a { missing after the if.
+
+Luc.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-23 17:37:27 EDT</bug_when>
+            <thetext>Created an attachment (id=205)
+Potential fix
+
+Ok, I think I know what is going on now.
+
+The problem was that we were doing the right thing for single-mailbox cases,
+but we were transforming to the full external name for the recursive nature of
+user moves.  I&apos;ve fixed that so we only give the external hiersep
+representation in this patch, and it works for nonaltnamespace builds still.
+
+Please try the patch I just attached to this bug.  If it works, great.	If not,
+try it in combination with the other patch, and let me know how that goes.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-08-05 10:55:08 EDT</bug_when>
+            <thetext>hearing no response, I&apos;m committing it since its very likely to be more correct
+than what we have now.  please reopen if problems continue.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Luc Germain">Luc.Germain@USherbrooke.ca</who>
+            <bug_when>2003-08-12 10:36:49 EDT</bug_when>
+            <thetext>I tested the patch and it works perfectly! Thanks!!
+
+Luc.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>205</attachid>
+            <date>2003-07-23 17:37 EDT</date>
+            <desc>Potential fix</desc>
+            <filename>x.diff</filename>
+            <type>text/plain</type>
+            <size>932</size>
+            <attacher>rjs3@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXBkLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcuY211LmVkdS9z
+eXN0ZW0vY3ZzL3NyYy9jeXJ1cy9pbWFwL2ltYXBkLmMsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEu
+NDM1CmRpZmYgLXUgLXIxLjQzNSBpbWFwZC5jCi0tLSBpbWFwZC5jCTIyIEp1bCAyMDAzIDE5OjE3
+OjEwIC0wMDAwCTEuNDM1CisrKyBpbWFwZC5jCTIzIEp1bCAyMDAzIDIxOjE1OjI0IC0wMDAwCkBA
+IC02Mjc5LDExICs2Mjc5LDE4IEBACiAJYWNsID0geHN0cmR1cChpbmFjbCk7CiAgICAgfQogCi0g
+ICAgaWYoIXIpIHsKLQlyID0gKCppbWFwZF9uYW1lc3BhY2UubWJveG5hbWVfdG9leHRlcm5hbCko
+JmltYXBkX25hbWVzcGFjZSwKLQkJCQkJCSAgIG5hbWUsCi0JCQkJCQkgICBpbWFwZF91c2VyaWQs
+Ci0JCQkJCQkgICBleHRlcm5hbG5hbWUpOworICAgIGlmICghcikgeworCXNpemVfdCByZXNfc2l6
+ZSA9IHN0cmxjcHkoZXh0ZXJuYWxuYW1lLCBuYW1lLCBzaXplb2YoZXh0ZXJuYWxuYW1lKSk7CisJ
+CisJaWYocmVzX3NpemUgPj0gc2l6ZW9mKGV4dGVybmFsbmFtZSkpIHsKKwkgICAgLyogT3ZlcmZs
+b3cgKi8KKwkgICAgciA9IElNQVBfTUFJTEJPWF9CQUROQU1FOworCX0gZWxzZSB7CisJICAgIC8q
+IERvbid0IGRvIGZ1bGwgbmFtZXNwYWNlIHRvaW50ZXJuYWwsIHNpbmNlIGZvciBhbHRuYW1lc3Bh
+Y2UKKwkgICAgICogdGhhdCB3aWxsIGFzc3VtZSB3ZSdyZSBpbiB0aGlzIGFkbWluJ3MgaW5ib3gg
+bmFtZXNwYWNlLCB3aGljaAorCSAgICAgKiB3ZSBhcmVuJ3QhICovCisJICAgIG1ib3huYW1lX2hp
+ZXJzZXBfdG9leHRlcm5hbCgmaW1hcGRfbmFtZXNwYWNlLCBleHRlcm5hbG5hbWUpOworCX0KICAg
+ICB9CiAKICAgICBpZighcikgewo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

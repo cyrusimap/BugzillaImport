@@ -1,0 +1,295 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2986</bug_id>
+          
+          <creation_ts>2007-08-29 08:33 EDT</creation_ts>
+          <short_desc>The imap CLOSE command crash imapd</short_desc>
+          <delta_ts>2010-10-25 18:46:43 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alain Spineux">alain.spineux@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>alain.spineux@gmail.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-08-29 08:33:51 EDT</bug_when>
+            <thetext>Send a CLOSE command when a folder is selected crash the imap server.
+This append with 2.3.8 and 2.3.9  (the openpkg version in a kolab environement)
+This was not happening with version 2.2.x.
+
+I posted a lot of info in the thread :
+http://cyrusimap.web.cmu.edu/archive/message.php?mailbox=archive.info-cyrus&amp;msg=44371
+
+Here is a cut&amp;past of the most relevant info:
+
+== cyrmaster.log ==
+
+cyrmaster.log:Aug 13 16:14:25 eg01 &lt;error&gt; master[32578]: process 21432
+exited, signaled to death by 11
+cyrmaster.log:Aug 13 16:14:25 eg01 &lt;debug&gt; master[32578]: service imap pid
+21432 in BUSY state: terminated abnormally
+cyrmaster.log:Aug 13 16:14:25 eg01 &lt;debug&gt; master[21531]: about to exec
+/kolab/bin/imapd
+
+== a python script that show the problem ==
+
+import imaplib, sys, types
+
+imap_server=&apos;localhost&apos;
+imap_port=143
+imap_login=&apos;manager&apos;
+imap_password=&apos;vishnou&apos;
+
+mailbox=&apos;user/catchall.teta.loc/donald.duck@teta.loc&apos;
+
+imap_con=imaplib.IMAP4(imap_server, imap_port)
+typ, dat=imap_con.login(imap_login, imap_password)
+
+typ, dat=imap_con.setacl(mailbox, imap_login, &apos;lrd&apos;)
+print &apos;%s, %s=SETACL %s&apos; % (typ, dat, mailbox)
+typ, dat=imap_con.select(mailbox)
+print &apos;%s, %s=SELECT %s&apos; % (typ, dat, mailbox)
+#typ, dat=imap_con.uid(&apos;search&apos;, None, &apos;ALL&apos;)
+#print &apos;%s, %s=UID SEARCH %s&apos; % (typ, dat, mailbox)
+typ, dat=imap_con.close()
+print &apos;%s, %s=CLOSE %s&apos; % (typ, dat, mailbox)
+typ, dat=imap_con.logout()
+print &apos;%s, %s=LOGOUT %s&apos; % (typ, dat, mailbox)
+
+== the output ==
+
+OK, [&apos;Completed&apos;]=SETACL user/catchall.teta.loc/donald.duck@teta.loc
+OK, [&apos;1&apos;]=SELECT user/catchall.teta.loc/donald.duck@teta.loc
+Traceback (most recent call last):
+  File &quot;cyrus_bug.py&quot;, line 21, in &lt;module&gt;
+    typ, dat=imap_con.close()
+  File &quot;/kolab/lib/python/imaplib.py&quot;, line 376, in close
+    typ, dat = self._simple_command(&apos;CLOSE&apos;)
+  File &quot;/kolab/lib/python/imaplib.py&quot;, line 1055, in _simple_command
+    return self._command_complete(name, self._command(name, *args))
+  File &quot;/kolab/lib/python/imaplib.py&quot;, line 887, in _command_complete
+    raise self.abort(&apos;command: %s =&gt; %s&apos; % (name, val))
+imaplib.abort: command: CLOSE =&gt; socket error: EOF
+
+== related problemes ==
+
+- the CLOSE command is used by thunderbird when renaming, moving, deleting a folder! And then carsh imapd too
+- I wrote a python script that was monitoring some mailbox. Because of the need to reopen the connection the log where growing light fast and the disk was full in a short time, with some database corruption. Thanks to cyrus :-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-08-29 12:09:14 EDT</bug_when>
+            <thetext>I can&apos;t reproduce this problem with an unmodified 2.3.9.  Perhaps this is a bug with the Kolab patches.  Can you get me a backtrace from an imapd core dump?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-08-31 08:49:53 EDT</bug_when>
+            <thetext>(In reply to comment #1)
+&gt; I can&apos;t reproduce this problem with an unmodified 2.3.9.  Perhaps this is a bug
+&gt; with the Kolab patches.  Can you get me a backtrace from an imapd core dump?
+&gt; 
+Someone else running kolab-2.2 got hte same problem.
+I will investigate.
+
+How can I generate this  backtrace ? I didn&apos;t found any info on your site.
+
+I imagine I have to :
+
+compile imapd with -g
+I will try to do a 
+# make all CFLAGS=-g
+
+then how to get the coredump ?
+run 
+# gdb master -d
+or add some line in imapd.conf or cyrus.conf ?
+and wait for coredump to be generated somewhere ?
+
+Regards
+
+
+
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-08-31 09:20:11 EDT</bug_when>
+            <thetext>I usually will do the following:
+
+cd /tmp
+ulimit -c unlimited
+/usr/cyrus/bin/master &amp;
+
+Any core dumps should be written in /tmp.  Once you get one, do:
+
+gdb /usr/cyrus/bin/imap /tmp/&lt;corefile&gt;
+bt</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-08-31 10:32:57 EDT</bug_when>
+            <thetext>(In reply to comment #3)
+&gt; I usually will do the following:
+&gt; 
+&gt; cd /tmp
+&gt; ulimit -c unlimited
+&gt; /usr/cyrus/bin/master &amp;
+&gt; 
+&gt; Any core dumps should be written in /tmp.  Once you get one, do:
+&gt; 
+&gt; gdb /usr/cyrus/bin/imap /tmp/&lt;corefile&gt;
+&gt; bt
+&gt; 
+
+As you said :-)
+This is very easy to correct, this is a bug in the logging 
+(gdb) where
+#0  0x0805536c in cmd_close (tag=0x8f7ae38 &quot;EEED5&quot;) at imapd.c:3517
+#1  0x0804e2d5 in cmdloop () at imapd.c:1169
+#2  0x0804d2a3 in service_main (argc=1, argv=0x8f6f008, envp=0xbfc98e64)
+    at imapd.c:796
+#3  0x0804c1d7 in main (argc=3, argv=0xbfc98e54, envp=0xbfc98e64)
+    at service.c:539
+(gdb) print r
+$1 = 0
+(gdb) print tag
+$2 = 0x8f7ae38 &quot;EEED5&quot;
+(gdb) print imapd_userid
+$3 = 0x8f7abd0 &quot;manager&quot;
+(gdb) print imapd_mailbox
+$4 = (struct mailbox *) 0x0
+
+
+    index_closemailbox(imapd_mailbox);
+    mailbox_close(imapd_mailbox);
+    imapd_mailbox = 0;
+
+    if (r) {
+        prot_printf(imapd_out, &quot;%s NO %s\r\n&quot;, tag, error_message(r));
+    }
+    else {
+        prot_printf(imapd_out, &quot;%s OK %s\r\n&quot;, tag,
+                    error_message(IMAP_OK_COMPLETED));
+&gt;&gt;&gt;&gt;&gt;THIS LINE is 3517
+        syslog(LOG_DEBUG, &quot;cmd_expunge: user %s, mailbox %s, sequence %s&quot;,
+               imapd_userid, imapd_mailbox-&gt;name, &quot;&apos;&apos;&quot;);
+    }
+
+
+I moved the imapd_mailbox=0 at the end to try
+
+Then I have no more crash and no more error in my python script
+
+Regards
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-08-31 10:37:15 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt;     index_closemailbox(imapd_mailbox);
+&gt;     mailbox_close(imapd_mailbox);
+&gt;     imapd_mailbox = 0;
+&gt; 
+&gt;     if (r) {
+&gt;         prot_printf(imapd_out, &quot;%s NO %s\r\n&quot;, tag, error_message(r));
+&gt;     }
+&gt;     else {
+&gt;         prot_printf(imapd_out, &quot;%s OK %s\r\n&quot;, tag,
+&gt;                     error_message(IMAP_OK_COMPLETED));
+&gt; &gt;&gt;&gt;&gt;&gt;THIS LINE is 3517
+&gt;         syslog(LOG_DEBUG, &quot;cmd_expunge: user %s, mailbox %s, sequence %s&quot;,
+&gt;                imapd_userid, imapd_mailbox-&gt;name, &quot;&apos;&apos;&quot;);
+&gt;     }
+&gt; 
+&gt; 
+&gt; I moved the imapd_mailbox=0 at the end to try
+&gt; 
+
+but then the message is probably wrong
+
+Aug 31 16:22:22 eg01.emailgency.loc &lt;debug&gt; imap[23675]: open: user manager opened user/catchall.teta.loc@teta.loc
+Aug 31 16:22:22 eg01.emailgency.loc &lt;debug&gt; imap[23675]: cmd_expunge: user manager, mailbox (NULL), sequence &apos;&apos;
+
+the imap_close and maybe more must go to the end.
+
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-08-31 10:53:22 EDT</bug_when>
+            <thetext>The LOG_DEBUG message that is causing your problem is not in the stock Cyrus 2.3.x codebase.  This is either part of the Kolab patch, or some other third-party patch.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-08-31 12:01:21 EDT</bug_when>
+            <thetext>(In reply to comment #6)
+&gt; The LOG_DEBUG message that is causing your problem is not in the stock Cyrus
+&gt; 2.3.x codebase.  This is either part of the Kolab patch, or some other
+&gt; third-party patch.
+&gt; 
+Thanks for your help.
+
+I fact this is related to 
+
+https://bugzilla.andrew.cmu.edu/show_bug.cgi?id=2964
+
+The submitted patch is the faulty one :-)
+I already wrote a new one, we will submit is soon.
+I have also submitted this patch to the openpkg mailing list.
+
+I thing you can close this bug.
+
+I take advantage I know you will read this post to say I already
+posted 2 email to the cyrus-mailing list about bug with lot of details.
+One about string &quot;loker ???&quot; appearing as a response to an IMAP command. this is in 2.2.X, this is probably an error message from berkeley db flowing through an unclosed file descriptor through the imap socket.
+Another about the way cyrus is daemonized: file descriptor not closed and probably no double fork that make CTRL-C terminate the cyrus daemons. this is about 2.2.x and also 2.3.x
+
+Regards
+
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

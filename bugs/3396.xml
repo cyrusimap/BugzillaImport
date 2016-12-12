@@ -1,0 +1,328 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3396</bug_id>
+          
+          <creation_ts>2011-02-04 08:33 EDT</creation_ts>
+          <short_desc>Issue with Outlook and IMAP IDLE</short_desc>
+          <delta_ts>2013-03-27 22:09:24 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sébastien Michel">sebastien.michel@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>awilliam@whitemice.org</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2011-02-04 08:33:57 EDT</bug_when>
+            <thetext>Created an attachment (id=1354)
+A light workaround for Outlook and IMAP IDLE
+
+Outlook Express (all versions) and Outlook (version 2000, I doesn&apos;t tested on 2003 and it is resolved on version 2007) have a known bug regarding their support of IMAP IDLE (see: http://www.washington.edu/imap/IMAP-FAQs/index.html#7.37 or the post here : http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.info-cyrus&amp;searchterm=outlook%20idle&amp;msg=31911).
+
+The first workaround defined by Mark Crispin is detailed here : http://www.mail-archive.com/c-client@u.washington.edu/msg00462.html
+
+But Dovecot implements a lighter workaround that just keep alive the connection to avoid any server timeout (doesn&apos;t resolve the problem at 100%). Find in attachement the same workaround for Cyrus Imapd (based on version 2.4.6). If you prefer we can provide an access to our github account as we did it for this issue : http://bugzilla.cyrusimap.org/bugzilla3/show_bug.cgi?id=3374.
+But may be the Mark Crispin&apos;s workaround is better...
+
+Lots of people still use WIN XP and its default mail client : outlook express. I think the bug is still present on Vista&apos;s Windows Mail (not tested)
+
+This patch is valuable for us because lots of customers of our clients will switch from POP to IMAP. Below the commands sent by OE to check for new mail :
+
+J3e3 CAPABILITY
+be1h LOGIN &quot;user&quot; &quot;passwd&quot;
+g4nc STATUS &quot;INBOX&quot; (MESSAGES UNSEEN)
+rpez STATUS &quot;INBOX.Trash&quot; (MESSAGES UNSEEN) 
+ZZZZ LOGOUT
+
+7kdd CAPABILITY
+qf5z LOGIN &quot;user&quot; &quot;passwd&quot;
+y3ff SELECT &quot;INBOX&quot;  
+lt82 UID FETCH 886:* (BODY.PEEK[HEADER.FIELDS (References X-Ref X-Priority X-MSMail-Priority X-MSOESRec Newsgroups)] ENVELOPE RFC822.SIZE UID FLAGS INTERNALDATE)
+ggku UID FETCH 1:885 (UID FLAGS)
+ZZZZ LOGOUT
+
+depending the periodicity (1/2 minutes for impatients) opening INBOX with SELECT could have an huge impact on I/O (we&apos;re talking about millions of users).
+
+Unfortunately enable IDLE doesn&apos;t disable the checking for new mail :-(
+Outlook just opens one new connection for IDLE. But we have the opportunity to ask customers to disable the new mail checking option or increase the periodicity to save I/O
+
+Sébastien</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-27 01:43:52 EDT</bug_when>
+            <thetext>Hi Sébastien,
+
+I just noticed this Bugzilla.  I&apos;ve recently reworked the IDLE code
+not to use signals, which means your patch will no longer apply to
+the master branch :(
+
+I think it would be good to either workaround this in Cyrus or
+definitely refuse to, so I have a few questions.
+
+ * is this still a problem for you?  I assume so, given you raised
+   the bug only 12 months ago.
+
+ * why have an imapd.conf option?
+
+ * what does the workaround do to power-sensitive mobile devices
+   like smartphones?
+
+ * is it possible to detect a buggy OE in imapd and only apply the
+   workaround in that case?  Does it, for example, use the ID command?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-03-28 09:54:30 EDT</bug_when>
+            <thetext>1) and 4) 
+I hope less than yesterday and more than tomorrow !
+We can&apos;t identify these outlook and outlook-express clients since there is no User-Agent header in IMAP. And those old clients don&apos;t support ID command... 
+
+2)
+I dislike endless workarounds and I hope to remove it in the future
+
+3)
+IMAP IDLE is not supported by android (nor the latest ICS), nor in IOS 4.X and I don&apos;t expect either in 5.X. 
+it consumes too much battery power.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-28 19:14:59 EDT</bug_when>
+            <thetext>&gt; 1) and 4) 
+&gt; I hope less than yesterday
+
+Ok, so we have to do something.
+
+Sigh...I had hoped that by not working on code that runs in Web browsers I could
+avoid having to work around Microsoft brain damage :(
+
+&gt; We can&apos;t identify these outlook and outlook-express clients since there is no
+&gt; User-Agent header in IMAP. And those old clients don&apos;t support ID command... 
+
+What about the &quot;X-MSMail-Priority&quot; and &quot;X-MSOESRec&quot; headers which are FETCHed
+in your above examples?  Are they fetched only by MS clients?  I would assume so
+judging by the name.  Will such a client try to fetch those headers before it IDLEs?
+
+&gt; I dislike endless workarounds and I hope to remove it in the future
+
+Sure, but that&apos;s not a reason for an imapd.conf option, that&apos;s a reason to add a
+comment like &quot;Please remove this hack when the last Outlook Express &lt; 2007
+client dies&quot;.  Does a sysadmin ever actually need a Cyrus installation to *not*
+behave in this new way? 
+
+&gt; IMAP IDLE is not supported by android (nor the latest ICS), nor in IOS 4.X and
+&gt; I don&apos;t expect either in 5.X. 
+&gt; it consumes too much battery power.
+
+Fair enough.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-28 19:17:47 EDT</bug_when>
+            <thetext>Also, what would be the impact of either
+
+ * disabling the 30 minute server timeout, or
+
+ * adding an imapd.conf option to allow sysadmins to tune the timeout
+   to some arbitrarily large value?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-28 19:18:38 EDT</bug_when>
+            <thetext>I may as well stop pretending I&apos;m not looking at this.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-03-29 03:43:01 EDT</bug_when>
+            <thetext>(In reply to comment #3)
+&gt; &gt; 1) and 4) 
+&gt; &gt; I hope less than yesterday
+&gt; 
+&gt; Ok, so we have to do something.
+&gt; 
+&gt; Sigh...I had hoped that by not working on code that runs in Web browsers I
+&gt; could
+&gt; avoid having to work around Microsoft brain damage :(
+&gt; 
+&gt; &gt; We can&apos;t identify these outlook and outlook-express clients since there is no
+&gt; &gt; User-Agent header in IMAP. And those old clients don&apos;t support ID command... 
+&gt; 
+&gt; What about the &quot;X-MSMail-Priority&quot; and &quot;X-MSOESRec&quot; headers which are FETCHed
+&gt; in your above examples?  Are they fetched only by MS clients?  I would assume
+&gt; so
+&gt; judging by the name.  Will such a client try to fetch those headers before it
+&gt; IDLEs?
+
+Good question. I will check also with some newer versions of outlook in case these FETCH also these headers, that will be too bad because newer versions don&apos;t send ID command either ...
+
+&gt; &gt; I dislike endless workarounds and I hope to remove it in the future
+&gt; 
+&gt; Sure, but that&apos;s not a reason for an imapd.conf option, that&apos;s a reason to add
+&gt; a
+&gt; comment like &quot;Please remove this hack when the last Outlook Express &lt; 2007
+&gt; client dies&quot;.  
+OK</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-03-29 03:49:23 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; Also, what would be the impact of either
+&gt; 
+&gt;  * disabling the 30 minute server timeout, or
+&gt; 
+&gt;  * adding an imapd.conf option to allow sysadmins to tune the timeout
+&gt;    to some arbitrarily large value?
+
+The timeout will be reached on one network equipment like FW or LB.
+
+Don&apos;t worry about this issue, it seems that not lot of people are complaining about that. I will update the patch later after you commit your refactoring.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adam Tauno Williams">awilliam@whitemice.org</who>
+            <bug_when>2012-03-29 07:30:09 EDT</bug_when>
+            <thetext>Referencing &quot;IMAP IDLE is not supported by android&quot; (from comment 1).   This is not entirely true.  IMAP IDLE isn&apos;t supported or used by the Android &apos;default&apos; non-gmail mail client, it isn&apos;t really &quot;unsupported&quot;.  The excellent K-9 IMAP/POP/SMTP client for Android does support IMAP IDLE and works with Cyrus IMAPd.  
+
+As for it consuming too much battery,  I don&apos;t see that on my phone;  K-9 consumes less power than many other applications according to the power meter.   This is probably just another thinly veiled excuse for Google providing inferior support for non-proprietary services.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-27 22:09:24 EDT</bug_when>
+            <thetext>Sorry, I have to throw this one back in the pool :(</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1354</attachid>
+            <date>2011-02-04 08:33 EDT</date>
+            <desc>A light workaround for Outlook and IMAP IDLE</desc>
+            <filename>outlook_workaround.patch</filename>
+            <type>text/plain</type>
+            <size>4487</size>
+            <attacher>sebastien.michel@atos.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXJCIGN5cnVzLWltYXBkLTIuNC42L2ltYXAvaW1hcGQuYyBjeXJ1cy1pbWFwZC0yLjQu
+Ni1pZGxlL2ltYXAvaW1hcGQuYwotLS0gY3lydXMtaW1hcGQtMi40LjYvaW1hcC9pbWFwZC5jCTIw
+MTAtMTItMjAgMTM6MTU6NDkuMDAwMDAwMDAwICswMDAwCisrKyBjeXJ1cy1pbWFwZC0yLjQuNi1p
+ZGxlL2ltYXAvaW1hcGQuYwkyMDExLTAxLTI4IDE4OjExOjA0LjAwMDAwMDAwMCArMDAwMApAQCAt
+MjY3NCw4ICsyNjc0LDMxIEBACiAJICogY29ubmVjdGlvbiBhYm9ydCB3ZSB0ZWxsIGlkbGVkIGFi
+b3V0IGl0ICovCiAJaWRsaW5nID0gMTsKIAotCS8qIEdldCBjb250aW51YXRpb24gZGF0YSAqLwot
+CWMgPSBnZXR3b3JkKGltYXBkX2luLCAmYXJnKTsKKyAgICAgICAgZm9yICg7OykgeworICAgICAg
+ICAgICAgICAgIC8qIEdldCBjb250aW51YXRpb24gZGF0YSAqLworICAgICAgICAgICAgICAgIGMg
+PSBnZXR3b3JkKGltYXBkX2luLCAmYXJnKTsKKworICAgICAgICAgICAgICAgIGlmICghY29uZmln
+X2dldHN3aXRjaChJTUFQT1BUX09VVExPT0tfSURMRV9XT1JLQVJPVU5EKSkKKyAgICAgICAgICAg
+ICAgICAgICAgICAgIGJyZWFrOworCisgICAgICAgICAgICAgICAgLyogaGFzIHJlYWQgc29tZSBk
+YXRhICovCisgICAgICAgICAgICAgICAgaWYgKGMgIT0gRU9GKQorICAgICAgICAgICAgICAgICAg
+ICAgICAgYnJlYWs7CisKKyAgICAgICAgICAgICAgICAvKiBBdCB0aGlzIHBvaW50IHdlIGRvbid0
+IGtub3cgOgorICAgICAgICAgICAgICAgICAqIC0gaWYgd2Ugc2VudCBhbiB1bnNvbGljaXRlZCBJ
+TUFQIHJlc3BvbnNlCisgICAgICAgICAgICAgICAgICogLSBpZiB0aGUgdGltZW91dCBpcyByZWFj
+aGVkCisgICAgICAgICAgICAgICAgICoKKyAgICAgICAgICAgICAgICAgKiBBcHBseSBPdXRsb29r
+IHdvcmthcm91bmQgaW4gYWxsIGNhc2UgOgorICAgICAgICAgICAgICAgICAqIC0gc2VuZCBzb21l
+dGhpbmcgb24gdGhlIHdpcmUgdG8ga2VlcCBhbGl2ZSBGVyBhbmQgSU1BUCBjbGllbnQKKyAgICAg
+ICAgICAgICAgICAgKiAtIHJlc2V0IGNsaWVudCB0aW1lb3V0IGFuZCB3YWl0IGFnYWluIGZvciBl
+bmQgb2YgY29tbWFuZAorICAgICAgICAgICAgICAgICAqLworICAgICAgICAgICAgICAgIHByb3Rf
+cHJpbnRmKGltYXBkX291dCwgIiogT0sga2VlcCBhbGl2ZVxyXG4iKTsKKyAgICAgICAgICAgICAg
+ICBwcm90X2ZsdXNoKGltYXBkX291dCk7CisKKyAgICAgICAgICAgICAgICBwcm90X3Jlc2V0KGlt
+YXBkX2luKTsKKyAgICAgICAgICAgICAgICBwcm90X3Jlc2V0dGltZW91dChpbWFwZF9pbik7Cisg
+ICAgICAgIH0KIAogCS8qIFN0b3AgdXBkYXRlcyBhbmQgZG8gYW55IG5lY2Vzc2FyeSBjbGVhbnVw
+ICovCiAJaWRsaW5nID0gMDsKQEAgLTI3MzIsNiArMjc1NSwxOCBAQAogCSAgICAvKiBJZiBub3Qg
+cnVubmluZyBJRExFIG9uIGJhY2tlbmQsIHBvbGwgdGhlIG1haWxib3ggZm9yIHVwZGF0ZXMgKi8K
+IAkgICAgaWYgKCFDQVBBKGJhY2tlbmRfY3VycmVudCwgQ0FQQV9JRExFKSkgewogCQlpbWFwZF9j
+aGVjayhOVUxMLCAwKTsKKworICAgICAgICAgICAgICAgIC8qIEFwcGx5IE91dGxvb2sgd29ya2Fy
+b3VuZC4KKyAgICAgICAgICAgICAgICAgKiBTaW5jZSB0aGUgYmFja2VuZCBkb2Vzbid0IHN1cHBv
+cnQgaWRsZSwKKyAgICAgICAgICAgICAgICAgICBwcm94eSBtdXN0IHNlbmQga2VlcCBhbGl2ZSBi
+eSBpdHNlbGYgKi8KKyAgICAgICAgICAgICAgICBpZiAoZG9uZSAmJiBjb25maWdfZ2V0c3dpdGNo
+KElNQVBPUFRfT1VUTE9PS19JRExFX1dPUktBUk9VTkQpCisgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICYmIHByb3RfaGFzZXhwaXJlZChpbWFwZF9pbikpIHsKKyAgICAgICAgICAgICAg
+ICAgICAgICAgIHByb3RfcHJpbnRmKGltYXBkX291dCwgIiogT0sga2VlcCBhbGl2ZVxyXG4iKTsK
+KyAgICAgICAgICAgICAgICAgICAgICAgIHByb3RfZmx1c2goaW1hcGRfb3V0KTsKKworICAgICAg
+ICAgICAgICAgICAgICAgICAgcHJvdF9yZXNldHRpbWVvdXQoaW1hcGRfaW4pOworICAgICAgICAg
+ICAgICAgICAgICAgICAgZG9uZSA9IDA7CisgICAgICAgICAgICAgICAgfQogCSAgICB9CiAJfQog
+CmRpZmYgLXVyQiBjeXJ1cy1pbWFwZC0yLjQuNi9saWIvaW1hcG9wdGlvbnMgY3lydXMtaW1hcGQt
+Mi40LjYtaWRsZS9saWIvaW1hcG9wdGlvbnMKLS0tIGN5cnVzLWltYXBkLTIuNC42L2xpYi9pbWFw
+b3B0aW9ucwkyMDEwLTEyLTIwIDEzOjE1OjQ5LjAwMDAwMDAwMCArMDAwMAorKysgY3lydXMtaW1h
+cGQtMi40LjYtaWRsZS9saWIvaW1hcG9wdGlvbnMJMjAxMS0wMS0yOCAxODoxMTowNC4wMDAwMDAw
+MDAgKzAwMDAKQEAgLTEzMTAsNiArMTMxMCw5IEBACiAgICBpbnRlcmZhY2UsIG90aGVyd2lzZSB0
+aGUgdXNlciBpcyBhc3N1bWVkIHRvIGJlIGluIHRoZSBkZWZhdWx0CiAgICBkb21haW4gKGlmIHNl
+dCkuICovCiAKK3sgIm91dGxvb2tfaWRsZV93b3JrYXJvdW5kIiwgMCwgU1dJVENIIH0KKy8qIFNl
+ZSBidWcgcmVwb3J0ZWQgaGVyZSBmb3IgbW9yZSBkZXRhaWxzIDogaHR0cDovL3d3dy53YXNoaW5n
+dG9uLmVkdS9pbWFwL0lNQVAtRkFRcy9pbmRleC5odG1sIzcuMzcgKi8KKwogLyoKIC5TSCBTRUUg
+QUxTTwogLlBQCmRpZmYgLXVyQiBjeXJ1cy1pbWFwZC0yLjQuNi9saWIvcHJvdC5jIGN5cnVzLWlt
+YXBkLTIuNC42LWlkbGUvbGliL3Byb3QuYwotLS0gY3lydXMtaW1hcGQtMi40LjYvbGliL3Byb3Qu
+YwkyMDEwLTEyLTIwIDEzOjE1OjQ5LjAwMDAwMDAwMCArMDAwMAorKysgY3lydXMtaW1hcGQtMi40
+LjYtaWRsZS9saWIvcHJvdC5jCTIwMTEtMDEtMjggMTg6MTE6MDQuMDAwMDAwMDAwICswMDAwCkBA
+IC00MTEsNiArNDExLDE3IEBACiB9CiAKIC8qCisgKiBDaGVjayBpZiB0aW1lb3V0IGZvciB0aGUg
+c3RyZWFtICdzJyBoYXMgZXhwaXJlZC4KKyAqICdzJyBtdXN0IGhhdmUgYmVlbiBjcmVhdGVkIGZv
+ciByZWFkaW5nLgorICovCitpbnQgcHJvdF9oYXNleHBpcmVkKHN0cnVjdCBwcm90c3RyZWFtICpz
+KQoreworICAgICAgICBhc3NlcnQoIXMtPndyaXRlKTsKKworICAgICAgICByZXR1cm4gKHMtPnRp
+bWVvdXRfbWFyayAtIHRpbWUoTlVMTCkpIDw9IDA7Cit9CisKKy8qCiAgKiBTZXQgdGhlIHN0cmVh
+bSAncycgdG8gZmx1c2ggdGhlIHN0cmVhbSAnZmx1c2hzJyBiZWZvcmUKICAqIGJsb2NraW5nIGZv
+ciByZWFkaW5nLiAncycgbXVzdCBoYXZlIGJlZW4gY3JlYXRlZCBmb3IgcmVhZGluZywKICAqICdm
+bHVzaHMnIGZvciB3cml0aW5nLgpAQCAtNTI5LDYgKzU0MCwxNSBAQAogfQogCiAvKgorICogUGVy
+bWl0IHRvIHJldXNlIHRoZSBzdHJlYW0gYWZ0ZXIgYW4gZXJyb3IKKyAqLwordm9pZCBwcm90X3Jl
+c2V0KHN0cnVjdCBwcm90c3RyZWFtICpzKQoreworICAgICAgICBzLT5lcnJvciA9IDA7CisgICAg
+ICAgIHMtPmVvZiA9IDA7Cit9CisKKy8qCiAgKiBSZWFkIGRhdGEgaW50byB0aGUgZW1wdHkgYnVm
+ZmVyIGZvciB0aGUgc3RyZWFtICdzJyBhbmQgcmV0dXJuIHRoZQogICogZmlyc3QgY2hhcmFjdGVy
+LiAgUmV0dXJucyBFT0Ygb24gRU9GIG9yIGVycm9yLgogICovCmRpZmYgLXVyQiBjeXJ1cy1pbWFw
+ZC0yLjQuNi9saWIvcHJvdC5oIGN5cnVzLWltYXBkLTIuNC42LWlkbGUvbGliL3Byb3QuaAotLS0g
+Y3lydXMtaW1hcGQtMi40LjYvbGliL3Byb3QuaAkyMDEwLTEyLTIwIDEzOjE1OjQ5LjAwMDAwMDAw
+MCArMDAwMAorKysgY3lydXMtaW1hcGQtMi40LjYtaWRsZS9saWIvcHJvdC5oCTIwMTEtMDEtMjgg
+MTg6MTE6MDQuMDAwMDAwMDAwICswMDAwCkBAIC0yMTYsNiArMjE2LDkgQEAKIC8qIFJlc2V0IHRo
+ZSB0aW1lb3V0IHRpbWVyIGZvciB0aGUgY29ubmVjdGlvbiAoaW4gc2Vjb25kcykgKi8KIGV4dGVy
+biBpbnQgcHJvdF9yZXNldHRpbWVvdXQoc3RydWN0IHByb3RzdHJlYW0gKnMpOwogCisvKiBDaGVj
+ayBpZiB0aGUgdGltZW91dCBoYXMgZXhwaXJlZCBmb3IgdGhlIGNvbm5lY3Rpb24gKi8KK2V4dGVy
+biBpbnQgcHJvdF9oYXNleHBpcmVkKHN0cnVjdCBwcm90c3RyZWFtICpzKTsKKwogLyogQ29ubmVj
+dCB0d28gc3RyZWFtcyBzbyB0aGF0IHdoZW4geW91IGJsb2NrIG9uIHJlYWRpbmcgcywgdGhlIGxh
+eWVyCiAgKiB3aWxsIGF1dG9tYXRpY2x5IGZsdXNoIGZsdXNocyAqLwogZXh0ZXJuIGludCBwcm90
+X3NldGZsdXNob25yZWFkKHN0cnVjdCBwcm90c3RyZWFtICpzLApAQCAtMjMzLDYgKzIzNiw3IEBA
+CiAKIGV4dGVybiBjb25zdCBjaGFyICpwcm90X2Vycm9yKHN0cnVjdCBwcm90c3RyZWFtICpzKTsK
+IGV4dGVybiBpbnQgcHJvdF9yZXdpbmQoc3RydWN0IHByb3RzdHJlYW0gKnMpOworZXh0ZXJuIHZv
+aWQgcHJvdF9yZXNldChzdHJ1Y3QgcHJvdHN0cmVhbSAqcyk7CiAKIC8qIEZpbGwgdGhlIGJ1ZmZl
+ciBmb3IgYSByZWFkIHN0cmVhbSB3aXRoIHdhaXRpbmcgZGF0YSAobWF5IGJsb2NrKSAqLwogZXh0
+ZXJuIGludCBwcm90X2ZpbGwoc3RydWN0IHByb3RzdHJlYW0gKnMpOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

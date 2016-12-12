@@ -1,0 +1,346 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3415</bug_id>
+          
+          <creation_ts>2011-03-02 07:48 EDT</creation_ts>
+          <short_desc>Unable to select mailboxes via NNTP</short_desc>
+          <delta_ts>2014-06-27 14:41:25 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>NNTP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>FreeBSD</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.8</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Lars Kellogg-Stedman">lars@oddbit.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Lars Kellogg-Stedman">lars@oddbit.com</who>
+            <bug_when>2011-03-02 07:48:50 EDT</bug_when>
+            <thetext>Created an attachment (id=1359)
+imapd.conf
+
+I&apos;m getting some odd errors from Cyrus trying to access mailboxes via
+NNTP, and I&apos;m hoping you can help out.  The basic symptoms are that
+the mailboxes should up in an NNTP LIST command, but trying to select
+the via GROUP results in an a &quot;unknown error&quot;:
+
+ LIST
+ 215 List of newsgroups follows:
+ sample 0 1 y
+ .
+ GROUP sample
+ 411 No such newsgroup (Unknown error: 0)
+
+Cyrus doesn&apos;t appear to log anything regarding this failure.  In my
+imap.conf, I have:
+
+partition-news: /var/spool/news
+newsspool: /var/spool/news
+newsprefix: news
+
+And I created the mailbox like this:
+
+cm news.sample
+sam news.sample anyone post
+
+And in /var/spool/imap/news I see:
+
+ drwx------  2 cyrus  cyrus  5 Mar  1 23:36 /var/spool/imap/news/sample/
+
+Access to this mailbox works just fine via IMAP:
+
+a SELECT news.sample
+* 0 EXISTS
+* 0 RECENT
+* FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+* OK [PERMANENTFLAGS (\Seen)] Ok
+* OK [UIDVALIDITY 1299040605] Ok
+* OK [UIDNEXT 1] Ok
+* OK [HIGHESTMODSEQ 2] Ok
+* OK [URLMECH INTERNAL] Ok
+a OK [READ-WRITE] Completed
+
+In both cases, I&apos;m authenticating with the same username and password.
+
+I&apos;m running Cyrus 2.4.6 under FreeBSD 8.1.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lars Kellogg-Stedman">lars@oddbit.com</who>
+            <bug_when>2011-03-02 07:49:16 EDT</bug_when>
+            <thetext>Created an attachment (id=1360)
+cyrus.conf</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lars Kellogg-Stedman">lars@oddbit.com</who>
+            <bug_when>2011-03-04 14:14:37 EDT</bug_when>
+            <thetext>The problem (or at least the symptom) appears to be in is_newsgroup().
+
+Given:
+
+  newsprefix=news
+
+And a mailbox:
+
+  news.sample
+
+A connection NNTP client will see a newsgroup named &quot;sample&quot;:
+
+  LIST
+  sample 15 1 y
+
+And so will do:
+
+  GROUP sample
+
+This calls is_newsgroup(&quot;sample&quot;), which then does this:
+
+    if (!mbox || !*mbox ||
+        (!strncasecmp(mbox, &quot;INBOX&quot;, 5) &amp;&amp; (!mbox[5] || mbox[5] == &apos;.&apos;)) ||
+        !strncmp(mbox, &quot;user.&quot;, 5) ||
+        strncmp(mbox, newsprefix, strlen(newsprefix))) return 0;
+
+The final strncmp() is failing, because the newsgroup does not contain the value of newsprefix.  The easiest solution would seem to be including newsprefix in the newsgroup names produced by LIST.
+
+I&apos;ve attached a patch that makes the following changes:
+
+- Changes do_active to produce newsgroup names with newsprefix included, and
+- Changes the call to open_group() to indicate that the prefix does not need to be prepended.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lars Kellogg-Stedman">lars@oddbit.com</who>
+            <bug_when>2011-03-04 14:15:17 EDT</bug_when>
+            <thetext>Created an attachment (id=1361)
+Makes NNTP access work by including newsprefix in newsgroup names.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-03-04 14:18:13 EDT</bug_when>
+            <thetext>That change in logic will most likely break other things.  We will have to find out where the existing logic was broken between 2.3.x and 2.4.x and fix it properly.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lars Kellogg-Stedman">lars@oddbit.com</who>
+            <bug_when>2011-03-04 14:21:20 EDT</bug_when>
+            <thetext>What was the behavior for 2.3?  Did newsgroup names include newsprefix, or not?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lars Kellogg-Stedman">lars@oddbit.com</who>
+            <bug_when>2011-03-04 14:22:24 EDT</bug_when>
+            <thetext>Also, you&apos;re welcome.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-03-04 14:52:30 EDT</bug_when>
+            <thetext>It did not include the newsprefix.  newsprefix is only seen by IMAP clients</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lars Kellogg-Stedman">lars@oddbit.com</who>
+            <bug_when>2011-03-04 23:32:08 EDT</bug_when>
+            <thetext>Created an attachment (id=1362)
+Fixes nntpd problems with access to mailboxes.
+
+This updated patch also teaches parse_groups() about the new way of things.  With this change, it is possible to read and post using an NNTP client...which means I&apos;ve resolved my bug report.  Hooray.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-06 17:46:37 EDT</bug_when>
+            <thetext>Thanks - I&apos;ve applied your patch to master and 2.4</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-06 15:56:23 EDT</bug_when>
+            <thetext>As expected, the patch breaks newsgroup listing (includes newsprefix in the group names) and article posting (POST, IHAVE).
+
+I am going to backout this patch and correctly fix the [LIST]GROUP bug</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-06 18:54:32 EDT</bug_when>
+            <thetext>Corrected patch committed to 2.4 and master</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-06-27 14:41:25 EDT</bug_when>
+            <thetext>Assuming this is fixed at this point</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1359</attachid>
+            <date>2011-03-02 07:48 EDT</date>
+            <desc>imapd.conf</desc>
+            <filename>imapd.conf</filename>
+            <type>text/plain</type>
+            <size>1144</size>
+            <attacher>lars@oddbit.com</attacher>
+            
+              <data encoding="base64">Y29uZmlnZGlyZWN0b3J5OiAvdmFyL2ltYXAKZGVmYXVsdHBhcnRpdGlvbjogZGVmYXVsdApwYXJ0
+aXRpb24tZGVmYXVsdDogL3Zhci9zcG9vbC9pbWFwCnBhcnRpdGlvbi1uZXdzOiAvdmFyL3Nwb29s
+L25ld3MKc2VydmVybmFtZTogd3d3LmV4YW1wbGUuY29tCmFsbG93cGxhaW50ZXh0OiB5ZXMKYWRt
+aW5zOiBjeXJ1cwpkZWZhdWx0YWNsOiBhbnlvbmUgbHJzIGN5cnVzIHgKbmV3c3Nwb29sOiAvdmFy
+L3Nwb29sL25ld3MKbmV3c3ByZWZpeDogbmV3cwphdXRvY3JlYXRlcXVvdGE6IDEwMDAKc2lldmV1
+c2Vob21lZGlyOiBmYWxzZQpzaWV2ZWRpcjogL3Zhci9pbWFwL3NpZXZlCgphbm5vdGF0aW9uX2Ri
+OiBza2lwbGlzdApkdXBsaWNhdGVfZGI6IHNraXBsaXN0Cm1ib3hsaXN0X2RiOiBza2lwbGlzdApw
+dHNjYWNoZV9kYjogc2tpcGxpc3QKc2VlbnN0YXRlX2RiOiBza2lwbGlzdApzdGF0dXNjYWNoZV9k
+Yjogc2tpcGxpc3QKc3Vic2NyaXB0aW9uX2RiOiBmbGF0CnRsc2NhY2hlX2RiOiBza2lwbGlzdAoK
+IyMKIyMgU0FTTCBDb25maWcKIyMKCnNhc2xfbWluaW11bV9sYXllcjogMApzYXNsX2xvZ19sZXZl
+bDogMQpzYXNsX3B3Y2hlY2tfbWV0aG9kOiBhdXhwcm9wCnNhc2xfYXV4cHJvcF9wbHVnaW46IHNx
+bApzYXNsX21lY2hfbGlzdDogcGxhaW4Kc2FzbF9zcWxfZW5naW5lOiBwZ3NxbApzYXNsX3NxbF9o
+b3N0bmFtZXM6IC90bXAKc2FzbF9zcWxfZGF0YWJhc2U6IGJicwpzYXNsX3NxbF91c2VyOiBjeXJ1
+cwpzYXNsX3NxbF9zZWxlY3Q6IFNFTEVDVCAlcCBGUk9NIHVzZXJzIFdIRVJFIHVpZCA9ICcldScg
+YW5kIHJlYWxtID0gJyVyJwpzYXNsX3NxbF9pbnNlcnQ6IElOU0VSVCBJTlRPIHVzZXJzICh1aWQs
+IHJlYWxtLCAlcCkgVkFMVUVTICgnJXUnLCAnJXInLCAnJXYnKQpzYXNsX3NxbF91cGRhdGU6IFVQ
+REFURSB1c2VycyBTRVQgJyVwJyA9ICcldicgV0hFUkUgdWlkID0gJyV1JyBhbmQgcmVhbG0gPSAn
+JXInCgojIwojIyBUTFMgQ29uZmlnCiMjCgp0bHNfY2VydF9maWxlOiAvZXRjL3BraS90bHMvY2Vy
+dHMvd3d3LmV4YW1wbGUuY29tLmNydAp0bHNfa2V5X2ZpbGU6IC9ldGMvcGtpL3Rscy9wcml2YXRl
+L3d3dy5leGFtcGxlLmNvbS5rZXkKdGxzX2NhX2ZpbGU6IC9ldGMvcGtpL3Rscy9jZXJ0cy9jYS5j
+cnQKCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1360</attachid>
+            <date>2011-03-02 07:49 EDT</date>
+            <desc>cyrus.conf</desc>
+            <filename>cyrus.conf</filename>
+            <type>text/plain</type>
+            <size>1287</size>
+            <attacher>lars@oddbit.com</attacher>
+            
+              <data encoding="base64">IyBzdGFuZGFyZCBzdGFuZGFsb25lIHNlcnZlciBpbXBsZW1lbnRhdGlvbgoKU1RBUlQgewogICMg
+ZG8gbm90IGRlbGV0ZSB0aGlzIGVudHJ5IQogIHJlY292ZXIJY21kPSJjdGxfY3lydXNkYiAtciIK
+CiAgIyB0aGlzIGlzIG9ubHkgbmVjZXNzYXJ5IGlmIHVzaW5nIGlkbGVkIGZvciBJTUFQIElETEUK
+IyAgaWRsZWQJCWNtZD0iaWRsZWQiCn0KCiMgVU5JWCBzb2NrZXRzIHN0YXJ0IHdpdGggYSBzbGFz
+aCBhbmQgYXJlIHB1dCBpbnRvIC92YXIvaW1hcC9zb2NrZXQKU0VSVklDRVMgewogICMgYWRkIG9y
+IHJlbW92ZSBiYXNlZCBvbiBwcmVmZXJlbmNlcwogIGltYXAJCWNtZD0iaW1hcGQiIGxpc3Rlbj0i
+aW1hcCIgcHJlZm9yaz0wCiAgaW1hcHMJCWNtZD0iaW1hcGQgLXMiIGxpc3Rlbj0iaW1hcHMiIHBy
+ZWZvcms9MAogIHBvcDMJCWNtZD0icG9wM2QiIGxpc3Rlbj0icG9wMyIgcHJlZm9yaz0wCiAgcG9w
+M3MJCWNtZD0icG9wM2QgLXMiIGxpc3Rlbj0icG9wM3MiIHByZWZvcms9MAogIHNpZXZlCQljbWQ9
+InRpbXNpZXZlZCIgbGlzdGVuPSJzaWV2ZSIgcHJlZm9yaz0wCgogICMgdGhlc2UgYXJlIG9ubHkg
+bmVjZXNzYXJ5IGlmIHJlY2VpdmluZy9leHBvcnRpbmcgdXNlbmV0IHZpYSBOTlRQCiAgbm50cAkJ
+Y21kPSJubnRwZCIgbGlzdGVuPSJubnRwIiBwcmVmb3JrPTAKICBubnRwcwkJY21kPSJubnRwZCAt
+cyIgbGlzdGVuPSJubnRwcyIgcHJlZm9yaz0wCgogICMgYXQgbGVhc3Qgb25lIExNVFAgaXMgcmVx
+dWlyZWQgZm9yIGRlbGl2ZXJ5CiMgIGxtdHAJCWNtZD0ibG10cGQiIGxpc3Rlbj0ibG10cCIgcHJl
+Zm9yaz0wCiAgbG10cHVuaXgJY21kPSJsbXRwZCIgbGlzdGVuPSIvdmFyL2ltYXAvc29ja2V0L2xt
+dHAiIHByZWZvcms9MAoKICAjIHRoaXMgaXMgcmVxdWlyZWQgaWYgdXNpbmcgbm90aWZpY2F0aW9u
+cwogIG5vdGlmeQljbWQ9Im5vdGlmeWQiIGxpc3Rlbj0iL3Zhci9pbWFwL3NvY2tldC9ub3RpZnki
+IHByb3RvPSJ1ZHAiIHByZWZvcms9MQp9CgpFVkVOVFMgewogICMgdGhpcyBpcyByZXF1aXJlZAog
+IGNoZWNrcG9pbnQJY21kPSJjdGxfY3lydXNkYiAtYyIgcGVyaW9kPTMwCgogICMgdGhpcyBpcyBv
+bmx5IG5lY2Vzc2FyeSBpZiB1c2luZyBkdXBsaWNhdGUgZGVsaXZlcnkgc3VwcHJlc3Npb24sCiAg
+IyBTaWV2ZSBvciBOTlRQCiAgZGVscHJ1bmUJY21kPSJjeXJfZXhwaXJlIC1FIDMiIGF0PTA0MDAK
+CiAgIyB0aGlzIGlzIG9ubHkgbmVjZXNzYXJ5IGlmIGNhY2hpbmcgVExTIHNlc3Npb25zCiAgdGxz
+cHJ1bmUJY21kPSJ0bHNfcHJ1bmUiIGF0PTA0MDAKfQoK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1361</attachid>
+            <date>2011-03-04 14:15 EDT</date>
+            <desc>Makes NNTP access work by including newsprefix in newsgroup names.</desc>
+            <filename>nntpd.patch</filename>
+            <type>text/plain</type>
+            <size>749</size>
+            <attacher>lars@oddbit.com</attacher>
+            
+              <data encoding="base64">LS0tIG5udHBkLmMJMjAxMS0wMy0wNCAxNDoxMToyOS4xMzE3NDk0NDkgLTA1MDAKKysrIG5udHBk
+LmMub2xkCTIwMTAtMTItMjAgMDg6MTU6NDkuMDAwMDAwMDAwIC0wNTAwCkBAIC0xMDUzLDcgKzEw
+NTMsNyBAQAogCQliZSA9IGJhY2tlbmRfY3VycmVudDsKIAkJaWYgKGFyZzEubGVuICYmCiAJCSAg
+ICAoIWlzX25ld3Nncm91cChhcmcxLnMpIHx8Ci0JCSAgICAgKHIgPSBvcGVuX2dyb3VwKGFyZzEu
+cywgMSwgJmJlLCBOVUxMKSkpKSBnb3RvIG5vZ3JvdXA7CisJCSAgICAgKHIgPSBvcGVuX2dyb3Vw
+KGFyZzEucywgMCwgJmJlLCBOVUxMKSkpKSBnb3RvIG5vZ3JvdXA7CiAJCWVsc2UgaWYgKGJlKSB7
+CiAJCSAgICBwcm90X3ByaW50ZihiZS0+b3V0LCAiJXMiLCBjbWQucyk7CiAJCSAgICBpZiAoYXJn
+MS5sZW4pIHsKQEAgLTI0OTQsNyArMjQ5NCw3IEBACiAJfQogICAgIH0KICAgICBlbHNlIHsKLQlw
+cm90X3ByaW50ZihubnRwX291dCwgIiVzICV1ICV1ICVjXHJcbiIsIG5hbWUsCisJcHJvdF9wcmlu
+dGYobm50cF9vdXQsICIlcyAldSAldSAlY1xyXG4iLCBuYW1lK3N0cmxlbihuZXdzcHJlZml4KSwK
+IAkJICAgIGdyb3VwX3N0YXRlLT5leGlzdHMgPyBpbmRleF9nZXR1aWQoZ3JvdXBfc3RhdGUsIGdy
+b3VwX3N0YXRlLT5leGlzdHMpIDoKIAkJICAgIGdyb3VwX3N0YXRlLT5tYWlsYm94LT5pLmxhc3Rf
+dWlkLAogCQkgICAgZ3JvdXBfc3RhdGUtPmV4aXN0cyA/IGluZGV4X2dldHVpZChncm91cF9zdGF0
+ZSwgMSkgOgo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1362</attachid>
+            <date>2011-03-04 23:32 EDT</date>
+            <desc>Fixes nntpd problems with access to mailboxes.</desc>
+            <filename>nntpd.patch</filename>
+            <type>text/plain</type>
+            <size>1154</size>
+            <attacher>lars@oddbit.com</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL2ltYXAvbm50cGQuYyBiL2ltYXAvbm50cGQuYwppbmRleCBlYTM0OTMxLi5h
+ZjJkYjQ5IDEwMDY0NAotLS0gYS9pbWFwL25udHBkLmMKKysrIGIvaW1hcC9ubnRwZC5jCkBAIC0x
+MDUzLDcgKzEwNTMsNyBAQCBzdGF0aWMgdm9pZCBjbWRsb29wKHZvaWQpCiAJCWJlID0gYmFja2Vu
+ZF9jdXJyZW50OwogCQlpZiAoYXJnMS5sZW4gJiYKIAkJICAgICghaXNfbmV3c2dyb3VwKGFyZzEu
+cykgfHwKLQkJICAgICAociA9IG9wZW5fZ3JvdXAoYXJnMS5zLCAwLCAmYmUsIE5VTEwpKSkpIGdv
+dG8gbm9ncm91cDsKKwkJICAgICAociA9IG9wZW5fZ3JvdXAoYXJnMS5zLCAxLCAmYmUsIE5VTEwp
+KSkpIGdvdG8gbm9ncm91cDsKIAkJZWxzZSBpZiAoYmUpIHsKIAkJICAgIHByb3RfcHJpbnRmKGJl
+LT5vdXQsICIlcyIsIGNtZC5zKTsKIAkJICAgIGlmIChhcmcxLmxlbikgewpAQCAtMjQ5NCw3ICsy
+NDk0LDcgQEAgaW50IGRvX2FjdGl2ZShjaGFyICpuYW1lLCB2b2lkICpyb2NrKQogCX0KICAgICB9
+CiAgICAgZWxzZSB7Ci0JcHJvdF9wcmludGYobm50cF9vdXQsICIlcyAldSAldSAlY1xyXG4iLCBu
+YW1lK3N0cmxlbihuZXdzcHJlZml4KSwKKwlwcm90X3ByaW50ZihubnRwX291dCwgIiVzICV1ICV1
+ICVjXHJcbiIsIG5hbWUsCiAJCSAgICBncm91cF9zdGF0ZS0+ZXhpc3RzID8gaW5kZXhfZ2V0dWlk
+KGdyb3VwX3N0YXRlLCBncm91cF9zdGF0ZS0+ZXhpc3RzKSA6CiAJCSAgICBncm91cF9zdGF0ZS0+
+bWFpbGJveC0+aS5sYXN0X3VpZCwKIAkJICAgIGdyb3VwX3N0YXRlLT5leGlzdHMgPyBpbmRleF9n
+ZXR1aWQoZ3JvdXBfc3RhdGUsIDEpIDoKQEAgLTI5NDMsNyArMjk0Myw3IEBAIHN0YXRpYyBpbnQg
+cGFyc2VfZ3JvdXBzKGNvbnN0IGNoYXIgKmdyb3VwcywgbWVzc2FnZV9kYXRhX3QgKm1zZykKIAlp
+ZiAoIXJjcHQpIHJldHVybiAtMTsKIAogCS8qIGNvbnN0cnVjdCB0aGUgbWFpbGJveCBuYW1lICov
+Ci0Jc3ByaW50ZihyY3B0LCAiJXMlLipzIiwgbmV3c3ByZWZpeCwgKGludCkgbiwgcCk7CisJc3By
+aW50ZihyY3B0LCAiJS4qcyIsIChpbnQpIG4sIHApOwogCiAJLyogc2tpcCBtYWlsYm94ZXMgdGhh
+dCB3ZSBkb24ndCBzZXJ2ZSBhcyBuZXdzZ3JvdXBzICovCiAJaWYgKCFpc19uZXdzZ3JvdXAocmNw
+dCkpIGNvbnRpbnVlOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

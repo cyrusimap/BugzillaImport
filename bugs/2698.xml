@@ -1,0 +1,151 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2698</bug_id>
+          
+          <creation_ts>2005-08-05 10:26 EDT</creation_ts>
+          <short_desc>proxyd crashes while processing getannotation command</short_desc>
+          <delta_ts>2010-10-18 12:43:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="paul r turgyan">pturgyan@umich.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="paul r turgyan">pturgyan@umich.edu</who>
+            <bug_when>2005-08-05 10:26:31 EDT</bug_when>
+            <thetext>proxyd crash in strhash.
+
+#0  strhash (string=0x0) at strhash.c:63
+63      strhash.c: No such file or directory.
+        in strhash.c
+(gdb) bt
+#0  strhash (string=0x0) at strhash.c:63
+#1  0x08083af6 in hash_lookup (key=0x0, table=0xbfffcfac) at hash.c:160
+#2  0x08068f58 in fetch_cb (name=0xbfffa5e0 &quot;&quot;, matchlen=12, maycreate=1,
+    rock=0xbfffcf80) at annotate.c:997
+#3  0x0805f8d2 in find_cb (rockp=0xbfffcd00,
+    key=0x46b37e88 &lt;Address 0x46b37e88 out of bounds&gt;, keylen=23,
+    data=0x46b37ea4 &lt;Address 0x46b37ea4 out of bounds&gt;, datalen=54)
+    at mboxlist.c:1858
+#4  0x0807c5aa in myforeach (db=0x813f548, prefix=0xbfffc920 &quot;user.jmforth&quot;,
+    prefixlen=12, goodp=0x805f470 &lt;find_p&gt;, cb=0x805f750 &lt;find_cb&gt;,
+    rock=0xbfffcd00, tid=0x0) at cyrusdb_skiplist.c:989
+#5  0x0805ffba in mboxlist_findall (namespace=0x8133760,
+    pattern=0xbfffcd90 &quot;user.jmforth&quot;, isadmin=0,
+    userid=0xbfffcd00 &quot;\220\221\024\b&quot;, auth_state=0x0,
+    proc=0x8068d90 &lt;fetch_cb&gt;, rock=0xbfffcf80) at mboxlist.c:2050
+#6  0x0806947c in annotatemore_fetch (mailbox=0x8145200 &quot;user/jmforth&quot;,
+    entries=0x8146a30, attribs=0x8146a48, namespace=0x8133760, isadmin=1,
+    userid=0x8146b50 &quot;imap.test^mail^umich^edu&quot;, auth_state=0x8146ab8,
+    pout=0x0) at annotate.c:1164
+#7  0x080599d5 in cmd_getannotation (tag=0xc &lt;Address 0xc out of bounds&gt;,
+    mboxpat=0x0) at proxyd.c:5064
+#8  0x0805182c in cmdloop () at proxyd.c:1724
+#9  0x080503df in service_main (argc=1, argv=0x813ce88, envp=0xbffff3ec)
+    at proxyd.c:1370
+#10 0x0804cf5e in main (argc=1, argv=0x24f1, envp=0xbffff3ec) at service.c:530
+#11 0x402658be in __libc_start_main (main=0x804c7c0 &lt;main&gt;, argc=1, 
+    ubp_av=0x24f1, init=0x809db10 &lt;__libc_csu_init&gt;, 
+    fini=0x809db40 &lt;__libc_csu_fini&gt;, rtld_fini=0x9, stack_end=0x0)
+    at ../sysdeps/generic/libc-start.c:152
+
+
+When listing the mailbox metedata using cyradm info command
+proxyd could crash.
+
+proxyd processes the info command like:
+
+1) create list of matching mailboxes.
+
+2) get server/ partition names (get_mb_data)
+
+3) get the meta data from backend server.
+
+4) respond to client w/ meta data.
+
+If in between step 1 and 2 someone deletes the mailbox
+or renames the mailbox step 2 will not succeed,  and the
+servername and partition returned from get_mb_data will be NULL.
+Calling hash_lookup w/ a NULL servername causes the crash.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="paul r turgyan">pturgyan@umich.edu</who>
+            <bug_when>2005-08-05 10:28:33 EDT</bug_when>
+            <thetext>Created an attachment (id=369)
+When detecting NULL server name ignore mailbox.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-10-31 12:21:40 EDT</bug_when>
+            <thetext>fixed in CVS</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>369</attachid>
+            <date>2005-08-05 10:28 EDT</date>
+            <desc>When detecting NULL server name ignore mailbox.</desc>
+            <filename>annotate.diff</filename>
+            <type>text/plain</type>
+            <size>736</size>
+            <attacher>pturgyan@umich.edu</attacher>
+            
+              <data encoding="base64">KioqIGFubm90YXRlLmMtIFRodSBBdWcgIDQgMTU6MDY6NTEgMjAwNQotLS0gYW5ub3RhdGUuYyAg
+VGh1IEF1ZyAgNCAxMjo0NjoyMSAyMDA1CioqKioqKioqKioqKioqKgoqKiogOTgzLDk4OSAqKioq
+CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICh2b2lkKikgZW50cmll
+c19wdHItPmVudHJ5cGF0KSk7CiAgICAgIH0KCiEgICAgIGlmIChwcm94eV9mZXRjaF9mdW5jICYm
+IGZkYXRhLT5vcmlnX2VudHJ5CiAgICAgICAgJiYgIWhhc2hfbG9va3VwKG1icm9jay5zZXJ2ZXIs
+ICYoZmRhdGEtPnNlcnZlcl90YWJsZSkpKSB7CiAgICAgICAgLyogeHh4IGlnbm9yaW5nIHJlc3Vs
+dCAqLwogICAgICAgIHByb3h5X2ZldGNoX2Z1bmMobWJyb2NrLnNlcnZlciwgZmRhdGEtPm9yaWdf
+bWFpbGJveCwKLS0tIDk4Myw5ODkgLS0tLQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAodm9pZCopIGVudHJpZXNfcHRyLT5lbnRyeXBhdCkpOwogICAgICB9CgohICAg
+ICBpZiAobWJyb2NrLnNlcnZlciAmJiBwcm94eV9mZXRjaF9mdW5jICYmIGZkYXRhLT5vcmlnX2Vu
+dHJ5CiAgICAgICAgJiYgIWhhc2hfbG9va3VwKG1icm9jay5zZXJ2ZXIsICYoZmRhdGEtPnNlcnZl
+cl90YWJsZSkpKSB7CiAgICAgICAgLyogeHh4IGlnbm9yaW5nIHJlc3VsdCAqLwogICAgICAgIHBy
+b3h5X2ZldGNoX2Z1bmMobWJyb2NrLnNlcnZlciwgZmRhdGEtPm9yaWdfbWFpbGJveCwKCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,190 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1749</bug_id>
+          
+          <creation_ts>2003-01-08 15:29 EDT</creation_ts>
+          <short_desc>squatter core dumps</short_desc>
+          <delta_ts>2010-10-18 12:42:59 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <bug_file_loc>http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=159558</bug_file_loc>
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</assigned_to>
+          <cc>hmh@debian.org</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 15:29:59 EDT</bug_when>
+            <thetext>URL is debian bug URL.  original report follows:
+----
+Last night I had three core dumps of 2.1.5 imapd in rapid
+succession. All backtraces look like this:
+
+#0  0x08087a59 in memconst (s=3D0x418bf000 &lt;Address 0x418bf000 out of bound=
+s&gt;,=20
+    len=3D2, v=3D0 &apos;\0&apos;) at squat.c:77
+#1  0x08087d4b in squat_search_open (fd=3D17) at squat.c:133
+#2  0x080876ff in search_squat (msg_list=3D0x815a8c0, mailbox=3D0x8125820,=
+=20
+    searchargs=3D0x8159f38) at search_engines.c:257
+#3  0x080879a6 in search_prefilter_messages (msg_list=3D0x815a8c0,=20
+    mailbox=3D0x8125820, searchargs=3D0x8159f38) at search_engines.c:309
+#4  0x08062408 in _index_search (msgno_list=3D0xbfffee38, mailbox=3D0x81258=
+20,=20
+    searchargs=3D0x8159f38) at index.c:947
+#5  0x0806260e in index_search (mailbox=3D0x8125820, searchargs=3D0x8159f38=
+,=20
+    usinguid=3D1) at index.c:1012
+#6  0x08056256 in cmd_search (tag=3D0x8147768 &quot;B00026&quot;, usinguid=3D1)
+    at imapd.c:3373
+#7  0x0805140e in cmdloop () at imapd.c:1513
+#8  0x0804e61d in service_main (argc=3D2, argv=3D0xbffffbe4, envp=3D0xbffff=
+bf0)
+    at imapd.c:703
+#9  0x0804c99c in main (argc=3D2, argv=3D0xbffffbe4, envp=3D0xbffffbf0)
+    at service.c:468
+
+I have been looking at imap/squat.c. Here is something which strikes
+me as a bug: the mmap in line 120 maps data_len bytes, but the
+memconst check in line 137 goes 16 bytes beyond the end of the mmap&apos;ed
+block. In the case at hand, data_len =3D 4153330, which is 14 bytes
+short of being 1014 4K pages --- hence reading data 16 bytes behind
+the mmap&apos;ed data gets into a new page which occasionally will be
+read-protected... is this a valid analysis?
+
+Slightly off-topic: should the mmap&apos;ed data be included in the core
+dump? I wonder whether &lt;Address 0x418bf000 out of bounds&gt; is an
+artifact of the core dump or whether it is truly a bogus address.
+
+Thanks in advance for any advice,
+Hein &lt;hpr@eml.cc&gt;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 15:31:00 EDT</bug_when>
+            <thetext>Adding Henrique.  Note that the debian bug report has a patch that works on
+linux, but may not be portable...
+
+Index: squat.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/imap/squat.c,v
+retrieving revision 1.1.1.2
+diff -u -r1.1.1.2 squat.c
+--- squat.c	19 Feb 2002 18:50:14 -0000	1.1.1.2
++++ squat.c	6 Sep 2002 22:20:28 -0000
+@@ -117,7 +117,7 @@
+     goto cleanup_index;    
+   }
+ 
+-  index-&gt;data = mmap(NULL, data_len, PROT_READ, MAP_SHARED, fd, 0);
++  index-&gt;data = mmap(NULL, data_len + SQUAT_SAFETY_ZONE, PROT_READ, MAP_SHARED,
+fd, 0);
+   if (index-&gt;data == MAP_FAILED) {
+     squat_set_last_error(SQUAT_ERR_SYSERR);
+     goto cleanup_index;
+@@ -134,7 +134,7 @@
+       || doc_list_offset &lt; 0 || doc_list_offset &gt;= data_len
+       || word_list_offset &lt; 0 || word_list_offset &gt;= data_len
+       || doc_ID_list_offset &lt; 0 || doc_ID_list_offset &gt;= data_len
+-      || !memconst(index-&gt;data + data_len, 16, 0)) {
++      || !memconst(index-&gt;data + data_len, SQUAT_SAFETY_ZONE, 0)) {
+     squat_set_last_error(SQUAT_ERR_INVALID_INDEX_FILE);
+     goto cleanup_unmap;
+   }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 15:45:37 EDT</bug_when>
+            <thetext>that patch definitely isn&apos;t portable. some unixes don&apos;t allow mmap()s longer
+than the file. (this is the difference between map_shared.c and map_stupidshared.c.)
+
+also, to answer hpr@eml.cc&apos;s question: no, mmap data never makes it into core
+dumps, since it&apos;s a different section of memory and can be quite large. such is
+life.
+
+the cyrus.squat file needs to be generated with these 0 bytes already in it, and
+we should make sure that our tests of whether it is valid don&apos;t go off the end
+of the file.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 17:44:46 EDT</bug_when>
+            <thetext>there&apos;s a good reason that squat.c isn&apos;t using the libcyrus mmap routines, right?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 17:47:10 EDT</bug_when>
+            <thetext>well, it doesn&apos;t need the read/write semantics, so map_private would kill
+performance for no reason.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 19:14:44 EDT</bug_when>
+            <thetext>um, the mmap is currently shorter than the file by SQUAT_SAFETY_ZONE bytes
+(data_len is the stat size of the file minus SQUAT_SAFETY_ZONE).
+
+Also, as far as I can tell, the 16 NUL bytes are actually there in the .squat
+files already.
+
+I guess I don&apos;t see why this isn&apos;t portable.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2003-01-08 19:18:54 EDT</bug_when>
+            <thetext>Then, where is the bug in the first place? I did manage to reproduce it, and the
+patch cured it, so it must be somewhere.  That extra safety zone fixed the issue...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 19:24:46 EDT</bug_when>
+            <thetext>as i understand it, only a segment of the file was getting mmap()d before. your
+patch made the whole file get mmap()d. (it probably only core dumps when there&apos;s
+a page boundary between the end of the data and the end of the padding.)
+
+thus this patch is the correct solution and we should commit and be happy.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-01-08 19:49:56 EDT</bug_when>
+            <thetext>good, applied and credited.  closing bug.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

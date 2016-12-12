@@ -1,0 +1,113 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2908</bug_id>
+          
+          <creation_ts>2007-02-09 11:56 EDT</creation_ts>
+          <short_desc>checking result in sieve/test.c, main()</short_desc>
+          <delta_ts>2010-10-25 18:46:41 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dilyan Palauzov">dilyan.palauzov@aegee.org</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2007-02-09 11:56:12 EDT</bug_when>
+            <thetext>reading 2.3.8/sieve/test.c I found in main():
+
+     if (message) {
+         fd = open(message, O_RDONLY);
+         res = fstat(fd, &amp;sbuf);
+1)      if (res != 0) {
+             perror(&quot;fstat&quot;);
+         }
+
+
+         m = new_msg(fdopen(fd, &quot;r&quot;), sbuf.st_size, message);
+2)      if (res != SIEVE_OK) {
+             printf(&quot;sieve_msg_parse() returns %d\n&quot;, res);
+             exit(1);
+         }
+And I have some question:
+1) Why is it written 0 and not SIEVE_OK ?
+2) Why is this code not included in it 1) if ...? I mean, the value of res  
+is not modified, but is checked twice if it is 0/SIEVE_OK . Or maybe  
+the source code shall be:
+2)      if (m != SIEVE_OK) {
+
+? In all cases, I consider the code as not very clear.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2007-02-14 14:35:30 EDT</bug_when>
+            <thetext>The check # 1 is Ok, as fstat is a standard C function.
+
+Regarding # 2: I think the correct code should look like:
+
+	FILE * f;
+
+       [...]
+
+	f = fdopen(fd, &quot;r&quot;);
+	m = new_msg(fdopen(fd, &quot;r&quot;), sbuf.st_size, message);
+	if (m == NULL || f == NULL) {
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-03-15 13:44:06 EDT</bug_when>
+            <thetext>I assume that you mean something like this:
+
+	FILE * f;
+
+       [...]
+
+	f = fdopen(fd, &quot;r&quot;);
+	if (f) m = new_msg(f, sbuf.st_size, message);
+	if (f == NULL || m == NULL) {</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-04-20 08:57:01 EDT</bug_when>
+            <thetext>fixed in CVS</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

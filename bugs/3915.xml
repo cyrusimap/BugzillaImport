@@ -1,0 +1,159 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3915</bug_id>
+          
+          <creation_ts>2015-11-17 07:39 EDT</creation_ts>
+          <short_desc>authentication fails if userid and authid differ</short_desc>
+          <delta_ts>2015-11-17 07:39:03 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>cyrusbug@mail.architektur.tu-darmstadt.de</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">cyrusbug@mail.architektur.tu-darmstadt.de</who>
+            <bug_when>2015-11-17 07:39:03 EDT</bug_when>
+            <thetext>Hello
+
+I recently tried (again) upgrading one of my mail systems and discovered that still something within sasl seems to be broken.
+The same configuration that worked with sasl libs 2.1.23 stopped working with 2.1.25 and 2.1.26.
+
+It seems to me an issue related to bug id 3590.
+When doing a &quot;plain&quot; authentication in a setup using saslauthd without configured auxprop modules (as described in https://bugzilla.cyrusimap.org/show_bug.cgi?id=3590) everything is fine as long as userid and authid are the same:
+
+I replaced usernames, hashes etc. for the report.
+The user &apos;cyrus&apos; is an admin user declared in imapd.conf, the user &apos;test&apos; is not. 
+
+same userid and authid works just fine:
+
+# imtest -u test -a test -w &lt;Password&gt; -v -m plain 127.0.0.1
+S: * OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE STARTTLS AUTH=PLAIN AUTH=LOGIN SASL-IR] ourea Cyrus IMAP v2.4.17-caldav-beta10-Debian-2.4.17+caldav~beta10-18 server ready
+C: A01 AUTHENTICATE PLAIN &lt;here would be an base64 encoded string&gt;
+S: A01 OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY CATENATE CONDSTORE ESEARCH SORT SORT=MODSEQ SORT=DISPLAY THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE LIST-EXTENDED WITHIN QRESYNC SCAN XLIST X-REPLICATION URLAUTH URLAUTH=BINARY LOGINDISABLED COMPRESS=DEFLATE IDLE] Success (no protection) SESSIONID=&lt;cyrus-21765-1447758288-1&gt;
+Authenticated.
+Security strength factor: 0
+
+syslog:
+Nov 17 12:04:48 ourea cyrus/master[21765]: about to exec /usr/lib/cyrus/bin/imapd
+Nov 17 12:04:48 ourea cyrus/imap[21765]: executed
+Nov 17 12:04:48 ourea cyrus/imap[21765]: accepted connection
+Nov 17 12:04:48 ourea cyrus/imap[21765]: login: localhost [127.0.0.1] muman PLAIN User logged in SESSIONID=&lt;cyrus-21765-1447758288-1&gt;
+Nov 17 12:05:19 ourea cyrus/imap[21765]: Connection reset by peer, closing connection
+
+But if userid and authid differ, sasl will behave similar as before the patch from bug id 3509. I believe that there is still a bug somewhere.
+
+# imtest -u test -a cyrus -w &lt;Password&gt; -v -m plain 127.0.0.1
+S: * OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE STARTTLS AUTH=PLAIN AUTH=LOGIN SASL-IR] ourea Cyrus IMAP v2.4.17-caldav-beta10-Debian-2.4.17+caldav~beta10-18 server ready
+C: A01 AUTHENTICATE PLAIN &lt;here would be an base64 encoded string&gt;
+S: A01 NO no mechanism available
+Authentication failed. generic failure
+Security strength factor: 0
+
+syslog:
+Nov 17 12:09:55 ourea cyrus/master[21845]: about to exec /usr/lib/cyrus/bin/imapd
+Nov 17 12:09:55 ourea cyrus/imap[21845]: executed
+Nov 17 12:09:55 ourea cyrus/imap[21845]: accepted connection
+Nov 17 12:09:55 ourea cyrus/imap[21845]: badlogin: localhost [127.0.0.1] PLAIN [SASL(-4): no mechanism available: Unable to find a callback: 32773]
+Nov 17 12:10:04 ourea cyrus/imap[21845]: Connection reset by peer, closing connection
+
+
+Some more tests with sieve and the same results:
+
+using &quot;test\0cyrus\0Password&quot; base64 encoded
+
+# telnet localhost 4190
+Trying ::1...
+Connected to localhost.
+Escape character is &apos;^]&apos;.
+&quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved v2.4.17-caldav-beta10-Debian-2.4.17+caldav~beta10-18&quot;
+&quot;SASL&quot; &quot;PLAIN LOGIN&quot;
+&quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope relational regex subaddress copy&quot;
+&quot;STARTTLS&quot;
+&quot;UNAUTHENTICATE&quot;
+OK
+AUTHENTICATE &quot;PLAIN&quot; {28+}
+&lt;here would be an base64 encoded string&gt;
+NO &quot;Authentication Error&quot;
+
+syslog:
+Nov 17 11:45:20 ourea cyrus/master[21532]: about to exec /usr/lib/cyrus/bin/timsieved
+Nov 17 11:45:20 ourea cyrus/sieve[21532]: executed
+Nov 17 11:45:20 ourea cyrus/sieve[21532]: accepted connection
+Nov 17 11:46:54 ourea cyrus/sieve[21532]: badlogin: localhost[::1] PLAIN no mechanism available
+
+
+doing the same with:
+&quot;test\0test\0Password&quot;
+--&gt;
+AUTHENTICATE &quot;PLAIN&quot; {24+}
+&lt;here would be an base64 encoded string&gt;
+will work
+
+
+# sivtest -u test -a cyrus localhost
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved v2.4.17-caldav-beta10-Debian-2.4.17+caldav~beta10-18&quot;
+S: &quot;SASL&quot; &quot;PLAIN LOGIN&quot;
+S: &quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope relational regex subaddress copy&quot;
+S: &quot;STARTTLS&quot;
+S: &quot;UNAUTHENTICATE&quot;
+S: OK
+Please enter your password: &lt;Password&gt;
+C: AUTHENTICATE &quot;PLAIN&quot; {28+}
+&lt;here would be an base64 encoded string&gt;
+S: NO &quot;Authentication Error&quot;
+Authentication failed. generic failure
+Security strength factor: 0
+quit
+Connection closed. 
+
+syslog:
+Nov 17 12:00:45 ourea cyrus/master[21716]: about to exec /usr/lib/cyrus/bin/timsieved
+Nov 17 12:00:45 ourea cyrus/sieve[21716]: executed
+Nov 17 12:00:45 ourea cyrus/sieve[21716]: accepted connection
+Nov 17 12:01:00 ourea cyrus/sieve[21716]: badlogin: localhost[::1] PLAIN no mechanism available
+Nov 17 12:01:24 ourea cyrus/master[2478]: process 21716 exited, status 0
+
+
+Best regards,
+Christian</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,141 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3635</bug_id>
+          
+          <creation_ts>2012-01-18 08:38 EDT</creation_ts>
+          <short_desc>cmd_rename() fails to check error codes</short_desc>
+          <delta_ts>2012-03-12 08:17:27 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.13</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.14</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="David Carter">dpc22@cam.ac.uk</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="David Carter">dpc22@cam.ac.uk</who>
+            <bug_when>2012-01-18 08:38:03 EDT</bug_when>
+            <thetext>Created an attachment (id=1452)
+Check error code
+
+An innocuous looking:
+
+      r = 0; /* doesn&apos;t matter if we didn&apos;t find it now */
+
+in imap/imapd.c, cmd_rename() merrily blats any previous error code which
+is still to be reported.
+
+I attach one obvious patch. A &quot;goto bail&quot; might also be appropriate.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-01-18 17:12:42 EDT</bug_when>
+            <thetext>Wait - no.  That&apos;s just &apos;r&apos; from the mlookup above.  It&apos;s perfectly fine for that to have failed if you&apos;re renaming a heirarchy that has no mailbox at this point:
+
+RENAME INBOX.a INBOX.b
+
+when only INBOX.a.c exists.
+
+If there actually IS another error, it will be detected later and cause the failure then.  This was just &apos;r&apos; from the lookup to decide if we needed to proxy elsewhere, and in each of those cases we already called &apos;return&apos; at the end.
+
+If you can find a real case where that&apos;s a problem, I&apos;ll certainly reconsider - but as written, this will break Bug #3586 again.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Carter">dpc22@cam.ac.uk</who>
+            <bug_when>2012-01-19 02:21:55 EDT</bug_when>
+            <thetext>What about:
+
+
+    if (partition &amp;&amp; !imapd_userisadmin) {
+	r = IMAP_PERMISSION_DENIED;
+    }
+
+and the two translations from altnamespace to internal namespace at the
+top of the function? While the following might be a special case:
+
+	r = mlookup(NULL, NULL, oldmailboxname, &amp;mbtype,
+		    &amp;server, NULL, NULL);
+
+I think that the other values of r need to be caught.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-01-19 02:27:38 EDT</bug_when>
+            <thetext>Yeah, OK - I&apos;ll go through and isolate the ones that need checking, and make the &quot;no mailboxes.db entry&quot; codepath explicit.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-01-19 07:43:25 EDT</bug_when>
+            <thetext>OK - patch written.  I haven&apos;t written test-cases to attempt the illegal actions, but it does check &apos;r&apos; in all the right places.  If it&apos;s not IMAP_MAILBOX_NONEXISTENT then it won&apos;t become 0.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-12 04:29:16 EDT</bug_when>
+            <thetext>To be included in release 2.4.14 - adjusting milestone.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-12 08:17:27 EDT</bug_when>
+            <thetext>Closing ticket</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1452</attachid>
+            <date>2012-01-18 08:38 EDT</date>
+            <desc>Check error code</desc>
+            <filename>rename.patch</filename>
+            <type>text/plain</type>
+            <size>371</size>
+            <attacher>dpc22@cam.ac.uk</attacher>
+            
+              <data encoding="base64">LS0tIGltYXAvaW1hcGQuYy1ESVNUCTIwMTItMDEtMTggMTM6MzI6NTcuMDAwMDAwMDAwICswMDAw
+CisrKyBpbWFwL2ltYXBkLmMJMjAxMi0wMS0xOCAxMzozMzo1NC4wMDAwMDAwMDAgKzAwMDAKQEAg
+LTU0MTksNiArNTQxOSwxMSBAQAogCQkgICAgJnNlcnZlciwgTlVMTCwgTlVMTCk7CiAgICAgfQog
+CisgICAgaWYgKHIpIHsKKwlwcm90X3ByaW50ZihpbWFwZF9vdXQsICIlcyBOTyAlc1xyXG4iLCB0
+YWcsIGVycm9yX21lc3NhZ2UocikpOworICAgICAgICByZXR1cm47CisgICAgfQorCiAgICAgaWYg
+KCFyICYmIChtYnR5cGUgJiBNQlRZUEVfUkVNT1RFKSkgewogCS8qIHJlbW90ZSBtYWlsYm94ICov
+CiAJc3RydWN0IGJhY2tlbmQgKnMgPSBOVUxMOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

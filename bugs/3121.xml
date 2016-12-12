@@ -1,0 +1,109 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3121</bug_id>
+          
+          <creation_ts>2008-11-26 06:31 EDT</creation_ts>
+          <short_desc>frontend proxy fails to get full set of CAPABILITY from backend</short_desc>
+          <delta_ts>2010-10-25 18:46:47 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Wes Craig">wes@umich.edu</assigned_to>
+          <cc>Lesley.Longhurst@opus.co.nz</cc>
+    
+    <cc>murch@andrew.cmu.edu</cc>
+    
+    <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2008-11-26 06:31:22 EDT</bug_when>
+            <thetext>Hi!
+
+I recognized that IDLE was not working as expected on our murder setup. We&apos;ve
+two frontends, 3 backends and a dedicated mupdate server, all running 2.3.13.
+idled is active on the backends.
+
+I did some strace&apos;ing on front- and backends and as far as I can tell, the
+frontends do not proxy the IDLE command to the backends, because the frontends
+think the backends are not CAPAable to do IDLE.
+
+I searched the source and it seems that there is a problem with the capability
+check the frontends do on the backends.
+
+On one hand cyrus announces CAPABILITY in the greeting banner. But
+CAPA_PREAUTH doesn&apos;t contain all of the caps a frontend wants to know. IDLE, MULTIAPPEND, RIGHTS and LIST-SUBSCRIBED are missing.
+
+On the other hand, the frontend is told by the protocol definition in
+imap_proxy.c:107, that it should exclusively check the banner in backend.c:400
+for the CAPS, which doesn&apos;t contain the needed info in pre_auth state.
+
+I confirmed this behaviour by sending a full set of CAPS in the greeting by adding CAPA_POSTAUTH in cmdloop(). After doing so the frontends proxy the IDLE command to the backend again.
+
+I don&apos;t know how to fix this best. Sending a full set of capabilites seems odd. Adding only those the frontend proxy wants to check would be possible, maybe triggered by a &quot;backend mode greeting&quot; config switch.
+
+Telling the frontend to do a CAPABILITY command instead of &quot;believing&quot; in the greeting banner adds a little overhead but seems fine, too.
+
+Regards, Wolfgang Breyha</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2008-11-26 14:47:16 EDT</bug_when>
+            <thetext>It wouldn&apos;t take much for backend_authenticate() to issue the CAPABILITY command in appropriate situations.  However, I don&apos;t see any advantage to hiding IDLE, MULTIAPPEND, and LIST-SUBSCRIBED until after authentication.  Each of these capabilities is checked by proxy imapd and changes proxy behavior in some way.  MULTIAPPEND may just be moved from CAPA_POSTAUTH_STRING to CAPA_PREAUTH_STRING.  The code in capa_response() that provides LIST-SUBSCRIBED can be moved before the CAPA_POSTAUTH check.  There&apos;s a small problem with the code in capa_response() which provides IDLE: it also opens the sockets used to communicate with idled, assuming idled is present.  Probably not a significant problem, tho, so I&apos;d just move that code to be before the CAPA_POSTAUTH check. 
+
+(The is_capa banner flag doesn&apos;t say that the banner should be *exclusively* checked, just that capabilities are present in the banner.)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-07 21:51:12 EDT</bug_when>
+            <thetext>I have just logged bug #3240 for a similar problem with a later version. I think the correct resolution would be for the front-end to ask for capabilities post-auth rather than using what it finds in the greeting banner.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-08-06 13:47:09 EDT</bug_when>
+            <thetext>*** Bug 3240 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-10-19 14:18:39 EDT</bug_when>
+            <thetext>Frontend proxy has been fixed to parse [CAPABILITY] response codes as needed to avoid extra roundtrips caused by explicitly calling CAPABILITY command.  Also changed backend server to always return ALL capabilities in response to the CAPABILITY command.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

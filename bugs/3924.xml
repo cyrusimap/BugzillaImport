@@ -1,0 +1,114 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3924</bug_id>
+          
+          <creation_ts>2016-03-21 13:01 EDT</creation_ts>
+          <short_desc>GETANNOTATION/GETMETADATA hash keys changed/wrong</short_desc>
+          <delta_ts>2016-03-21 13:01:16 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>perl</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-03-21 13:01:16 EDT</bug_when>
+            <thetext>for getannotation Cyrus::IMAP::Admin changed the keys from 2.4 =&gt; 2.5 introducing double &quot;/&quot;. This patch fixes it back to the IMO wanted format:
+
+-------------------
+--- a/perl/imap/IMAP/Admin.pm	2015-11-30 07:30:33.000000000 +0100
++++ b/perl/imap/IMAP/Admin.pm	2016-01-15 14:53:03.320795093 +0100
+@@ -883,9 +883,9 @@
+ 			       /^\s*\&quot;?([^&quot;]*)&quot;?\s+&quot;?([^&quot;]*)&quot;?\s+\(\&quot;?([^&quot;\{]*)\&quot;?\s+\&quot;?([^&quot;\{]*)\&quot;?(?:\s+\&quot;?([^&quot;\{]*)\&quot;?\s+\&quot;?([^&quot;\{]*)\&quot;?)?\)/) {
+ 			  my $key;
+ 			  if($1 ne &quot;&quot;) {
+-				$key = &quot;/mailbox/$2&quot;;
++				$key = &quot;/mailbox$2&quot;;
+ 			  } else {
+-				$key = &quot;/server/$2&quot;;
++				$key = &quot;/server$2&quot;;
+ 			  }
+ 			  $d{-rock}-&gt;{&quot;$1&quot;}-&gt;{_attribname2access($3)}-&gt;{$key} = $4;
+ 			  $d{-rock}-&gt;{&quot;$1&quot;}-&gt;{_attribname2access($5)}-&gt;{$key} = $6 if (defined ($5) &amp;&amp; defined ($6));
+@@ -902,7 +902,7 @@
+ 
+ 			  my $key;
+ 			  if($1 ne &quot;&quot;) {
+-				$key = &quot;/mailbox/$2&quot;;
++				$key = &quot;/mailbox$2&quot;;
+ 			  } else {
+ 				$key = &quot;/server$2&quot;;
+ 			  }
+---------------
+
+for GETMETADATA it seems a similar error is included. In case of /mailbox/.... tree the returned keys are eg.
+/mailbox//private/specialuse
+instead of
+/mailbox/INBOX.Trash/private/specialuse
+
+My fix:
+------------------
+--- Cyrus/IMAP/Admin.pm.orig	2016-03-21 17:57:21.486046740 +0100
++++ Cyrus/IMAP/Admin.pm	2016-03-21 17:46:13.835135701 +0100
+@@ -1083,7 +1083,7 @@
+ 			    my $mdkey = $2;
+ 			    my $mdvalue = $3;
+ 			    if($mdbox ne &quot;&quot;) {
+-				$mdkey = &quot;/mailbox/$mdkey&quot;;
++				$mdkey = &quot;/mailbox/$mdbox$mdkey&quot;;
+ 				if ($mdkey =~ /private/) {
+ 				    $d{-rock}-&gt;{&quot;$mdbox&quot;}-&gt;{&apos;private&apos;}-&gt;{$mdkey} = $mdvalue;
+ 				} elsif ($mdkey =~ /shared/) {
+@@ -1108,7 +1108,7 @@
+ 			  # possibly multiple values -- multiple
+ 			  # values not tested.
+ 			  if($mdbox ne &quot;&quot;) {
+-			      $mdkey = &quot;/mailbox/$mdkey&quot;;
++			      $mdkey = &quot;/mailbox/$mdbox$mdkey&quot;;
+ 			      if ($mdkey =~ /private/) {
+ 			          $d{-rock}-&gt;{&quot;$mdbox&quot;}-&gt;{&apos;private&apos;}-&gt;{$mdkey} = $mdvalue;
+ 			      } elsif ($mdkey =~ /shared/) {
+--------------------
+
+maybe the &quot;/server/$mdkey&quot; should be &quot;/server$mdkey&quot; as well. Didn&apos;t check/need that.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

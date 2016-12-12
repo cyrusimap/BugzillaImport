@@ -1,0 +1,177 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2860</bug_id>
+          
+          <creation_ts>2006-07-08 09:02 EDT</creation_ts>
+          <short_desc>mupdate crashes in lib/auth_unix.c when an authentication identity with invalid characters is given</short_desc>
+          <delta_ts>2014-10-21 09:56:05 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.2.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Anders Morken">andersmo@itea.ntnu.no</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Anders Morken">andersmo@itea.ntnu.no</who>
+            <bug_when>2006-07-08 09:02:20 EDT</bug_when>
+            <thetext>The mupdate daemon crashes with SIGSEGV when you attempt to connect to it with
+GSSAPI authentication and a host/hostname.example.com ticket is in the
+credential cache, and the unix authorization is enabled.
+
+How to reproduce:
+
+1. Set up Cyrus in a murder configuration using gssapi authentication.
+2. Leave auth_mech unconfigured, or include unix in the auth_mech list in
+imapd.conf on the mupdate server.
+3. On a client machine with mupdatetest, Initialize a kerberos ticket containing
+a character considered invalid by the auth_unix.c#mycanonifyid() function. /
+(ascii 0x2F) is one such character, so a host/hostname.example.com ticket will
+do fine.
+4. Connect to the mupdate server with a command such as ./mupdatetest -a
+cyrproxy -u cyrproxy -m gssapi mupdate.server.example.com
+
+Log entries produced by the master daemon:
+
+Jul  8 00:20:13 stump master[21410]: [ID 684980 uucp.warning] service mupdate
+pid 21417 in READY state:
+ terminated abnormally
+Jul  8 00:20:13 stump master[21410]: [ID 970914 uucp.error] process 21417
+exited, signaled to death by
+11
+
+Backtrace of a mupdate process at the point of the crash:
+
+t@6 (l@6) signal SEGV (no mapping at the fault address) in myfreestate at line
+263 in file &quot;auth_unix.c&quot;
+  263       if (auth_state-&gt;group) free((char *)auth_state-&gt;group);
+(dbx) where
+current thread: t@6
+=&gt;[1] myfreestate(auth_state = (nil)), line 263 in &quot;auth_unix.c&quot;
+  [2] auth_freestate(auth_state = (nil)), line 118 in &quot;auth.c&quot;
+  [3] mysasl_proxy_policy(conn = 0x238f98, context = (nil), requested_user =
+0x2398a8 &quot;cyrproxy&quot;, rlen = 8U, auth_identity = 0x239ca9
+&quot;host/grisk.itea.ntnu.no&quot;, alen = 23U, def_realm = (nil), urlen = 0, propctx =
+0x22eb80), line 541 in &quot;global.c&quot;
+  [4] mupdate_proxy_policy(conn = 0x238f98, context = (nil), requested_user =
+0x2398a8 &quot;cyrproxy&quot;, rlen = 8U, auth_identity = 0x239ca9
+&quot;host/grisk.itea.ntnu.no&quot;, alen = 23U, def_realm = (nil), urlen = 0, propctx =
+0x22eb80), line 483 in &quot;mupdate.c&quot;
+  [5] do_authorization(0x238f98, 0x22eb80, 0x3fa48, 0x236800, 0x1134, 0x1000),
+at 0xff381b30
+  [6] sasl_server_step(0x238f98, 0xfecc1bb4, 0x28, 0xfcd76854, 0x0, 0x1000), at
+0xff3821a4
+  [7] saslserver(conn = 0x238f98, mech = 0x2372b0 &quot;GSSAPI&quot;, init_resp = 0x237320
+&quot;YIICagYJKoZIhvcSAQICAQBuggJZMIICVaADAgEFoQMCAQ6iBwMFACAAAACjggFdYYIBWTCCAVWgAwIBBaEJGwdOVE5VLk5PoigwJqADAgEBoR8wHRsHbXVwZGF0ZRsSc3R1bXAuaXRlYS5udG51Lm5vo4IBFzCCAROgAwIBEqEDAgEBooIBBQSCAQGF/YHBEW22cNVGoiZqEbzm9SIEfO2EpX/yfW5trF8/t60VryvLfhYJIQYrjBO3rWVnAc6Xs2NPMbdVU75aWjeLL6L/u0zO/WN98+qj45Z62uyzMOGfT0LWUzKiVE8eWKABogwZykTVTUqDS6dfDAcQjnlE7rwERGVRgcKAhuLQHSVIKuxUGTAEYMhYZrJZGVAQOO8Vinf6Zzi3UNt/5mrjWDTyatu+nFMQ2HtbcLHfshpURQBQW1gLXbKlIR2VkifozoGWAdYaFHF8jpJCxhymQBLy52zFmc24RkmyTEzE43hiZgUaeAqfnEquV3gVaGwfdHNl&quot;
+..., resp_prefix = 0x1dc530 &quot;&quot;, continuation = 0x1dc534 &quot;&quot;, empty_chal =
+0x1dc538 &quot;&quot;, pin = 0x234710, pout = 0x235788, sasl_result = 0xfcd7be40,
+success_data = (nil)), line 135 in &quot;saslserver.c&quot;
+  [8] cmd_authenticate(C = 0x233dd0, tag = 0x236b00 &quot;A01&quot;, mech = 0x2372b0
+&quot;GSSAPI&quot;, clientstart = 0x237320
+&quot;YIICagYJKoZIhvcSAQICAQBuggJZMIICVaADAgEFoQMCAQ6iBwMFACAAAACjggFdYYIBWTCCAVWgAwIBBaEJGwdOVE5VLk5PoigwJqADAgEBoR8wHRsHbXVwZGF0ZRsSc3R1bXAuaXRlYS5udG51Lm5vo4IBFzCCAROgAwIBEqEDAgEBooIBBQSCAQGF/YHBEW22cNVGoiZqEbzm9SIEfO2EpX/yfW5trF8/t60VryvLfhYJIQYrjBO3rWVnAc6Xs2NPMbdVU75aWjeLL6L/u0zO/WN98+qj45Z62uyzMOGfT0LWUzKiVE8eWKABogwZykTVTUqDS6dfDAcQjnlE7rwERGVRgcKAhuLQHSVIKuxUGTAEYMhYZrJZGVAQOO8Vinf6Zzi3UNt/5mrjWDTyatu+nFMQ2HtbcLHfshpURQBQW1gLXbKlIR2VkifozoGWAdYaFHF8jpJCxhymQBLy52zFmc24RkmyTEzE43hiZgUaeAqfnEquV3gVaGwfdHNl&quot;
+...), line 1389 in &quot;mupdate.c&quot;
+  [9] docmd(c = 0x233dd0), line 703 in &quot;mupdate.c&quot;
+  [10] thread_main(rock = (nil)), line 1258 in &quot;mupdate.c&quot;
+
+As we can see, mysasl_proxy_policy calls auth_freestate on a NULL reference.
+That NULL reference comes from a call to auth_newstate on line 534, and is NULL
+because that&apos;s what auth_unix.c#mycanonifyid() returns when given an invalid
+identifier string - such as one containing &quot;/&quot;.
+
+Possible workarounds: 1) Configure auth_mech in imapd.conf to not include
+&quot;unix&quot;, or 2) Do not connect with gssapi while unix authorization is active.
+(note that I haven&apos;t tested either of these, I&apos;m just guessing. I went straight
+for the debugger and patched the code instead. =)
+
+Anyway, to fix this I took a look at what myfreestate() looks like in the other
+auth_{pts,krb,krb5}.c modules, and I see that auth_krb5.c&apos;s myfreestate includes
+a &quot;if(!auth_state) return;&quot; as it&apos;s first statement. I patched a line like that
+into auth_unix.c as well, and mupdate no longer crashes - instead log lines such
+as the following can be found in syslog:
+
+Jul  8 14:50:23 stump mupdate[21833]: [ID 157422 uucp.error]
+host/grisk.itea.ntnu.no is not an admin
+Jul  8 14:50:26 stump mupdate[21833]: [ID 656617 uucp.error] badlogin:
+grisk.itea.ntnu.no [129.241.56.77] GSSAPI SASL(-13): authentication failure:
+only admins may authenticate
+
+This is expected behavior.
+
+Anyway, here is a patch:
+
+----8&lt;----
+
+--- cyrus-imapd-2.2.13.bork/lib/auth_unix.c     Wed Feb 16 21:38:01 2005
++++ cyrus-imapd-2.2.13/lib/auth_unix.c  Sat Jul  8 01:26:14 2006
+@@ -260,6 +260,8 @@
+ static void myfreestate(auth_state)
+ struct auth_state *auth_state;
+ {
++    if(!auth_state) return;
++
+     if (auth_state-&gt;group) free((char *)auth_state-&gt;group);
+     free((char *)auth_state);
+ }
+
+----8&lt;----
+
+Whether this is the right fix or not is unknown, as I am not very familiar with
+the Cyrus source code. However, as a robustness fix it makes sense to me.
+Similar fixes may be appropriate for auth_pts.c and auth_krb.c as well, if
+there&apos;s any possibility of a NULL auth_state being returned by their newstate
+functions. 
+
+Maybe the logic in imap/global.c#mysasl_proxy_policy() should be fixed to check
+for a NULL result from the call to auth_newstate as well? I don&apos;t know, but at
+least the simple hack above fixed my problems, so I&apos;ll leave pondering the
+proper fix to the guys who actually know this code.
+
+Thanks for an impressive piece of software,
+
+Anders Morken
+Junior sysadmin, IT services dept, the Norwegian University of Science and
+Technology</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 09:56:05 EDT</bug_when>
+            <thetext>Batch moving bugs that won&apos;t be in 2.5</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

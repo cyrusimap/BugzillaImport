@@ -1,0 +1,108 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3426</bug_id>
+          
+          <creation_ts>2011-03-28 05:51 EDT</creation_ts>
+          <short_desc>[FIXUP] broken select(2) call in TLS code</short_desc>
+          <delta_ts>2011-03-28 08:56:10 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Enrico Scholz">enrico.scholz@sigma-chemnitz.de</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Enrico Scholz">enrico.scholz@sigma-chemnitz.de</who>
+            <bug_when>2011-03-28 05:51:29 EDT</bug_when>
+            <thetext>tls_start_servertls() in imap/tls.c contains
+
+|        sts = select(1, &amp;rfds, NULL, NULL, &amp;tv);
+
+which is obviously wrong and should be
+
+|        sts = select(readfd + 1, &amp;rfds, NULL, NULL, &amp;tv);</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-03-28 08:31:59 EDT</bug_when>
+            <thetext>This appears to already be fixed in master!
+
+commit 753e7c4d0ebb15b3d8174e0cf3fe7ab91a545572
+Author: Greg Banks &lt;gnb@fastmail.fm&gt;
+Date:   Wed Feb 2 12:06:16 2011 +1100
+
+    Make tls_start_servertls() to work when readfd!=1
+    
+    This function presented the pleasant illusion of generality, but in fact
+    the timed read loop implemented using select() would fail to notice
+    incoming data on the readfd unless the readfd was 0 (which is of course
+    always the case for imapd servers but not for the backend unit test).
+
+diff --git a/imap/tls.c b/imap/tls.c
+index e76d994..43bce0f 100644
+--- a/imap/tls.c
++++ b/imap/tls.c
+@@ -863,7 +863,7 @@ int tls_start_servertls(int readfd, int writefd, int timeout,
+        tv.tv_sec = timeout;
+        tv.tv_usec = 0;
+ 
+-       sts = select(1, &amp;rfds, NULL, NULL, &amp;tv);
++       sts = select(readfd+1, &amp;rfds, NULL, NULL, &amp;tv);
+        if (sts &lt;= 0) {
+            if (sts == 0) {
+                syslog(LOG_DEBUG, &quot;SSL_accept() timed out -&gt; fail&quot;);
+
+
+But I&apos;ve committed a fix acknowledging you on the 2.4 stable branch, since we didn&apos;t notice and backport it already!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Enrico Scholz">enrico.scholz@sigma-chemnitz.de</who>
+            <bug_when>2011-03-28 08:34:18 EDT</bug_when>
+            <thetext>but cyrus-imapd-2.4.7beta1 which was announced yesterday still contains the buggy select()</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-03-28 08:56:10 EDT</bug_when>
+            <thetext>Maybe I wasn&apos;t clear.  It was fixed in master, but not in 2.4 stable.
+
+I&apos;ve applied the fix to stable in git now.  It will be in 2.4.7 release, along with two other fixes since 2.4.7beta1 (so far)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,166 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3145</bug_id>
+          
+          <creation_ts>2009-03-24 01:33 EDT</creation_ts>
+          <short_desc>ipurge causes cache corruption with delayed delete</short_desc>
+          <delta_ts>2010-10-25 18:46:48 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bron Gondwana">brong@fastmail.fm</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2009-03-24 01:33:18 EDT</bug_when>
+            <thetext>On Mon, 23 Mar 2009 16:08 -0700, &quot;David R Bosso&quot; &lt;dbosso+lists.cyrus@lsit.ucsb.edu&gt; wrote:
+&gt; --On March 13, 2009 10:18:53 AM -0300 Patrick Boutilier 
+&gt; &lt;boutilpj@ednet.ns.ca&gt; wrote:
+&gt; 
+&gt; &lt;snip&gt;
+&gt; 
+&gt; &gt;&gt; This will be real easy to test though. I will just run ipurge on a
+&gt; &gt;&gt; subfolder of my mailbox and see if it corrupts it. :-)
+&gt; 
+&gt; FWIW we see the same corruption here with ipurge.  We use ipurge to clean 
+&gt; out old messages from a spam box for each user.  We&apos;ve worked around it 
+&gt; currently by reconstructing the box after the ipurge which adds a lot of 
+&gt; work to our nightly maintenance.
+&gt; 
+&gt; I&apos;d love to see a fix for this.
+&gt; 
+&gt; -David
+&gt; 
+&gt; &gt; I can duplicate the corruption by following steps similar to this report:
+&gt; &gt;
+&gt; &gt; http://archives.devshed.com/forums/networking-100/cyr-expire-sigsegv-2146
+&gt; &gt; 878.html
+&gt; &gt;
+&gt; &gt;
+&gt; &gt; Current directory here is /var/imap/metadata/G/user/boutilpj/Testmail
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;     Clean mailbox:
+&gt; &gt;
+&gt; &gt;
+&gt; &gt; [cyrus@student2 Testmail]$ ll
+&gt; &gt; total 60
+&gt; &gt; -rw------- 1 cyrus cyrus 49612 Mar 13 10:03 cyrus.cache
+&gt; &gt; -rw------- 1 cyrus cyrus   189 Mar 13 10:03 cyrus.header
+&gt; &gt; -rw------- 1 cyrus cyrus  3792 Mar 13 10:03 cyrus.index
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;     Quick way to show number of messages in the folder:
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;
+&gt; &gt; [cyrus@student2 Testmail]$ cat cyrus.cache |grep -a Prec|wc -l
+&gt; &gt; 42
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;     Delete 11 messages through IMAP client:
+&gt; &gt;
+&gt; &gt; [cyrus@student2 Testmail]$ ll
+&gt; &gt; total 64
+&gt; &gt; -rw------- 1 cyrus cyrus 49612 Mar 13 10:03 cyrus.cache
+&gt; &gt; -rw------- 1 cyrus cyrus  1064 Mar 13 10:05 cyrus.expunge
+&gt; &gt; -rw------- 1 cyrus cyrus   189 Mar 13 10:03 cyrus.header
+&gt; &gt; -rw------- 1 cyrus cyrus  2824 Mar 13 10:05 cyrus.index
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;     Run ipurge with a number high enough not to delete anything. I purge
+&gt; &gt; only sees 31 messages and removes them from cyrus.cache:
+&gt; &gt;
+&gt; &gt;
+&gt; &gt; [cyrus@student2 Testmail]$ /usr/local/cyrus/bin/ipurge -f -d 2333
+&gt; &gt; user.boutilpj.Testmail
+&gt; &gt; Working on user.boutilpj.Testmail...
+&gt; &gt; total messages                   31
+&gt; &gt; total bytes                      539400
+&gt; &gt; Deleted messages                 0
+&gt; &gt; Deleted bytes                    0
+&gt; &gt; Remaining messages               31
+&gt; &gt; Remaining bytes                  539400
+&gt; &gt;
+&gt; &gt; [cyrus@student2 Testmail]$ ll
+&gt; &gt; total 48
+&gt; &gt; -rw------- 1 cyrus cyrus 36652 Mar 13 10:08 cyrus.cache
+&gt; &gt; -rw------- 1 cyrus cyrus  1064 Mar 13 10:05 cyrus.expunge
+&gt; &gt; -rw------- 1 cyrus cyrus   189 Mar 13 10:03 cyrus.header
+&gt; &gt; -rw------- 1 cyrus cyrus  2824 Mar 13 10:08 cyrus.index
+&gt; &gt;
+&gt; &gt; [cyrus@student2 Testmail]$ cat cyrus.cache |grep -a Prec|wc -l
+&gt; &gt; 31
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;     Run cyr_expire and corruption occurs:
+&gt; &gt;
+&gt; &gt; [cyrus@student2 Testmail]$ /usr/local/cyrus/bin/cyr_expire -E 333 -X 7 -p
+&gt; &gt; user.boutilpj.Testmail -v
+&gt; &gt; Expunging deleted messages in mailboxes older than 7 days
+&gt; &gt;
+&gt; &gt; Expunged 0 out of 33 messages from 1 mailboxes
+&gt; &gt; [cyrus@student2 Testmail]$ ll
+&gt; &gt; total 96
+&gt; &gt; -rw------- 1 cyrus cyrus 36652 Mar 13 10:08 cyrus.cache
+&gt; &gt; -rw------- 1 cyrus cyrus 37852 Mar 13 10:15 cyrus.cache.NEW
+&gt; &gt; -rw------- 1 cyrus cyrus  1064 Mar 13 10:05 cyrus.expunge
+&gt; &gt; -rw------- 1 cyrus cyrus   272 Mar 13 10:15 cyrus.expunge.NEW
+&gt; &gt; -rw------- 1 cyrus cyrus   189 Mar 13 10:03 cyrus.header
+&gt; &gt; -rw------- 1 cyrus cyrus  2824 Mar 13 10:08 cyrus.index
+&gt; &gt; -rw------- 1 cyrus cyrus  2824 Mar 13 10:15 cyrus.index.NEW
+&gt; &gt;
+&gt; &gt;
+&gt; &gt; Mar 13 10:15:40 student2 cyr_expire[8725]: IOERROR: reading cache record
+&gt; &gt; for user.boutilpj.Testmail: item 1 has bogus offset 576450680 of 36652
+&gt; &gt; for 2/11; mailbox needs a reconstruct
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;
+&gt; &gt;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2009-11-16 21:52:30 EDT</bug_when>
+            <thetext>I fixed this by making ipurge do a delayed delete, meaning that it&apos;s undeletable and all the other goodness.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

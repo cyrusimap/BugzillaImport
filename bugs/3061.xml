@@ -1,0 +1,212 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3061</bug_id>
+          
+          <creation_ts>2008-05-15 08:59 EDT</creation_ts>
+          <short_desc>buffer overflow</short_desc>
+          <delta_ts>2012-07-06 06:48:52 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Mariusz Woloszyn">trash1@clubbing.pl</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Mariusz Woloszyn">trash1@clubbing.pl</who>
+            <bug_when>2008-05-15 08:59:39 EDT</bug_when>
+            <thetext>Hi!
+
+I have compiled cyrus-sasl and cyrus-imap with -fstack-protector-all. I have linked both against kerberos 5 libraries, all compiled with -stack-protector-all.
+
+While testing kerberos authentication with GSSAPI i got following:
+
+root@mobile:~# imtest -m GSSAPI mobile
+S: * OK [CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID STARTTLS LOGINDISABLED AUTH=GSSAPI AUTH=CRAM-MD5 AUTH=DIGEST-MD5 AUTH=OTP SASL-IR] mobile Cyrus IMAP v2.3.12p2 server ready
+C: C01 CAPABILITY
+S: * CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID STARTTLS LOGINDISABLED AUTH=GSSAPI AUTH=CRAM-MD5 AUTH=DIGEST-MD5 AUTH=OTP SASL-IR ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE CATENATE CONDSTORE SCAN IDLE URLAUTH
+S: C01 OK Completed
+C: A01 AUTHENTICATE GSSAPI Authentication failed. overflowed buffer
+Security strength factor: 0
+
+The kernel reported:
+May 15 14:48:00 mobile kernel: imapd[20248]: segfault at c ip b7f8e07d sp bf9b4f70 error 4 in libsasl2.so.2.0.22[b7f7f000+16000]
+
+And the gdb shows:
+
+Program received signal SIGSEGV, Segmentation fault.
+[Switching to Thread -1213978944 (LWP 20253)]
+0xb7f4607d in sasl_server_step () from /usr/lib/libsasl2.so.2
+(gdb) backtrace 
+#0  0xb7f4607d in sasl_server_step () from /usr/lib/libsasl2.so.2
+#1  0x08092b7a in saslserver ()
+#2  0x0806264f in cmd_authenticate ()
+#3  0x080654c5 in cmdloop ()
+#4  0x08066c8b in service_main ()
+#5  0x0804d542 in main ()
+(gdb) x/10i 0xb7f4607d
+0xb7f4607d &lt;sasl_server_step+169&gt;:      mov    0xc(%eax),%esi
+0xb7f46080 &lt;sasl_server_step+172&gt;:      lea    0x860(%edi),%eax
+0xb7f46086 &lt;sasl_server_step+178&gt;:      mov    %eax,0x18(%esp)
+0xb7f4608a &lt;sasl_server_step+182&gt;:      mov    %ecx,0x14(%esp)
+0xb7f4608e &lt;sasl_server_step+186&gt;:      mov    0xffffffdc(%ebp),%eax
+0xb7f46091 &lt;sasl_server_step+189&gt;:      mov    %eax,0x10(%esp)
+0xb7f46095 &lt;sasl_server_step+193&gt;:      mov    %edx,0xc(%esp)
+0xb7f46099 &lt;sasl_server_step+197&gt;:      mov    0xffffffe0(%ebp),%edx
+0xb7f4609c &lt;sasl_server_step+200&gt;:      mov    %edx,0x8(%esp)
+0xb7f460a0 &lt;sasl_server_step+204&gt;:      mov    0x1134(%edi),%eax
+(gdb) info registers 
+eax            0x0      0
+ecx            0xbfc6f2b0       -1077480784
+edx            0x0      0
+ebx            0xb7f4d224       -1208692188
+esp            0xbfc6f220       0xbfc6f220
+ebp            0xbfc6f268       0xbfc6f268
+esi            0x0      0
+edi            0x94e3628        156120616
+eip            0xb7f4607d       0xb7f4607d &lt;sasl_server_step+169&gt;
+eflags         0x10282  [ SF IF RF ]
+cs             0x73     115
+ss             0x7b     123
+ds             0x7b     123
+es             0x7b     123
+fs             0x0      0
+gs             0x33     51</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Mariusz Woloszyn">trash1@clubbing.pl</who>
+            <bug_when>2008-07-28 09:57:44 EDT</bug_when>
+            <thetext>(In reply to comment #0)
+&gt; Hi!
+&gt; 
+&gt; I have compiled cyrus-sasl and cyrus-imap with -fstack-protector-all. I have
+&gt; linked both against kerberos 5 libraries, all compiled with
+&gt; -stack-protector-all.
+&gt; 
+&gt; While testing kerberos authentication with GSSAPI i got following:
+&gt; 
+&gt; root@mobile:~# imtest -m GSSAPI mobile
+&gt; S: * OK [CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID STARTTLS LOGINDISABLED
+&gt; AUTH=GSSAPI AUTH=CRAM-MD5 AUTH=DIGEST-MD5 AUTH=OTP SASL-IR] mobile Cyrus IMAP
+&gt; v2.3.12p2 server ready
+&gt; C: C01 CAPABILITY
+&gt; S: * CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID STARTTLS LOGINDISABLED AUTH=GSSAPI
+&gt; AUTH=CRAM-MD5 AUTH=DIGEST-MD5 AUTH=OTP SASL-IR ACL RIGHTS=kxte QUOTA
+&gt; MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN
+&gt; MULTIAPPEND BINARY SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES
+&gt; ANNOTATEMORE CATENATE CONDSTORE SCAN IDLE URLAUTH
+&gt; S: C01 OK Completed
+&gt; C: A01 AUTHENTICATE GSSAPI Authentication failed. overflowed buffer
+&gt; Security strength factor: 0
+&gt; 
+&gt; The kernel reported:
+&gt; May 15 14:48:00 mobile kernel: imapd[20248]: segfault at c ip b7f8e07d sp
+&gt; bf9b4f70 error 4 in libsasl2.so.2.0.22[b7f7f000+16000]
+&gt; 
+&gt; And the gdb shows:
+&gt; 
+&gt; Program received signal SIGSEGV, Segmentation fault.
+&gt; [Switching to Thread -1213978944 (LWP 20253)]
+&gt; 0xb7f4607d in sasl_server_step () from /usr/lib/libsasl2.so.2
+&gt; (gdb) backtrace 
+&gt; #0  0xb7f4607d in sasl_server_step () from /usr/lib/libsasl2.so.2
+&gt; #1  0x08092b7a in saslserver ()
+&gt; #2  0x0806264f in cmd_authenticate ()
+&gt; #3  0x080654c5 in cmdloop ()
+&gt; #4  0x08066c8b in service_main ()
+&gt; #5  0x0804d542 in main ()
+&gt; (gdb) x/10i 0xb7f4607d
+&gt; 0xb7f4607d &lt;sasl_server_step+169&gt;:      mov    0xc(%eax),%esi
+&gt; 0xb7f46080 &lt;sasl_server_step+172&gt;:      lea    0x860(%edi),%eax
+&gt; 0xb7f46086 &lt;sasl_server_step+178&gt;:      mov    %eax,0x18(%esp)
+&gt; 0xb7f4608a &lt;sasl_server_step+182&gt;:      mov    %ecx,0x14(%esp)
+&gt; 0xb7f4608e &lt;sasl_server_step+186&gt;:      mov    0xffffffdc(%ebp),%eax
+&gt; 0xb7f46091 &lt;sasl_server_step+189&gt;:      mov    %eax,0x10(%esp)
+&gt; 0xb7f46095 &lt;sasl_server_step+193&gt;:      mov    %edx,0xc(%esp)
+&gt; 0xb7f46099 &lt;sasl_server_step+197&gt;:      mov    0xffffffe0(%ebp),%edx
+&gt; 0xb7f4609c &lt;sasl_server_step+200&gt;:      mov    %edx,0x8(%esp)
+&gt; 0xb7f460a0 &lt;sasl_server_step+204&gt;:      mov    0x1134(%edi),%eax
+&gt; (gdb) info registers 
+&gt; eax            0x0      0
+&gt; ecx            0xbfc6f2b0       -1077480784
+&gt; edx            0x0      0
+&gt; ebx            0xb7f4d224       -1208692188
+&gt; esp            0xbfc6f220       0xbfc6f220
+&gt; ebp            0xbfc6f268       0xbfc6f268
+&gt; esi            0x0      0
+&gt; edi            0x94e3628        156120616
+&gt; eip            0xb7f4607d       0xb7f4607d &lt;sasl_server_step+169&gt;
+&gt; eflags         0x10282  [ SF IF RF ]
+&gt; cs             0x73     115
+&gt; ss             0x7b     123
+&gt; ds             0x7b     123
+&gt; es             0x7b     123
+&gt; fs             0x0      0
+&gt; gs             0x33     51
+&gt; 
+
+Is there any progress on this subject?
+
+Best regards,</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-07-28 09:59:59 EDT</bug_when>
+            <thetext>Not yet</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Mariusz Woloszyn">trash1@clubbing.pl</who>
+            <bug_when>2008-10-30 12:15:57 EDT</bug_when>
+            <thetext>Hi!
+
+Is there any progress in this subject?
+I have investigated it a bit and it seems to be exploitable as I get ip=0x44444444.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-02-08 12:22:17 EDT</bug_when>
+            <thetext>It would be good to build 2.1.25 with debug information, so that C line numbers are visible in the stack trace. Otherwise this just doesn&apos;t provide enough information.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-07-06 06:48:52 EDT</bug_when>
+            <thetext>Lowering priority of this because no information is available.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

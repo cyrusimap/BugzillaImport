@@ -1,0 +1,100 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3494</bug_id>
+          
+          <creation_ts>2011-07-20 15:42 EDT</creation_ts>
+          <short_desc>skiplist file format limited by 32 bit byte counter</short_desc>
+          <delta_ts>2012-10-19 14:30:16 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.10</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Scott Cochran">scott.cochran@gmail.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>don.jacobs@acision.com</cc>
+    
+    <cc>hmh@debian.org</cc>
+    
+    <cc>scott.cochran@gmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Scott Cochran">scott.cochran@gmail.com</who>
+            <bug_when>2011-07-20 15:42:11 EDT</bug_when>
+            <thetext>The mailboxes.db cannot be checkpointed when larger than around 2147483828 bytes. This is a problem with all the following scenarios:
+
+1. Normal runtime skiplist checkpointing with imap running. Triggered when mailboxes.db has approximately 29M mailboxes. On failure, the mailboxes.db file is truncated to the ~2147483828 bytes.
+
+2. Importing from a flat file using &quot;ctl_mboxlist -u&quot;. Similar failure as above.
+
+3. Forcing a checkpoint using &quot;ctl_cyrusdb -r&quot; when the mailboxes.db exceeds ~2147483828 bytes:
+./ctl_cyrusdb -r
+skiplist inconsistent: 7F7466EC: ptr 16 is 80949B04; eof is 800000B4
+fatal error: can&apos;t read mailboxes file
+
+It appears to be based on actual byte size of the mailboxes.db rather than the number of entries. Varying length of entries(mailbox name, domain name, additional ACLs) does not alter the failure point.
+
+Once the mailboxes.db has exceeded the ~2GB limit deletion of mailboxes does not reduce the size or allow a successful checkpoint to occur.
+
+I speculate that this may be a result of using &quot;unsigned long&quot; in db.map_len etc...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-07-25 03:25:49 EDT</bug_when>
+            <thetext>The problem is, there&apos;s a number in the skiplist format which is an offset into the file, and that&apos;s 32 bits.  I think perhaps we need a &apos;skiplist v2&apos; with 64 bit offsets.
+
+(probably 64 bit time_t while we&apos;re at it)
+
+It&apos;s not just one number in the header either, the whole skiplist is a list of file offsets.  There are PILES of them.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-07-25 20:57:54 EDT</bug_when>
+            <thetext>I&apos;d say that yes, we need a skiplist v2 format that can handle very large databases :-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-09 16:13:55 EDT</bug_when>
+            <thetext>Agree, but it&apos;s future.  Not even 2.5.0.  It&apos;s a big format change, and it won&apos;t be backwards compatible.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-10-19 14:30:16 EDT</bug_when>
+            <thetext>Skiplist will never be changed, but 2.5 will include twoskip - which is 64 bit clean.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

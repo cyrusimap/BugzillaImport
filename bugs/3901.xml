@@ -1,0 +1,80 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3901</bug_id>
+          
+          <creation_ts>2015-07-30 09:28 EDT</creation_ts>
+          <short_desc>cyrus-imapd floods logs and enter loops</short_desc>
+          <delta_ts>2015-07-30 09:28:23 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.17</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Giuseppe Ghibò">ghibomgx@gmail.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Giuseppe Ghibò">ghibomgx@gmail.com</who>
+            <bug_when>2015-07-30 09:28:23 EDT</bug_when>
+            <thetext>I compiled (this is the standard mageia cyrus-imapd package) cyrus-imapd
+with (http://web.mit.edu/kerberos/www/) release 1.12.4, but actually
+the ptloader enter in loops and floods the journal system logs, in particular with errors:
+
+starting: $Id: ptloader.c,v 1.50 2010/01/06 17:01:58 murch Exp $
+ptloader[20531]: PTS module afskrb not supported
+cyrus-master[10503]: service ptloader pid 20531 in READY state: terminated abnormally
+
+in a loop. The cyrus process never starts and the journalctl consumes 15% of CPUs.
+In the config.log the flag HAVE_AFSKRB is not defined. The problem sound to be in the code: ptclient/ptloader.c
+
+
+    if (!pts) {
+        char errbuf[1024];
+        snprintf(errbuf, sizeof(errbuf),
+                 &quot;PTS module %s not supported&quot;, name);
+        fatal(errbuf, EC_CONFIG);
+    }
+
+which scans for every option listed in IMAPOPT_PTS_MODULE (which are defined in lib/imapoptions) and sound to be &quot;ldap&quot; and &quot;afskrb&quot;. When one is not found then the error is printed and program ptloader exists. The problem is that the afskrb is supported only when HAVE_AFSKRB is defined while the imapoptions doesn&apos;t rely on this and defines the pts_module options as:
+
+{ &quot;pts_module&quot;, &quot;afskrb&quot;, STRINGLIST(&quot;afskrb&quot;, &quot;ldap&quot;) }
+
+and not conditionally. Of course since the imapopts.{c,h} are automatically generated trough imapoptions, a conditional #ifdef HAVE_AFSKRB there wouln&apos;t work.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

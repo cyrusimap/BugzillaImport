@@ -1,0 +1,363 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3652</bug_id>
+          
+          <creation_ts>2012-03-14 23:10 EDT</creation_ts>
+          <short_desc>Install Perl modules into vendor not site directories</short_desc>
+          <delta_ts>2012-04-12 23:20:14 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-14 23:10:09 EDT</bug_when>
+            <thetext>Cyrus has several Perl modules.  When a Perl module is installed,
+MakeMaker will install it into one of three locations, known as
+&apos;perl&apos;, &apos;vendor&apos; and &apos;site&apos;.  The default is &apos;site&apos;, and because we
+do nothing to change it, this is what we get when we install.  However,
+this is the wrong location.  According to this advice
+
+https://www.socialtext.net/perl5/hints_for_distributors
+
+we should be using the &apos;vendor&apos; locations.  The trick is to pass
+INSTALLDIRS =&gt; &apos;vendor&apos; to MakeMaker.
+
+We also need to change the way we set up the Perl search paths in
+the various top-level Perl scripts and shell scripts which invoke
+Perl scripts.  Currently this is done in different ways:
+
+In perl/imap/cyradm.sh
+
+INCS=
+SITEARCH=&quot;@INSTALLSITEARCH@&quot;
+if [ -n &quot;$SITEARCH&quot; -a -d &quot;$SITEARCH&quot; ]; then
+    INCS=&quot;-I$SITEARCH&quot;
+fi
+
+case &quot;x$BASH_VERSION&quot; in
+x) exec perl $INCS -MCyrus::IMAP::Shell -e shell -- ${1+&quot;$@&quot;} ;;
+*) exec perl $INCS -MCyrus::IMAP::Shell -e shell -- &quot;$@&quot; ;;
+
+where @INSTALLSITEARCH@ is interpolated by the Makefile at build
+time.
+
+
+In perl/sieve/scripts/installsieve.pl
+
+use lib (&quot;@prefix@/lib/perl&quot;, &quot;@prefix@/share/perl&quot;);
+
+where @prefix@ is interpolated by the Makefile at build
+time.
+
+These need to be replaced with something like
+
+use lib (&quot;@INSTALLVENDORLIB@&quot;, &quot;@INSTALLVENDORARCH@&quot;);
+
+This is causing problems on ci.cyrusimap.org, where the &apos;site&apos;
+directories on CentOS are sufficiently different from the &apos;site&apos;
+directories on Debian so that the value of $PERL5LIB that
+Cassandane sets up when it runs the installsieve script,
+does not contain the actual locations of the Cyrus modules.
+See
+
+http://ci.cyrusimap.org/job/cyrus-imapd-master/452</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-15 01:13:26 EDT</bug_when>
+            <thetext>Fixed in commit 
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=7dc331023e4869b782a1fe0217415e8ce868381d
+
+I also adjusted Cassandane to handle this change
+
+http://git.cyrusimap.org/cassandane/commit/?id=88725f61ad19cb9b7b7032433e69140bca8cb40d</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-15 06:51:10 EDT</bug_when>
+            <thetext>(In reply to comment #0)
+&gt; Cyrus has several Perl modules.  When a Perl module is installed,
+&gt; MakeMaker will install it into one of three locations, known as
+&gt; &apos;perl&apos;, &apos;vendor&apos; and &apos;site&apos;.  The default is &apos;site&apos;, and because we
+&gt; do nothing to change it, this is what we get when we install.  However,
+&gt; this is the wrong location.  According to this advice
+&gt; 
+&gt; https://www.socialtext.net/perl5/hints_for_distributors
+&gt; 
+&gt; we should be using the &apos;vendor&apos; locations.  The trick is to pass
+&gt; INSTALLDIRS =&gt; &apos;vendor&apos; to MakeMaker.
+&gt; 
+
+Actually, these are hints for distributors, like Fedora, and Red Hat, and Debian - not hints for a ./configure; make; make install if you will, where &apos;site&apos; should be used.
+
+If you want to specifically install into the vendor directory, use a parameter to Build.PL;
+
+  %{__perl} Build.PL installdirs=vendor
+
+or Makefile.PL;
+
+  %{__perl} Makefile.PL INSTALLDIRS=vendor
+
+A ./configure; make; make install should default to using &apos;site&apos;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-15 23:53:55 EDT</bug_when>
+            <thetext>(sigh).
+
+So the situation is...complicated.  I&apos;ve tried to solve the problem
+in the simplest way in this commit, but I&apos;m happy to be convinced
+there&apos;s a better way.  Let me see if I can explain the actual problem
+I was trying to solve.
+
+The main complicating factor comes in when we configure cyrus with
+a --prefix option which is not /usr, for example
+
+./configure --prefix=/usr/cyrus-fastmail
+
+We (and by &apos;we&apos; I suspect I mean &apos;only Fastmail&apos;) want to allow two
+different cyrus system packages (.debs in our case) to be installed
+on a system at the same time, without clashing.  For example, one of
+our production machines has these installed:
+
+cyrus-conversations	9:1fmgit21496-7230-05702393
+cyrus-fastmail	9:1fmgit23446-7771-665f7a39
+cyrus-future	9:1fmgit23446-7771-665f7a39
+
+which install (for example) the imapd binary into, respectively,
+
+/usr/cyrus-conversations/bin/imapd
+/usr/cyrus/bin/imapd
+/usr/cyrus-future/bin/imapd
+
+Some OS package systems have difficulty handling the case where a
+file is owned by two different packages, even if that file has
+identical contents.  So to avoid relying on that behaviour, we
+need to make sure that every single file installed by a cyrus
+package built with --prefix != /usr, is installed into a unique
+path which doesn&apos;t clash with the same file installed by another
+cyrus package built with a different --prefix.
+
+When our configure script is run, the only information we have to
+uniquify our pathnames is the value of --prefix.  So, we achieve
+unique paths by putting all the pathnames under the --prefix.
+
+For example:
+
+% dpkg-query -L cyrus-future | grep &apos;^\/usr\/cyrus-future&apos; | wc -l
+207
+
+% dpkg-query -L cyrus-future | grep -v &apos;^\/usr\/cyrus-future&apos;
+/.
+/usr
+/usr/share
+/usr/share/doc
+/usr/share/doc/cyrus-future
+/usr/share/doc/cyrus-future/changelog.Debian.gz
+/usr/share/doc/cyrus-future/copyright
+
+as you can see, the only files not under the prefix are the ones
+built by the package system i.e. entirely outside cyrus&apos; configure
+script.
+
+As a consequence, any cyrus package built with prefix != /usr
+will be installing Perl modules in directories which are not any
+of the six standard system locations.
+
+For example, on that same machine the standard locations are
+
+% perl -V:install.\*
+...
+installarchlib=&apos;/usr/lib/perl/5.10&apos;;     # &apos;perl&apos; arch-dependent
+installprivlib=&apos;/usr/share/perl/5.10&apos;;   # &apos;perl&apos; arch-independent
+...
+installsitearch=&apos;/usr/local/lib/perl/5.10.1&apos;;   # &apos;site&apos; arch-dependent
+installsitelib=&apos;/usr/local/share/perl/5.10.1&apos;;  # &apos;site&apos; arch-independent
+...
+installvendorarch=&apos;/usr/lib/perl5&apos;;     # &apos;vendor&apos; arch-dependent
+installvendorlib=&apos;/usr/share/perl5&apos;;    # &apos;vendor&apos; arch-independent
+
+but the cyrus-future package is installing modules into
+
+/usr/cyrus-future/lib/perl/5.10.1/      # arch-dependent
+/usr/cyrus-future/share/perl/5.10.1/    # arch-independent
+
+which are the directories that MakeMaker uses when you run it
+with PREFIX=/usr/cyrus-future and INSTALLDIRS=site.
+
+Now, because these modules are in non-standard locations, we need to
+do special tricks to find them at runtime, one of
+
+ * perl -I
+
+ * futzing with @INCS
+
+ * use lib (&quot;...&quot;), i.e. futzing with @INCS more cleanly
+
+ * set PERL5LIB in the environment
+
+and we need to do that in every place where we need to load (the correct
+versions of) the Cyrus modules.  There are two groups of these
+
+ * perl/imap/cyradm.sh is a shell script which is a trivial wrapper
+   around some Perl code in the module Cyrus::IMAP::Shell.  It is
+   installed from perl/imap/Makefile.PL which is built using MakeMaker.
+
+ * perl/sieve/scripts/installsieve.pl etc are Perl scripts which use
+   the Cyrus::SIEVE::managesieve module.  They are installed from
+   perl/sieve/Makefile - which is *not* built using MakeMaker
+
+Both of these get installed into $prefix/bin/.  Because installsieve.pl
+is a Perl script rather than a shell script wrapper around a Perl script,
+we don&apos;t really have the option of using PERL5LIB in the environment or
+the -I option, so basically we end up doing &quot;use lib&quot;.
+
+The old code was doing this
+
+use lib (&quot;@prefix@/lib/perl&quot;, &quot;@prefix@/share/perl&quot;);
+
+with @prefix@ replaced by the value of $prefix at install time, in the
+Makefile.  The problem with this is that it assumes a particular directory
+structure which is in fact a choice made at the time when the OS vendor
+runs Perl&apos;s configure script.  The values hardcoded above worked on Debian,
+but don&apos;t work on CentOS, which has
+
+% perl -V:install.\*
+...
+installarchlib=&apos;/usr/lib64/perl5/5.8.8/x86_64-linux-thread-multi&apos;;
+installprivlib=&apos;/usr/lib/perl5/5.8.8&apos;;
+...
+installsitearch=&apos;/usr/lib64/perl5/site_perl/5.8.8/x86_64-linux-thread-multi&apos;;
+installsitelib=&apos;/usr/lib/perl5/site_perl/5.8.8&apos;;
+...
+installvendorarch=&apos;/usr/lib64/perl5/vendor_perl/5.8.8/x86_64-linux-thread-multi&apos;;
+installvendorlib=&apos;/usr/lib/perl5/vendor_perl/5.8.8&apos;;
+
+This was the problem causing Jenkins builds #452 and #453 to fail.  The
+solution I chose was to
+
+ * use the &quot;use lib&quot; technique everywhere, using directories predicted
+   at install time expansion
+
+ * force INSTALLDIRS=vendor in the modules&apos; Makefile.PL so that we only
+   ever have to deal with two directories in the &quot;use lib&quot;
+
+ * for perl/sieve/Makefile, predict the directories into which MakeMaker
+   will end up installing the modules, at configure time using $prefix,
+   &apos;perl -V:installvendorlib&apos; and &apos;perl -V:prefix&apos;
+
+ * for perl/imap/Makefile.PL, the directories are available in variables
+   set up by MakeMaker.
+
+So there&apos;s a number of ways we could vary this solution.
+
+a) Allow installation into either &apos;vendor&apos; or &apos;site&apos; - then we need to
+   predict, expand at install time, and &quot;use lib&quot; on, *four* directories.
+
+b) Similarly, but choose either the 2 vendor directories or the 2 site
+   directories depending on whether $prefix = /usr, so we only have to
+   expand two directories.
+
+c) Similarly, but have the configure script calculate an entire &quot;use lib...&quot;
+   line and expand that at install time
+
+d) At configure time, if $prefix != /usr, choose two installation
+   directories for Perl modules (e.g. $prefix/share/perl/ and
+   $prefix/lib/perl/), igoring entirely the system Perl&apos;s choice of
+   directories, and *force* MakeMaker to install them there.  If
+   we force them, there will be exactly two directories and their
+   positions relative to $prefix will be completely predictable, so
+   only $prefix needs to be expanded at install time.  If $prefix = /usr
+   we do none of that, and expect to find Cyrus modules in the standard
+   system locations.
+   
+d) Figure out the directories at runtime instead of configure &amp; install
+   time.  The problem with this is that it may mean significant complexity
+   at every one of the places in the code where we use a Cyrus Perl
+   module. Worse, it&apos;s complexity we couldn&apos;t abstract out into common
+   code, because we have the same problem - we don&apos;t know where to find
+   the correct version of that common code.
+
+Let me know what you think.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-04-10 19:51:18 EDT</bug_when>
+            <thetext>Go to ASSIGNED to keep Bugzilla happy.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-04-12 23:20:14 EDT</bug_when>
+            <thetext>Ok, I have a new solution which I hope will be better received.
+
+This one does not mandate whether the Cyrus Perl modules are installed
+into site or vendor directories, but handles either.  It also handles
+running from an uninstalled staging directory, as Cassandane does.
+
+The following changes since commit f6b030d3e409f4addcc98496bab481be1d568898:
+
+  Bug #3667 - ignore .SILENT if qresync enabled (2012-04-12 15:21:21 +1000)
+
+are available in the git repository at:
+  ssh://git.cyrusimap.org/git/cyrus-imapd master
+
+Greg Banks (2):
+      Revert &quot;Bug 3652 - install Perl modules into &apos;vendor&apos; dirs&quot;
+      Bug 3652 - set Perl search paths correctly
+
+ configure.in                       |    9 +--
+ perl/Makefile.in                   |    3 +-
+ perl/annotator/Makefile.PL         |    1 -
+ perl/imap/Makefile.PL              |   13 ++--
+ perl/imap/cyradm.sh                |   13 ++---
+ perl/sieve/Makefile.in             |    7 +-
+ perl/sieve/managesieve/Makefile.PL |    1 -
+ perl/sieve/scripts/installsieve.pl |    1 -
+ perl/sieve/scripts/sieveshell.pl   |    1 -
+ tools/fixsearchpath.pl             |  119 ++++++++++++++++++++++++++++++++++++
+ 10 files changed, 140 insertions(+), 28 deletions(-)
+ create mode 100755 tools/fixsearchpath.pl</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

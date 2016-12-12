@@ -1,0 +1,319 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2894</bug_id>
+          
+          <creation_ts>2006-12-03 20:36 EDT</creation_ts>
+          <short_desc>reconstruct does not recurse into virtuser directories</short_desc>
+          <delta_ts>2014-10-21 09:56:06 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Virtual Domains</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jo Rhett">jrhett@netconsonance.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>rudy.gevaert@ugent.be</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jo Rhett">jrhett@netconsonance.com</who>
+            <bug_when>2006-12-03 20:36:46 EDT</bug_when>
+            <thetext>This syntax is not working to recover a folder where I had to restore
+messages:
+
+su - cyrus -c &quot;reconstruct -r user/username@domain.dom&quot;
+
+I watched it with ktrace/kdump and its not even looking for subfolders.
+  This doesn&apos;t work either
+su - cyrus -c &quot;reconstruct -xrf user/username@domain.dom&quot;
+
+It seems the only thing that works is
+
+su - cyrus -c &quot;reconstruct user/username/*@domain.dom&quot;
+su - cyrus -c &quot;reconstruct user/username/*/*@domain.dom&quot;
+su - cyrus -c &quot;reconstruct user/username/*/*/*@domain.dom&quot; 
+
+Configuration is Virtdomains with unixhiersep, altnamespace and authentication
+via sasl auxprop-sql (mysql) out of the box FreeBSD ports.
+
+Here&apos;s the mailboxes and the ktrace of a reconstruct of this mailbox (me)
+
+localhost&gt; lm user/jrhett@netconsonance.com
+user/jrhett/AT&amp;-T@netconsonance.com (\HasNoChildren)
+user/jrhett/American Express@netconsonance.com (\HasNoChildren)
+user/jrhett/Drafts@netconsonance.com (\HasNoChildren)
+user/jrhett/Junk@netconsonance.com (\HasNoChildren)
+user/jrhett/LECG@netconsonance.com (\HasNoChildren)
+user/jrhett/OpenSRS@netconsonance.com (\HasNoChildren)
+user/jrhett/Sent@netconsonance.com (\HasNoChildren)
+user/jrhett/Spam@netconsonance.com (\HasNoChildren)
+user/jrhett/Trash@netconsonance.com (\HasNoChildren)
+user/jrhett/lecg@netconsonance.com (\HasNoChildren)
+user/jrhett/lists/amavisd-users@netconsonance.com (\HasNoChildren)
+user/jrhett/lists/cyrus-imapd@netconsonance.com (\HasNoChildren)
+user/jrhett/lists/cyrus-sasl@netconsonance.com (\HasNoChildren)
+user/jrhett/lists@netconsonance.com (\HasChildren)
+user/jrhett@netconsonance.com (\HasChildren)
+
+Here&apos;s the ktrace of a reconstruct of my mailbox.  I su-ed to cyrus to simplify
+the command lines.  &quot;ktrace -t n&quot; shows all namei calls (filesystem accesses) --
+but I stored all of them in the ktrace file so I can get you whatever output you
+want.
+
+I included everything, including the startup library loading so that you can see
+it all.
+
+triceratops# su - cyrus
+% cd /tmp
+% ktrace reconstruct -r user/jrhett@netconsonance.com
+user/jrhett@netconsonance.com
+% kdump -t n -f ktrace.out
+78102 ktrace   NAMI  &quot;/sbin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/bin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/usr/sbin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/usr/bin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/usr/games/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/usr/local/sbin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/usr/local/bin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/usr/X11R6/bin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/usr/local/cyrus/bin/reconstruct&quot;
+78102 ktrace   NAMI  &quot;/libexec/ld-elf.so.1&quot;
+78102 reconstruct NAMI  &quot;/etc/libmap.conf&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libsasl2.so.2&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libsasl2.so.2&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libgssapi.so.8&quot;
+78102 reconstruct NAMI  &quot;/var/run/ld-elf.so.hints&quot;
+78102 reconstruct NAMI  &quot;/lib/libgssapi.so.8&quot;
+78102 reconstruct NAMI  &quot;/usr/lib/libgssapi.so.8&quot;
+78102 reconstruct NAMI  &quot;/usr/lib/libgssapi.so.8&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libkrb5.so.8&quot;
+78102 reconstruct NAMI  &quot;/lib/libkrb5.so.8&quot;
+78102 reconstruct NAMI  &quot;/usr/lib/libkrb5.so.8&quot;
+78102 reconstruct NAMI  &quot;/usr/lib/libkrb5.so.8&quot;
+78102 reconstruct Events dropped.
+78102 reconstruct NAMI  &quot;/usr/local/lib/libssl.so.4&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libssl.so.4&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libcrypto.so.4&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libcrypto.so.4&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libmd.so.3&quot;
+78102 reconstruct NAMI  &quot;/lib/libmd.so.3&quot;
+78102 reconstruct NAMI  &quot;/lib/libmd.so.3&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/libcrypto.so.4&quot;
+78102 reconstruct Events dropped.
+78102 reconstruct NAMI  &quot;/etc/malloc.conf&quot;
+78102 reconstruct NAMI  &quot;/usr/local/etc/imapd.conf&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/DB_CONFIG&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/DB_CONFIG&quot;
+78102 reconstruct NAMI  &quot;/var/tmp&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.001&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.001&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.001&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.002&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.002&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.003&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.003&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.004&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.004&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.005&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/__db.005&quot;
+78102 reconstruct NAMI  &quot;/var/imap/db/skipstamp&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libsasldb.la&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libsasldb.so&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libcrammd5.la&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libcrammd5.so&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct Events dropped.
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libplain.la&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libplain.so&quot;
+78102 reconstruct NAMI  &quot;/lib/libcrypt.so.3&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libanonymous.la&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libanonymous.so&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/liblogin.la&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/liblogin.so&quot;
+78102 reconstruct NAMI  &quot;/lib/libcrypt.so.3&quot;
+78102 reconstruct NAMI  &quot;/lib/libc.so.6&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libsql.la&quot;
+78102 reconstruct NAMI  &quot;/usr/local/lib/sasl2/libsql.so&quot;
+78102 reconstruct Events dropped.
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.header&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.header&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.header&quot;
+78102 reconstruct NAMI  &quot;/var/spool/imap/domain/netconsonance.com/user/jrhett&quot;
+78102 reconstruct NAMI  &quot;/var/imap/domain/n/netconsonance.com/quota/j/user.jrhett&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.index&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.index&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.index.NEW&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.cache.NEW&quot;
+78102 reconstruct Events dropped.
+78102 reconstruct NAMI  &quot;/etc/localtime&quot;
+78102 reconstruct NAMI  &quot;/etc/localtime&quot;
+78102 reconstruct NAMI  &quot;99.&quot;
+78102 reconstruct NAMI  &quot;109.&quot;
+78102 reconstruct NAMI  &quot;111.&quot;
+78102 reconstruct NAMI  &quot;112.&quot;
+78102 reconstruct NAMI  &quot;114.&quot;
+78102 reconstruct NAMI  &quot;115.&quot;
+78102 reconstruct NAMI  &quot;116.&quot;
+78102 reconstruct NAMI  &quot;117.&quot;
+78102 reconstruct NAMI  &quot;118.&quot;
+78102 reconstruct NAMI  &quot;119.&quot;
+78102 reconstruct NAMI  &quot;120.&quot;
+78102 reconstruct NAMI  &quot;121.&quot;
+78102 reconstruct NAMI  &quot;122.&quot;
+78102 reconstruct NAMI  &quot;123.&quot;
+78102 reconstruct NAMI  &quot;124.&quot;
+78102 reconstruct NAMI  &quot;135.&quot;
+78102 reconstruct NAMI  &quot;148.&quot;
+78102 reconstruct NAMI  &quot;151.&quot;
+78102 reconstruct NAMI  &quot;152.&quot;
+78102 reconstruct NAMI  &quot;160.&quot;
+78102 reconstruct NAMI  &quot;163.&quot;
+78102 reconstruct NAMI  &quot;175.&quot;
+78102 reconstruct NAMI  &quot;203.&quot;
+78102 reconstruct NAMI  &quot;206.&quot;
+78102 reconstruct NAMI  &quot;208.&quot;
+78102 reconstruct NAMI  &quot;209.&quot;
+78102 reconstruct NAMI  &quot;230.&quot;
+78102 reconstruct NAMI  &quot;241.&quot;
+78102 reconstruct NAMI  &quot;245.&quot;
+78102 reconstruct NAMI  &quot;247.&quot;
+78102 reconstruct NAMI  &quot;248.&quot;
+78102 reconstruct NAMI  &quot;249.&quot;
+78102 reconstruct NAMI  &quot;250.&quot;
+78102 reconstruct NAMI  &quot;289.&quot;
+78102 reconstruct NAMI  &quot;297.&quot;
+78102 reconstruct NAMI  &quot;298.&quot;
+78102 reconstruct NAMI  &quot;313.&quot;
+78102 reconstruct NAMI  &quot;317.&quot;
+78102 reconstruct NAMI  &quot;319.&quot;
+78102 reconstruct NAMI  &quot;353.&quot;
+78102 reconstruct NAMI  &quot;354.&quot;
+78102 reconstruct NAMI  &quot;355.&quot;
+78102 reconstruct NAMI  &quot;357.&quot;
+78102 reconstruct NAMI  &quot;358.&quot;
+78102 reconstruct NAMI  &quot;359.&quot;
+78102 reconstruct NAMI  &quot;393.&quot;
+78102 reconstruct NAMI  &quot;448.&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.header.NEW&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.header.NEW&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.header&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.index.NEW&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.index&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.cache.NEW&quot;
+78102 reconstruct NAMI 
+&quot;/var/spool/imap/domain/netconsonance.com/user/jrhett/cyrus.cache&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;
+78102 reconstruct NAMI  &quot;/var/imap/mailboxes.db&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Denis Araujo">denis@spps.com.br</who>
+            <bug_when>2006-12-26 13:40:58 EDT</bug_when>
+            <thetext>I&apos;m not sure if is here that I must put this, but I think that what happened to
+me is the same, but my conclusion is diferent: reconstruct generate wrongs ACLs.
+I copied a mailbox data from one server to another and runned reconstruct.
+First time it showed all sub-folders, but do not show when viewing with imap
+client. Then i runned &quot;ctl_mboxlist -d&quot; and observed that ACLs was created only
+considering user name, not domain.
+Example:
+
+spps.com.br!user.bereta.Annie 0 default bereta lrswipcda cyrus lrswipcda
+
+Should be:
+
+spps.com.br!user.bereta.Annie 0 default bereta@spps.com.br lrswipcd
+
+I believe that is the same that hapenned to Jo Rhett, described in this bug.
+
+If not, please, sorry.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rudy Gevaert">rudy.gevaert@ugent.be</who>
+            <bug_when>2007-09-25 07:38:31 EDT</bug_when>
+            <thetext>I needed to run reconstruct on user/login@domain.com and user/login/*@domain.com
+
+I agree that when -r is given it should recurse into the subdirs too.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 09:56:06 EDT</bug_when>
+            <thetext>Batch moving bugs that won&apos;t be in 2.5</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

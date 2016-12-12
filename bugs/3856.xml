@@ -1,0 +1,132 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3856</bug_id>
+          
+          <creation_ts>2014-07-09 07:09 EDT</creation_ts>
+          <short_desc>lmtpd service does not respect user_deny.db</short_desc>
+          <delta_ts>2016-03-04 09:14:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>REOPENED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Deniss Gaplevsky">slim@inbox.lv</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>Leena.Heino@uta.fi</cc>
+    
+    <cc>murch@andrew.cmu.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2014-07-09 07:09:33 EDT</bug_when>
+            <thetext>lmtpd network service should respect user_deny.db to bounce new incoming messages with 4xx code back to an queue for the users listed. 
+lmtpd should works as imapd,pop3d here to allow complete freeze mailbox from updates for maintenance.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-10-21 10:21:52 EDT</bug_when>
+            <thetext>Fixed in master.  Will be in 2.5</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2014-10-28 05:57:33 EDT</bug_when>
+            <thetext>please backport it to stable branch</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-10-28 06:56:02 EDT</bug_when>
+            <thetext>Committed to cyrus-imapd-2.4</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2014-11-18 08:13:00 EDT</bug_when>
+            <thetext>This patch seems to break delivery to shared mailboxes when postuser in imapd.conf is set to its default empty value.
+
+If one tries to sent email to shared mailbox then lmtpd just silently closes the connection. No errors are seen in the lmtpd output nor are any errors logged to the logs. The connection is just silently closed and messages will remain undelivered in the mail queue.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2015-08-26 06:54:00 EDT</bug_when>
+            <thetext>the patch does not convert cyrus internal mailbox name into external format (ie ^ =&gt; . in username part) before matching user_deny entries.
+So imap and others search for &quot;some.user&quot; while lmtpd looks for &quot;some^user&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2016-03-04 08:03:32 EDT</bug_when>
+            <thetext>following patch fix the issue with lmtpd.
+
+--- lmtpd.c     2015-07-06 06:38:29.000000000 +0300
++++ lmtpd.c     2016-03-04 14:50:02.000000000 +0200
+@@ -1068,7 +1070,9 @@
+            user = namebuf;
+        }
+ 
+-       if (userdeny(user, config_ident, msg, sizeof(msg)))
++       (*lmtpd_namespace.mboxname_toexternal)(&amp;lmtpd_namespace, user, user, namebuf);
++
++       if (userdeny(namebuf, config_ident, msg, sizeof(msg)))
+            return IMAP_MAILBOX_DISABLED;
+     }
+ 
+Indeed other services (imap/pop) do improper user_deny.db checking against internal username every time but at login
+Mar  4 14:59:27 lv-test-2 imap[7799]: fetching user_deny.db entry for &apos;slim.test&apos;
+Mar  4 14:59:27 lv-test-2 imap[7799]: fetching user_deny.db entry for &apos;slim^test&apos;
+Mar  4 14:59:27 lv-test-2 imap[7799]: fetching user_deny.db entry for &apos;slim^test&apos;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2016-03-04 09:14:09 EDT</bug_when>
+            <thetext>(In reply to comment #6)
+
+
+correct patch that works with domains is:
+--- imap/lmtpd.c        2015-07-06 06:38:29.000000000 +0300
++++ imap/lmtpd.c        2016-03-04 16:11:28.000000000 +0200
+@@ -1062,6 +1064,10 @@
+ 
+     if (!r &amp;&amp; user) {
+        char msg[MAX_MAILBOX_PATH+1];
++       char namebufext[MAX_MAILBOX_BUFFER] = &quot;&quot;;
++
++       (*lmtpd_namespace.mboxname_toexternal)(&amp;lmtpd_namespace, user, user, namebufext);
++       if (namebufext) { user = namebufext; }
+ 
+        if (domain) {
+            snprintf(namebuf, sizeof(namebuf), &quot;%s@%s&quot;, user, domain);</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

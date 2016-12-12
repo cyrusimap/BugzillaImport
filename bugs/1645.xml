@@ -1,0 +1,111 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1645</bug_id>
+          
+          <creation_ts>2002-11-13 10:55 EDT</creation_ts>
+          <short_desc>imapd with ssl hangs when SSL_read blocks</short_desc>
+          <delta_ts>2010-10-18 12:42:59 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>pete@oit.umass.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">pete@oit.umass.edu</who>
+            <bug_when>2002-11-13 10:55:08 EDT</bug_when>
+            <thetext>The imapd hangs and lmtpds stack up waiting to deliver:
+
+&gt;    22335:  imapd -s
+&gt;     ff09b3bc read     (0, 1c4bc8, 6f5)
+&gt;     0008e8c8 sock_read (0, 1c4bc8, 6f5, 8e8a0, 18edf8, 1) + 28
+&gt;     0008d670 BIO_read (1bd090, 1c4bc8, 6f5, 1c32a8, 1bccf0, 0) + d0
+&gt;     0007dec8 ssl3_read_n (5, 2010, 2010, 191b, 0, 0) + 148
+&gt;     0007e140 ssl3_get_record (1bb7e0, 1bccf0, 0, 0, 23138, ff0941d8) + 1e0
+&gt;     0007e8d4 ssl3_read_bytes (1bb7e0, 17, 1aa610, 1000, 0, 1bccf0) + 1d4
+&gt;     0007c6e8 ssl3_read (1bb7e0, 1aa610, 1000, 7c6a0, 19a1ac, 0) + 48
+&gt;     0006e730 SSL_read (1bb7e0, 1aa610, 1000, 1, ff0bd194, ffbec4b8) + 70
+&gt;     00060524 prot_fill (ffffffff, 0, 1000, 19cfb0, ffbec7b8, 1) + 340
+&gt;     00060d8c prot_read (0, ffbec7b8, 1000, 19cfb0, 1, ffbec7b8) + 6c
+&gt;     00050894 message_copy_strict (0, 19cfb0, 8008c, ffffeff8, 1a17a8,ff09c648)
++ 64
+&gt;     00044584 append_fromstream (ffbed830, 1a17a8, 9408c, 3cbce214, 1d0520, 1)
++ 14c
+
+Additional comments from Lawrence Greenfield &lt;leg+@andrew.cmu.edu&gt; on
+Fri, 8 Nov 2002:
+
+&gt; This one looks like the one that&apos;s actually having the problem. If you
+&gt; kill this process, everything will return to normal.
+&gt;
+&gt; What caused this? Well, prot_fill() isn&apos;t suppose to call SSL_read if
+&gt; SSL_read is going to block. Unfortunately, it doesn&apos;t succeed in this
+&gt; case.
+&gt;
+&gt; Really, we should put the SSL socket into non-blocking mode and have
+&gt; some additional logic to make sure this doesn&apos;t happen. Since the prot
+&gt; layer itself is (generally) blocking, it&apos;s not totally trivial and we
+&gt; haven&apos;t done the work.
+&gt;
+&gt; Finally, there&apos;s the larger issue that we lock the mailbox during an
+&gt; APPEND which is a Bad Idea, since a client can be arbitrarily slow
+&gt; uploading data and thus creates a DoS for other clients. Avoiding this
+&gt; isn&apos;t probably that hard (the staging code used by lmtpd can probably
+&gt; be adapted by imapd) but we haven&apos;t done it, either.
+&gt;
+&gt; At the very least, I&apos;d appreciate it if you open a bug on the SSL
+&gt; issue and include the backtrace on bugzilla.andrew.cmu.edu.
+
+Almost every time this happens the solairs fuser command reports the
+imapd has the quota file open but none of the cyrus.* files (the lmtpd&apos;s
+have these open).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-06-29 14:35:55 EDT</bug_when>
+            <thetext>Note we have since fixed the APPEND issue...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-10-07 09:53:50 EDT</bug_when>
+            <thetext>This should be fixed in 2.3.11</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

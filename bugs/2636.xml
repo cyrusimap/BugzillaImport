@@ -1,0 +1,163 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2636</bug_id>
+          
+          <creation_ts>2005-03-21 05:03 EDT</creation_ts>
+          <short_desc>option auxprop_plugin works?</short_desc>
+          <delta_ts>2010-10-25 18:46:36 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>plugins</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alexander Schegolev">alex@nrbspb.ru</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alexander Schegolev">alex@nrbspb.ru</who>
+            <bug_when>2005-03-21 05:03:02 EDT</bug_when>
+            <thetext>I see in my auth.log (from postfix 2.2.1 and cyrus-IMAP 2.2.12) lots of:
+
+ sql_select option missing
+ auxpropfunc error no mechanism available
+ _sasl_plugin_load failed on sasl_auxprop_plug_init for plugin: sql
+
+cyrus-sasl 2.1.20 builded with sasldb and mysql, but used with sasldb
+
+smtpd.conf:
+pwcheck_method: auxprop
+auxprop_plugin: sasldb
+log_level: 2
+...
+
+imapd.conf:
+...
+sasl_pwcheck_method: auxprop
+sasl_auxprop_plugin: sasldb
+sasl_log_level: 2
+...
+
+What I do wrong?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-03-23 12:06:07 EDT</bug_when>
+            <thetext>Is the problem postfix, or cyrus, or both?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Schegolev">alex@nrbspb.ru</who>
+            <bug_when>2005-03-24 02:22:57 EDT</bug_when>
+            <thetext>postfix 2.0.16 + cyrus-imapd 2.2.2-beta + cyrus-sasl 2.1.17 - all works fine
+(sasl builded with sasldb but without sql)
+
+after update to cyrus-sasl 2.1.20 (builded with sasldb &amp; sql. postfix &amp; imap - 
+the same, builded with sasl 2.1.17):
+&lt;cut auth.log&gt;
+ Mar 21 15:11:36 mail postfix/smtpd[9829]: sql_select option missing
+ Mar 21 15:11:36 mail postfix/smtpd[9829]: auxpropfunc error no mechanism 
+available 
+ Mar 21 15:11:36 mail postfix/smtpd[9829]: _sasl_plugin_load failed on 
+sasl_auxprop_plug_init for plugin: sql 
+ Mar 21 15:11:43 mail lmtpunix[9833]: sql_select option missing
+ Mar 21 15:11:43 mail lmtpunix[9833]: auxpropfunc error no mechanism available 
+ Mar 21 15:11:43 mail lmtpunix[9833]: _sasl_plugin_load failed on 
+sasl_auxprop_plug_init for plugin: sql 
+ Mar 21 15:12:41 mail pop3s[9834]: sql_select option missing
+ Mar 21 15:12:41 mail pop3s[9834]: auxpropfunc error no mechanism available 
+ Mar 21 15:12:41 mail pop3s[9834]: _sasl_plugin_load failed on 
+sasl_auxprop_plug_init for plugin: sql 
+ Mar 21 15:16:46 mail pop3[9840]: sql_select option missing
+ Mar 21 15:16:46 mail pop3[9840]: auxpropfunc error no mechanism available 
+ Mar 21 15:16:46 mail pop3[9840]: _sasl_plugin_load failed on 
+sasl_auxprop_plug_init for plugin: sql 
+&lt;cut auth.log&gt;
+
+after update to postfix 2.2.1 &amp; cyrus-imapd 2.2.12 (both builded with sasl 
+2.1.20) nothing change.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-05-06 14:24:06 EDT</bug_when>
+            <thetext>So you changed version and whether or not you&apos;re using sql. Can you change only one or the other?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2009-01-25 11:44:21 EDT</bug_when>
+            <thetext>Option &quot;auxprop_plugin&quot;, but not in the way you think it does. It doesn&apos;t prevent auxprop plugins from loading, it prevents which ones are used.
+I know this might be a bit counterintuitive.
+
+In order to prevent the annoying error message you get, you can install
+SASL_CB_VERIFYFILE callback that can catch loading of the plugin and suppress its initialization. The callback might look something like this:
+
+static int
+ms_sasl_verifyfile(void *context,
+		   char *file,
+		   int type)
+{
+    if (type == SASL_VRFY_PLUGIN) {
+	char * short_name;
+	char * ext;
+
+	short_name = strrchr (file, OS_HIER_SEP);
+	if (short_name == NULL) {
+	    /* We can&apos;t check this, we don&apos;t care? */
+	    return SASL_OK;
+	}
+
+	/* Skip the hierarchy separator */
+	short_name++;
+
+	/* Find the leftmost dot, so that we can cope with names like libdigestmd5.so.2.1.18 */
+	ext = strchr (short_name, &apos;.&apos;);
+	if (ext == NULL) {
+	    ext = short_name + strlen(short_name);
+	}
+
+	if (strnicmp (short_name, PLUGIN_TO_IGNORE, ext - short_name) == 0) {
+	    /* We don&apos;t want this plugin to be loaded, so we return something other than SASL_OK */
+	    return SASL_CONTINUE;
+	}
+    }
+
+    /* always say ok */
+    return SASL_OK;
+}
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

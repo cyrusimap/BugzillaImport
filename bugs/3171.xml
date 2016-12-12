@@ -1,0 +1,123 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3171</bug_id>
+          
+          <creation_ts>2009-09-23 12:52 EDT</creation_ts>
+          <short_desc>imtest uses undersized buffer for sasl_encode64()</short_desc>
+          <delta_ts>2010-10-25 18:46:48 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="James Ralston">ralston@pobox.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="James Ralston">ralston@pobox.com</who>
+            <bug_when>2009-09-23 12:52:43 EDT</bug_when>
+            <thetext>Created an attachment (id=1233)
+patch for imtest.c to pass correct size to sasl_encode64()
+
+In imtest.c, in auth_sasl(), the inbase64 buffer is declared as:
+
+    char inbase64[4096];
+
+But when auth_sasl() calls the sasl_encode64() function, in inexplicably tells sasl_encode64() that the buffer size is only 2048:
+
+    saslresult = sasl_encode64(out, outlen, inbase64, 2048,
+                               (unsigned *) &amp;inbase64len);
+
+This can cause imtest to fail when attempting GSSAPI authentication against any IMAP server (not just a Cyrus IMAP server). This is a particular problem in infrastructures that use Microsoft Active Directory as a Kerberos 5 KDC, because 2048 is frequently insufficient to hold the resulting encoded data:
+
+$ imtest -m GSSAPI imap.example.org
+S: * OK [CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID STARTTLS AUTH=PLAIN AUTH=GSSAPI SASL-IR] imap.example.org Cyrus IMAP4 v2.3.7-Invoca-RPM-2.3.7-4.0.2 server ready
+C: A01 AUTHENTICATE GSSAPI Authentication failed. overflowed buffer
+Security strength factor: 0
+
+The fix (patch attached) is to replace:
+
+    2048
+
+with:
+
+    sizeof(inbase64)
+
+We have been using this patch locally for some time now, and can confirm that it solves the problem; please apply it.
+
+(It would be super-swell if you would also cut a 2.3.16 release after applying this, but I can understand if you feel that this fix doesn&apos;t merit a bugfix release by itself.)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="James Ralston">ralston@pobox.com</who>
+            <bug_when>2009-09-23 12:56:48 EDT</bug_when>
+            <thetext>Also, just to be explicitly clear, there is no potential security vulnerability here, as auth_sasl() is telling sasl_encode64() that the buffer is smaller than it actually is, not larger.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-09-24 09:35:46 EDT</bug_when>
+            <thetext>Patch applied to CVS.  Thanks.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1233</attachid>
+            <date>2009-09-23 12:52 EDT</date>
+            <desc>patch for imtest.c to pass correct size to sasl_encode64()</desc>
+            <filename>cyrus-imapd-2.3.15-encode64-bufsize.patch</filename>
+            <type>text/plain</type>
+            <size>624</size>
+            <attacher>ralston@pobox.com</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXAgY3lydXMtaW1hcGQtMi4zLjE1L2ltdGVzdC9pbXRlc3QuYy5lbmNvZGU2NC1idWZz
+aXplIGN5cnVzLWltYXBkLTIuMy4xNS9pbXRlc3QvaW10ZXN0LmMKLS0tIGN5cnVzLWltYXBkLTIu
+My4xNS9pbXRlc3QvaW10ZXN0LmMuZW5jb2RlNjQtYnVmc2l6ZQkyMDA5LTA0LTIzIDEzOjEwOjA3
+LjAwMDAwMDAwMCAtMDQwMAorKysgY3lydXMtaW1hcGQtMi4zLjE1L2ltdGVzdC9pbXRlc3QuYwky
+MDA5LTA5LTIzIDEyOjQ1OjI3LjAwMDAwMDAwMCAtMDQwMApAQCAtMTA5Miw3ICsxMDkyLDcgQEAg
+aW50IGF1dGhfc2FzbChzdHJ1Y3Qgc2FzbF9jbWRfdCAqc2FzbF9jbQogICAgIGRvIHsKIAlpZiAo
+b3V0KSB7IC8qIHJlc3BvbnNlICovCiAJICAgIC8qIGNvbnZlcnQgdG8gYmFzZTY0ICovCi0JICAg
+IHNhc2xyZXN1bHQgPSBzYXNsX2VuY29kZTY0KG91dCwgb3V0bGVuLCBpbmJhc2U2NCwgMjA0OCwK
+KwkgICAgc2FzbHJlc3VsdCA9IHNhc2xfZW5jb2RlNjQob3V0LCBvdXRsZW4sIGluYmFzZTY0LCBz
+aXplb2YoaW5iYXNlNjQpLAogCQkJCSAgICAgICAodW5zaWduZWQgKikgJmluYmFzZTY0bGVuKTsK
+IAkgICAgaWYgKHNhc2xyZXN1bHQgIT0gU0FTTF9PSykgcmV0dXJuIHNhc2xyZXN1bHQ7CiAK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

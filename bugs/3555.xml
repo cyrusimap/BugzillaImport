@@ -1,0 +1,174 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3555</bug_id>
+          
+          <creation_ts>2011-09-19 12:08 EDT</creation_ts>
+          <short_desc>Imap idled doesn&apos;t recognize state changes</short_desc>
+          <delta_ts>2011-09-19 13:33:57 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>2.2.x</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tobi">tt@etcgmbh.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dwhite@olp.net</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Tobi">tt@etcgmbh.de</who>
+            <bug_when>2011-09-19 12:08:02 EDT</bug_when>
+            <thetext>If I change the mail status from unseen to seen, no IMAP-IDLE event is fired.
+
+For Example:
+I&apos;m connected with Thunderbird to my IMAP-Account. Now I&apos;m accessing the same account from my webmailer and change the message status from unseen to seen. The Thunderbird-account doesn&apos;t show it until i refresh my messages.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-09-19 12:24:43 EDT</bug_when>
+            <thetext>Is idled running (cyrus.conf)?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Tobi">tt@etcgmbh.de</who>
+            <bug_when>2011-09-19 13:09:18 EDT</bug_when>
+            <thetext>(Mit Bezug zu comment #1)
+&gt; Is idled running (cyrus.conf)?
+
+Yes. It&apos;s running. It&apos;s in Imapd.conf:
+
+  idled           cmd=&quot;idled&quot;
+
+To reproduce it. I&apos;ve connect with telnet to the IMAP-Server and changed the status.
+
+
+Connected to boron.
+Escape character is &apos;^]&apos;.
+* OK boron Cyrus IMAP4 v2.2.13-Debian-2.2.13-19ubuntu4 server ready
+01 LOGIN uuuuuuu XXXXXX
+01 OK User logged in
+02 SELECT INBOX
+* FLAGS (\Answered \Flagged \Draft \Deleted \Seen NonJunk)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen NonJunk \*)]
+* 43 EXISTS
+* 0 RECENT
+* OK [UNSEEN 33]
+* OK [UIDVALIDITY 1307361276]
+* OK [UIDNEXT 50]
+02 OK [READ-WRITE] Completed
+03 IDLE
++ idling
+
+==&gt; Now I changed the status and nothing happened.
+
+==&gt; After sending a new Mail this appeared:
+* 44 EXISTS
+* 1 RECENT
+* 39 FETCH (FLAGS (\Seen))
+* 40 FETCH (FLAGS (\Seen))
+done
+03 OK Completed
+
+
+I&apos;ve tried an strace on the idled command and this is the output while changing the status:
+
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 50299})
+recvfrom(5, &quot;\1\0\0\0\0\0\0\0\3247\0\0\0\0\0\0user.dcctest\0&quot;, 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 29
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 919374})
+recvfrom(5, &quot;\0\0\0\0\0\0\0\0\3247\0\0\0\0\0\0user.dcctest\0&quot;, 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 29
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 0 (Timeout)
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 0 (Timeout)
+
+
+and this is strace while receiving a new message:
+
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 0 (Timeout)
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 317963})
+recvfrom(5, &quot;\2\0\0\0\0\0\0\0J:\0\0\0\0\0\0user.dcctest\0&quot;, 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 29
+kill(14292, SIGUSR1)                    = 0
+kill(14892, SIGUSR1)                    = 0
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 958525})
+recvfrom(5, &quot;\1\0\0\0\0\0\0\0\3247\0\0\0\0\0\0user.dcctest\0&quot;, 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 29
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 981451})
+recvfrom(5, &quot;\1\0\0\0\0\0\0\0C:\0\0\0\0\0\0user.tobias.Sent&quot;..., 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 33
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 908935})
+recvfrom(5, &quot;\2\0\0\0\0\0\0\0C:\0\0\0\0\0\0user.tobias.Sent&quot;..., 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 33
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 546732})
+recvfrom(5, &quot;\0\0\0\0\0\0\0\0\3247\0\0\0\0\0\0user.dcctest\0&quot;, 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 29
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 1 (in [5], left {0, 743195})
+recvfrom(5, &quot;\0\0\0\0\0\0\0\0C:\0\0\0\0\0\0user.tobias.Sent&quot;..., 512, 0, {sa_family=AF_FILE, path=@&quot;&quot;}, [0]) = 33
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 0 (Timeout)
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+select(6, [5], NULL, NULL, {1, 0})      = 0 (Timeout)
+open(&quot;/var/lib/cyrus/msg/shutdown&quot;, O_RDONLY) = -1 ENOENT (No such file or directory)
+
+
+The different I&apos;ve found is the sending SIGUSR1 as expected.
+
+The Output in syslog with CYRUS_VERBOSE=1 while receiving a new message is not so much :
+Sep 19 19:05:57 boron cyrus/idled[14942]: imapd[14892]: IDLE_INIT &apos;user.dcctest&apos;
+Sep 19 19:06:06 boron cyrus/idled[14942]: IDLE_NOTIFY &apos;user.dcctest&apos;
+Sep 19 19:06:06 boron cyrus/idled[14942]:     SIGUSR1 14812
+Sep 19 19:06:06 boron cyrus/idled[14942]:     SIGUSR1 14900
+Sep 19 19:06:06 boron cyrus/idled[14942]: imapd[14812]: IDLE_DONE &apos;user.dcctest&apos;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Tobi">tt@etcgmbh.de</who>
+            <bug_when>2011-09-19 13:27:33 EDT</bug_when>
+            <thetext>of course, is &quot;idled&quot; in the &quot;cyrus.conf&quot; defined</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-09-19 13:33:57 EDT</bug_when>
+            <thetext>2.2.x, sorry.  We don&apos;t support it.  While this bug kind of sucks, I can guarantee it&apos;s fixed in 2.4.11, which is the current stable release, and I&apos;m pretty sure it works fine in 2.3.17 as well, which is the old stable.
+
+Sorry, closing this &quot;WONTFIX&quot;.
+
+Bron.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,110 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3764</bug_id>
+          
+          <creation_ts>2013-01-09 07:25 EDT</creation_ts>
+          <short_desc>proxying set annotation strips escaped double-quotes</short_desc>
+          <delta_ts>2013-01-09 08:06:44 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>murch@andrew.cmu.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-01-09 07:25:14 EDT</bug_when>
+            <thetext>imap/imap_proxy.c int annotate_store_proxy() proxies the SETANNOTATION command in such a way that escaped double-quotes (\&quot;) are not escaped by the time they hit the backend.
+
+When executing, to the frontend:
+
+  . setannotation /path (&quot;value.priv&quot; &quot;somestring \&quot;with\&quot; escaped quotes&quot;)
+
+what the backend gets (according to telemetry), is:
+
+  . setannotation /path (&quot;value.priv&quot; &quot;somestring &quot;with&quot; escaped quotes&quot;)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-01-09 07:28:57 EDT</bug_when>
+            <thetext>My C-noviceness only gets me so far:
+
+[kanarip@albert tmp]$ cat test.c 
+#include &lt;stdio.h&gt;
+
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+char *str_replace(char *needle, char *replace, char *haystack)
+{
+    char *str1;
+    char *str2 = malloc(0);
+
+    while (strstr(haystack, needle)) {
+	str1 = strstr(haystack, needle);
+	strncpy(str2+strlen(str2), haystack, str1 - haystack);
+	strcat(str2, replace);
+	str1 += strlen(needle);
+	haystack = str1;
+    }
+
+    return strcat(str2, str1);
+}
+
+int main()
+{
+    char *doublequoted_str = &quot;something \&quot;quoted\&quot;&quot;;
+
+    printf(&quot;w/ str_replace(): %s\n&quot;, str_replace(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;, doublequoted_str));
+    printf(&quot;w/o str_replace(): %s\n&quot;, doublequoted_str);
+
+}
+[kanarip@albert tmp]$ gcc -o test.exe test.c
+[kanarip@albert tmp]$ ./test.exe
+w/ str_replace(): something \&quot;quoted\&quot;
+w/o str_replace(): something &quot;quoted&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2013-01-09 08:06:44 EDT</bug_when>
+            <thetext>I&apos;d suggest using the buf_replace_all() function that gnb added to lib/util.c</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

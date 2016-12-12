@@ -1,0 +1,175 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3783</bug_id>
+          
+          <creation_ts>2013-03-05 05:39 EDT</creation_ts>
+          <short_desc>BAD: Missing annotation entry</short_desc>
+          <delta_ts>2013-03-20 02:04:05 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-03-05 05:39:10 EDT</bug_when>
+            <thetext>In attempting to use METADATA in 2.5 (git master HEAD at 56d755), I&apos;m seemingly unsuccessful:
+
+[root@kolab ~]# history | grep SETANNOTATION
+  217  echo &quot;. SETANNOTATION INBOX (/shared/comment something /private/comment something)&quot; | imtest -t &quot;&quot; -u meier@example.org -a meier@example.org -w **** localhost
+  218  echo &quot;. SETANNOTATION INBOX (/shared/comment \&quot;something\&quot; /private/comment \&quot;something\&quot;)&quot; | imtest -t &quot;&quot; -u meier@example.org -a meier@example.org -w **** localhost
+  219  echo &quot;. SETANNOTATION INBOX (/shared/comment something)&quot; | imtest -t &quot;&quot; -u meier@example.org -a meier@example.org -w **** localhost
+  220  echo &quot;. SETANNOTATION INBOX (/shared/comment \&quot;something\&quot;)&quot; | imtest -t &quot;&quot; -u meier@example.org -a meier@example.org -w **** localhost
+
+All of the above attempts fail with:
+
+. BAD Missing annotation entry</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2013-03-05 08:07:30 EDT</bug_when>
+            <thetext>You appear to be confused.  You&apos;re attempting to use the old SETANNOTATION draft, not METADATA, which is spelled SETMETADATA.
+
+. setmetadata INBOX (/shared/comment &quot;something&quot;)
+. OK Completed
+
+The syntax for SETANNOTATION (which is still supported) is spelled differently.
+
+The value parameter doesn&apos;t appear to be supported as an atom, which may be a bug... it works quoted or at a literal - strictly it&apos;s &apos;getbnstring&apos;, which supports binary or literal, but not atoms.
+
+Nope:  RFC 5464 says:
+
+ value             = nstring / literal8
+
+Our implementation is strictly correct.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-03-05 08:54:41 EDT</bug_when>
+            <thetext>(In reply to comment #1)
+&gt; You appear to be confused.  You&apos;re attempting to use the old SETANNOTATION
+&gt; draft, not METADATA, which is spelled SETMETADATA.
+&gt; 
+
+D&apos;oh, I should feel ashamed. Sorry about that;
+
+[05-Mar-2013 09:59:22,000000 +0000]: [3698] C: A0018 SETMETADATA INBOX (/shared/vendor/kolab/folder-type mail /private/vendor/kolab/folder-type mail.inbox)
+[05-Mar-2013 09:59:22,000000 +0000]: [3698] S: A0018 BAD Missing metadata value
+
+&gt; . setmetadata INBOX (/shared/comment &quot;something&quot;)
+&gt; . OK Completed
+&gt; 
+&gt; The syntax for SETANNOTATION (which is still supported) is spelled differently.
+&gt; 
+
+It appears the Cyrus IMAP implementation requires quotes around the values, which (so I&apos;ve been told) appears to not be required by the RFC:
+
+echo &quot;. SETMETADATA INBOX (/shared/comment something /private/comment something)&quot; | imtest -t &quot;&quot; -u meier@example.org -a meier@example.org -w Welcome2KolabSystems localhost
+
+Results in: BAD Missing annotation value
+
+whereas:
+
+echo &quot;. SETMETADATA INBOX (/shared/comment \&quot;something\&quot; /private/comment \&quot;something\&quot;)&quot; | imtest -t &quot;&quot; -u meier@example.org -a meier@example.org -w Welcome2KolabSystems localhost
+
+Results in: . OK Completed
+
+&gt; The value parameter doesn&apos;t appear to be supported as an atom, which may be a
+&gt; bug... it works quoted or at a literal - strictly it&apos;s &apos;getbnstring&apos;, which
+&gt; supports binary or literal, but not atoms.
+&gt; 
+&gt; Nope:  RFC 5464 says:
+&gt; 
+&gt;  value             = nstring / literal8
+&gt; 
+&gt; Our implementation is strictly correct.
+
+Please advise - if the quoting issue is a point of ambiguity in the RFC, I would like to have it clarified somehow, or if it isn&apos;t, I&apos;d love for you to confirm all values must be quoted.
+
+Thanks!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-20 01:43:11 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; It appears the Cyrus IMAP implementation requires quotes around the values,
+&gt; which (so I&apos;ve been told) appears to not be required by the RFC:
+
+&gt; Please advise - if the quoting issue is a point of ambiguity in the RFC, I
+&gt; would like to have it clarified somehow, or if it isn&apos;t, I&apos;d love for you to
+&gt; confirm all values must be quoted.
+
+The ABNF collected from the RFCs says
+
+// RFC5464
+
+      value             = nstring / literal8
+
+// RFC3501
+
+nstring         = string / nil
+
+nil             = &quot;NIL&quot;
+
+string          = quoted / literal
+
+quoted          = DQUOTE *QUOTED-CHAR DQUOTE
+
+literal         = &quot;{&quot; number &quot;}&quot; CRLF *CHAR8
+                    ; Number represents the number of CHAR8s
+
+So it looks to me like the RFC says the value needs to be quoted.  That&apos;s
+a side effect of the server being able to correctly tell the difference
+between NIL and &quot;NIL&quot;, the former of which deletes the annotation and the
+latter of which sets an annotation of length three bytes containing the
+bytes 0x4E 0x4A 0x4C.  So it&apos;s not just the server code being pedantic
+about RFC compliance, but that compliance is necessary to allow you to
+delete annotations.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2013-03-20 02:04:05 EDT</bug_when>
+            <thetext>Which is all a pile of shit in the standards, because the parser can handle that just fine so long as you always quote &quot;NIL&quot;.  The quoting code already handles that correctly.
+
+But the standards say nstring, so nstring it is.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

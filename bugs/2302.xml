@@ -1,0 +1,351 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2302</bug_id>
+          
+          <creation_ts>2003-11-20 16:42 EDT</creation_ts>
+          <short_desc>clean up ipurge&apos;s output, add a feature to clean only top folder</short_desc>
+          <delta_ts>2011-01-17 06:53:52 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P4</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrew Caird">andrew.caird@fccc.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>awilliam@whitemice.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Andrew Caird">andrew.caird@fccc.edu</who>
+            <bug_when>2003-11-20 16:42:29 EDT</bug_when>
+            <thetext>The patch below does the following things:
+
+1) Adds the &quot;-i&quot; option to purge messages from only the top level mailbox
+(-i=Inbox), so mail in user.loginID is purged based on the rules, but mail in
+user.loginID.folder1 is not.  This is done by looking at the number of
+separators in the mailbox path, 1 is the top, 0, or &gt;1 is something else and
+isn&apos;t touched.
+
+2) Adds the -q and -w options; -q makes ipurge run silently execpt for errors
+and usage messages; -w (whisper) makes ipurge be a little less verbose, but
+still informative.
+
+3) Wraps all of the printf&apos;s in if(verbose){}, adds if(verbose){print} analogs
+for all of the syslog calls, cleans up some formatting so source code lines
+don&apos;t wrap beyond 84 cols if possible.
+
+
+*** cyrus-imapd-2.1.15/imap/ipurge.c    Tue Apr 22 13:39:41 2003
+--- ../cyrus-imapd-2.1.15/imap/ipurge.c Thu Nov 20 16:38:07 2003
+***************
+*** 97,108 ****
+--- 97,111 ----
+  static struct namespace purge_namespace;
+  
+  int verbose = 1;
++ int whisper = 0;
+  int forceall = 0;
++ int inboxonly = 0;
+  
+  int purge_me(char *, int, int);
+  int purge_check(struct mailbox *, void *, char *);
+  int usage(char *name);
+  void print_stats(mbox_stats_t *stats);
++ void whisper_stats(mbox_stats_t *stats);
+  
+  int main (int argc, char *argv[]) {
+    char option;
+***************
+*** 111,120 ****
+    int r;
+  
+    if (geteuid() == 0) { /* don&apos;t run as root, changes permissions */
+      usage(argv[0]);
+    }
+  
+!   while ((option = getopt(argc, argv, &quot;C:hxd:b:k:m:fs&quot;)) != EOF) {
+      switch (option) {
+      case &apos;C&apos;: /* alt config file */
+        alt_config = optarg;
+--- 114,125 ----
+    int r;
+  
+    if (geteuid() == 0) { /* don&apos;t run as root, changes permissions */
++     fprintf (stderr,&quot;ERROR: %s must not be run as root (try the cyrus user).\n\n&quot;,
++         argv[0]);
+      usage(argv[0]);
+    }
+  
+!   while ((option = getopt(argc, argv, &quot;C:hxd:b:k:m:fsqwi&quot;)) != EOF) {
+      switch (option) {
+      case &apos;C&apos;: /* alt config file */
+        alt_config = optarg;
+***************
+*** 149,154 ****
+--- 154,170 ----
+      case &apos;f&apos; : {
+        forceall = 1;
+      } break;
++     case &apos;q&apos; : {
++       verbose = 0;
++       whisper = 0;
++     } break;
++     case &apos;w&apos; : {
++       whisper = 1;
++       verbose = 0;
++     } break;
++     case &apos;i&apos; : {
++       inboxonly = 1;
++     } break;
+      case &apos;s&apos; : {
+        skipflagged = 1;
+      } break;
+***************
+*** 157,163 ****
+      }
+    }
+    if ((days == -1 ) &amp;&amp; (size == -1)) {
+!     printf(&quot;One of these must be specified -d, -b -k, -m\n&quot;);
+      usage(argv[0]);
+    }
+  
+--- 173,179 ----
+      }
+    }
+    if ((days == -1 ) &amp;&amp; (size == -1)) {
+!     fprintf(stderr,&quot;One of these must be specified -d, -b -k, -m\n&quot;);
+      usage(argv[0]);
+    }
+  
+***************
+*** 183,188 ****
+--- 199,205 ----
+        strncpy(buf, argv[optind], MAX_MAILBOX_NAME);
+        /* Translate any separators in mailboxname */
+        mboxname_hiersep_tointernal(&amp;purge_namespace, buf);
++       
+        (*purge_namespace.mboxlist_findall)(&amp;purge_namespace, buf, 1, 0, 0,
+                                          purge_me, NULL);
+      }
+***************
+*** 195,206 ****
+  
+  int
+  usage(char *name) {
+!   printf(&quot;usage: %s [-f] [-s] [-C &lt;alt_config&gt;] [-x] {-d days &amp;| -b bytes|-k Kbyte
+s|-m Mbytes}\n\t[mboxpattern1 ... [mboxpatternN]]\n&quot;, name);
+!   printf(&quot;\tthere are no defaults and at least one of -d, -b, -k, -m\n\tmust be sp
+ecified\n&quot;);
+    printf(&quot;\tif no mboxpattern is given %s works on all mailboxes\n&quot;, name);
+    printf(&quot;\t -x specifies an exact match for days or size\n&quot;);
+    printf(&quot;\t -f force also to delete mail below user.* and INBOX.*\n&quot;);
+    printf(&quot;\t -s skip over messages that are flagged.\n&quot;);
+    exit(0);
+  }
+  
+--- 212,228 ----
+  
+  int
+  usage(char *name) {
+!   printf(&quot;usage: %s [-f] [-s] [-C &lt;alt_config&gt;] [-x] {-d days &amp;| -b bytes|&quot;,name);
+!   printf(&quot;-k Kbytes|-m Mbytes}\n\t[mboxpattern1 ... [mboxpatternN]]\n&quot;);
+!   printf(&quot;\tthere are no defaults and at least one of -d, -b, -k, -m\n\tmust &quot;);
+!   printf(&quot;be specified\n&quot;);
+    printf(&quot;\tif no mboxpattern is given %s works on all mailboxes\n&quot;, name);
+    printf(&quot;\t -x specifies an exact match for days or size\n&quot;);
+    printf(&quot;\t -f force also to delete mail below user.* and INBOX.*\n&quot;);
+    printf(&quot;\t -s skip over messages that are flagged.\n&quot;);
++   printf(&quot;\t -q process quietly (default is verbosely).\n&quot;);
++   printf(&quot;\t -w whisper: output a slightly more consise report (turns off verbose)
+.\n&quot;);
++   printf(&quot;\t -i inbox only: purge only messages in user.login, no subfolders\n&quot;);
+    exit(0);
+  }
+  
+***************
+*** 210,230 ****
+    struct mailbox the_box;
+    int            error;
+    mbox_stats_t   stats;
+  
+    if( ! forceall ) {
+      /* DON&apos;T purge INBOX* and user.* */
+!     if ((strncasecmp(name,&quot;INBOX&quot;,5)==0) || (strncasecmp(name,&quot;user.&quot;,5)==0))
+        return 0;
+    }
+  
+    memset(&amp;stats, &apos;\0&apos;, sizeof(mbox_stats_t));
+  
+    if (verbose)
+        printf(&quot;Working on %s...\n&quot;,name);
+  
+    error = mailbox_open_header(name, 0, &amp;the_box);
+    if (error != 0) { /* did we find it? */
+      syslog(LOG_ERR, &quot;Couldn&apos;t find %s, check spelling&quot;, name);
+      return error;
+    }
+    if (the_box.header_fd != -1) {
+--- 232,295 ----
+    struct mailbox the_box;
+    int            error;
+    mbox_stats_t   stats;
++   int            tok=0;
++   char          *tname;
++   char          *sep;
++   int            isep;
+  
+    if( ! forceall ) {
+      /* DON&apos;T purge INBOX* and user.* */
+!     if ((strncasecmp(name,&quot;INBOX&quot;,5)==0) || (strncasecmp(name,&quot;user.&quot;,5)==0)) {
+!       if (verbose) {
+!         printf (&quot;Skipping %s - use &apos;-f&apos; option to purge this as well\n&quot;,name);
+!       }
+        return 0;
++     }
+    }
+  
++   sep = (char *)xmalloc (sizeof(char));
++   isep = (config_getswitch(&quot;unixhierarchysep&quot;, 0) ? &apos;/&apos; : &apos;.&apos;);
++   sprintf (sep, &quot;%c&quot;, isep);
+    memset(&amp;stats, &apos;\0&apos;, sizeof(mbox_stats_t));
+  
++   /* Count &apos;sep&apos;s - one &apos;sep&apos; means inbox (user.login), more is subfolders 
++      (user.login.folder or user.login.folder.folder, etc.).  */
++   tname=strdup(name);
++   if (!strtok (tname, sep)) {
++     tok=0;
++   } else {
++       while (strtok (NULL, sep) != NULL) {
++       tok++;
++       }
++   }
++   free (tname);
++ 
++   if (inboxonly) {
++     if (tok != 1) {
++       if (verbose) {
++         printf(&quot;Skipping %s - it doesn&apos;t look like an inbox (%i tokens)\n&quot;,
++                name,tok);
++       }
++       return 0;
++     }
++   }
++ 
+    if (verbose)
+        printf(&quot;Working on %s...\n&quot;,name);
++   if (whisper) {
++      if (inboxonly) {
++         printf(&quot;%16s&quot;,name);
++      } else {
++         printf(&quot;%35s&quot;,name);
++      }
++   }
+  
+    error = mailbox_open_header(name, 0, &amp;the_box);
+    if (error != 0) { /* did we find it? */
+      syslog(LOG_ERR, &quot;Couldn&apos;t find %s, check spelling&quot;, name);
++     if (verbose) {
++       fprintf (stderr, &quot;Couldn&apos;t find %s, check spelling\n&quot;, name);
++     }
+      return error;
+    }
+    if (the_box.header_fd != -1) {
+***************
+*** 235,240 ****
+--- 300,308 ----
+    error = chdir(the_box.path);
+    if (error &lt; 0) {
+      syslog(LOG_ERR, &quot;Couldn&apos;t change directory to %s : %m&quot;, the_box.path);
++     if (verbose) {
++         fprintf( stderr, &quot;Couldn&apos;t change directory to %s : %m\n&quot;, the_box.path);
++     }
+      return error;
+    }
+    error = mailbox_open_index(&amp;the_box);
+***************
+*** 241,246 ****
+--- 309,317 ----
+    if (error != 0) {
+      mailbox_close(&amp;the_box);
+      syslog(LOG_ERR, &quot;Couldn&apos;t open mailbox index for %s&quot;, name);
++     if (verbose) {
++         fprintf( stderr, &quot;Couldn&apos;t open mailbox index for %s\n&quot;, name);
++     }
+      return error;
+    }
+    (void) mailbox_lock_index(&amp;the_box);
+***************
+*** 249,255 ****
+    mailbox_expunge(&amp;the_box, 1, purge_check, &amp;stats);
+    mailbox_close(&amp;the_box);
+  
+!   print_stats(&amp;stats);
+  
+    return 0;
+  }
+--- 320,327 ----
+    mailbox_expunge(&amp;the_box, 1, purge_check, &amp;stats);
+    mailbox_close(&amp;the_box);
+  
+!   if (verbose) print_stats(&amp;stats);
+!   if (whisper) whisper_stats(&amp;stats);
+  
+    return 0;
+  }
+***************
+*** 327,332 ****
+--- 399,410 ----
+      printf(&quot;Remaining bytes   \t\t %d\n&quot;,stats-&gt;total_bytes - stats-&gt;deleted_bytes
+);
+  }
+  
++ void whisper_stats(mbox_stats_t *stats)
++ {
++     printf(&quot;  Had:%7d  Deleted:%7d  Left:%7d\n&quot;, stats-&gt;total, 
++                                stats-&gt;deleted, stats-&gt;total - stats-&gt;deleted);
++ }
++ 
+  /* fatal needed for imap library */
+  void
+  fatal(const char *s, int code) {</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adam Tauno Williams">awilliam@whitemice.org</who>
+            <bug_when>2011-01-17 06:53:52 EDT</bug_when>
+            <thetext>The &quot;-M delete mail only in a single mailbox&quot; option provided by the patch in Bug#3092 may make this bug a duplicate of Bug#3092.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,136 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3899</bug_id>
+          
+          <creation_ts>2015-07-22 08:12 EDT</creation_ts>
+          <short_desc>EXAMINE reset \recent flag in statuscache</short_desc>
+          <delta_ts>2015-07-22 09:05:52 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Deniss Gaplevsky">slim@inbox.lv</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2015-07-22 08:12:48 EDT</bug_when>
+            <thetext>EXAMINE assumed to be read-only command and not change any imap data.
+It works fine until statuscache is enabled.
+EXAMINE updates statuscache with dropped \recent flags and STATUS returns no \recent from cache then.
+
+test case:
+send email to some user ( e.g. mail will go to testdev3/INBOX)
+
+one \recent from STATUS:
+--------------------------------------------------------------------
+. login testdev3 qwe
+. OK [CAPABILITY IMAP4rev1] User logged in SESSIONID=&lt;brat26-6875-1437483805-1&gt;
+. STATUS INBOX (MESSAGES RECENT UNSEEN UIDNEXT UIDVALIDITY)
+* STATUS INBOX (MESSAGES 834 RECENT 1 UIDNEXT 15225 UIDVALIDITY 1219070341 UNSEEN 3)
+. OK Completed
+. logout
+* BYE LOGOUT received
+
+one \recent from EXAMINE
+--------------------------------------------------------------------
+. login testdev3 qwe
+. OK [CAPABILITY IMAP4rev1] User logged in SESSIONID=&lt;brat26-6959-1437483832-1&gt;
+. EXAMINE INBOX
+* 834 EXISTS
+* 1 RECENT
+* FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+* OK [PERMANENTFLAGS ()] Ok
+* OK [UNSEEN 832] Ok
+* OK [UIDVALIDITY 1219070341] Ok
+* OK [UIDNEXT 15225] Ok
+* OK [HIGHESTMODSEQ 2770] Ok
+* OK [URLMECH INTERNAL] Ok
+. OK [READ-ONLY] Completed
+. logout
+* BYE LOGOUT received
+
+no \recent from STATUS, one from EXAMINE and then STATUS returns one \recent in same session (no statuscache used) in same session  !
+--------------------------------------------------------------------
+. login testdev3 qwe
+. OK [CAPABILITY IMAP4rev1] User logged in SESSIONID=&lt;brat26-6919-1437483866-1&gt;
+. STATUS INBOX (MESSAGES RECENT UNSEEN UIDNEXT UIDVALIDITY)
+* STATUS INBOX (MESSAGES 834 RECENT 0 UIDNEXT 15225 UIDVALIDITY 1219070341 UNSEEN 3)
+. OK Completed
+. EXAMINE INBOX
+* 834 EXISTS
+* 1 RECENT
+* FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+* OK [PERMANENTFLAGS ()] Ok
+* OK [UNSEEN 832] Ok
+* OK [UIDVALIDITY 1219070341] Ok
+* OK [UIDNEXT 15225] Ok
+* OK [HIGHESTMODSEQ 2770] Ok
+* OK [URLMECH INTERNAL] Ok
+. OK [READ-ONLY] Completed
+. STATUS INBOX (MESSAGES RECENT UNSEEN UIDNEXT UIDVALIDITY)
+* STATUS INBOX (MESSAGES 834 RECENT 1 UIDNEXT 15225 UIDVALIDITY 1219070341 UNSEEN 3)
+. OK Completed
+. logout
+* BYE LOGOUT received</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2015-07-22 08:39:18 EDT</bug_when>
+            <thetext>yeah, this came after https://bugzilla.cyrusimap.org/show_bug.cgi?id=3725 due SELECT and EXAMINE is same subroutine actually</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2015-07-22 09:05:52 EDT</bug_when>
+            <thetext>may be that way:
+
+--- cyrus-imapd-2.4.18.orig/imap/index.c        2015-07-06 06:38:29.000000000 +0300
++++ cyrus-imapd-2.4.18/imap/index.c     2015-07-22 16:04:38.000000000 +0300
+@@ -1229,7 +1229,7 @@
+        index_status(state, &amp;sdata);
+        /* RECENT is zero for everyone else because we wrote a new
+         * recentuid! */
+-       sdata.recent = 0;
++       if (!state-&gt;examining) sdata.recent = 0;
+        mailbox_unlock_index(state-&gt;mailbox, &amp;sdata);
+     }
+     else</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

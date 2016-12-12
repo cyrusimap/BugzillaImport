@@ -1,0 +1,200 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2300</bug_id>
+          
+          <creation_ts>2003-11-18 14:42 EDT</creation_ts>
+          <short_desc>segfault with cyradm</short_desc>
+          <delta_ts>2010-10-25 18:46:33 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andreas Hasenack">andreas@conectiva.com.br</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2003-11-18 14:42:53 EDT</bug_when>
+            <thetext>sasl-2.1.15
+cyrus-imapd-2.1.15
+perl-5.8.0
+
+I get a segfault with cyradm whenever I run it this way:
+# cyradm --user cyrus localhost
+Password:  &lt;--- here I type the wrong password
+Segmentation fault (core dumped)
+
+Logs show:
+Nov 18 17:36:45 pandora imapd[27295]: client response doesn&apos;t match what we
+generated
+Nov 18 17:36:45 pandora imapd[27295]: badlogin: localhost.localdomain[127.0.0.1]
+DIGEST-MD5 [SASL(-13): authentication failure: client response doesn&apos;t match
+what we generated]
+Nov 18 17:36:48 pandora perl: GSSAPI Error: Miscellaneous failure (No
+credentials cache found)
+
+However, if I specify the authmec, then it works as expected (no core dump, just
+access denied):
+# cyradm --user cyrus --auth DIGEST-MD5 localhost
+Password: (wrong password again)
+cyradm: cannot authenticate to server with DIGEST-MD5 as cyrus
+
+Logs:
+Nov 18 17:37:56 pandora imapd[27295]: client response doesn&apos;t match what we
+generated
+Nov 18 17:37:56 pandora imapd[27295]: badlogin: localhost.localdomain[127.0.0.1]
+DIGEST-MD5 [SASL(-13): authentication failure: client response doesn&apos;t match
+what we generated]
+Nov 18 17:37:59 pandora perl: No worthy mechs found
+
+If I specify the correct password in both attempts above, then I log in and
+there is no core dump.
+
+The backtrace (without debugging symbols, but it may help):
+#0  0x40230013 in strlen () from /lib/libc.so.6
+#1  0x403817ff in _sasl_canon_user () from /usr/lib/libsasl2.so.2
+#2  0x40504c73 in crammd5_server_plug_init () from /usr/lib/sasl2/libcrammd5.so.2
+#3  0x40383e1d in sasl_client_step () from /usr/lib/libsasl2.so.2
+#4  0x40378d05 in fillin_interactions () from
+/usr/lib/perl5/site_perl/5.8.0/i386-linux-thread-multi/auto/Cyrus/IMAP/IMAP.so
+#5  0x40378e70 in imclient_authenticate () from
+/usr/lib/perl5/site_perl/5.8.0/i386-linux-thread-multi/auto/Cyrus/IMAP/IMAP.so
+#6  0x40373f34 in XS_Cyrus__IMAP__authenticate () from
+/usr/lib/perl5/site_perl/5.8.0/i386-linux-thread-multi/auto/Cyrus/IMAP/IMAP.so
+#7  0x400995f9 in Perl_pp_entersub () from
+/usr/lib/perl5/5.8.0/i386-linux-thread-multi/CORE/libperl.so.5.8
+#8  0x40091dd9 in Perl_runops_standard () from
+/usr/lib/perl5/5.8.0/i386-linux-thread-multi/CORE/libperl.so.5.8
+#9  0x40037598 in perl_run () from
+/usr/lib/perl5/5.8.0/i386-linux-thread-multi/CORE/libperl.so.5.8
+#10 0x400373a5 in perl_run () from
+/usr/lib/perl5/5.8.0/i386-linux-thread-multi/CORE/libperl.so.5.8
+#11 0x0804931e in main ()
+#12 0x401d3654 in __libc_start_main () from /lib/libc.so.6
+
+Capability line from the imap server:
+* CAPABILITY IMAP4 IMAP4rev1 ACL QUOTA LITERAL+ MAILBOX-REFERRALS NAMESPACE
+UIDPLUS ID NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND SORT
+THREAD=ORDEREDSUBJECT THREAD=REFERENCES IDLE AUTH=DIGEST-MD5 AUTH=GSSAPI
+AUTH=CRAM-MD5 X-NETSCAPE
+
+If it&apos;s necessary, I can try to get a backtrace with full debug symbols.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2003-11-18 15:01:12 EDT</bug_when>
+            <thetext>Changing to gssapi. Hmm, it could be because I use MIT kerberos, not Heimdal.
+Version 1.3.1. I&apos;ll try to get gssapi working.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2003-11-18 15:20:07 EDT</bug_when>
+            <thetext>Did some more testing (sorry for the flood).
+After configuring GSSAPI properly, the segfault doesn&apos;t happen anymore when I
+enter a wrong password while using DIGEST-MD5. So, the events seem to be:
+- not specify a mechanism
+- the library chooses digest-md5
+- enter the wrong password
+- the library attempts another method, this time GSSAPI
+- if gssapi doesn&apos;t work, core dump. If it works, I just login.
+
+$ cyradm --user andreas pandora.distro.conectiva
+Password: 
+Cannot find termcap: Can&apos;t find a valid termcap file at
+/usr/lib/perl5/5.8.0/Term/ReadLine.pm line 333
+
+pandora.distro.conectiva&gt;
+
+Log for this login:
+Nov 18 18:16:58 pandora imapd[2026]: client response doesn&apos;t match what we generated
+Nov 18 18:16:58 pandora imapd[2026]: badlogin:
+pandora.distro.conectiva[10.0.17.30] DIGEST-MD5 [SASL(-13): authentication
+failure: client response doesn&apos;t match what we generated]
+Nov 18 18:17:01 pandora imapd[2026]: login: pandora.distro.conectiva[10.0.17.30]
+andreas GSSAPI User logged in
+
+And I have my krb5 ticket:
+$ klist|grep imap
+11/18/03 18:17:01  11/19/03 02:16:44  imap/pandora.distro.conectiva@DISTRO.CONECTIVA
+
+If I destroy the ticket:
+[andreas@pandora andreas]$ kdestroy
+[andreas@pandora andreas]$ cyradm --user andreas pandora.distro.conectiva
+Password: 
+Falha de segmentação (core dumped)
+
+If I just specify GSSAPI, then I get no core dump. The fallback seems to be
+related to this problem:
+$ cyradm --user andreas --auth GSSAPI pandora.distro.conectiva
+cyradm: cannot authenticate to server with GSSAPI as andreas
+
+Logs:
+Nov 18 18:19:28 pandora perl: GSSAPI Error: Miscellaneous failure (No
+credentials cache found)
+Nov 18 18:19:28 pandora perl: No worthy mechs found</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-11-25 12:37:52 EDT</bug_when>
+            <thetext>whoops, closed wrong bug.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-08-06 11:03:05 EDT</bug_when>
+            <thetext>The following patch done by Derrick J Brashear &lt;shadow@dementia.org&gt; fixed this
+issue for me in cyrus-sasl-2.1.18:
+
+--- plugins/cram.c      15 Dec 2003 20:04:22 -0000      1.83
++++ plugins/cram.c      5 Aug 2004 21:06:06 -0000
+@@ -507,7 +507,7 @@
+                                    sasl_out_params_t *oparams)
+ {
+     client_context_t *text = (client_context_t *) conn_context;
+-    const char *authid;
++    const char *authid = NULL;
+     sasl_secret_t *password = NULL;
+     unsigned int free_password = 0; /* set if we need to free password */
+     int auth_result = SASL_OK;
+
+I noticed that 2.1.19 doesn&apos;t have this patch applied, but I couldn&apos;t reproduce
+the segfault there. Perhaps it was fixed somewhere else, or the error just got a
+little harder to trigger.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

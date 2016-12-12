@@ -1,0 +1,94 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3109</bug_id>
+          
+          <creation_ts>2008-10-28 00:58 EDT</creation_ts>
+          <short_desc>quota&apos;s errmsg() function sends syslog format string to stderr</short_desc>
+          <delta_ts>2011-06-21 17:20:11 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>SNMP/logging</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.9</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Matt Selsky">selsky@columbia.edu</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Matt Selsky">selsky@columbia.edu</who>
+            <bug_when>2008-10-28 00:58:46 EDT</bug_when>
+            <thetext>imap/quota.c contains:
+
+void errmsg(const char *fmt, const char *arg, int err)
+{
+   char buf[1024];
+   size_t len;
+
+   len = snprintf(buf, sizeof(buf), fmt, arg);
+   if (len &lt; sizeof(buf))
+       len += snprintf(buf+len, sizeof(buf)-len, &quot;: %s&quot;, error_message(err));
+   if ((err == IMAP_IOERROR) &amp;&amp; (len &lt; sizeof(buf)))
+       len += snprintf(buf+len, sizeof(buf)-len, &quot;: %%m&quot;);
+
+   syslog(LOG_ERR, buf);
+   fprintf(stderr, &quot;%s\n&quot;, buf);
+}
+
+So, if we have an IMAP_IOERROR and we have room in the buffer, we append %m to the format string.  This string is only valid for syslog, and not for fprintf.  The result is log messages like the following sent to stderr:
+
+failed opening header for mailbox &apos;user.abc123.Folder&apos;: System I/O error: %m
+failed building quota list for &apos;*&apos;: System I/O error: %m</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-16 04:01:12 EDT</bug_when>
+            <thetext>Yeah, I&apos;ve seen this.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-18 09:49:42 EDT</bug_when>
+            <thetext>Taking over all quota-related tickets</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 09:34:32 EDT</bug_when>
+            <thetext>I&apos;m fixing it by using strerror(errno) and %s rather than %m.
+
+Will be fixed in 2.4.9.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

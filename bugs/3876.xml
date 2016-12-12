@@ -1,0 +1,101 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3876</bug_id>
+          
+          <creation_ts>2014-12-28 12:54 EDT</creation_ts>
+          <short_desc>full cpu usage on CLOSE_WAIT</short_desc>
+          <delta_ts>2014-12-28 13:09:15 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Xuefer">xuefer@gmail.com</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Xuefer">xuefer@gmail.com</who>
+            <bug_when>2014-12-28 12:54:33 EDT</bug_when>
+            <thetext>cyrus-sasl-2.1.26
+
+Linux x 3.15.5-hardened-r1 #1 SMP Mon Jul 28 13:22:02 CST 2014 x86_64 Intel(R) Xeon(R) CPU E5-2680 v2 @ 2.80GHz GenuineIntel GNU/Linux
+
+# strace -fp 29912 2&gt;&amp;1 | head
+Process 29912 attached
+select(9, [8], NULL, NULL, {0, 0})      = 1 (in [8], left {0, 0})
+read(8, &quot;&quot;, 951)                        = 0
+select(9, [8], NULL, NULL, {0, 0})      = 1 (in [8], left {0, 0})
+read(8, &quot;&quot;, 951)                        = 0
+select(9, [8], NULL, NULL, {0, 0})      = 1 (in [8], left {0, 0})
+read(8, &quot;&quot;, 951)                        = 0
+select(9, [8], NULL, NULL, {0, 0})      = 1 (in [8], left {0, 0})
+read(8, &quot;&quot;, 951)                        = 0
+select(9, [8], NULL, NULL, {0, 0})      = 1 (in [8], left {0, 0})
+
+# lsof -np 29912
+COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF      NODE NAME
+saslauthd 29912 root    8u  IPv4          180234875      0t0       TCP 127.0.0.1:48863-&gt;127.0.0.1:imap (CLOSE_WAIT)
+
+i don&apos;t know how to reproduce it, just leave it there for some days and it get reproduced on live server
+
+i believe auth_rimap.c is the code that get endless loop
+
+383         while( select (fds, &amp;perm, NULL, NULL, &amp;timeout ) &gt;0 ) {
+384            if ( FD_ISSET(s, &amp;perm) ) {
+385               ret = read(s, rbuf+rc, sizeof(rbuf)-rc);
+386               if ( ret&lt;0 ) {
+387                  rc = ret;
+388                  break;
+389               } else {
+390                  rc += ret;
+391               }
+392            }
+393         }
+
+&quot;man 2 read&quot; says
+RETURN VALUE
+       On  success,  the  number of bytes read is returned (zero indicates end of file)
+but the above code never handle the case &quot;ret == 0&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Xuefer">xuefer@gmail.com</who>
+            <bug_when>2014-12-28 13:09:15 EDT</bug_when>
+            <thetext>bug #3211 is relative to this bug</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,101 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2928</bug_id>
+          
+          <creation_ts>2007-03-30 09:25 EDT</creation_ts>
+          <short_desc>Missing calls to htonll in sync_commit.c ?</short_desc>
+          <delta_ts>2010-10-25 18:46:42 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="James Goodlet">j.s.goodlet@sussex.ac.uk</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="James Goodlet">j.s.goodlet@sussex.ac.uk</who>
+            <bug_when>2007-03-30 09:25:57 EDT</bug_when>
+            <thetext>Hi.  I&apos;ve just noticed an oddity in function sync_combine_commit in imap/sync_commit.c for Cyrus IMAP 
+2.3.8.  Around line 309, the code looks like this:
+
+    /* Fix up last_append time */
+    *((bit32 *)(buf+OFFSET_LAST_APPENDDATE)) = htonl(last_appenddate);
+
+    /* Fix up highest modseq */
+#ifdef HAVE_LONG_LONG_INT
+    if (highestmodseq &gt; *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64))) {
+        *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
+    }
+#else
+    if (highestmodseq &gt; *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ))) {
+        *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+        *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(highestmodseq);
+    }
+#endif
+
+    rewind(newindex);
+
+Note that the value of highestmodseq is converted to network byte order using htonl or htonll when 
+being written into the mailbox struct pointed to by buf, which is fine and correct.  But note that the 
+comparison of its value with that already in the mailbox struct immediately beforehand does _not_ 
+convert the stored value in buf to host order.
+
+Repeating for clarify, and consdering only the HAVE_LONG_LONG_INT case, should not the existing 
+lines:
+
+    if (highestmodseq &gt; *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64))) {
+        *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
+
+instead read:
+
+    if (highestmodseq &gt; ntohll(*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)))) {
+        *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
+
+I note that the equivalent code in the sync_append_commit function later in the code does do this 
+additional byte order conversion.
+
+Thanks, James</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-04-02 14:26:05 EDT</bug_when>
+            <thetext>Fixed in CVS.  Thanks.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

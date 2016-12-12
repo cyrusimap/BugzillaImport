@@ -1,0 +1,225 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3174</bug_id>
+          
+          <creation_ts>2009-10-14 05:42 EDT</creation_ts>
+          <short_desc>sync_client crashes with empty mech_list before TLS starts</short_desc>
+          <delta_ts>2010-10-25 18:33:46 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>2.3.17</target_milestone>
+          
+          <blocked>3279</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan">steffo76@gmx.de</reporter>
+          <assigned_to name="Wes Craig">wes@umich.edu</assigned_to>
+          <cc>bawood@umich.edu</cc>
+    
+    <cc>dave64@andrew.cmu.edu</cc>
+    
+    <cc>gyurco@freemail.hu</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+    
+    <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2009-10-14 05:42:55 EDT</bug_when>
+            <thetext>Hi there,
+
+with two nodes, one of them acting als sync_server, the other one as sync_client the sync_client crashes if on the sync_server side the following options are set in imapd.conf:
+
+sasl_mech_list: PLAIN
+syncserver_allowplaintext: 0
+
+In this case sync_server starts with an empty mech_list which leads to a crash in sync_client:
+
+Program received signal SIGSEGV, Segmentation fault.
+0x080967ef in xstrdup (str=0x0) at xmalloc.c:92
+92          char *p = xmalloc(strlen(str)+1);
+(gdb) bt
+#0  0x080967ef in xstrdup (str=0x0) at xmalloc.c:92
+#1  0x0805957d in backend_connect (ret_backend=0x0, 
+server=0xbfe4594d &quot;node1.zmnh.uni-hamburg.de&quot;, prot=0x811b760,
+     userid=0x80998e7 &quot;&quot;, cb=0x8135490, auth_status=0x0) at 
+backend.c:429
+#2  0x080530b6 in replica_connect (be=0x0, servername=0xbfe4594d 
+&quot;node1.zmnh.uni-hamburg.de&quot;, cb=0x8135490)
+     at sync_client.c:3392
+#3  0x080538d9 in main (argc=5, argv=0xbfe439c4) at sync_client.c:3682
+
+This trace is taken using version 2.3.14 where it says on line 429 of backend.c:
+
+char *mlist = xstrdup(mechlist);
+
+The greeting on the sync_server side looks like this:
+
+S: * STARTTLS
+S: * OK nod1.zmnh.uni-hamburg.de Cyrus sync server v2.3.14</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">gyurco@freemail.hu</who>
+            <bug_when>2010-01-10 16:03:30 EDT</bug_when>
+            <thetext>I can confirm this, I had to set allowplaintext: yes on the sync_server for sync_client to not segfault at start.
+However if the server cannot provide any authentication method, shouldn&apos;t it choke first?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-05-24 17:16:59 EDT</bug_when>
+            <thetext>Created an attachment (id=1280)
+allow NULL mech lists
+
+This patch will allow backend_authenticate() to proceed with a NULL mechlist.  This happens when PLAIN is the only mech offered, but plain text is not allowed.  Within backend_authenticate(), SSL can be negotiated and PLAIN will then be offered.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Brian Awood">bawood@umich.edu</who>
+            <bug_when>2010-05-24 17:45:17 EDT</bug_when>
+            <thetext>*** Bug 3224 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-08-06 14:04:26 EDT</bug_when>
+            <thetext>I think this bug is related to 3121.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-08-07 21:48:49 EDT</bug_when>
+            <thetext>*** Bug 3243 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-12 06:52:23 EDT</bug_when>
+            <thetext>Should the patch be used for 2.4.0 as well ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-19 04:29:37 EDT</bug_when>
+            <thetext>I think this issue is specific to 2.3 and 2.3 alone? Could someone please verify?
+
+If it applies to 2.4.1 as well, I&apos;m going to clone the report against 2.4.1 and the 2.4-next milestone as well.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephan">steffo76@gmx.de</who>
+            <bug_when>2010-10-19 05:41:59 EDT</bug_when>
+            <thetext>It is still the same in 2.4.1, this is sync_client from cyrus imap 2.4.1 while on the peer syncserver_allowplaintext: 0 is set:
+
+(gdb) run -lv -m user.example
+Starting program: /usr/local/cyrus-imapd-2.4.1/bin/sync_client -lv -m user.example
+[Thread debugging using libthread_db enabled]
+[New Thread 0xb72bcad0 (LWP 8088)]
+
+Program received signal SIGSEGV, Segmentation fault.
+0xb734d113 in strlen () from /lib/i686/libc.so.6
+
+(gdb) bt
+#0  0xb734d113 in strlen () from /lib/i686/libc.so.6
+#1  0x0808fa65 in xstrdup (str=0x0) at xmalloc.c:92
+#2  0x08054b00 in backend_connect (ret_backend=0x0, server=0x92b7730 &quot;testmachine.testdomain.xyz&quot;, prot=0x817e7c0, userid=0x8094e4d &quot;&quot;, cb=0x92a5a80, auth_status=0x0) at backend.c:536
+#3  0x0804cc13 in replica_connect (be=0x0, servername=0x92b7730 &quot;testmachine.testdomain.xyz&quot;, cb=0x92a5a80) at sync_client.c:2406
+#4  0x08051124 in main (argc=4, argv=0xbf92e304) at sync_client.c:2756</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-10-19 09:58:56 EDT</bug_when>
+            <thetext>The attached patch is has not been committed to 2.3.x or 2.4.x (where it ought to still be a problem).  Please try the attached patch and confirm that it fixes the problem.  Thanks!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-19 10:51:55 EDT</bug_when>
+            <thetext>(In reply to comment #9)
+&gt; The attached patch is has not been committed to 2.3.x or 2.4.x (where it ought
+&gt; to still be a problem).  Please try the attached patch and confirm that it
+&gt; fixes the problem.  Thanks!
+
+The attached patch is committed and pushed out to git.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-10-19 13:52:13 EDT</bug_when>
+            <thetext>Sorry, this needs the rest of the patch from 3279, as well, before it can be closed.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-25 18:33:46 EDT</bug_when>
+            <thetext>Applied to master:
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=aa8767ec2ca5eca230dbcf49795c8d1a2dca6fa0
+
+Picked to cyrus-imapd-2.3:
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.3&amp;id=2f9b2fb76306944ecccca25a6d7d36d9f46802bf</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1280</attachid>
+            <date>2010-05-24 17:16 EDT</date>
+            <desc>allow NULL mech lists</desc>
+            <filename>no-mech.diff</filename>
+            <type>text/plain</type>
+            <size>1179</size>
+            <attacher>wes@umich.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXAvYmFja2VuZC5jCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9hZnMvYW5kcmV3L3N5
+c3RlbS9jdnMvc3JjL2N5cnVzL2ltYXAvYmFja2VuZC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAx
+LjYyCmRpZmYgLXUgLXIxLjYyIGJhY2tlbmQuYwotLS0gaW1hcC9iYWNrZW5kLmMJMTEgTWF5IDIw
+MTAgMTU6MjE6MDAgLTAwMDAJMS42MgorKysgaW1hcC9iYWNrZW5kLmMJMjQgTWF5IDIwMTAgMjE6
+MTI6MzQgLTAwMDAKQEAgLTUxNSw3ICs1MTUsMTEgQEAKICAgICBpZiAoKHNlcnZlclswXSAhPSAn
+LycpIHx8CiAJKHN0cmNtcChwcm90LT5zYXNsX3NlcnZpY2UsICJsbXRwIikgJiYKIAkgc3RyY21w
+KHByb3QtPnNhc2xfc2VydmljZSwgImNzeW5jIikpKSB7Ci0JY2hhciAqbWxpc3QgPSB4c3RyZHVw
+KG1lY2hsaXN0KTsgLyogYmFja2VuZF9hdXRoIGlzIGRlc3RydWN0aXZlICovCisJY2hhciAqbWxp
+c3QgPSBOVUxMOworCisJaWYgKCBtZWNobGlzdCApIHsKKwkgICAgbWxpc3QgPSB4c3RyZHVwKG1l
+Y2hsaXN0KTsgLyogYmFja2VuZF9hdXRoIGlzIGRlc3RydWN0aXZlICovCisJfQogCiAJaWYgKChy
+ID0gYmFja2VuZF9hdXRoZW50aWNhdGUocmV0LCBwcm90LCAmbWxpc3QsIHVzZXJpZCwKIAkJCQkg
+ICAgICBjYiwgYXV0aF9zdGF0dXMpKSkgewpAQCAtNTU2LDYgKzU2MCwxMSBAQAogCiAJCW5ld19t
+ZWNobGlzdCA9IGFza19jYXBhYmlsaXR5KHJldC0+b3V0LCByZXQtPmluLCBwcm90LAogCQkJCQkg
+ICAgICAmcmV0LT5jYXBhYmlsaXR5LCBhdXRvX2NhcGEpOworCQkvKgorCQkgKiBBIGZsYXdlZCBj
+aGVjazogYmFja2VuZF9hdXRoZW50aWNhdGUoKSBtYXkgYmUgZ2l2ZW4gYQorCQkgKiBOVUxMIG1l
+Y2hsaXN0LCBuZWdvdGlhdGUgU1NMLCBhbmQgZ2V0IGEgbmV3IG1lY2hsaXN0LgorCQkgKiBUaGlz
+IG5ldywgY29ycmVjdCBtZWNobGlzdCB3b24ndCBiZSB2aXNpYmxlIGhlcmUuCisJCSAqLwogCQlp
+ZiAobmV3X21lY2hsaXN0ICYmIHN0cmNtcChuZXdfbWVjaGxpc3QsIG1lY2hsaXN0KSkgewogCQkg
+ICAgc3lzbG9nKExPR19FUlIsICJwb3NzaWJsZSBNSVRNIGF0dGFjazoiCiAJCQkgICAibGlzdCBv
+ZiBhdmFpbGFibGUgU0FTTCBtZWNoYW5pc21zIGNoYW5nZWQiKTsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

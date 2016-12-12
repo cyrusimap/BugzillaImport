@@ -1,0 +1,161 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3197</bug_id>
+          
+          <creation_ts>2010-03-01 14:10 EDT</creation_ts>
+          <short_desc>imaps connection leads to hanging daemon instances</short_desc>
+          <delta_ts>2011-06-02 15:26:05 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>REOPENED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bogdan Stancescu">bogdan@moongate.ro</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-01 14:10:53 EDT</bug_when>
+            <thetext>I&apos;m using sendmail + cyrus on CentOS 5, on a x64 machine. Everything works fine when clients connect via POP3. However, attempts to connect via imaps (port 993) lead to hanging imapd instances which use 100% CPU. They never die, and their number doesn&apos;t seem to be limited in time. I suspect that each new incoming imaps connection produces a new instance (that is, each subsequent attempt by a single client to connect produces a new instance).
+
+This used to happen with the stock 2.3.7 version; I upgraded manually to 2.3.16 and the problem is still present. I have not made any configuration changes related to SSL, and that may well be the source of the problem. But that should lead to error messages, not to the catastrophic failure I&apos;m experiencing.
+
+I have next to no experience with strace and friends, but I&apos;m willing to invest some time into helping to identify the problem if someone gives me instructions. In particular I don&apos;t know how I could dynamically hook strace to new imapd instances -- by the time I identify the hanging instances already running the information I can get out is pretty much useless (I only get one single line of code, repeated ad nauseaum).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 05:42:28 EDT</bug_when>
+            <thetext>Update: as expected, the problem disappears once the proper keys are set up.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 07:21:59 EDT</bug_when>
+            <thetext>No, the bug is not invalid -- I can assure you I ended up with a very unresponsive server because of this bug, as the CPU load reached 100 (and would&apos;ve kept growing). As I said in the original report, improperly setting up the SSL keys should lead to error messages, not to the catastrophic failure I was experiencing.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-03-10 07:26:14 EDT</bug_when>
+            <thetext>My guess is that your system is running out of entropy for the random number generator.  Try using /dev/urandom or Entropy Gathering Daemon</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 07:34:09 EDT</bug_when>
+            <thetext>You&apos;ve lost me there. You see, everything&apos;s working fine now, once I&apos;ve properly set up the keys in /etc/pki/tls/certs; I didn&apos;t have to do anything beside that, it simply started working once I set them up.
+
+Incidentally, attempting to use STARTTLS for authentication before setting up the keys did produce errors, as expected.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-03-10 07:35:42 EDT</bug_when>
+            <thetext>So what is the problem?  That if you don&apos;t configure SSL/TLS properly that you don&apos;t get error messages when attempting to use imaps?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 07:50:41 EDT</bug_when>
+            <thetext>Something like that, but much worse. More specifically, each new thread started when an incoming imaps connection hanged at 100% CPU. And each new connection started a *new* thread. So after N (failed) incoming connections you ended up with CPU load N. And that&apos;s not necessarily from N different clients -- a single client could start 100 new threads in less than two hours, if they configured they MUA to check for mail each minute. (Which is what happened in my case.)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 07:59:58 EDT</bug_when>
+            <thetext>A picture is worth 1000 words, so here:
+
+[Before setting up the keys]
+POP3/STARTTLS connection -&gt; new thread -&gt; error -&gt; thread dies
+
+IMAPS connection -&gt; new thread -&gt; thread silently hangs in an infinite loop
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-03-10 11:20:37 EDT</bug_when>
+            <thetext>imapd doesn&apos;t spin in an infinite loop.  It exits properly and errors are logged to syslog.  Master then tries to spawn another imapd process to service the client.  It would take some work to rewrite the code to gracefully handle what is clearly a configuration error (as noted by the syslog messages).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 11:37:50 EDT</bug_when>
+            <thetext>I very much doubt that&apos;s the case, since top used to show processes with stable pids at 100%...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-03-10 12:43:41 EDT</bug_when>
+            <thetext>My dev server behaves exactly as I describe.  I can&apos;t reproduce your problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 13:07:53 EDT</bug_when>
+            <thetext>If you&apos;re willing to direct me, I could test if I can replicate the problem again and give you whatever information you require to identify the issue. Please re-read the third paragraph in the original bug report for more info.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-03-10 13:09:51 EDT</bug_when>
+            <thetext>What line of code is spinning?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 13:18:43 EDT</bug_when>
+            <thetext>Hmm... Not only I&apos;m unable to replicate the original problem, but both STARTTLS and SSL work even though I renamed the files containing the certificates and restarted both Cyrus and sendmail. Who&apos;s caching those?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-03-10 13:22:17 EDT</bug_when>
+            <thetext>The services only read imapd.conf on startup.  Any currently running processes will continue to have the old config as long as they are reused.  You can either kill all of the imapd, pop3d, etc, or if you update imapd.conf (either via an actual edit, or using &apos;touch&apos;) the services will notice that the file has changed and shutdown when the client connection is done.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 13:26:30 EDT</bug_when>
+            <thetext>No joy. I touched imapd.conf, stopped the service, verified that all processes died with ps (they did), but upon restarting cyrus-imapd everything still works. It&apos;s a miracle! :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bogdan Stancescu">bogdan@moongate.ro</who>
+            <bug_when>2010-03-10 13:42:15 EDT</bug_when>
+            <thetext>I also tried pointing cyrus to a non-existent cert file. That finally changed something, but it ended up behaving properly. (That is, it issues errors and the threads die as they should.)
+
+I guess the only way to really test this would be to try it on a vanilla CentOS installation. I&apos;m using CentOS 5.4 (Final) -- if you have VMware installed somewhere on an x64 machine maybe you could try that. I&apos;m sorry I can&apos;t help any more, but that&apos;s the nature of the beast.
+
+Of course, please let me know if you can think of something else I could try.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-02 15:26:05 EDT</bug_when>
+            <thetext>FYI - Greg (gnb) has some patches for rate limiting spawning of new processes from master, so that if something causes imapd to crash on startup, it doesn&apos;t cause a DOS on the machine.
+
+He&apos;s on holiday at the moment, but we&apos;ll be pushing these back to cmu git once he&apos;s back and is satisfied that the patches are stable and safe.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

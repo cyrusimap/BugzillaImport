@@ -1,0 +1,123 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1192</bug_id>
+          
+          <creation_ts>2002-02-28 03:25 EDT</creation_ts>
+          <short_desc>saslauthd fails under high load?</short_desc>
+          <delta_ts>2010-10-25 18:46:29 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Walter Wong">wcw+bugz@cmu.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>leg+cyrus@andrew.cmu.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Walter Wong">wcw+bugz@cmu.edu</who>
+            <bug_when>2002-02-28 03:25:04 EDT</bug_when>
+            <thetext> </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Walter Wong">wcw+bugz@cmu.edu</who>
+            <bug_when>2002-02-28 03:28:26 EDT</bug_when>
+            <thetext>look at why saslauthd seems to crap out after too many connections have gone 
+through. testing was done with mstone. behavior was that it could do 1000 
+mstone connections from one machine. doing 1000 each from two machines 
+resulted in a bunch of failures. trying to run again with just one machine 
+ended up failing.
+
+maybe it makes sense to write a specific saslauthd test and remove imapd from 
+the loop to see if this behavior can be duplicated here -- problem could be 
+with the imapd.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-28 11:20:10 EDT</bug_when>
+            <thetext>So I took testsaslauthd and modified it to fork a couple processes before it
+started going, and have them all run in parallel.
+
+Running on mail-fe4 with 16 saslauthd processes results:
+16 testsaslauthds, 1000 connections each: No failures.
+32 testsaslauthds, 1000 connections each: 26000 failures.
+
+Now, I would have expected there to be 16000 failures in the testsaslauthd case.
+I&apos;m not quite sure why the failure rate is so high, but certainly saslauthd
+should be able to keep up with a fairly decent connection rate, and if not, we
+should increase the listen queue or increase the number of waiting threads.
+
+Other ideas?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-28 13:51:35 EDT</bug_when>
+            <thetext>so this is explainable by the fact that if all 16 saslauthds are waiting for the
+kerberos server, 5 more requests will be queued and all further requests will be
+rejected.
+
+since a rejected connection by your test client means your test client gets to
+wrap around and make yet another request very quickly (which will also probably
+fail) it&apos;s expected to have more than 16000 failures.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-28 14:05:03 EDT</bug_when>
+            <thetext>so, based on this, if there is a problem with our code, it&apos;s within the sasl
+library where it tries to make the connection to the saslauthd server.
+
+except that the test client is based off of the code in the sasl library (via
+copy and paste).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-05-08 13:05:56 EDT</bug_when>
+            <thetext>I think we&apos;ve determined that this isn&apos;t our fault at this point.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-05-08 13:07:40 EDT</bug_when>
+            <thetext>more details: solaris appears to have a bug where heavy use of unix domain
+sockets causes some sort of meltdown in the kernel.  socket operations start
+taking a long time (i observed one close() taking over 20 seconds).
+
+when saslauthd was having problems, ptloader was also experiencing issues.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

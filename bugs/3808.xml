@@ -1,0 +1,209 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3808</bug_id>
+          
+          <creation_ts>2013-08-22 03:48 EDT</creation_ts>
+          <short_desc>SIGFPE when not supplying Basic Auth</short_desc>
+          <delta_ts>2013-09-03 08:32:08 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>CalDAV</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alfie John">alfiej@fastmail.fm</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>robn@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2013-08-22 03:48:13 EDT</bug_when>
+            <thetext>When attempting to talk to the CalDav server, if the Basic Auth credentials weren&apos;t supplied, then the following error message was logged:
+
+  calendar/master[15786]: process 12885 exited, signaled to death by 8</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2013-08-23 09:04:09 EDT</bug_when>
+            <thetext>Can you be more specific when you say &quot;if the Basic Auth credentials
+weren&apos;t supplied&quot;?  Are you talking about the Authorization header not be present?  Or incomplete?  Or something else?
+
+Do you have a sample request or can you provide a backtrace?
+
+What version of the code are you running?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2013-08-26 00:15:49 EDT</bug_when>
+            <thetext>We&apos;ve managed to break it down a little bit further. So the SIGFPE occurs when:
+
+  - sasl_mech_list: PLAIN LOGIN DIGEST-MD5
+  - Authorization header is missing
+
+If you remove the DIGEST-MD5 open from sasl_mech_list, then it seems to work fine.
+
+Here&apos;s a sample test script to tickle the SIGFPE:
+
+  #!/usr/bin/perl
+                                                                                    
+  use LWP::UserAgent;
+                                                                                                              
+  my $ua = LWP::UserAgent-&gt;new;
+  my $req = HTTP::Request-&gt;new(&quot;PROPFIND&quot;, &quot;http://calendarServer/user/testuser/Default&quot;);
+  my $res = $ua-&gt;request($req);
+
+We&apos;re running 2.4.17.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2013-08-26 08:35:41 EDT</bug_when>
+            <thetext>What version of SASL?  Can you get a backtrace of the core dump?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Robert Norris">robn@fastmail.fm</who>
+            <bug_when>2013-08-27 08:13:58 EDT</bug_when>
+            <thetext>Created an attachment (id=1524)
+cyrus.conf</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Robert Norris">robn@fastmail.fm</who>
+            <bug_when>2013-08-27 08:14:48 EDT</bug_when>
+            <thetext>Created an attachment (id=1525)
+imapd.conf</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Robert Norris">robn@fastmail.fm</who>
+            <bug_when>2013-08-27 08:14:58 EDT</bug_when>
+            <thetext>SASL is libsasl2 from Debian, 2.1.25.dfsg1-6+deb7u1.
+
+Here&apos;s the backtrace using Debian&apos;s libsasl2 debug symbols:
+
+Program received signal SIGFPE, Arithmetic exception.
+digestmd5_server_mech_step1 (stext=0xb75f50, sparams=0xb47470, serverout=0x7fffa27a4a38, serveroutlen=0x7fffa27a4a34, 
+    oparams=&lt;error reading variable: Unhandled dwarf expression opcode 0xfa&gt;, clientinlen=&lt;error reading variable: Unhandled dwarf expression opcode 0xfa&gt;, 
+    clientin=&lt;error reading variable: Unhandled dwarf expression opcode 0xfa&gt;) at ../../plugins/digestmd5.c:2125
+2125	../../plugins/digestmd5.c: No such file or directory.
+(gdb) bt
+#0  digestmd5_server_mech_step1 (stext=0xb75f50, sparams=0xb47470, serverout=0x7fffa27a4a38, serveroutlen=0x7fffa27a4a34, 
+    oparams=&lt;error reading variable: Unhandled dwarf expression opcode 0xfa&gt;, clientinlen=&lt;error reading variable: Unhandled dwarf expression opcode 0xfa&gt;, 
+    clientin=&lt;error reading variable: Unhandled dwarf expression opcode 0xfa&gt;) at ../../plugins/digestmd5.c:2125
+#1  0x00002aaaaacde605 in sasl_server_step (serveroutlen=&lt;optimized out&gt;, serverout=0x7fffa27a4a38, clientinlen=&lt;optimized out&gt;, clientin=&lt;optimized out&gt;, conn=0xb46260)
+    at ../../lib/server.c:1614
+#2  sasl_server_step (conn=0xb46260, clientin=&lt;optimized out&gt;, clientinlen=&lt;optimized out&gt;, serverout=0x7fffa27a4a38, serveroutlen=&lt;optimized out&gt;) at ../../lib/server.c:1585
+#3  0x00002aaaaacdeae1 in sasl_server_start (conn=&lt;optimized out&gt;, mech=&lt;optimized out&gt;, clientin=clientin@entry=0x0, clientinlen=&lt;optimized out&gt;, serverout=serverout@entry=0x7fffa27a4a38, 
+    serveroutlen=serveroutlen@entry=0x7fffa27a4a34) at ../../lib/server.c:1543
+#4  0x000000000040c29e in http_auth (creds=&lt;optimized out&gt;, txn=txn@entry=0x7fffa27a5060) at httpd.c:2816
+#5  0x000000000040ddbf in response_header (code=code@entry=-1964266998, txn=txn@entry=0x7fffa27a5060) at httpd.c:2111
+#6  0x000000000040f2ea in write_body (code=-1964266998, txn=0x7fffa27a5060, 
+    buf=0xb75330 &quot;&lt;!DOCTYPE HTML PUBLIC \&quot;-//W3C//DTD HTML 4.01 Transitional//EN\&quot; \&quot;http://www.w3.org/TR/html4/loose.dtd\&quot;&gt;&lt;html&gt;&lt;head&gt;&lt;title&gt;401 Unauthorized&lt;/title&gt;&lt;/head&gt;&lt;body&gt;&lt;h1&gt;Unauthorized&lt;/h1&gt;&lt;p&gt;Must authenticate &quot;..., len=429) at httpd.c:2431
+#7  0x000000000041044f in cmdloop () at httpd.c:1353
+#8  0x000000000041186d in service_main (argc=argc@entry=1, argv=argv@entry=0xb3c010, envp=envp@entry=0x7fffa27aa258) at httpd.c:641
+#9  0x000000000040afbd in main (argc=&lt;optimized out&gt;, argv=&lt;optimized out&gt;, envp=0x7fffa27aa258) at service.c:582
+
+I can see I might need to recompile the lib myself to get any better info. Let me know.
+
+For reference, cyrus.conf and imapd.conf is attached.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2013-08-30 11:12:43 EDT</bug_when>
+            <thetext>I just started looking into this.  I am using the current caldav-2.4 with the cyrus-sasl-2.1.26 that comes with Fedora 19.  It doesn&apos;t crash, but authentication is broken.  Looking into the auth failure now.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2013-08-30 16:54:47 EDT</bug_when>
+            <thetext>OK.  I think I found the bug and have a fix for the DIGEST-MD5 plugin.  To verify, can you add the following option to imapd.conf and see if it solves your problem:
+
+sasl_reauth_timeout: 1</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Robert Norris">robn@fastmail.fm</who>
+            <bug_when>2013-09-02 21:36:38 EDT</bug_when>
+            <thetext>Yes, it no longer crashes with that option. Instead it correctly returns a 401 error.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2013-09-03 08:32:08 EDT</bug_when>
+            <thetext>OK.  The problem was a bug in the DIGEST-MD5 plugin where if the reauth_timeout was zero (no reauth cache), it was still trying to do cache lookups.  The fix is now in Git.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1524</attachid>
+            <date>2013-08-27 08:13 EDT</date>
+            <desc>cyrus.conf</desc>
+            <filename>cyrus.conf</filename>
+            <type>text/plain</type>
+            <size>324</size>
+            <attacher>robn@fastmail.fm</attacher>
+            
+              <data encoding="base64">U1RBUlQgewogIHJlY292ZXIgY21kPSJjdGxfY3lydXNkYiAtQyAvbG9jYWwvY3lydXNjYWwvaW1h
+cGQuY29uZiAtciIKfQoKU0VSVklDRVMgewogIGltYXAgICAgY21kPSJpbWFwZCAtQyAvbG9jYWwv
+Y3lydXNjYWwvaW1hcGQuY29uZiIgbGlzdGVuPSJpbWFwIiBwcmVmb3JrPTMKICBodHRwICAgIGNt
+ZD0iaHR0cGQgLUMgL2xvY2FsL2N5cnVzY2FsL2ltYXBkLmNvbmYiIGxpc3Rlbj0iaHR0cCIgcHJl
+Zm9yaz0yMAp9CgpFVkVOVFMgewogIGNoZWNrcG9pbnQgY21kPSJjdGxfY3lydXNkYiAtQyAvbG9j
+YWwvY3lydXNjYWwvaW1hcGQuY29uZiAtYyIgcGVyaW9kPTMwCn0K
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1525</attachid>
+            <date>2013-08-27 08:14 EDT</date>
+            <desc>imapd.conf</desc>
+            <filename>imapd.conf</filename>
+            <type>text/plain</type>
+            <size>323</size>
+            <attacher>robn@fastmail.fm</attacher>
+            
+              <data encoding="base64">c2VydmVybmFtZTogY2FsZW5kYXIxCnN5c2xvZ19wcmVmaXg6IGNhbGVuZGFyCmFkbWluczogYWRt
+aW4gcmVwbHVzZXIKY29uZmlnZGlyZWN0b3J5OiAvbG9jYWwvY3lydXNjYWwvY29uZgpwYXJ0aXRp
+b24tZGVmYXVsdDogL2xvY2FsL2N5cnVzY2FsL2RhdGEKc2FzbF9wd2NoZWNrX21ldGhvZDogc2Fz
+bGF1dGhkCnNhc2xfbWVjaF9saXN0OiBQTEFJTiBMT0dJTiBESUdFU1QtTUQ1CmFsbG93cGxhaW50
+ZXh0OiB5ZXMKdmlydGRvbWFpbnM6IHVzZXJpZApkZWZhdWx0ZG9tYWluOiBpbnRlcm5hbApodHRw
+bW9kdWxlczogY2FsZGF2IGNhcmRkYXYKYXVkaXRsb2c6IHllcwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

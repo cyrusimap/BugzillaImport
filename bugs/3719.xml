@@ -1,0 +1,114 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3719</bug_id>
+          
+          <creation_ts>2012-07-16 11:57 EDT</creation_ts>
+          <short_desc>latest message never become SEEN with popuseimapflags &amp; popuseacl</short_desc>
+          <delta_ts>2012-07-17 13:13:54 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>POP</component>
+          <version>2.4.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Deniss Gaplevsky">slim@inbox.lv</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-07-16 11:57:51 EDT</bug_when>
+            <thetext>latest message never become SEEN with popuseimapflags &amp; popuseacl
+
+--- imap/pop3d.c.orig   2012-04-19 12:39:51.000000000 +0300
++++ imap/pop3d.c.fixed  2012-07-16 18:45:08.198817652 +0300
+@@ -2060,7 +2060,7 @@
+ 
+     /* we know this mailbox must be owned by the user, because 
+      * all POP mailboxes are */
+-    for (i = 0; i &lt; popd_exists; i++) {
++    for (i = 0; i &lt;= popd_exists; i++) {
+        if (!popd_msg[i].seen)
+            continue; /* don&apos;t even need to check */
+        if (mailbox_read_index_record(popd_mailbox, popd_msg[i].recno, &amp;record))</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-07-16 17:12:31 EDT</bug_when>
+            <thetext>I&apos;m worried about this patch from first read, if you look everywhere else that &quot;exists&quot; counts are used, the pattern is:
+
+for (i = 1; i &lt;= exists; i++) {
+   do_stuff(map[i-1]);
+}
+
+So I don&apos;t really think this fix is right - it iterates exists+1 times.  Maybe exists is being set wrong, but we should fix that instead.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-07-17 05:04:06 EDT</bug_when>
+            <thetext>indeed in all other funcs in pop3d.c is used like
+    for (msgno = 1; msgno &lt;= popd_exists; msgno++) {
+        if (!popd_msg[msgno].deleted)
+
+so i assume right patch should be
+
+--- imap/pop3d.c.orig   2012-04-19 12:39:51.000000000 +0300
++++ imap/pop3d.c.fixed  2012-07-16 18:45:08.198817652 +0300
+@@ -2060,7 +2060,7 @@
+
+     /* we know this mailbox must be owned by the user, because 
+      * all POP mailboxes are */
+-    for (i = 0; i &lt; popd_exists; i++) {
++    for (i = 1; i &lt;= popd_exists; i++) {
+        if (!popd_msg[i].seen)
+            continue; /* don&apos;t even need to check */
+        if (mailbox_read_index_record(popd_mailbox, popd_msg[i].recno,
+&amp;record))
+
+but you know better</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-07-17 12:54:38 EDT</bug_when>
+            <thetext>Yeah, that&apos;s the right fix.  I&apos;ll apply that to 2.4.  For 2.5, I&apos;m changing to call it popd_map instead (similar to index_map) and indexing it from zero like everything else.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-07-17 13:13:54 EDT</bug_when>
+            <thetext>Fixes pushed to master and 2.4.  Thanks.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

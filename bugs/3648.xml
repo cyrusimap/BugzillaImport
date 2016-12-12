@@ -1,0 +1,447 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3648</bug_id>
+          
+          <creation_ts>2012-02-23 22:42 EDT</creation_ts>
+          <short_desc>Bad signal handling logic in lib/signals.c</short_desc>
+          <delta_ts>2012-03-27 00:49:14 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          <dependson>3100</dependson>
+          <blocked>3656</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-02-23 22:42:56 EDT</bug_when>
+            <thetext>From email
+
+On Thu, Feb 23, 2012, at 05:07 AM, Jenkins wrote:
+&gt; See &lt;http://ci.cyrusimap.org/job/cyrus-imapd-master/410/&gt;
+&gt; 
+&gt; ------------------------------------------
+&gt; [...]
+&gt; + exitcode=1
+&gt; + &apos;[&apos; -x jenkins-xml-summary.pl &apos;]&apos;
+&gt; + ./jenkins-xml-summary.pl
+&gt; --build-url=http://ci.cyrusimap.org/job/cyrus-imapd-master/410/
+&gt; Test failures and errors summary
+&gt; ================================
+
+Ok, so the good news first.
+
+ * these test failure report URLs are now correct
+
+ * the stray process killer in autobuild.sh is working
+
+Now for the test failures.  Thirty-four of these thirty-five appear to be of the nature
+
+&gt; test_dup_keep_keep(Cassandane::Cyrus::Sieve)
+&gt;      Perl exception: Some process is already listening on 127.0.0.1:9101
+
+which AFAICS are all cascading failures due to Cyrus failing to shut down correctly here:
+
+&gt; 
+&gt; Cassandane::Cyrus::Bug3072.copy_longset
+&gt;     http://ci.cyrusimap.org/job/cyrus-imapd-master/410//testReport/%28root%29/Cassandane__Cyrus__Bug3072/test_copy_longset/
+
+which is thorny one.  The error message is
+
+Error Message
+
+Perl exception: Cannot shut down master pid 14360     
+
+Stacktrace
+
+test_copy_longset(Cassandane::Cyrus::Bug3072)
+     Perl exception: Cannot shut down master pid 14360
+     at Cassandane/Instance.pm line 831
+    	Cassandane::Instance::stop(&apos;Cassandane::Instance=HASH(0x1db7eb80)&apos;) called at Cassandane/Cyrus/TestCase.pm line 255
+    	Cassandane::Cyrus::TestCase::tear_down(&apos;Cassandane::Cyrus::Bug3072=HASH(0x1c2642d0)&apos;) called at Cassandane/Cyrus/Bug3072.pm line 64
+    	Cassandane::Cyrus::Bug3072::tear_down(&apos;Cassandane::Cyrus::Bug3072=HASH(0x1c2642d0)&apos;) called at /usr/lib/perl5/vendor_perl/5.8.8/Test/Unit/TestCase.pm line 65
+
+So Cassandane::Instance::_stop_pid() returned false.  This happens because it fails to shut
+down the master process gracefully, where &quot;graceful&quot; means the master terminates within about
+20 seconds of receiving SIGQUIT.
+
+We can see the sequence in syslog
+
+Feb 23 05:04:55 hudson-01 cassandane: =====&gt; Instance[826] stop 
+Feb 23 05:04:55 hudson-01 cassandane: =====&gt; Instance[804] _stop_pid: sending signal 3 to 14360 
+Feb 23 05:05:24 hudson-01 cassandane: =====&gt; Instance[811] _stop_pid: failed to shut down pid 14360 with signal 3 
+Feb 23 05:05:24 hudson-01 cassandane: =====&gt; Instance[804] _stop_pid: sending signal 4 to 14360 
+Feb 23 05:05:24 hudson-01 cassandane: =====&gt; Util::Wait[75] Waited 0.011758 sec for unknown condition 
+
+At 05:04:55, _stop_pid() sent SIGQUIT (signal 3) to the master process.  Twenty-nine seconds
+later, it gave up waiting and sent SIGILL (signal 4) in the hope of getting a core file.  Twelve
+milliseconds later that hope was fulfilled.
+
+There&apos;s nothing else interesting in the log.  In particular, no unusual messages from master.
+The previous message which mentions instance starting is
+
+Feb 23 05:03:17 hudson-01 cassandane: =====&gt; Instance[688] start main instance for test test_copy_longset: basedir /var/tmp/cass/1003145
+
+I logged in earlier this morning and grabbed a copy of that directory before the next
+build ran (each build removes the leftovers from the previous one and I&apos;m now wondering
+whether that&apos;s a good thing).
+
+gnb@hudson-01 2002 ls -l 1003145/conf/cores/
+total 840
+-rw------- 1 gnb gnb 851968 Feb 23 05:05 core.14360
+
+gnb@hudson-01 2004 file 1003145/conf/cores/core.14360 
+1003145/conf/cores/core.14360: ELF 64-bit LSB core file AMD x86-64, version 1 (SYSV), SVR4-style, from &apos;master&apos;
+
+gnb@hudson-01 2005 gdb /var/lib/jenkins/jobs/cyrus-imapd-master/workspace/inst/usr/cyrus/bin/master 1003145/conf/cores/core.14360
+...
+Program terminated with signal 4, Illegal instruction.
+#0  0x0000000000406903 in child_janitor (now=...) at master.c:1060
+1060		janitor_position = janitor_position % child_table_size;
+
+(gdb) bt
+#0  0x0000000000406903 in child_janitor (now=...) at master.c:1060
+#1  0x000000000040c916 in main (argc=12, argv=0x7fffade2ce88) at master.c:2272
+
+At this point I poked around and eventually worked out that master was busy
+looping into and out of the main select loop and the janitor code, but the janitor
+code itself wasn&apos;t stuck in a loop.
+
+The child table contains exactly one entry.
+
+(gdb) p ctable
+$1 = {0x0 &lt;repeats 4366 times&gt;, 0x13be10a0, 0x0 &lt;repeats 5633 times&gt;}
+
+(gdb) p *(struct centry *)0x13be10a0
+$2 = {pid = 14366, service_state = SERVICE_STATE_READY, janitor_deadline = 0, si = 0, next = 0x0}
+
+According to syslog, pid 14366 was an imapd
+
+Feb 23 05:03:17 hudson-01 1003145/imap[14366]: login: localhost.localdomain [127.0.0.1] admin plaintext User logged in SESSIONID=&lt;1003145-14366-1329991397-1&gt;
+
+This explains why master didn&apos;t die, it&apos;s waiting for this child imapd to die.  Indeed,
+we see the struct service has the correct nactive and ready_workers counts
+
+(gdb) p Services[0]
+$5 = {name = 0x13be12c0 &quot;imap&quot;, listen = 0x13be1120 &quot;127.0.0.1:9104&quot;, proto = 0x13be1280 &quot;tcp&quot;, exec = 0x13be1360, babysit = 0, 
+  associate = 0, family = 2, socket = 5, stat = {7, 9}, desired_workers = 0, max_workers = 2147483647, maxfds = 256, 
+  maxforkrate = 0, ready_workers = 1, nforks = 1, nactive = 1, nconnections = 2, forkrate = 0, nreadyfails = 0, 
+  last_interval_start = {tv_sec = 1329991397, tv_usec = 543872}, interval_forks = 1}
+
+So what went wrong?
+
+1078	static void sigquit_handler(int sig __attribute__((unused)))
+1079	{
+...
+1095	    /* Set a flag so main loop knows to shut down when
+1096	       all children have exited */
+1097	    in_shutdown = 1;
+
+(gdb) p in_shutdown
+$6 = 1
+
+So we did receive SIGQUIT and run sigquit_handler, which re-sends SIGQUIT to
+master&apos;s process group.  That should have killed off imapd.  Because autobuild.sh
+now cleans up stray processes, there&apos;s no evidence that it failed to shut down.  We
+don&apos;t have &apos;auditlog&apos; set in imapd.conf so there&apos;s no message in syslog when an
+imapd shuts down gracefully, and so no evidence that it succeeded in shutting
+down.  What we have in fact is a big question mark.
+
+There&apos;s a number of possible failure modes here, but basically either
+
+a) imapd might have died and master failed to notice.
+
+b) imapd might have decided not to die.
+
+So did happen in imapd?  From syslog we see
+
+Feb 23 05:04:55 hudson-01 1003145/imap[14366]: USAGE cassandane user: 2.518617 sys: 1.865716
+
+so telemetry_rusage() was called.  We don&apos;t create any shutdown file in this test,
+so this means imapd processed a LOGOUT command, which is to be expected as
+Cassandane is running the test&apos;s tear_down method. This means cmdloop() would
+have returned, and service_main() also, back to main() in master/service.c.
+
+At this point, imapd would have sent a MASTER_SERVICE_AVAILABLE status
+message to master, which is consistent with the centry being in state
+SERVICE_STATE_READY.  Imapd then goes back around and accept()s.  What
+probably happens here is that accept() returns with EINTR and signals_poll() is
+called.
+
+It seems like signals_poll() should be driving the whole sequence of dealing
+with SIGQUIT, by detecting it and calling shut_down(). Here&apos;s what it does
+
+107 int signals_poll(void)
+108 {
+109     switch (gotsignal) {
+110     case SIGINT:
+111     case SIGQUIT:
+112         if (shutdown_cb) shutdown_cb(EC_TEMPFAIL);
+113         else exit(EC_TEMPFAIL);
+114         break;
+115     default:
+116         return gotsignal;
+117         break;
+118     }           
+119     return 0; /* compiler warning stupidity */
+120 }
+
+and where is gotsignal set?
+
+ 55 static volatile sig_atomic_t gotsignal = 0;
+ 56 
+ 57 static void sighandler(int sig)
+ 58 {
+ 59     /* syslog(LOG_DEBUG, &quot;got signal %d&quot;, sig); */
+ 60     gotsignal = sig;
+ 61 }
+
+and guess what, sighandler is set up as the signal handler for SIGQUIT,
+SIGALRM, SIGHUP and SIGINT.  So we handle only the *last received*
+of all those signals.  If SIGQUIT is received, followed by (say) SIGALRM,
+we never even notice SIGQUIT. 
+
+Hmm, that&apos;s definitely a bug and would explain the observed behaviour,
+although it&apos;s not the only possibility.  I&apos;ll raise a Bugzilla ticket.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-02-24 01:41:33 EDT</bug_when>
+            <thetext>Ok, so some more digging reveals that there&apos;s a bunch more
+signal handling ugliness going on.
+
+The Master.prefork test is almost reliably leaking a lemming
+process.  One such run leaked pid 829, and with some extra
+syslog()s in lemming.c, I see
+
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Unit::SyslogListener[72] Cassandane test test_prefork starting.
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[357] single successful service
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[688] start unknown: basedir /var/tmp/cass/0510316
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[1063] Running: &quot;/usr/sbin/saslpasswd2&quot; &quot;-f&quot; &quot;/var/tmp/cass/0510316/conf/sasldb2&quot; &quot;-c&quot; &quot;-p&quot; &quot;admin
+&quot;
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[1063] Running: &quot;/home/gnb/software/cyrus/inst/usr/cyrus/bin/master&quot; &quot;-C&quot; &quot;/var/tmp/cass/0510316/c
+onf/imapd.conf&quot; &quot;-l&quot; &quot;255&quot; &quot;-p&quot; &quot;/var/tmp/cass/0510316/run/cyrus.pid&quot; &quot;-d&quot; &quot;-M&quot; &quot;/var/tmp/cass/0510316/conf/cyrus.conf&quot;
+Feb 24 16:11:35 gnb-desktop 0510316/master[824]: setrlimit: Unable to set file descriptors limit to -1: Operation not permitted
+Feb 24 16:11:35 gnb-desktop 0510316/master[824]: retrying with 4096 (current max)
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[535] _start_master: waiting for PID file
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[538] _start_master: PID file present and correct
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[544] _start_master: PID waiting for services
+Feb 24 16:11:35 gnb-desktop lemming[825]: XXX Blocked signals: 17(Child exited)
+Feb 24 16:11:35 gnb-desktop lemming[825]: XXX sigaction(SIGQUIT) = { handler=(nil) action=(nil) flags=0x0 }
+Feb 24 16:11:35 gnb-desktop lemming[825]: lemming serving
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Service[269] is_listening: service A is listening on 127.0.0.1:9100
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[555] _start_master: all services listening
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[362] preforked, so one lemming running already
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Util::Socket[61] create_client_socket INET host=127.0.0.1 port=9100
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop lemming[827]: XXX Blocked signals: 17(Child exited)
+Feb 24 16:11:35 gnb-desktop lemming[827]: XXX sigaction(SIGQUIT) = { handler=(nil) action=(nil) flags=0x0 }
+Feb 24 16:11:35 gnb-desktop lemming[827]: lemming serving
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=827
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Util::Wait[75] Waited 0.010494 sec for master to prefork the configured lemmings
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[369] connected so one lemming forked
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=827
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Util::Socket[61] create_client_socket INET host=127.0.0.1 port=9100
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=827
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop lemming[828]: XXX Blocked signals: 17(Child exited)
+Feb 24 16:11:35 gnb-desktop lemming[828]: XXX sigaction(SIGQUIT) = { handler=(nil) action=(nil) flags=0x0 }
+Feb 24 16:11:35 gnb-desktop lemming[828]: lemming serving
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=827
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=828
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Util::Wait[75] Waited 0.010648 sec for master to prefork the configured lemmings
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[376] connected again so two additional lemmings forked
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=827
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=828
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop lemming[825]: lemming exiting normally
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Util::Wait[75] Waited 0.010148 sec for master to reap lemming 825
+Feb 24 16:11:35 gnb-desktop lemming[827]: lemming exiting normally
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Util::Wait[75] Waited 0.010134 sec for master to reap lemming 827
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[383] always at least one live lemming
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=827
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=828
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[133] found lemming tag=A pid=825
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Cyrus::Master[167] culled lemming tag=A pid=828
+Feb 24 16:11:35 gnb-desktop 0510316/master[824]: process 828 exited, signaled to death by 9
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[826] stop
+Feb 24 16:11:35 gnb-desktop 0510316/master[824]: service A pid 828 in READY state: terminated abnormally
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Instance[804] _stop_pid: sending signal 3 to 824
+Feb 24 16:11:35 gnb-desktop 0510316/master[824]: All children have exited, closing down
+Feb 24 16:11:35 gnb-desktop lemming[829]: XXX Blocked signals: 17(Child exited)
+Feb 24 16:11:35 gnb-desktop lemming[829]: XXX sigaction(SIGQUIT) = { handler=0x1 action=0x1 flags=0x0 }
+Feb 24 16:11:35 gnb-desktop lemming[829]: lemming serving
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Util::Wait[75] Waited 0.010167 sec for unknown condition
+Feb 24 16:11:35 gnb-desktop cassandane: =====&gt; Unit::SyslogListener[98] Cassandane test test_prefork ending, 0 failures 0 errors.
+
+Note how most of the lemmings were started with the SIGQUIT
+handler set to 0 = SIG_DFL, but the one which leaked had
+1 = SIG_IGN.  This Isn&apos;t Supposed To Happen (tm).  The SIGQUIT
+handler in master expects all children to handle SIGQUIT or
+die, not ignore it.
+
+But.
+
+It does this:
+
+1078 static void sigquit_handler(int sig __attribute__((unused)))
+1079 {
+1080     struct sigaction action;
+1081 
+1082     /* Ignore SIGQUIT ourselves */
+1083     sigemptyset(&amp;action.sa_mask);
+1084     action.sa_flags = 0;
+1085     action.sa_handler = SIG_IGN;
+1086     if (sigaction(SIGQUIT, &amp;action, (struct sigaction *) 0) &lt; 0) {
+1087         syslog(LOG_ERR, &quot;sigaction: %m&quot;);
+1088     }
+1089 
+1090     /* send our process group a SIGQUIT */
+1091     if (kill(0, SIGQUIT) &lt; 0) {
+1092         syslog(LOG_ERR, &quot;sigquit_handler: kill(0, SIGQUIT): %m&quot;);
+1093     }
+1094 
+1095     /* Set a flag so main loop knows to shut down when
+1096        all children have exited */
+1097     in_shutdown = 1;
+1098 
+1099     /* syslog(LOG_INFO, &quot;attempting clean shutdown on SIGQUIT&quot;); */
+1100 }
+
+and in the rest of the code we check the in_shutdown flag to
+avoid spawning any new processes:
+
+2113         /* do we have any services undermanned? */
+2114         for (i = 0; i &lt; nservices; i++) {
+...
+2116             if (!in_shutdown) {
+...
+2120                     spawn_service(i);
+
+
+So it looks like this test is triggering the following sequence.
+
+1.  Cassandane runs Master.test_prefork(), which creates a service
+    with the parameter prefork=1, starts the instance and exercises
+    it a bit.  When test_prefork() finishes, the instance is still
+    running, with 1 master process and 1 lemming (because of the
+    prefork parameter).
+
+2.  Cassandane runs Master.tear_down(), which runs lemming_cull()
+
+3.  lemming_cull() finds all the currently running lemmings and
+    kills them with signal 9.
+
+4.  The master process notices that it&apos;s lemming died and starts
+    to fork another one.  It checks the in_shutdown flag, which
+    is 0 because SIGQUIT has not been received, and calls
+    spawn_service().
+
+5.  Meanwhile, Cassandane is racing with master.  lemming_cull()
+    returns and tear_down() calls SUPER::tear_down, which calls
+    Instance.stop(), which sends a SIGQUIT to master.
+
+6.  Meanwhile, master is running spawn_service() but has not yet
+    fork()ed.  The SIGQUIT handler runs, sets the kernel&apos;s SIGQUIT
+    handler to SIG_IGN, and sets in_shutdown, then returns.
+
+7.  Now master is back in spawn_service(), and fork()s a child
+    which will become the new lemming, which inherits the SIGQUIT
+    handler set to SIG_IGN.
+
+So there are two reasons why this lemming will be leaked.
+
+a) the re-send of SIGQUIT occurs *before* the lemming is forked, and
+
+b) even so, the lemming is ignoring SIGQUIT.
+
+The important lesson is, Don&apos;t Do Anything Significant In Signal Handlers.
+
+Relating this to Bug 3100 where Wes Craig reports the same problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-02-27 20:10:17 EDT</bug_when>
+            <thetext>Ok, there were numerous problems here including several race conditions.
+I think I have most of them solved, except the whole IDLE subsystem.
+
+The following changes since commit bd9c86792dec4c208cf1abc08215ce3d69b96c0b:
+
+  autobuild: clean up leftover Cassandane processes (2012-02-23 13:01:31 +1100)
+
+are available in the git repository at:
+  ssh://git.cyrusimap.org/git/cyrus-imapd master
+
+Greg Banks (9):
+      Bug 3648 - lib/signals.c handles multiple signals
+      Bug 3648 - master handles SIGQUIT synchronously
+      master: don&apos;t busyloop after SIGQUIT
+      Remove unused dead definitions of printstring()
+      autobuild.sh: show any leaked processes
+      cyr_expire: better signal handling
+      idled: better signal handling
+      lib/signals.c: better signal handling
+      Bug 3100 master: handle SIGTERM synchronously
+
+ autobuild.sh          |    1 +
+ imap/cli_fatal.c      |    8 ---
+ imap/cyr_expire.c     |   14 ++++--
+ imap/fud.c            |    6 ---
+ imap/idled.c          |   20 +++-----
+ imap/smmapd.c         |    6 ---
+ imap/sync_server.c    |    7 ---
+ lib/signals.c         |   40 ++++++++++------
+ master/master.c       |  121 ++++++++++++++++++++++++++++---------------------
+ notifyd/notifyd.c     |    7 ---
+ ptclient/ptloader.c   |    6 ---
+ timsieved/timsieved.c |    7 ---
+ 12 files changed, 113 insertions(+), 130 deletions(-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-27 00:49:14 EDT</bug_when>
+            <thetext>Last part of Cyrus signals cleanup will happen in Bug 3656.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,1257 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3771</bug_id>
+          
+          <creation_ts>2013-02-11 12:31 EDT</creation_ts>
+          <short_desc>Various fixes/changes/enhancements for master/service handling</short_desc>
+          <delta_ts>2013-03-27 22:13:08 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-11 12:31:25 EDT</bug_when>
+            <thetext>Here is a set of commits that try to fix some bugs, or propose changes/enhancements in master/service handling
+
+Repository: git://github.com/worldline-messaging/cyrus-imapd.git
+Branch: master-changes
+Commits:
+
+491164bf30278a2bfc994eb17b54da15f4af482c (https://github.com/worldline-messaging/cyrus-imapd/commit/491164bf30278a2bfc994eb17b54da15f4af482c)
+This one allow fast service recycling upon SIGHUP (more useful with one of the following commits)
+
+df33c9908d435637a953dfda3f0c94e641736966 (https://github.com/worldline-messaging/cyrus-imapd/commit/df33c9908d435637a953dfda3f0c94e641736966)
+This one fixes a crash due to double data freeing (data shared between primary and non-primary service instances). Kept for commits history as one of the following commits refactor the code.
+
+29c878f7bca1b5e1862423458ea5a3496b176254 (https://github.com/worldline-messaging/cyrus-imapd/commit/29c878f7bca1b5e1862423458ea5a3496b176254)
+This one fixes a rare case where syslogs could end up printed on the protocol socket :D. Also kept for commits history as one of the following commits refactor the code.
+
+063c626053c820a205a86f5978fc34c7d3c7d8c8 (https://github.com/worldline-messaging/cyrus-imapd/commit/063c626053c820a205a86f5978fc34c7d3c7d8c8)
+After a few issues (e.g. see the 2 preceding commits), here is a &apos;light&apos; refactoring of services handling in master code.
+First I added the service protocol in logs, because it is useful when trying to see what&apos;s happening with IPv4/IPv6 instances.
+Then I tried to &apos;simplify&apos; the way service entries are handled: completly free the entry when it is removed, otherwise (active, or disabled but not yet removed) all useful information remain until entry is either re-activated or removed. This way I was able to fix a few issues when dealing with non-primary instances (e.g. non-primary instance could not be re-activated (SIGHUP) until primary instance was also deactivated/removed).
+
+5cb2c517a4edfa32b4d9871a05083d67056cce55 (https://github.com/worldline-messaging/cyrus-imapd/commit/5cb2c517a4edfa32b4d9871a05083d67056cce55)
+This one propagates SIGHUP from master to running instances. Coupled with commit 491164bf30278a2bfc994eb17b54da15f4af482c, this allow immediate recycling of unused processes, e.g. when changing configuration.
+
+0e0f634e5edad6574e1e6150547bde13fb9ceef2 (https://github.com/worldline-messaging/cyrus-imapd/commit/0e0f634e5edad6574e1e6150547bde13fb9ceef2)
+Not sure if this one would be useful to you, but it is used to allow faster restarting of cyrus master: upon clean shutdown, resources (listening sockets and pid file) are released so that another master instance can be started right away. Of course we try to cope with a slight delay when starting master.
+It also comes with an option to somehow force processes to end after a given timeout (for those which may be stuck somewhere).
+
+89759a78e12eb257bec67d6abfec855184feee34 (https://github.com/worldline-messaging/cyrus-imapd/commit/89759a78e12eb257bec67d6abfec855184feee34)
+You may not want this one.
+It&apos;s a bit off topic, but we are thinking of keeping the master process run as root with this commit. We tend not to give the &apos;cyrus&apos; user extra privileges, quite the contrary in fact. Upon startup the master process which is still root run the START and SERVICES sections (so it is e.g. allowed to listen to ports below 1024), then become &apos;cyrus&apos; for the rest of its life: without privileges cyrus.conf reloading is problematic (cannot start listening to privileged ports anymore).
+This may not be as risky as it may seem, since the processes actually listening to client connections are run as &apos;cyrus&apos;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-13 08:41:38 EDT</bug_when>
+            <thetext>New commit: e61a687296740005558a5a2dfe08e8859a911cba (https://github.com/worldline-messaging/cyrus-imapd/commit/e61a687296740005558a5a2dfe08e8859a911cba)
+This one acts as a fixup for commit 063c626053c820a205a86f5978fc34c7d3c7d8c8, with some code cleanup and a few more fixes in special cases.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-22 08:43:36 EDT</bug_when>
+            <thetext>New commit with minor changes: 14b69996b2fb49f3e25db2ca3604423b51a4e99f (https://github.com/worldline-messaging/cyrus-imapd/commit/14b69996b2fb49f3e25db2ca3604423b51a4e99f)
+Also acts as a fixup for commit 063c626053c820a205a86f5978fc34c7d3c7d8c8.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-25 01:12:46 EDT</bug_when>
+            <thetext>I&apos;ll review and merge these.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-25 01:15:16 EDT</bug_when>
+            <thetext>commit &quot;Speedup services recycling upon SIGHUP &quot;
+
+See my comments on github.
+
+commit &quot;Fix crash upon master SIGHUP handling &quot;
+
+Merged, with small compile fix and a testcase.  Thanks!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-25 02:01:38 EDT</bug_when>
+            <thetext>commit &quot;Refactored master services handling &quot;
+
+This commit needs to be split up into about three commits.  Some parts of it won&apos;t apply after recent changes (sorry, my fault).  Some parts are obvious improvements to syslog messages which should be merged ASAP; others need another read.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-25 02:14:28 EDT</bug_when>
+            <thetext>commit &quot;Don&apos;t close socket if not necessary&quot;
+
+Merged, thanks :)  I also went a bit further, see commit &quot;master: use xclose()&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-25 02:32:07 EDT</bug_when>
+            <thetext>commit &quot;Remain root on master process. &quot;
+
+This is the wrong solution, and dangerous.  The master should absolutely not be root when spawning preforked service children, or when listening to the network.
+
+On systems which implement POSIX capabilities (like Linux) the correct solution is to gain CAP_NET_BIND_SERVICE while root, before calling become_cyrus().  You should also handle the failure to gain the capabilitity gracefully, so that it is possible to start Cyrus as a non-root user when none of the ports are privileged.  It might be best to incorporate this logic into become_cyrus() itself and pass it an extra flag saying whether to retain the cap.  You will also need to make sure the cap is dropped when fork()ing children from master.
+
+See the capabilities(7) man page on Linux.  There is an open bug for this https://bugzilla.cyrusimap.org/show_bug.cgi?id=971
+
+Systems which do not have the ability to do capabilities should just ignore services with privileged ports which are newly added via SIGHUP.  The best thing to do is probably to print a message to syslog explaining that you&apos;re just going to have to restart Cyrus.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-25 15:17:51 EDT</bug_when>
+            <thetext>Rebased branch: ticket/3771
+
+Commit 491164bf30278a2bfc994eb17b54da15f4af482c &quot;Speedup services recycling upon SIGHUP&quot; split into:
+1f5676381cc53aa0a5c13e77d66f651e7214eddc (https://github.com/worldline-messaging/cyrus-imapd/commit/1f5676381cc53aa0a5c13e77d66f651e7214eddc)
+2070e93e60e4b4905f948c93b892f692f97072fb (https://github.com/worldline-messaging/cyrus-imapd/commit/2070e93e60e4b4905f948c93b892f692f97072fb)
+50c7b71d23d74384ecd269335d076f379c5d7b7c (https://github.com/worldline-messaging/cyrus-imapd/commit/50c7b71d23d74384ecd269335d076f379c5d7b7c)
+
+
+Commits 063c626053c820a205a86f5978fc34c7d3c7d8c8 &quot;Refactored master services handling&quot;, with its fixups e61a687296740005558a5a2dfe08e8859a911cba and 14b69996b2fb49f3e25db2ca3604423b51a4e99f, split into:
+65ef40915ff8d130cbf73f297bd15cd9c2ed3c4a (https://github.com/worldline-messaging/cyrus-imapd/commit/65ef40915ff8d130cbf73f297bd15cd9c2ed3c4a)
+86fcab3ca5b972fc20c6bed1ae5a27ebb1d63588 (https://github.com/worldline-messaging/cyrus-imapd/commit/86fcab3ca5b972fc20c6bed1ae5a27ebb1d63588)
+028503cf97f2cd4488caefa30d82f05018ae945f (https://github.com/worldline-messaging/cyrus-imapd/commit/028503cf97f2cd4488caefa30d82f05018ae945f)
+8e11bb9c4bcee83c7e572e6db94cc0d453657855 (https://github.com/worldline-messaging/cyrus-imapd/commit/8e11bb9c4bcee83c7e572e6db94cc0d453657855)
+
+And with the following further changes:
+6947a4d5560d5b2ad85c38230a5741fd72a07216 (https://github.com/worldline-messaging/cyrus-imapd/commit/6947a4d5560d5b2ad85c38230a5741fd72a07216)
+  -&gt; since you had left a few places untouched after changing &quot;invalid fd&quot; from 0 to -1
+b52ec02e6f7f16b15ffc654470a5b542ed8e4ea5 (https://github.com/worldline-messaging/cyrus-imapd/commit/b52ec02e6f7f16b15ffc654470a5b542ed8e4ea5)
+  -&gt; minor common code refactoring from my previous commits
+
+
+Commit 5cb2c517a4edfa32b4d9871a05083d67056cce55 &quot;Recycle running services upon SIGHUP on master&quot; rebased as f4222e1481c8d5c1858a5bac1cbae028bf31bdad (https://github.com/worldline-messaging/cyrus-imapd/commit/f4222e1481c8d5c1858a5bac1cbae028bf31bdad)
+
+
+Commit 0e0f634e5edad6574e1e6150547bde13fb9ceef2 &quot;Handle a more graceful shutdown&quot; rebased as 80a8b792b9edb34e163fbe2f97146bb674264bc0 (https://github.com/worldline-messaging/cyrus-imapd/commit/80a8b792b9edb34e163fbe2f97146bb674264bc0)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-26 02:05:43 EDT</bug_when>
+            <thetext>
+Julien, thanks for getting back on this so promptly.
+
+commit &quot;Added missing SASL/SSL dependencies&quot;
+
+I&apos;ve merged in the hunk in .gitignore under the name
+&quot;Ignore .libs folders for git&quot;, thanks.
+
+I don&apos;t understand the purpose of the changes to Makefile.am.
+Are you experiencing build failures or broken executables?  I&apos;ve
+just tried a build with defaults, and a build with only static
+libraries, and they both succeed and generate correct executables.
+Is there a set of configure options where the Makefile.am does the
+wrong thing?
+
+commit &quot;Speedup services recycling upon SIGHUP&quot;
+
+Merged, thanks.  I adjusted the commit slightly to account for the
+different way we register signals handlers after commit 
+
+    [IRIS-1784] more useful graceful shutdown syslogs
+
+commit &quot;If recvfrom is interrupted by SIGHUP, this is not an error&quot;
+
+Merged, thanks.
+
+commit &quot;When service exit after receiving a signal,...&quot;
+
+I&apos;m quite confused by this.  If the service actually exits, the master
+should receive and respond to a SIGCHLD almost immediately.  If that
+isn&apos;t happening, then it&apos;s a bug and I really want to know the reason
+why.  And if that reason is not fixable (e.g. a kernel bug which delays
+SIGCHLD for some reason) then the right way to fix is it set
+MESSAGE_MASTER_ON_EXIT=1 in configure.ac so that *all* the paths which
+might be affected by that problem are fixed at the same time, not just
+this one.
+
+commit &quot;Fixed compilation warning&quot;
+
+Merged, thanks.
+
+commit &quot;Add service protocol family name in logs.&quot;
+
+Merged, thanks.
+
+commit &quot;Refactored master services handling&quot;
+
+I need to think about this one a bit more.
+
+commit &quot;Make sure janitor start working right away when being (re)initialized&quot;
+
+Merged, thanks.  Subject trimmed to &quot;Ensure janitor starts right away on (re)init&quot;
+to fit in the recommended size for git commit subjects.
+
+commit &quot;A previous commit changed the &quot;invalid fd&quot; from 0 to -1&quot;
+
+Merged, thanks for pointing out where I stuffed up.  I also fixed another
+one that we both missed.
+
+commit &quot;Refactored common code when re-reading conf for new and remaining service&quot;
+
+I will look at this again after commit &quot;Refactored master services handling&quot;
+
+commit &quot;Recycle running services upon SIGHUP on master.&quot;
+
+I&apos;m confused about this:
+
++	/* Send SIGHUP to all children:
++	 *  - for services being added, there are still no children
+
+Agreed.
+
++	 *  - for services being disabled, we need to terminate the children
+
+By &quot;terminate the children&quot;, I assume you mean &quot;terminate the children
+when they next return to the main accept() loop&quot;, e.g. an IMAP client
+logs out from the imapd.  Because otherwise we&apos;d send SIGTERM.
+
++	 *  - otherwise (remaining services) we want to recycle children
+
+Why?  If the new cyrus.conf had the same config as the old one, why
+tell any running services at all?  Are you trying to enforce the maxchild
+parameter more quickly, without waiting for the reuse_timeout ?
+
++	 * Note that for services being disabled, it is important to first
++	 * signal them before shutting down their socket.
+
+Why is this important?  And which part of the code makes that happen?
+It looks to me like the order in which children notice receiving the
+signal and their socket being shut down was racy before and is still
+racy after this commit.
+
+BTW, it seems like almost none of the SIGHUP behaviour is tested in
+Cassandane.  Are you interested in writing some?
+
+commit &quot;Handle a more graceful shutdown&quot;
+
++    /* shutdown listening sockets */
++    for (i = 0; i &lt; nservices; i++) {
++	if (Services[i].socket &gt;= 0) {
++	    shutdown(Services[i].socket, SHUT_RDWR);
++	    xclose(Services[i].socket);
++	}
++    }
+
+This is a great idea, we definitely want to stop accepting incoming
+connections and UDP packets at this point, so that we can shut down
+at all under load.
+
++
++    /* release pidfile */
++    xclose(pidfd);
+ }
+
+This isn&apos;t.  Bron pointed out that the &quot;ctl_cyrusdb -r&quot; command that is
+typically run from the cyrus.conf START does some gnarly things which
+assume that it is the only process which might possibly be accessing
+skiplist files.  Having that run in parallel with other processes left
+over from an earlier master run is a really bad idea.  The pidfile forms
+a good and natural locking mechanism to prevent that happening.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-26 08:07:43 EDT</bug_when>
+            <thetext>(En réponse au commentaire 9)
+&gt; commit &quot;Added missing SASL/SSL dependencies&quot;
+&gt; 
+&gt; I&apos;ve merged in the hunk in .gitignore under the name
+&gt; &quot;Ignore .libs folders for git&quot;, thanks.
+&gt; 
+&gt; I don&apos;t understand the purpose of the changes to Makefile.am.
+&gt; Are you experiencing build failures or broken executables?  I&apos;ve
+&gt; just tried a build with defaults, and a build with only static
+&gt; libraries, and they both succeed and generate correct executables.
+&gt; Is there a set of configure options where the Makefile.am does the
+&gt; wrong thing?
+
+I experience build failures on my dev setup.
+There actually is another ticket open for that: #3768 (https://bugzilla.cyrusimap.org/show_bug.cgi?id=3768)
+
+
+&gt; commit &quot;When service exit after receiving a signal,...&quot;
+&gt; 
+&gt; I&apos;m quite confused by this.  If the service actually exits, the master
+&gt; should receive and respond to a SIGCHLD almost immediately.  If that
+&gt; isn&apos;t happening, then it&apos;s a bug and I really want to know the reason
+&gt; why.  And if that reason is not fixable (e.g. a kernel bug which delays
+&gt; SIGCHLD for some reason) then the right way to fix is it set
+&gt; MESSAGE_MASTER_ON_EXIT=1 in configure.ac so that *all* the paths which
+&gt; might be affected by that problem are fixed at the same time, not just
+&gt; this one.
+
+As you can see in the comment about the original version of the commit (https://github.com/worldline-messaging/cyrus-imapd/commit/491164bf30278a2bfc994eb17b54da15f4af482c#commitcomment-2685905) I do witness the master pauses, which does not happen if forked process talk to master before exiting.
+I still don&apos;t know what&apos;s the cause of this.
+
+
+&gt; commit &quot;Recycle running services upon SIGHUP on master.&quot;
+&gt; 
+&gt; I&apos;m confused about this:
+&gt; 
+&gt; +    /* Send SIGHUP to all children:
+&gt; +     *  - for services being added, there are still no children
+&gt; 
+&gt; Agreed.
+&gt; 
+&gt; +     *  - for services being disabled, we need to terminate the children
+&gt; 
+&gt; By &quot;terminate the children&quot;, I assume you mean &quot;terminate the children
+&gt; when they next return to the main accept() loop&quot;, e.g. an IMAP client
+&gt; logs out from the imapd.  Because otherwise we&apos;d send SIGTERM.
+
+Of course, since SIGHUP is only taken into account when they are not processing a client connection.
+
+
+&gt; +     *  - otherwise (remaining services) we want to recycle children
+&gt; 
+&gt; Why?  If the new cyrus.conf had the same config as the old one, why
+&gt; tell any running services at all?  Are you trying to enforce the maxchild
+&gt; parameter more quickly, without waiting for the reuse_timeout ?
+
+cyrus.conf is already well taken care of.
+The main goal of those SIGHUP commits so far is for cyrus to take into account changes in imapd.conf.
+Sometimes we make changes in imapd.conf, and want to be sure they are taken into account as fast as possible, thus the whole recycling: processes waiting are done right away, and those processing a client connection are done once the client logouts.
+
+
+&gt; +     * Note that for services being disabled, it is important to first
+&gt; +     * signal them before shutting down their socket.
+&gt; 
+&gt; Why is this important?  And which part of the code makes that happen?
+&gt; It looks to me like the order in which children notice receiving the
+&gt; signal and their socket being shut down was racy before and is still
+&gt; racy after this commit.
+
+True, since signal handling is asynchronous AFAIK.
+This comment is actually more of an etiquette than a solution: it would be bad policy to shutdown/close the socket before trying to wake-up the processes waiting for it. Which is why I moved up the code that signals all known running processes.
+On the other hand we are shutdowning the concerned service. So another solution I could think of, which is to maintain the communication channel from master to children - checked with pselect/select - to wake them up gracefully may be a bit overkill.
+
+
+&gt; BTW, it seems like almost none of the SIGHUP behaviour is tested in
+&gt; Cassandane.  Are you interested in writing some?
+
+Not sure I will have enough time in the next days, and a few things seem a bit tricky to achieve.
+I will have a look to see if I can do some.
+
+
+&gt; commit &quot;Handle a more graceful shutdown&quot;
+&gt; 
+&gt; +
+&gt; +    /* release pidfile */
+&gt; +    xclose(pidfd);
+&gt;  }
+&gt; 
+&gt; This isn&apos;t.  Bron pointed out that the &quot;ctl_cyrusdb -r&quot; command that is
+&gt; typically run from the cyrus.conf START does some gnarly things which
+&gt; assume that it is the only process which might possibly be accessing
+&gt; skiplist files.  Having that run in parallel with other processes left
+&gt; over from an earlier master run is a really bad idea.  The pidfile forms
+&gt; a good and natural locking mechanism to prevent that happening.
+
+Ah, didn&apos;t know. That makes this commit mostly moot.
+Is this limited to skiplist files ? Isn&apos;t there some kind of locking mechanism when accessing skiplist files ?
+I mean if it&apos;s mailbox related, I guess there is the mailbox writing lock, and if it&apos;s server related there should be something preventing concurrent accesses to mess it up ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-26 17:03:30 EDT</bug_when>
+            <thetext>(In reply to comment #10)
+&gt; &gt; commit &quot;Added missing SASL/SSL dependencies&quot;
+&gt; &gt; 
+&gt; I experience build failures on my dev setup.
+&gt; There actually is another ticket open for that: #3768
+
+Ah, Dilyan&apos;s onto it.  I&apos;ll let the discussion continue there.
+
+&gt; &gt; commit &quot;When service exit after receiving a signal,...&quot;
+&gt; &gt; 
+&gt; &gt; I&apos;m quite confused by this.  If the service actually exits, the master
+&gt; &gt; should receive and respond to a SIGCHLD almost immediately.  If that
+&gt; &gt; isn&apos;t happening, then it&apos;s a bug and I really want to know the reason
+&gt; &gt; why.  And if that reason is not fixable (e.g. a kernel bug which delays
+&gt; &gt; SIGCHLD for some reason) then the right way to fix is it set
+&gt; &gt; MESSAGE_MASTER_ON_EXIT=1 in configure.ac so that *all* the paths which
+&gt; &gt; might be affected by that problem are fixed at the same time, not just
+&gt; &gt; this one.
+&gt; 
+&gt; As you can see in the comment about the original version of the commit
+&gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/491164bf30278a2bfc994eb17b54da15f4af482c#commitcomment-2685905)
+
+Sorry, I didn&apos;t see your comments there.  I must be missing a notification
+email from github.
+
+BTW I found your 2nd comment on that commit very clear and helpful so I
+added it as a comment in safe_wait_readable().
+
+&gt; I do witness the master pauses, which does not happen if forked process talk to
+&gt; master before exiting.
+
+It seems you have encountered a bug somewhere in the master main loop&apos;s
+SIGCHLD handling.  
+
+&gt; I still don&apos;t know what&apos;s the cause of this.
+
+Neither do I, but we need to track that down and fix it, not work around
+it for this one specific case.
+
+&gt; &gt; commit &quot;Recycle running services upon SIGHUP on master.&quot; 
+&gt; &gt; +     *  - otherwise (remaining services) we want to recycle children
+&gt; &gt; 
+&gt; &gt; Why?
+&gt;
+&gt; cyrus.conf is already well taken care of.
+&gt; The main goal of those SIGHUP commits so far is for cyrus to take into account
+&gt; changes in imapd.conf.
+
+Aha!  This is an excellent idea, but needs to be documented in the
+master.8 man page, which only mentions cyrus.conf being re-read.
+
+Given that long running connections mean there may be an unavoidably long
+delay between the SIGHUP and the last service process being recycled,
+it might be nice to
+
+a) make this obvious to the reader of the master.8 man page, and 
+
+b) find some way for master to emit a syslog explaining which service
+   processes have not recycled within some short time limit (say 30 sec).
+
+&gt; 
+&gt; &gt; BTW, it seems like almost none of the SIGHUP behaviour is tested in
+&gt; &gt; Cassandane.  Are you interested in writing some?
+&gt; 
+&gt; Not sure I will have enough time in the next days, and a few things seem a bit
+&gt; tricky to achieve.
+&gt; I will have a look to see if I can do some.
+
+Sure.  My commit &quot;Add regression test for a part of Bug #3771&quot; added
+some infrastructure and an example test Master.service_associate.  Let
+me know if you need any more help.
+
+&gt; &gt; commit &quot;Handle a more graceful shutdown&quot;
+&gt; 
+&gt; Ah, didn&apos;t know. That makes this commit mostly moot.
+&gt; Is this limited to skiplist files ? Isn&apos;t there some kind of locking mechanism
+&gt; when accessing skiplist files ?
+&gt; I mean if it&apos;s mailbox related, I guess there is the mailbox writing lock, and
+&gt; if it&apos;s server related there should be something preventing concurrent accesses
+&gt; to mess it up ?
+
+These are questions for Bron.  I will also point out that the documented
+purpose of the START section is
+
+&quot;This  section  lists the processes to run before any SERVICES are spawned.&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-27 12:28:00 EDT</bug_when>
+            <thetext>(En réponse au commentaire 11)
+&gt; &gt; &gt; commit &quot;Recycle running services upon SIGHUP on master.&quot; 
+&gt; &gt; &gt; +     *  - otherwise (remaining services) we want to recycle children
+&gt; &gt; &gt; 
+&gt; &gt; &gt; Why?
+&gt; &gt;
+&gt; &gt; cyrus.conf is already well taken care of.
+&gt; &gt; The main goal of those SIGHUP commits so far is for cyrus to take into account
+&gt; &gt; changes in imapd.conf.
+&gt; 
+&gt; Aha!  This is an excellent idea, but needs to be documented in the
+&gt; master.8 man page, which only mentions cyrus.conf being re-read.
+&gt; 
+&gt; Given that long running connections mean there may be an unavoidably long
+&gt; delay between the SIGHUP and the last service process being recycled,
+&gt; it might be nice to
+&gt; 
+&gt; a) make this obvious to the reader of the master.8 man page, and 
+&gt; 
+&gt; b) find some way for master to emit a syslog explaining which service
+&gt;    processes have not recycled within some short time limit (say 30 sec).
+
+Would this do then ?
+Branch: ticket/3771-2 (rebased on current master)
+Commits:
+
+a762664d1390772796afc13fffb8f80e9f201f0c (https://github.com/worldline-messaging/cyrus-imapd/commit/a762664d1390772796afc13fffb8f80e9f201f0c)
+fbc9938d913ad774298f3b488538a160b99acb60 (https://github.com/worldline-messaging/cyrus-imapd/commit/fbc9938d913ad774298f3b488538a160b99acb60)
+
+Plus small cleanups/fixes:
+49d31650560e8532d351a501e776490fd46bb5f0 (https://github.com/worldline-messaging/cyrus-imapd/commit/49d31650560e8532d351a501e776490fd46bb5f0)
+f92c3ea30d38f31891ab2903bb5b62bc9f790606 (https://github.com/worldline-messaging/cyrus-imapd/commit/f92c3ea30d38f31891ab2903bb5b62bc9f790606)
+10c6d09ecc8eebd4ddcec6d1f431266221b678ef (https://github.com/worldline-messaging/cyrus-imapd/commit/10c6d09ecc8eebd4ddcec6d1f431266221b678ef)
+492c57db44ee3584d6597068eed9b398e5c40268 (https://github.com/worldline-messaging/cyrus-imapd/commit/492c57db44ee3584d6597068eed9b398e5c40268)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-27 15:47:26 EDT</bug_when>
+            <thetext>And a last code cleanup concerning this part of the commits:
+1651db8732d597c4dfd6f03cd9b05c1649dc5f40 (https://github.com/worldline-messaging/cyrus-imapd/commit/1651db8732d597c4dfd6f03cd9b05c1649dc5f40)
+
+Feel free to squash/fixup those ones with the previous ones if you want</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-27 16:04:32 EDT</bug_when>
+            <thetext>(In reply to comment #11)
+&gt; (In reply to comment #10)
+&gt; &gt; &gt; commit &quot;When service exit after receiving a signal,...&quot;
+&gt; &gt; &gt; 
+&gt; &gt; &gt; I&apos;m quite confused by this.  If the service actually exits, the master
+&gt; &gt; &gt; should receive and respond to a SIGCHLD almost immediately.  If that
+&gt; &gt; &gt; isn&apos;t happening, then it&apos;s a bug and I really want to know the reason
+&gt; &gt; &gt; why.  And if that reason is not fixable (e.g. a kernel bug which delays
+&gt; &gt; &gt; SIGCHLD for some reason) then the right way to fix is it set
+&gt; &gt; &gt; MESSAGE_MASTER_ON_EXIT=1 in configure.ac so that *all* the paths which
+&gt; &gt; &gt; might be affected by that problem are fixed at the same time, not just
+&gt; &gt; &gt; this one.
+&gt; &gt; 
+&gt; &gt; As you can see in the comment about the original version of the commit
+&gt; &gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/491164bf30278a2bfc994eb17b54da15f4af482c#commitcomment-2685905)
+&gt; &gt; I do witness the master pauses, which does not happen if forked process talk to
+&gt; &gt; master before exiting.
+&gt; 
+&gt; It seems you have encountered a bug somewhere in the master main loop&apos;s
+&gt; SIGCHLD handling.  
+&gt; 
+&gt; &gt; I still don&apos;t know what&apos;s the cause of this.
+&gt; 
+&gt; Neither do I, but we need to track that down and fix it, not work around
+&gt; it for this one specific case.
+
+I think I got what happened.
+
+There are two things here: dead children do trigger SIGCHLD, and - as commented in a previous commit - under Linux select/pselect do return -1/EINTR when interrupted by a signal (even if SA_RESTART is set) as allowed by POSIX specs.
+
+So what happens here is that master is happily sleeping on select/pselect when it gets interrupted. Since it returns -1/EINTR, the code do &apos;continue&apos; which looks for gotsigxxx and do reaping and the like ... then goes back to sleep in select/pselect. Well almost: if service is undermanned, it spawns _one_ child.
+Then if it does not get interrupted anymore by other ungrateful children dying, or if a child talks, it returns from select/pselect with 0, and then realizes it needs to spawn more than one child to reach the desired_worker count.
+
+Which brings me to two commits:
+c4aa37f25ae4eb2cd34ce0571202ba8c729c6afa (https://github.com/worldline-messaging/cyrus-imapd/commit/c4aa37f25ae4eb2cd34ce0571202ba8c729c6afa)
+  -&gt; try to reach the desired_workers count earlier in the code
+This fixes the pauses I encountered
+
+a52f918780cd5cc3cd9d4453689cccd5e09197e2 (https://github.com/worldline-messaging/cyrus-imapd/commit/a52f918780cd5cc3cd9d4453689cccd5e09197e2)
+As for SIGHUP in services, we need to reset signals to be not restartable so that master behave the same on all POSIX systems: on systems that do honor SA_RESTART, there may be pauses up to 10s (max timeout in master) before undermanned services get populated.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-28 07:33:48 EDT</bug_when>
+            <thetext>Oops, forgot to remove original spawn_service in c4aa37f25ae4eb2cd34ce0571202ba8c729c6afa.
+As I don&apos;t like to rebase after pushing branches in the wild, fixup is here: 54245c9d375d3691471367157c3eb8d652cc9030 (https://github.com/worldline-messaging/cyrus-imapd/commit/54245c9d375d3691471367157c3eb8d652cc9030)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-28 18:23:46 EDT</bug_when>
+            <thetext>(In reply to comment #11)
+&gt; (In reply to comment #10)
+&gt; &gt; &gt; BTW, it seems like almost none of the SIGHUP behaviour is tested in
+&gt; &gt; &gt; Cassandane.  Are you interested in writing some?
+&gt; &gt; 
+&gt; &gt; Not sure I will have enough time in the next days, and a few things seem a bit
+&gt; &gt; tricky to achieve.
+&gt; &gt; I will have a look to see if I can do some.
+&gt; 
+&gt; Sure.  My commit &quot;Add regression test for a part of Bug #3771&quot; added
+&gt; some infrastructure and an example test Master.service_associate.  Let
+&gt; me know if you need any more help.
+
+Here are the test I could think of:
+Repository: git://github.com/worldline-messaging/cassandane.git
+Branch: ticket/3771
+Commits:
+
+068d70e4ef1d1b83941ec0061b5ce74fa8893786 (https://github.com/worldline-messaging/cassandane/commit/068d70e4ef1d1b83941ec0061b5ce74fa8893786)
+  -&gt; Test primary/associated service disabling/reativation
+This one fails in current master, and pass with the refatoring I proposed
+
+40f15cb845e26022431723e09e9aad73c685a38f (https://github.com/worldline-messaging/cassandane/commit/40f15cb845e26022431723e09e9aad73c685a38f)
+  -&gt; Test SIGHUP propagation to children
+Pass with my SIGHUP commits
+
+484ec0a1bb519386e32734066dfb4c7e996294e4 (https://github.com/worldline-messaging/cassandane/commit/484ec0a1bb519386e32734066dfb4c7e996294e4)
+  -&gt; Test adding/removing service and reloading cyrus.conf
+
+92b8195f5d2c2b20226bf92d00705fcb0c746f26 (https://github.com/worldline-messaging/cassandane/commit/92b8195f5d2c2b20226bf92d00705fcb0c746f26)
+  -&gt; Test changing listen parameter and reloading cyrus.conf 
+
+95ee7aece59fa0e56107b5373e307cb549be2574 (https://github.com/worldline-messaging/cassandane/commit/95ee7aece59fa0e56107b5373e307cb549be2574)
+  -&gt; Test changing proto parameter and reloading cyrus.conf 
+
+
+&gt; &gt; &gt; commit &quot;Handle a more graceful shutdown&quot;
+&gt; &gt; 
+&gt; &gt; Ah, didn&apos;t know. That makes this commit mostly moot.
+&gt; &gt; Is this limited to skiplist files ? Isn&apos;t there some kind of locking mechanism
+&gt; &gt; when accessing skiplist files ?
+&gt; &gt; I mean if it&apos;s mailbox related, I guess there is the mailbox writing lock, and
+&gt; &gt; if it&apos;s server related there should be something preventing concurrent accesses
+&gt; &gt; to mess it up ?
+&gt; 
+&gt; These are questions for Bron.  I will also point out that the documented
+&gt; purpose of the START section is
+&gt; 
+&gt; &quot;This  section  lists the processes to run before any SERVICES are spawned.&quot;
+
+I see your point, even though I think it would be nice if tools in this section could get along with the others (of course it&apos;s my biased opinion on the matter ;)).
+Dumb question then: I wonder if there currently could not be issues between some cyrus utilities that may alter some of those files, (manually) called by people, and the master being restarted automatically by processes supervision. That is if there are such tools (I don&apos;t know them all).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-04 17:26:45 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; commit &quot;Remain root on master process. &quot;
+&gt; 
+&gt; This is the wrong solution, and dangerous.  The master should absolutely not be
+&gt; root when spawning preforked service children, or when listening to the
+&gt; network.
+
+I understand your point of view.
+In this regard, I tend to believe that either everything should be done as root, or nothing.
+
+Currently master is still root while processing the START and SERVICES section. So it should become_cyrus before that.
+
+
+&gt; On systems which implement POSIX capabilities (like Linux) the correct solution
+&gt; is to gain CAP_NET_BIND_SERVICE while root, before calling become_cyrus().  You
+&gt; should also handle the failure to gain the capabilitity gracefully, so that it
+&gt; is possible to start Cyrus as a non-root user when none of the ports are
+&gt; privileged.  It might be best to incorporate this logic into become_cyrus()
+&gt; itself and pass it an extra flag saying whether to retain the cap.  You will
+&gt; also need to make sure the cap is dropped when fork()ing children from master.
+&gt; 
+&gt; See the capabilities(7) man page on Linux.  There is an open bug for this
+&gt; https://bugzilla.cyrusimap.org/show_bug.cgi?id=971
+
+Commits about that:
+
+ca2826d5b73dc3254a759a5c82eb9c79e2ce3e4d (https://github.com/worldline-messaging/cyrus-imapd/commit/ca2826d5b73dc3254a759a5c82eb9c79e2ce3e4d)
+  -&gt; libcap support
+I took the liberty of enabling this POSIX.1e support by default, and thus have people that do not want it (or do not have an appropriate system) explicitely disable it.
+
+109698e7ab9dad8da7faf0b42a97fd442e36ac3e (https://github.com/worldline-messaging/cyrus-imapd/commit/109698e7ab9dad8da7faf0b42a97fd442e36ac3e)
+
+eb490160c2ae0f1d6b83c1f8e8a105bf3c034034 (https://github.com/worldline-messaging/cyrus-imapd/commit/eb490160c2ae0f1d6b83c1f8e8a105bf3c034034)
+  -&gt; libcap-ng support (supersedes libcap if present)
+
+At this point, the only security point remaining is the capabilities bounding set: a forked service/tool may reacquire full privileges through execve. But it is e.g. useful when you want to use strace/gdb (debugging processes), otherwise since we dropped most of our privileges (the right to ptrace too) it wouldn&apos;t be possible anymore.
+It is possible to drop most or all of those privileges in the bounding set - and never be able to reacquire them - but we would have to add a new field in cyrus.conf so that people who needs it (debugging purposes etc.) can still list the capabilities they want to be able to reacquire per service (e.g.: CAP_SETUID/CAP_SETGID for sudo, CAP_SYS_PTRACE for strace, ...). But I doubt it&apos;s worth it.
+
+
+&gt; Systems which do not have the ability to do capabilities should just ignore
+&gt; services with privileged ports which are newly added via SIGHUP.  The best
+&gt; thing to do is probably to print a message to syslog explaining that you&apos;re
+&gt; just going to have to restart Cyrus.
+
+I don&apos;t think there is a need for a new message. The error one is clear enough for me when it says you don&apos;t have the right to bind the socket. But maybe it should be emphasized in the documentation.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 06:08:57 EDT</bug_when>
+            <thetext>(In reply to comment #17)
+&gt; (In reply to comment #7)
+&gt; Currently master is still root while processing the START and SERVICES section.
+&gt; So it should become_cyrus before that.
+
+Agreed.
+
+&gt; &gt; is to gain CAP_NET_BIND_SERVICE while root, [...]
+&gt; 
+&gt; Commits about that:
+&gt; 
+&gt; ca2826d5b73dc3254a759a5c82eb9c79e2ce3e4d
+&gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/ca2826d5b73dc3254a759a5c82eb9c79e2ce3e4d)
+&gt;   -&gt; libcap support
+
+Ok, I have quite a few comments :)
+
+&gt; I took the liberty of enabling this POSIX.1e support by default, and thus have
+&gt; people that do not want it (or do not have an appropriate system) explicitely
+&gt; disable it.
+
+That&apos;s not very polite to our non-Linux friends.  Given that we support
+the non-capability way, we should fall back to it and not break people&apos;s
+builds unnecessarily.
+
+Also, your configure.ac test looks like it&apos;s cross-platform test for the
+&quot;cap&quot; library.  However the code which is protected by the resulting #ifdef
+is very Linux-specific:
+
+ * it needs the Linux-specific system call prctl(PR_SET_KEEPCAPS)
+
+ * on some non-Linux systems, the cap_*() calls are in libc
+
+   http://techpubs.sgi.com/library/tpl/cgi-bin/getdoc.cgi?cmd=getdoc&amp;coll=0650&amp;db=man&amp;fname=3%20cap_get_proc   
+
+ * on that same system, CAP_NET_BIND_SERVICE is called CAP_PRIV_PORT
+
+I don&apos;t at all mind Linux-specific code, but the configure test should,
+in addition to checking for libcap, also check the other assumptions.
+Or just check for Linux.
+
+
+The big lump of new syscaps_*() code seems significantly over-complicated
+to me.  I found it over-generalised and hard to read, and in security-sensitive
+code that makes me very worried.  I think you could replace all of syscaps_init(),
+syscaps_drop(), syscaps_reset(), syscaps_new() and syscaps_log() with a single
+function like this
+
+enum { BEFORE_SETUID, AFTER_SETUID, BEFORE_BIND, AFTER_BIND, AFTER_FORK };
+#ifdef HAVE_LIBCAP
+int set_caps(int stage, int is_master)
+{
+    cap_t cap = NULL;
+    int r = 0;
+    int e = errno;
+    static const char * const capsets[2][5] = {
+	{ /* !master */
+	    &quot;cap_setuid=ep&quot;,   				/* BEFORE_SETUID */
+	    &quot;=&quot;,					/* AFTER_SETUID */
+	    &quot;=&quot;,					/* doesn&apos;t happen */
+	    &quot;=&quot;,					/* doesn&apos;t happen */
+	    &quot;=&quot;						/* doesn&apos;t happen */
+	}, { /* master */
+	    &quot;cap_net_bind_service=p cap_setuid=ep&quot;,   	/* BEFORE_SETUID */
+	    &quot;cap_net_bind_service=p&quot;,			/* AFTER_SETUID */
+	    &quot;cap_net_bind_service=ep&quot;,			/* BEFORE_BIND */
+	    &quot;cap_net_bind_service=p&quot;,			/* AFTER_BIND */
+	    &quot;=&quot;						/* AFTER_FORK */
+	}
+    };
+
+    cap = cap_from_text(capsets[stage][!!is_master]);
+    assert(cap != NULL);
+
+    r = cap_set_proc(cap);
+    if (r &lt; 0) {
+        syslog(LOG_ERR, &quot;cannot set caps: %m&quot;);
+        goto out;
+    }
+
+    if (stage == BEFORE_SETUID || stage == AFTER_SETUID) {
+	r = prctl(PR_SET_KEEPCAPS, (stage == BEFORE_SETUID));
+	if (r &lt; 0) {
+	    syslog(LOG_ERR, &quot;cannot set keepcaps flag: %m&quot;);
+	    goto out;
+	}
+    }
+
+out:
+    if (cap) cap_free(cap);
+    errno = e;   /* preserve errno so the caller&apos;s error reporting is easy */
+}
+#else
+void set_caps(int stage __attribute__((unused)), int is_master  __attribute__((unused)))
+{
+}
+#endif
+
+
+and then the setuid wrapper becomes simply
+
+
+static int cap_setuid(int uid, int is_master)
+{
+    int r;
+
+    set_caps(BEFORE_SETUID, is_master);
+    r = setuid(uid);
+    set_caps(AFTER_SETUID, is_master);
+    return r;
+}
+
+
+and the calls to become_cyrus() in master.c between the
+fork() and the execv() become just
+
+    set_caps(AFTER_FORK, /*is_master*/1);
+
+and you&apos;ll want to create a wrapper for bind() like this one
+
+http://techpubs.sgi.com/library/tpl/cgi-bin/getdoc.cgi?cmd=getdoc&amp;coll=0650&amp;db=man&amp;fname=3%20cap_bind
+
+which does
+
+int cap_bind(int sock, const struct sockaddr *a, socklen_t l)
+{
+    int r;
+
+    set_caps(BEFORE_BIND, /*is_master*/1);
+    r = bind(s, a, l);
+    set_caps(AFTER_BIND, /*is_master*/1);
+    return r;
+}
+
+That way, for most of it&apos;s life the master process has an empty effective cap
+set, and only CAP_NET_BIND_SERVICE in it&apos;s permitted set.
+
+
+Because become_cyrus_early=1 is hardcoded, we should stop pretending it&apos;s ever
+going to be otherwise and make the code inside if (become_cyrus_early) unconditional.
+
+
+Previously Cyrus created the master&apos;s pidfile before setuid, so it would be created
+like this
+
+-rw-r--r--  1 root  root        5 Feb 21 08:18 cyrus.pid
+
+If such a file was left over from a previous Cyrus instance, a new master
+with the new code will be unable to open it and will exit with an error.  Also
+the default pidfile is located in the /var/run/ directory which is unlikely
+to be writable by the cyrus user (and we don&apos;t want it to be).  So, your first
+call to become_cyrus() in master&apos;s main needs to be after that.
+
+It&apos;s not clear to me what capabilities might be needed during the SNMP agent
+initialisation code.   It&apos;s probably better to avoid breaking that code.  So,
+your first call to become_cyrus() in master&apos;s main needs to be after that.
+
+
+
+&gt; 109698e7ab9dad8da7faf0b42a97fd442e36ac3e
+&gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/109698e7ab9dad8da7faf0b42a97fd442e36ac3e)
+&gt; 
+&gt; eb490160c2ae0f1d6b83c1f8e8a105bf3c034034
+&gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/eb490160c2ae0f1d6b83c1f8e8a105bf3c034034)
+&gt;   -&gt; libcap-ng support (supersedes libcap if present)
+
+Ouch, that makes something over-complicated even worse :(
+
+I don&apos;t see a point supporting *two* APIs for Linux.  If the new one is widely
+available and can do what we want, let&apos;s just use that one.  In any case, let&apos;s
+strongly limit the parts of the code which are exposed to that, using a technique
+like the set_caps() function I sketched out before.
+
+
+&gt; At this point, the only security point remaining is the capabilities bounding
+&gt; set: [...]
+
+I don&apos;t see why we should do anything with the bounding set just yet.  It&apos;s a
+theoretical problem, but we already had that problem.  Let&apos;s just get to the point
+where we can bind to a privileged port on SIGHUP, which was the original point.
+
+&gt; &gt; [...]print a message to syslog explaining that you&apos;re
+&gt; &gt; just going to have to restart Cyrus.
+&gt; 
+&gt; I don&apos;t think there is a need for a new message. The error one is clear enough
+&gt; for me when it says you don&apos;t have the right to bind the socket. But maybe it
+&gt; should be emphasized in the documentation.
+
+Sure.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-06 17:29:14 EDT</bug_when>
+            <thetext>(In reply to comment #18)
+
+I thought the developers would have the smartness to use the same functions/constants when working on the &apos;same&apos; library, but your comment shows it is not the case. Probably due to the fact the specs remained as a POSIX draft.
+This also means that it&apos;s no use here to try to handle any system other than Linux since there is no way to be sure they work exactly as we want (nor do I have any mean to test them anyway).
+
+I indeed had my code more generalised because I tried to have finer log messages and error handling - and hoped that for other systems the feature could also be separated in basic get/set/update actions. But your version is also fine by me.
+I believe libcap is more useful - finer control when needed - and available.
+
+Your code almost compiles as-is, I simply restricted it to Linux systems that have libcap.
+So since I don&apos;t see the point in having my name as author when it&apos;s your code, you can take ownership of this commit or redo your own if you prefer: 44cb4e5721a9506023ee1895844e2aa590d5c609 (https://github.com/worldline-messaging/cyrus-imapd/commit/44cb4e5721a9506023ee1895844e2aa590d5c609)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 18:38:48 EDT</bug_when>
+            <thetext>(In reply to comment #19)
+&gt; (In reply to comment #18)
+&gt; 
+&gt; I thought the developers would have the smartness to use the same
+&gt; functions/constants when working on the &apos;same&apos; library,
+
+I wish :)
+
+&gt; Your code almost compiles as-is, I simply restricted it to Linux systems that
+&gt; have libcap.
+&gt; So since I don&apos;t see the point in having my name as author when it&apos;s your code,
+&gt; you can take ownership of this commit or redo your own if you prefer:
+
+No thanks, a credit in the comment is enough.
+
+&gt; 44cb4e5721a9506023ee1895844e2aa590d5c609
+
+Merged, thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 19:28:01 EDT</bug_when>
+            <thetext>(In reply to comment #12)
+&gt; (En réponse au commentaire 11)
+&gt; &gt; Aha!  This is an excellent idea, but needs to be documented in the
+&gt; &gt; master.8 man page, which only mentions cyrus.conf being re-read.
+&gt; &gt; 
+&gt; &gt; Given that long running connections mean there may be an unavoidably long
+&gt; &gt; delay between the SIGHUP and the last service process being recycled,
+&gt; &gt; it might be nice to
+&gt; &gt; 
+&gt; &gt; a) make this obvious to the reader of the master.8 man page, and 
+&gt; &gt; 
+&gt; &gt; b) find some way for master to emit a syslog explaining which service
+&gt; &gt;    processes have not recycled within some short time limit (say 30 sec).
+&gt; 
+&gt; Would this do then ?
+&gt; Branch: ticket/3771-2 (rebased on current master)
+&gt; Commits:
+&gt; 
+&gt; a762664d1390772796afc13fffb8f80e9f201f0c
+
+&quot;Recycle running services upon SIGHUP on master.&quot;
+Merged, thanks.
+
+&gt; fbc9938d913ad774298f3b488538a160b99acb60
+
+&quot;Log processes that were not recycled within 30s&quot;
+Merged, thanks.
+
+&gt; Plus small cleanups/fixes:
+&gt; 49d31650560e8532d351a501e776490fd46bb5f0
+&quot;Log error message when we fail to set signal handler&quot;
+
+No.  Normally I&apos;m all for logging more information, but the argument
+to fatal() is a constant string, not a syslog format string.  For
+example, the fatal() used by imapd.c does
+
+ 1112 EXPORTED void fatal(const char *s, int code)
+ 1113 {
+ ...
+ 1123     if (imapd_out) {
+ 1124         prot_printf(imapd_out, &quot;* BYE Fatal error: %s\r\n&quot;, s);
+ 1125         prot_flush(imapd_out);
+ 1126     }
+
+I wish it were different - there&apos;s a lot of clumsy code which
+generates strings just to call fatal().  But fixing it would
+be a big operation: I count 30 different implementations and
+320 callsites. 
+
+&gt; f92c3ea30d38f31891ab2903bb5b62bc9f790606
+&quot;No more need to loop over signals to handle&quot;
+
+Merged, without the &quot;: %m&quot;.  Thanks.
+
+&gt; 10c6d09ecc8eebd4ddcec6d1f431266221b678ef
+&quot;Make sure to catch more than one SIGHUP in services&quot;
+
+Merged, thanks.
+
+&gt; 492c57db44ee3584d6597068eed9b398e5c40268
+&quot;Refactor unecessary code in signals_reset_sighup_handler&quot;
+
+Merged, without the &quot;: %m&quot;.  Thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 19:34:47 EDT</bug_when>
+            <thetext>(In reply to comment #13)
+&gt; And a last code cleanup concerning this part of the commits:
+&gt; 1651db8732d597c4dfd6f03cd9b05c1649dc5f40
+&quot;Refactored unnecessary code in signals_add_handlers&quot;
+
+Merged, without the &quot;: %m&quot;.  Thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 20:08:05 EDT</bug_when>
+            <thetext>(In reply to comment #14)
+&gt; &gt; &gt; I do witness the master pauses, which does not happen if forked process talk to
+&gt; &gt; &gt; master before exiting.
+&gt; &gt; 
+
+&gt; c4aa37f25ae4eb2cd34ce0571202ba8c729c6afa
+
+Merged, as &quot;master: spawn undermanned services early&quot;, with your later
+commit to remove the extra spawn_service() call squashed in.  Thanks.
+
+&gt; a52f918780cd5cc3cd9d4453689cccd5e09197e2
+&gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/a52f918780cd5cc3cd9d4453689cccd5e09197e2)
+&gt; As for SIGHUP in services, we need to reset signals to be not restartable so
+&gt; that master behave the same on all POSIX systems: on systems that do honor
+&gt; SA_RESTART, there may be pauses up to 10s (max timeout in master) before
+&gt; undermanned services get populated.
+
+This looks to me like it&apos;s overcomplicated and does too much stuff
+at runtime, setting sigactions backwards and forwards around each
+call to pselect().  Perhaps we can do this more simply?  At a first
+guess it might be
+
+diff --git a/master/master.c b/master/master.c
+index 5f7da9f..cb59ed3 100644
+--- a/master/master.c
++++ b/master/master.c
+@@ -1236,7 +1236,7 @@ static void sighandler_setup(void)
+     sigemptyset(&amp;action.sa_mask);
+ 
+     action.sa_handler = sighup_handler;
+-#ifdef SA_RESTART
++#if defined(SA_RESTART) &amp;&amp; !defined(HAVE_PSELECT)
+     action.sa_flags |= SA_RESTART;
+ #endif
+     if (sigaction(SIGHUP, &amp;action, NULL) &lt; 0)
+@@ -1264,6 +1264,7 @@ static void sighandler_setup(void)
+     /* block SIGCHLD, and set up pselect_sigmask so SIGCHLD
+      * will be unblocked again inside pselect().  Ditto SIGQUIT.  */
+     sigemptyset(&amp;siglist);
++    sigaddset(&amp;siglist, SIGHUP);
+     sigaddset(&amp;siglist, SIGCHLD);
+     sigaddset(&amp;siglist, SIGQUIT);
+     sigaddset(&amp;siglist, SIGINT);</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 20:09:42 EDT</bug_when>
+            <thetext>(In reply to comment #15)
+&gt; Oops, forgot to remove original spawn_service in
+&gt; c4aa37f25ae4eb2cd34ce0571202ba8c729c6afa.
+&gt; As I don&apos;t like to rebase after pushing branches in the wild, fixup is here:
+&gt; 54245c9d375d3691471367157c3eb8d652cc9030
+&gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/54245c9d375d3691471367157c3eb8d652cc9030)
+
+I squashed this into commit &quot;master: spawn undermanned services early&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 22:53:29 EDT</bug_when>
+            <thetext>(In reply to comment #16)
+&gt; (In reply to comment #11)
+&gt; &gt; (In reply to comment #10)
+
+&gt; Here are the test I could think of:
+&gt; Repository: git://github.com/worldline-messaging/cassandane.git
+&gt; Branch: ticket/3771
+&gt; Commits:
+&gt; 
+&gt; 068d70e4ef1d1b83941ec0061b5ce74fa8893786
+&gt; (https://github.com/worldline-messaging/cassandane/commit/068d70e4ef1d1b83941ec0061b5ce74fa8893786)
+&gt;   -&gt; Test primary/associated service disabling/reativation
+&gt; This one fails in current master, and pass with the refatoring I proposed
+
+Then it&apos;s bug fixing not refactoring!  These tests are failing
+for me on latest cmu/master.  Which commits did you need to fix?
+I&apos;m going to merge these but temporarily disabled.
+
+
+&gt; 40f15cb845e26022431723e09e9aad73c685a38f
+Test SIGHUP propagation to children
+
+Merged, thanks.
+
+&gt; 484ec0a1bb519386e32734066dfb4c7e996294e4
+Test adding/removing service and reloading cyrus.conf
+
+Merged, thanks.
+
+&gt; 
+&gt; 92b8195f5d2c2b20226bf92d00705fcb0c746f26
+Test changing listen parameter and reloading cyrus.conf 
+
+Merged, thanks.
+
+&gt; 95ee7aece59fa0e56107b5373e307cb549be2574
+Test changing proto parameter and reloading cyrus.conf 
+
+Merged, without Cassandane::Service::set_master_param, which
+is inherited from the base class anyway.  Thanks.
+
+
+&gt; Dumb question then: I wonder if there currently could not be issues between
+&gt; some cyrus utilities that may alter some of those files, (manually) called by
+&gt; people, and the master being restarted automatically by processes supervision.
+&gt; That is if there are such tools (I don&apos;t know them all).
+
+That&apos;s entirely possible.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-06 22:56:13 EDT</bug_when>
+            <thetext>Ok Julien, this is coming along nicely.  By my accounting, the only
+commits pending are some service handling refactoring/bug fixing.
+Is there anything apart from that?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-07 05:27:28 EDT</bug_when>
+            <thetext>(En réponse au commentaire 23)
+&gt; diff --git a/master/master.c b/master/master.c
+&gt; index 5f7da9f..cb59ed3 100644
+&gt; --- a/master/master.c
+&gt; +++ b/master/master.c
+&gt; @@ -1236,7 +1236,7 @@ static void sighandler_setup(void)
+&gt;      sigemptyset(&amp;action.sa_mask);
+&gt; 
+&gt;      action.sa_handler = sighup_handler;
+&gt; -#ifdef SA_RESTART
+&gt; +#if defined(SA_RESTART) &amp;&amp; !defined(HAVE_PSELECT)
+&gt;      action.sa_flags |= SA_RESTART;
+&gt;  #endif
+&gt;      if (sigaction(SIGHUP, &amp;action, NULL) &lt; 0)
+&gt; @@ -1264,6 +1264,7 @@ static void sighandler_setup(void)
+&gt;      /* block SIGCHLD, and set up pselect_sigmask so SIGCHLD
+&gt;       * will be unblocked again inside pselect().  Ditto SIGQUIT.  */
+&gt;      sigemptyset(&amp;siglist);
+&gt; +    sigaddset(&amp;siglist, SIGHUP);
+&gt;      sigaddset(&amp;siglist, SIGCHLD);
+&gt;      sigaddset(&amp;siglist, SIGQUIT);
+&gt;      sigaddset(&amp;siglist, SIGINT);
+
+Actually I wonder if there is a reason not to &quot;emulate&quot; pselect ? The master code do check for signal flags in its main loop code, and goes through myselect waiting for signals/fds. So why not block the signals (SIGHUP included now) and have them not restartable, whether pselect is available or not, and unblock them at the time of calling select (pselect doing it on its own) ?
+
+This way the pselect path would not change, while the select path behaviour would mimic the pselect one (with unblock/block signals actions around select).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-07 05:47:16 EDT</bug_when>
+            <thetext>(En réponse au commentaire 25)
+&gt; &gt; 068d70e4ef1d1b83941ec0061b5ce74fa8893786
+&gt; &gt; (https://github.com/worldline-messaging/cassandane/commit/068d70e4ef1d1b83941ec0061b5ce74fa8893786)
+&gt; &gt;   -&gt; Test primary/associated service disabling/reativation
+&gt; &gt; This one fails in current master, and pass with the refatoring I proposed
+&gt; 
+&gt; Then it&apos;s bug fixing not refactoring!  These tests are failing
+&gt; for me on latest cmu/master.  Which commits did you need to fix?
+&gt; I&apos;m going to merge these but temporarily disabled.
+
+This test fails - even without my commits that were merged - because current master code tries to share fields between primary and non-primary (associate) service entries, while each one can be separately disabled (primary one freeing its fields) regardless of it being primary or not.
+At first I tried to fix it, but found it more complicated to achieve than &apos;refactor&apos; the code so that each service entry has its own life - except that associate entries are disabled upon init if the primary one fails (which for me means there is something wrong with the service, and associate entries are likely to fail too).
+
+Hence my commits which tried to address that:
+028503cf97f2cd4488caefa30d82f05018ae945f
+(https://github.com/worldline-messaging/cyrus-imapd/commit/028503cf97f2cd4488caefa30d82f05018ae945f)
+
+b52ec02e6f7f16b15ffc654470a5b542ed8e4ea5
+(https://github.com/worldline-messaging/cyrus-imapd/commit/b52ec02e6f7f16b15ffc654470a5b542ed8e4ea5)
+  -&gt; minor code cleanup</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-07 05:52:17 EDT</bug_when>
+            <thetext>(En réponse au commentaire 26)
+&gt; Ok Julien, this is coming along nicely.  By my accounting, the only
+&gt; commits pending are some service handling refactoring/bug fixing.
+&gt; Is there anything apart from that?
+
+Apart from my two previous comments ((p)select/SA_RESTART, and service handling refactoring/bug fixing), there were the things about faster master restarting (pid file unlocking, which collide with what is being done in START section) but it does not seem like it will make it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-07 17:21:54 EDT</bug_when>
+            <thetext>So, blocking/unblocking signals around select() (as done by pselect()) would give something like this:
+c39ca954f5b2bdf358e3f18c210d0309b3519464 (https://github.com/worldline-messaging/cyrus-imapd/commit/c39ca954f5b2bdf358e3f18c210d0309b3519464)
+
+
+And you seemed at least interested in closing listening sockets upon shutdown, so a commit for that:
+810bd01e4082a4f924e0d7f2f7bf36b2f2dd820d (https://github.com/worldline-messaging/cyrus-imapd/commit/810bd01e4082a4f924e0d7f2f7bf36b2f2dd820d)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-03-07 17:40:11 EDT</bug_when>
+            <thetext>Argh, I had left something useless in c39ca954f5b2bdf358e3f18c210d0309b3519464.
+As previously said I don&apos;t like rewriting history when I already gave you commit ids. So please use commit 5a9cc93d5205670ffbbef725cfc5479f57c2ed33 as a fixup if you merge it in official code.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-07 18:34:28 EDT</bug_when>
+            <thetext>(In reply to comment #27)
+&gt; (En réponse au commentaire 23)
+
+&gt; Actually I wonder if there is a reason not to &quot;emulate&quot; pselect ? 
+
+Interesting idea, assuming it can be done without a race.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-07 19:04:16 EDT</bug_when>
+            <thetext>(In reply to comment #28)
+&gt; This test fails - even without my commits that were merged - because current
+&gt; master code tries to share fields between primary and non-primary (associate)
+&gt; service entries, while each one can be separately disabled (primary one freeing
+&gt; its fields) regardless of it being primary or not.
+
+That is clearly broken.
+
+&gt; At first I tried to fix it, but found it more complicated to achieve than
+&gt; &apos;refactor&apos; the code so that each service entry has its own life - except that
+&gt; associate entries are disabled upon init if the primary one fails (which for me
+&gt; means there is something wrong with the service, and associate entries are
+&gt; likely to fail too).
+&gt; 
+&gt; Hence my commits which tried to address that:
+&gt; 028503cf97f2cd4488caefa30d82f05018ae945f
+&gt; (https://github.com/worldline-messaging/cyrus-imapd/commit/028503cf97f2cd4488caefa30d82f05018ae945f)
+
+I think this commit is both doing too much and also too little.
+
+Clearly the &quot;struct service&quot; design is wrong, and it smells like
+ipv6 support was hastily retrofitted some years ago by creating
+more instances of struct service.  This creates a number of
+problems, not just the one you&apos;ve fixed here.  For example, if
+a sysadmin wants to run a (say) imapd on both ipv4 and ipv6,
+there is no way to get the maxchild= or maxforkrate= parameter
+to apply across both of those *together*.  There is also the
+confusing behaviour where a SERVICES line like
+
+imap cmd=&quot;imapd&quot; listen=9000 prefork=10
+
+on a machine with IPV6 enabled results in 20 daemons pre-forked
+not the intuitive 10.
+
+A better design would have been to split struct service into two
+structs, one of which has the per-proto information (socket, family
+etc) and one of which has the per-service information (name, command).
+The per-proto structure would be kept in something like the current
+Services[] array (although I would prefer a ptrarray_t) and each
+one would point to per-service struct and hold a reference count
+in that struct.  To do this properly, it might also be necessary
+to allow master/service.c to have more than a single listening socket.
+
+That would be a fairly hefty change for this late stage of the 2.5
+release process, though.  I think it would be excellent material for
+the 2.6 release.  In the meantime I&apos;d prefer to see minimal changes
+to this critical data structure.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-27 22:13:08 EDT</bug_when>
+            <thetext>I don&apos;t think we have any more commits to merge for this bug.  Julien, when you have some more, please open another bug.  Thanks!</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

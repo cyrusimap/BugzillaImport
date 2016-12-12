@@ -1,0 +1,154 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2987</bug_id>
+          
+          <creation_ts>2007-09-02 15:01 EDT</creation_ts>
+          <short_desc>setacl works differently on mailbox with and without DOT</short_desc>
+          <delta_ts>2008-01-08 06:38:26 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alain Spineux">alain.spineux@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-09-02 15:01:07 EDT</bug_when>
+            <thetext>I have two mailbox ti.ti@dell360.asxnet.loc and foo@dell360.asxnet.loc
+and I try to change the ACL. On ti.ti I&apos;am loosing the &apos;a&apos; right and cannot
+get it back.
+
+# cyradm -u ti.ti@dell360.asxnet.loc --password genesis localhost
+dell360.asxnet.loc&gt; lam INBOX
+ti.ti@dell360.asxnet.loc lrswipkxtecda
+dell360.asxnet.loc&gt; sam INBOX ti.ti@dell360.asxnet.loc r
+dell360.asxnet.loc&gt; lam INBOX
+ti.ti@dell360.asxnet.loc r
+dell360.asxnet.loc&gt; sam INBOX ti.ti@dell360.asxnet.loc lrswipkxtecda
+setaclmailbox: ti.ti@dell360.asxnet.loc: lrswipkxtecda: Mailbox does not exist
+
+# cyradm -u foo@dell360.asxnet.loc --password genesis localhost dell360.asxnet.loc&gt; lam INBOX
+foo@dell360.asxnet.loc lrkxca
+dell360.asxnet.loc&gt; sam INBOX foo@dell360.asxnet.loc r
+dell360.asxnet.loc&gt; lam INBOX
+foo@dell360.asxnet.loc lrkxca
+dell360.asxnet.loc&gt; sam INBOX foo@dell360.asxnet.loc lrswipkxtecda
+dell360.asxnet.loc&gt; lam INBOX
+foo@dell360.asxnet.loc lrswipkxtecda
+
+dell360 is a fedora 7 running cyrus-imapd-2.3.8-3.fc7
+
+I also identified the problem on KOLAB 2.2beta1 platform running openpkg imapd-2.3.9, I also tested with pristine imapd-2.3.9 :-)
+
+It looks similar with bug https://bugzilla.andrew.cmu.edu/show_bug.cgi?id=2492
+
+Here is my imapd.conf 
+
+configdirectory: /var/lib/imap
+partition-default: /var/spool/imap
+allowusermoves:         0
+admins: manager
+sasl_pwcheck_method: auxprop
+sasl_auxprop_plugin: sasldb
+sasl_mech_list: PLAIN
+sendmail: /usr/sbin/sendmail
+allowanonymouslogin:    no
+allowplaintext:         yes
+servername:             dell360.asxnet.loc
+autocreatequota:        100000
+reject8bit:             no
+munge8bit:              no
+quotawarn:              80
+lmtp_over_quota_perm_failure: 1
+timeout:                30
+sievedir: /var/lib/imap/sieve
+lmtpsocket: /var/lib/imap/socket/lmtp
+allowapop:              no
+tls_cert_file: /etc/pki/cyrus-imapd/cyrus-imapd.pem
+tls_key_file: /etc/pki/cyrus-imapd/cyrus-imapd.pem
+tls_ca_file: /etc/pki/tls/certs/ca-bundle.crt
+altnamespace:           0
+unixhierarchysep:       yes
+lmtp_downcase_rcpt:     yes
+username_tolower:       1
+hashimapspool:          yes
+virtdomains:            userid
+postuser: cyrus
+userprefix: user
+sharedprefix: shared
+notifysocket: /var/lib/imap/socket/notify
+sievenotifier: mailto
+mailnotifier: mailto
+annotation_db: berkeley
+mboxlist_db: berkeley
+duplicatesuppression: 0
+imapidlepoll: 5</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-09-03 07:22:31 EDT</bug_when>
+            <thetext>The problem looks the be the same for 2.2.X (here on my centos-4.3 imapd-2.2.12).
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2008-01-08 06:38:26 EDT</bug_when>
+            <thetext>I looked into the sources and found the problem.
+This is because user name &quot;ti.ti&quot; != mailbox name &quot;ti^ti&quot;,
+but user name &quot;foo&quot; == mailbox name &quot;foo&quot;.
+
+But I thing their was another problem, when doing a setacl, 
+their is 3 users to take in account!
+
+- login: the one that provided the credential to login
+- owner: the owner of the mailbox
+- who: the &apos;who&apos; in the setacl command
+
+And I thing the test about &quot;implicit&quot; ACL was comparing
+the login with the who instead of owner with the who.
+
+I thing I didn&apos;t wrote any patch because the good information
+where not clearly available in the good function, and this
+part of cyrus is not the easiest to understand.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

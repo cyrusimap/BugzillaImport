@@ -1,0 +1,234 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3675</bug_id>
+          
+          <creation_ts>2012-04-15 09:00 EDT</creation_ts>
+          <short_desc>include ldap.c and afskrb.c, *_LIBS and *_LDFAGS only when necessary</short_desc>
+          <delta_ts>2012-04-15 17:11:15 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Distribution</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          <blocked>3669</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</reporter>
+          <assigned_to name="Dilyan Palauzov">dilyan.palauzov@aegee.org</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 09:00:18 EDT</bug_when>
+            <thetext>Created an attachment (id=1467)
+Add conditionals, fix syntax highlighting in configure.ac
+
+Please find attached patches.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 09:00:51 EDT</bug_when>
+            <thetext>Created an attachment (id=1468)
+Use the new conditionals</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 10:50:13 EDT</bug_when>
+            <thetext>Resolved in 8d1520b841b272972df0bd48b54ce31db405687e on origin/dev/automake</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-04-15 13:28:46 EDT</bug_when>
+            <thetext>The Automake documentation says about AM_CONDITIONAL:
+
+&quot; Note that you must arrange for _every_ `AM_CONDITIONAL&apos; to be invoked every time `configure&apos; is run.  If `AM_CONDITIONAL&apos; is run conditionally (e.g., in a shell `if&apos; statement), then the result will confuse `automake&apos;.&quot;
+
+For me this means, that AM_CONDITIONAL cannot be inside if ... fi . However the patch adds to configure.ac:
+
+@@ -750,12 +752,13 @@ if test &quot;x$with_ldap&quot; != &quot;xno&quot;; then
+ 
+     CPPFLAGS=$save_CPPFLAGS
+     LDFLAGS=$save_LDFLAGS
++
++    AM_CONDITIONAL([USE_LDAP], [test $HAVE_LDAP = 1])
++
+ fi
+
+which is AM_CONDITIONAL within if ... fi.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-04-15 13:57:43 EDT</bug_when>
+            <thetext>You cannot just use &quot;AM_CONDITIONAL([USE_AFSKRB], [test $HAVE_AFSKRB = 1])&quot; in a context, where $HAVE_AFSKRB is possible not defined (resolves $HAVE_AFSKRB to nothing).  In this way the generated configure contains:
+
+if test $HAVE_AFSKRB = 1; then  # line 9013
+  USE_AFSKRB_TRUE=
+  USE_AFSKRB_FALSE=&apos;#&apos;
+else
+  USE_AFSKRB_TRUE=&apos;#&apos;
+  USE_AFSKRB_FALSE=
+fi
+
+and running ./configure --disable-afs leads the the message
+
+./configure: line 9013: test: =: unary operator expected
+
+The same applies for
+AM_CONDITIONA([USE_LDAP], [test $HAVE_LDAP = 1])
+
+I the latter I suggest replacing the test with
+  AM_CONDITIONAL([USE_LDAP], [test &quot;x$with_ldap&quot; != &quot;xno&quot;])
+For the former you could try to put quotes around $HAVE_AFSKRB.
+
+With LDAP I guess the problem is not in using @LDAP_LIBS@, but the fact, that AC_SUBST(LDAP_LIBS) is executed only when &apos;test &quot;x$with_ldap&quot; != &quot;xno&quot;&apos;.  It might be better to leave Makefile.am as is, and instead fix configure.ac to AC_SUBST(LDAP_CPPFLAGS)
+AC_SUBST(LDAP_LDFLAGS)
+AC_SUBST LDAP_LIBS)
+exactly once (irrespective of ./configure --with-ldap).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 17:11:15 EDT</bug_when>
+            <thetext>(In reply to comment #3)
+&gt; The Automake documentation says about AM_CONDITIONAL:
+&gt; 
+&gt; &quot; Note that you must arrange for _every_ `AM_CONDITIONAL&apos; to be invoked every
+&gt; time `configure&apos; is run.  If `AM_CONDITIONAL&apos; is run conditionally (e.g., in a
+&gt; shell `if&apos; statement), then the result will confuse `automake&apos;.&quot;
+&gt; 
+&gt; For me this means, that AM_CONDITIONAL cannot be inside if ... fi.
+
+Fair enough, make -B resolves this problem but that should not set the standard.
+
+I&apos;ve moved the AM_CONDITIONAL to outside of the if/fi block.
+
+(In reply to comment #4)
+&gt; You cannot just use &quot;AM_CONDITIONAL([USE_AFSKRB], [test $HAVE_AFSKRB = 1])&quot; in
+&gt; a context, where $HAVE_AFSKRB is possible not defined.
+
+Also a good catch, I&apos;ve quoted both am conditional test statements now, to form a string comparison.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1467</attachid>
+            <date>2012-04-15 09:00 EDT</date>
+            <desc>Add conditionals, fix syntax highlighting in configure.ac</desc>
+            <filename>0002-Do-not-use-contractions-it-screws-up-syntax-highligh.patch</filename>
+            <type>text/plain</type>
+            <size>1679</size>
+            <attacher>vanmeeuwen@kolabsys.com</attacher>
+            
+              <data encoding="base64">RnJvbSA4ZDE1MjBiODQxYjI3Mjk3MmRmMGJkNDhiNTRjZTMxZGI0MDU2ODdlIE1vbiBTZXAgMTcg
+MDA6MDA6MDAgMjAwMQpGcm9tOiAiSmVyb2VuIHZhbiBNZWV1d2VuIChLb2xhYiBTeXN0ZW1zKSIg
+PHZhbm1lZXV3ZW5Aa29sYWJzeXMuY29tPgpEYXRlOiBTdW4sIDE1IEFwciAyMDEyIDEzOjQ0OjI0
+ICswMTAwClN1YmplY3Q6IFtQQVRDSCAyLzNdIERvIG5vdCB1c2UgY29udHJhY3Rpb25zIChpdCBz
+Y3Jld3MgdXAgc3ludGF4CiBoaWdobGlnaHRpbmcgZm9yIHRoZSByZXN0IG9mIHRoZSBmaWxlKSBB
+ZGQgVVNFX0xEQVAgYW5kCiBVU0VfQUZTS1JCIGNvbmRpdGlvbmFscyB0byB1c2Ugd2l0aCBidWls
+ZGluZyBwdGNsaWVudAoKLS0tCiBjb25maWd1cmUuYWMgfCAgICA5ICsrKysrKy0tLQogMSBmaWxl
+cyBjaGFuZ2VkLCA2IGluc2VydGlvbnMoKyksIDMgZGVsZXRpb25zKC0pCgpkaWZmIC0tZ2l0IGEv
+Y29uZmlndXJlLmFjIGIvY29uZmlndXJlLmFjCmluZGV4IDk3Mjg0MmQuLmVlOTgyMGMgMTAwNjQ0
+Ci0tLSBhL2NvbmZpZ3VyZS5hYworKysgYi9jb25maWd1cmUuYWMKQEAgLTY5Nyw3ICs2OTcsNyBA
+QCBpZiB0ZXN0ICJ4JGVuYWJsZV9hZnMiID0gInh5ZXMiOyB0aGVuCiAgICAgICAgIF0pCiAgICAg
+aWYgdGVzdCAiJGN5cnVzX2N2X2Fmc19zaWd2ZWMiID0geWVzOyB0aGVuCiAgICAgICBpZiB0ZXN0
+ICIkY2FudF9maW5kX3NpZ3ZlYyIgPSB5ZXM7IHRoZW4KLSAgICAgICAgQUNfTVNHX1dBUk4oW0Nh
+bid0IGZpbmQgYSBzaWd2ZWMgZm9yIEFGUyBsaWJyYXJpZXMgd2hpY2ggc2VlbSB0byBuZWVkIG9u
+ZS5dKQorICAgICAgICBBQ19NU0dfV0FSTihbQ2FuIG5vdCBmaW5kIGEgc2lndmVjIGZvciBBRlMg
+bGlicmFyaWVzIHdoaWNoIHNlZW0gdG8gbmVlZCBvbmUuXSkKICAgICAgIGVsc2UKICAgICAgICAg
+QUZTX0xJQlM9IiR7QUZTX0xJQlN9ICRjeXJ1c19jdl9zaWd2ZWNsaWIiCiAgICAgICAgIEFDX1NV
+QlNUKEFGU19MSUJTKQpAQCAtNzExLDcgKzcxMSw5IEBAIGlmIHRlc3QgIngkZW5hYmxlX2FmcyIg
+PSAieHllcyI7IHRoZW4KICAgICAgIEFDX0RFRklORShIQVZFX0FGU0tSQixbXSxbU2hvdWxkIHdl
+IGJ1aWxkIGFmc2tyYiBwdHMgbW9kdWxlP10pCiAgICAgZmkKICAgICBMSUJTPSIkU0FWRV9MSUJT
+IgorCiBmaQorQU1fQ09ORElUSU9OQUwoW1VTRV9BRlNLUkJdLCBbdGVzdCAkSEFWRV9BRlNLUkIg
+PSAxXSkKIAogTERBUF9DUFBGTEFHUz0iIgogTERBUF9MREZMQUdTPSIiCkBAIC03NTAsMTIgKzc1
+MiwxMyBAQCBpZiB0ZXN0ICJ4JHdpdGhfbGRhcCIgIT0gInhubyI7IHRoZW4KIAogICAgIENQUEZM
+QUdTPSRzYXZlX0NQUEZMQUdTCiAgICAgTERGTEFHUz0kc2F2ZV9MREZMQUdTCisKKyAgICBBTV9D
+T05ESVRJT05BTChbVVNFX0xEQVBdLCBbdGVzdCAkSEFWRV9MREFQID0gMV0pCisKIGZpCiAgCiBB
+TV9DT05ESVRJT05BTChbUFRDTElFTlRdLCBbdGVzdCAieCRlbmFibGVfYWZzIiA9ICJ4eWVzIiAt
+byAieCR3aXRoX2xkYXAiICE9ICJ4bm8iXSkKIAotCi0KIEFDX0FSR19FTkFCTEUoc2VydmVyLAog
+CVtBU19IRUxQX1NUUklORyhbLS1kaXNhYmxlLXNlcnZlcl0sIFtkaXNhYmxlIGNvbXBpbGluZyBz
+ZXJ2ZXJzXSldKQogQU1fQ09ORElUSU9OQUwoW1NFUlZFUl0sIFt0ZXN0ICIkZW5hYmxlX3NlcnZl
+ciIgIT0gIm5vIl0pCi0tIAoxLjcuNy42Cgo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1468</attachid>
+            <date>2012-04-15 09:00 EDT</date>
+            <desc>Use the new conditionals</desc>
+            <filename>0003-Use-the-new-USE_LDAP-and-USE_AFSKRB-conditionals-to-.patch</filename>
+            <type>text/plain</type>
+            <size>1704</size>
+            <attacher>vanmeeuwen@kolabsys.com</attacher>
+            
+              <data encoding="base64">RnJvbSBiNTAyMzUwZGFjMTRlMDQ1MDk1MWQyN2VhYWFmNzM1MzcyMzkwZGM0IE1vbiBTZXAgMTcg
+MDA6MDA6MDAgMjAwMQpGcm9tOiAiSmVyb2VuIHZhbiBNZWV1d2VuIChLb2xhYiBTeXN0ZW1zKSIg
+PHZhbm1lZXV3ZW5Aa29sYWJzeXMuY29tPgpEYXRlOiBTdW4sIDE1IEFwciAyMDEyIDEzOjQ4OjA0
+ICswMTAwClN1YmplY3Q6IFtQQVRDSCAzLzNdIFVzZSB0aGUgbmV3IFVTRV9MREFQIGFuZCBVU0Vf
+QUZTS1JCIGNvbmRpdGlvbmFscyB0bwogc2VsZWN0aXZlbHkgYnVpbGQgYW5kIGluY2x1ZGUgdGhl
+IHJlc3BlY3RpdmUgcHRjbGllbnQKIGNhcGFiaWxpdGllcwoKLS0tCiBNYWtlZmlsZS5hbSB8ICAg
+MTkgKysrKysrKysrKysrKysrKy0tLQogMSBmaWxlcyBjaGFuZ2VkLCAxNiBpbnNlcnRpb25zKCsp
+LCAzIGRlbGV0aW9ucygtKQoKZGlmZiAtLWdpdCBhL01ha2VmaWxlLmFtIGIvTWFrZWZpbGUuYW0K
+aW5kZXggY2I1YTBiYS4uMjYzYmM1NiAxMDA2NDQKLS0tIGEvTWFrZWZpbGUuYW0KKysrIGIvTWFr
+ZWZpbGUuYW0KQEAgLTU0MCw5ICs1NDAsMjIgQEAgcHRjbGllbnRfcHRleHBpcmVfTERBREQgPSAk
+KHB0Y2xpZW50X3B0ZHVtcF9MREFERCkKICNwdGNsaWVudF9wdGV4dHJhY3RfU09VUkNFUyA9IGlt
+YXAvY2xpX2ZhdGFsLm8gaW1hcC9tdXRleF9mYWtlLm8gcHRjbGllbnQvcHRleHRyYWMuYwogI3B0
+Y2xpZW50X3B0ZXh0cmFjdF9MREFERCA9ICQocHRjbGllbnRfcHRkdW1wX0xEQUREKQogCi1wdGNs
+aWVudF9wdGxvYWRlcl9TT1VSQ0VTID0gcHRjbGllbnQvcHRsb2FkZXIuYyBwdGNsaWVudC9wdGxv
+YWRlci5oIHB0Y2xpZW50L2Fmc2tyYi5vYyBwdGNsaWVudC9sZGFwLmMgaW1hcC9tdXRleF9mYWtl
+Lm8gbWFzdGVyL3NlcnZpY2UtdGhyZWFkLmMKLXB0Y2xpZW50X3B0bG9hZGVyX0xEQUREID0gQEFG
+U19MSUJTQCBATERBUF9MSUJTQCAkKHB0Y2xpZW50X3B0ZHVtcF9MREFERCkgQExJQl9XUkFQQAot
+cHRjbGllbnRfcHRsb2FkZXJfTERGTEFHUyA9IEBBRlNfTERGTEFHU0AgQExEQVBfTERGTEFHU0AK
+K3B0Y2xpZW50X3B0bG9hZGVyX1NPVVJDRVMgPSBwdGNsaWVudC9wdGxvYWRlci5jIHB0Y2xpZW50
+L3B0bG9hZGVyLmggaW1hcC9tdXRleF9mYWtlLm8gbWFzdGVyL3NlcnZpY2UtdGhyZWFkLmMKKwor
+cHRjbGllbnRfcHRsb2FkZXJfTERBREQgPSAkKHB0Y2xpZW50X3B0ZHVtcF9MREFERCkgQExJQl9X
+UkFQQAorcHRjbGllbnRfcHRsb2FkZXJfTERGTEFHUyA9IAorCitpZiBVU0VfTERBUAorcHRjbGll
+bnRfcHRsb2FkZXJfU09VUkNFUyArPSBwdGNsaWVudC9sZGFwLmMKK3B0Y2xpZW50X3B0bG9hZGVy
+X0xEQUREICs9IEBMREFQX0xJQlNACitwdGNsaWVudF9wdGxvYWRlcl9MREZMQUdTICs9IEBMREFQ
+X0xERkxBR1NACitlbmRpZgorCitpZiBVU0VfQUZTS1JCCitwdGNsaWVudF9wdGxvYWRlcl9TT1VS
+Q0VTICs9IHB0Y2xpZW50L2Fmc2tyYi5jCitwdGNsaWVudF9wdGxvYWRlcl9MREFERCArPSBAQUZT
+X0xJQlNACitwdGNsaWVudF9wdGxvYWRlcl9MREZMQUdTICs9IEBBRlNfTERGTEFHU0AKK2VuZGlm
+CiAKIHNpZXZlX2xpYnNpZXZlX2FfU09VUkNFUyA9IHNpZXZlL2J5dGVjb2RlLmggc2lldmUvYWRk
+ci55IHNpZXZlL2FkZHItbGV4LmwgXAogCXNpZXZlL2JjX2R1bXAuYyBzaWV2ZS9iY19lbWl0LmMg
+c2lldmUvYmNfZXZhbC5jIHNpZXZlL2JjX2dlbmVyYXRlLmMgXAotLSAKMS43LjcuNgoK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,124 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3616</bug_id>
+          
+          <creation_ts>2011-12-20 03:09 EDT</creation_ts>
+          <short_desc>master can deadlock during shutdown</short_desc>
+          <delta_ts>2012-02-15 00:23:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-12-20 03:09:41 EDT</bug_when>
+            <thetext>The Cassandane test suite shuts down Cyrus&apos; master program by sending it SIGQUIT.  The SIGQUIT handler does:
+
+1032 static void sigquit_handler(int sig __attribute__((unused)))
+1033 {
+...
+1049     /* Set a flag so main loop knows to shut down when
+1050        all children have exited */
+1051     in_shutdown = 1;
+1052 
+1053     syslog(LOG_INFO, &quot;attempting clean shutdown on SIGQUIT&quot;);
+1054 }
+
+This is racy.  If the SIGQUIT signal arrived at the wrong time, specifically
+while master was executing under the lock taken internally in the syslog()
+function, then this happens:
+
+Program terminated with signal 4, Illegal instruction.
+(gdb) bt
+#0  __lll_lock_wait_private () at ../nptl/sysdeps/unix/sysv/linux/x86_64/lowlevellock.S:97
+#1  0x0000000006b13ae8 in _L_lock_743 () from /lib/libc.so.6
+#2  0x0000000006b135b2 in __vsyslog_chk (pri=&lt;value optimised out&gt;, flag=-1, fmt=&lt;value optimised out&gt;, 
+    ap=0x7feffe378) at ../misc/syslog.c:260
+#3  0x0000000006b13a70 in __syslog (pri=115019888, fmt=0x2ddf9 &lt;Address 0x2ddf9 out of bounds&gt;)
+    at ../misc/syslog.c:119
+#4  0x0000000000407667 in sigterm_handler (sig=15) at master.c:1092
+#5  &lt;signal handler called&gt;
+#6  __lll_lock_wait_private () at ../nptl/sysdeps/unix/sysv/linux/x86_64/lowlevellock.S:95
+#7  0x0000000006b13ae8 in _L_lock_743 () from /lib/libc.so.6
+#8  0x0000000006b135b2 in __vsyslog_chk (pri=&lt;value optimised out&gt;, flag=-1, fmt=&lt;value optimised out&gt;, 
+    ap=0x7fefff228) at ../misc/syslog.c:260
+#9  0x0000000006b13a70 in __syslog (pri=115019888, fmt=0x26382 &lt;Address 0x26382 out of bounds&gt;)
+    at ../misc/syslog.c:119
+#10 0x0000000000407581 in sigquit_handler (sig=3) at master.c:1053
+#11 &lt;signal handler called&gt;
+#12 0x0000000006b18810 in __libc_send (fd=&lt;value optimised out&gt;, buf=0x8078d10, n=88, flags=112298002)
+    at ../sysdeps/unix/sysv/linux/x86_64/send.c:28
+#13 0x0000000006b136c0 in __vsyslog_chk (pri=&lt;value optimised out&gt;, flag=-1, fmt=&lt;value optimised out&gt;, 
+    ap=0x7ff000070) at ../misc/syslog.c:281
+#14 0x0000000006b13a70 in __syslog (pri=6, fmt=0x58 &lt;Address 0x58 out of bounds&gt;) at ../misc/syslog.c:119
+#15 0x0000000000405e4b in decode_wait_status (pid=32101, status=9) at master.c:553
+#16 0x0000000000406dd8 in reap_child () at master.c:871
+#17 0x000000000040a677 in main (argc=10, argv=0x7ff0004c8) at master.c:2070
+
+At frame #11, a SIGQUIT arrived during while the syslog lock was held.
+The syslog() from the SIGQUIT handler then deadlocked at frame #6.
+After a few seconds, Cassandane lost patience and sent a SIGTERM,
+caught at frame #5, which then proceeded to deadlock again at frame #0.
+Finally after some investigation I manually sent the process SIGILL
+which signal isn&apos;t caught and so the process actually died with a core.
+
+This is a prime example of why UNIX 101 courses teach us not to do
+fancy things in signal handlers.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-01-24 19:32:47 EDT</bug_when>
+            <thetext>Moved this to ASSIGNED to silence the Bugzilla whinygrams.
+
+I have a fix for this in my iris405 branch, see
+
+https://github.com/gnb/cyrus-imapd/commit/61da8858573d91c14a4d641e46731829f529c94c
+
+it&apos;s just a question of when to merge it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-02-15 00:23:04 EDT</bug_when>
+            <thetext>Fixed in http://git.cyrusimap.org/cyrus-imapd/commit/?id=d3f71ec8152292db2d4374024b18be60a3275f34</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

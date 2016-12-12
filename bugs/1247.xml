@@ -1,0 +1,204 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1247</bug_id>
+          
+          <creation_ts>2002-04-17 10:38 EDT</creation_ts>
+          <short_desc>Sieve depends on duplicate delivery suppression</short_desc>
+          <delta_ts>2010-10-18 12:42:56 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ken Murchison">ken@oceana.com</reporter>
+          <assigned_to name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</assigned_to>
+          <cc>ashley@semantic.org</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-17 10:38:01 EDT</bug_when>
+            <thetext>Currently Sieve is disabled if duplicate delivery suppression is disabled, for 
+fear of allowing mail loops to occur.
+
+AFAIK, redirect, reject and vacation are the only actions which could cause a 
+loop.  I brief look at the code leads me to believe that there are currently 
+controls in place for these actions which would prevent loops without depending 
+on duplicate suppression.
+
+redirect: we keep track of outgoing redirects, so that they only happen once 
+(because of over quota retries, etc) -- this fails if the message doesn&apos;t have 
+a msgid (so would dup supression for that matter)
+
+reject: we send out the responses with an empty envelope from: address so that 
+we won&apos;t get a reply
+
+vacation: we keep track of our replies so that each sender only gets one 
+response, regardless of the msgid.  we also send out the responses with an 
+empty envelope from: address so that we won&apos;t get a reply
+
+We still need to have deliver.db active, but that&apos;s not a problem.
+
+Based on this, I think we can make Sieve and duplicate suppression mutually 
+exclusive.  Any flaws in my logic?  Comments?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-04-22 21:43:28 EDT</bug_when>
+            <thetext>the major problem is broken implementations that look at &quot;From&quot; addresses
+instead of the envelope address.
+
+i think i agree with your analysis that if the other implementation is playing
+fair then everything works out ok.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-22 22:07:19 EDT</bug_when>
+            <thetext>Is this worth doing for 2.1.4?  I _think_ the work involved is trivial.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-23 16:28:45 EDT</bug_when>
+            <thetext>Created an attachment (id=30)
+patch that unhinges sieve from duplicate suppression
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-04-23 16:29:46 EDT</bug_when>
+            <thetext>comments on the patch?  is this a keeper for 2.1.4, or should we wait?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-05-15 14:16:48 EDT</bug_when>
+            <thetext>this looks pretty good to me.
+
+the main problem i see is that &quot;reject&quot; responses could come back to us due to
+broken mail systems responding to the &quot;From:&quot; address and not the SMTP envelope.
+ i&apos;m not sure what a good solution to that is, though.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-05-15 14:21:32 EDT</bug_when>
+            <thetext>can we add an empty reply-to: header?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-05-15 14:26:38 EDT</bug_when>
+            <thetext>it&apos;s hard to tell what these sort of repliers would do with that.  probably we
+should just not worry about it and commit your patch as is.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-05-15 14:32:04 EDT</bug_when>
+            <thetext>fortunately, because we track our rejects in deliver.db, we _shouldn&apos;t_ send 
+out a reject for our bounced/returned reject
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-05-15 14:42:13 EDT</bug_when>
+            <thetext>committed patch</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>30</attachid>
+            <date>2002-04-23 16:28 EDT</date>
+            <desc>patch that unhinges sieve from duplicate suppression</desc>
+            <filename>sieve-dup.patch</filename>
+            <type>text/plain</type>
+            <size>2734</size>
+            <attacher>ken@oceana.com</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGxtdHBkLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2
+cy9zcmMvY3lydXMvaW1hcC9sbXRwZC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjk2CmRpZmYg
+LXUgLWMgLXIxLjk2IGxtdHBkLmMKY3ZzIHNlcnZlcjogY29uZmxpY3Rpbmcgc3BlY2lmaWNhdGlv
+bnMgb2Ygb3V0cHV0IHN0eWxlCioqKiBsbXRwZC5jCTIwMDIvMDQvMTUgMTQ6NDI6MTcJMS45Ngot
+LS0gbG10cGQuYwkyMDAyLzA0LzIzIDIwOjI0OjQ0CioqKioqKioqKioqKioqKgoqKiogMTU2LDE2
+MiAqKioqCiAgZXh0ZXJuIGludCBvcHRpbmQ7CiAgZXh0ZXJuIGNoYXIgKm9wdGFyZzsKICBleHRl
+cm4gaW50IGVycm5vOwohIHN0YXRpYyBpbnQgZHVwZWxpbSA9IDA7CQkvKiBlbGltaW5hdGUgZHVw
+bGljYXRlIG1lc3NhZ2VzIHdpdGgKICAJCQkJICAgc2FtZSBtZXNzYWdlLWlkICovCiAgc3RhdGlj
+IGludCBzaW5nbGVpbnN0YW5jZSA9IDE7CS8qIGF0dGVtcHQgc2luZ2xlIGluc3RhbmNlIHN0b3Jl
+ICovCiAgY29uc3QgY2hhciAqQkIgPSAiIjsKLS0tIDE1NiwxNjMgLS0tLQogIGV4dGVybiBpbnQg
+b3B0aW5kOwogIGV4dGVybiBjaGFyICpvcHRhcmc7CiAgZXh0ZXJuIGludCBlcnJubzsKISBzdGF0
+aWMgaW50IGhhdmVfZHVwZGIgPSAxOwkvKiBkdXBsaWNhdGUgZGVsaXZlcnkgZGIgaXMgaW5pdGlh
+bGl6ZWQgKi8KISBzdGF0aWMgaW50IGR1cGVsaW0gPSAxOwkJLyogZWxpbWluYXRlIGR1cGxpY2F0
+ZSBtZXNzYWdlcyB3aXRoCiAgCQkJCSAgIHNhbWUgbWVzc2FnZS1pZCAqLwogIHN0YXRpYyBpbnQg
+c2luZ2xlaW5zdGFuY2UgPSAxOwkvKiBhdHRlbXB0IHNpbmdsZSBpbnN0YW5jZSBzdG9yZSAqLwog
+IGNvbnN0IGNoYXIgKkJCID0gIiI7CioqKioqKioqKioqKioqKgoqKiogMjcxLDI4MyAqKioqCiAg
+ICAgIH0KICAKICAgICAgZHVwZWxpbSA9IGNvbmZpZ19nZXRzd2l0Y2goImR1cGxpY2F0ZXN1cHBy
+ZXNzaW9uIiwgMSk7CiEgICAgIGlmIChkdXBlbGltKSB7CiEgCS8qIGluaXRpYWxpemUgZHVwbGlj
+YXRlIGRlbGl2ZXJ5IGRhdGFiYXNlICovCiEgCWlmIChkdXBsaWNhdGVfaW5pdChOVUxMLCAwKSAh
+PSAwKSB7CiEgCSAgICBzeXNsb2coTE9HX0VSUiwgCiEgCQkgICAibG10cGQ6IHVuYWJsZSB0byBp
+bml0IGR1cGxpY2F0ZSBkZWxpdmVyeSBkYXRhYmFzZVxuIik7CiEgCSAgICBkdXBlbGltID0gMDsK
+ISAJfQogICAgICB9CiAgCiAgICAgIC8qIHNvIHdlIGNhbiBkbyBtYm94bGlzdCBvcGVyYXRpb25z
+ICovCi0tLSAyNzIsMjgyIC0tLS0KICAgICAgfQogIAogICAgICBkdXBlbGltID0gY29uZmlnX2dl
+dHN3aXRjaCgiZHVwbGljYXRlc3VwcHJlc3Npb24iLCAxKTsKISAgICAgLyogaW5pdGlhbGl6ZSBk
+dXBsaWNhdGUgZGVsaXZlcnkgZGF0YWJhc2UgKi8KISAgICAgaWYgKGR1cGxpY2F0ZV9pbml0KE5V
+TEwsIDApICE9IDApIHsKISAJc3lzbG9nKExPR19FUlIsIAohIAkgICAgICAgImxtdHBkOiB1bmFi
+bGUgdG8gaW5pdCBkdXBsaWNhdGUgZGVsaXZlcnkgZGF0YWJhc2VcbiIpOwohIAlkdXBlbGltID0g
+aGF2ZV9kdXBkYiA9IDA7CiAgICAgIH0KICAKICAgICAgLyogc28gd2UgY2FuIGRvIG1ib3hsaXN0
+IG9wZXJhdGlvbnMgKi8KKioqKioqKioqKioqKioqCioqKiAxMDYxLDEwNjggKioqKgogIAlyZXR1
+cm4gTlVMTDsKICAgICAgfQogICAgICAKISAgICAgaWYgKCFkdXBlbGltKSB7CiEgCS8qIGR1cGxp
+Y2F0ZSBkZWxpdmVyeSBzdXBwcmVzc2lvbiBpcyBuZWVkZWQgZm9yIHNpZXZlICovCiAgCXJldHVy
+biBOVUxMOwogICAgICB9CiAgCi0tLSAxMDYwLDEwNjcgLS0tLQogIAlyZXR1cm4gTlVMTDsKICAg
+ICAgfQogICAgICAKISAgICAgaWYgKCFoYXZlX2R1cGRiKSB7CiEgCS8qIGR1cGxpY2F0ZSBkZWxp
+dmVyeSBkYXRhYmFzZSBpcyBuZWVkZWQgZm9yIHNpZXZlICovCiAgCXJldHVybiBOVUxMOwogICAg
+ICB9CiAgCioqKioqKioqKioqKioqKgoqKiogMTIzNiwxMjU0ICoqKioKICAJCXNucHJpbnRmKG5h
+bWVidWYsIHNpemVvZihuYW1lYnVmKSwgIiVzKyVzIiwgcmNwdCwKICAJCQkgcGx1cyA/IHBsdXMg
+OiAiIik7CiAgCQkKLSAJCS8qIGlzIHRoaXMgdGhlIGZpcnN0IHRpbWUgd2UndmUgc2lldmVkIHRo
+ZSBtZXNzYWdlPyAqLwotIAkJaWYgKG1zZ2RhdGEtPmlkKSB7Ci0gCQkgICAgY2hhciAqc2RiID0g
+bWFrZV9zaWV2ZV9kYihuYW1lYnVmKTsKLSAJCSAgICAKLSAJCSAgICBpZiAoZHVwbGljYXRlX2No
+ZWNrKG1zZ2RhdGEtPmlkLCBzdHJsZW4obXNnZGF0YS0+aWQpLAotIAkJCQkJc2RiLCBzdHJsZW4o
+c2RiKSkpIHsKLSAJCQlsb2dkdXBlbGVtKG1zZ2RhdGEtPmlkLCBzZGIpOwotIAkJCS8qIGRvbmUg
+aXQgYmVmb3JlICEgKi8KLSAJCQlyID0gMDsKLSAJCQlnb3RvIGRvbmVyY3B0OwotIAkJICAgIH0K
+LSAJCX0KLSAJCQogIAkJciA9IHNpZXZlX3NjcmlwdF9wYXJzZShzaWV2ZV9pbnRlcnAsIGYsICh2
+b2lkICopIHNkYXRhLCAmcyk7CiAgCQlmY2xvc2UoZik7CiAgCQlpZiAociA9PSBTSUVWRV9PSykg
+ewotLS0gMTIzNSwxMjQwIC0tLS0KKioqKioqKioqKioqKioqCioqKiAxMzA3LDEzMTMgKioqKgog
+IAkgICAgfQogIAl9CiAgCi0gICAgIGRvbmVyY3B0OgogIAlmcmVlKHJjcHQpOwogIAltc2dfc2V0
+cmNwdF9zdGF0dXMobXNnZGF0YSwgbiwgcik7CiAgICAgIH0KLS0tIDEyOTMsMTI5OCAtLS0tCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

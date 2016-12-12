@@ -1,0 +1,379 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1370</bug_id>
+          
+          <creation_ts>2002-08-14 23:45 EDT</creation_ts>
+          <short_desc>find_msgid can search beyond end of current header field</short_desc>
+          <delta_ts>2010-10-18 12:08:39 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.1.x</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Justin T. Gibbs">gibbs@scsiguy.com</reporter>
+          <assigned_to name="Ken Murchison">ken@oceana.com</assigned_to>
+          <cc>leg@andrew.cmu.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Justin T. Gibbs">gibbs@scsiguy.com</who>
+            <bug_when>2002-08-14 23:45:33 EDT</bug_when>
+            <thetext>When threading messages by reference ID, imap/index.c:index_get_ids() calls
+imap/index.c:find_msgid() with a string pointer that begins at the &quot;references:&quot;
+header field and is null terminated by the end of the header.  Since 
+index_get_ids() calls find_msgid() repeatedly until find_msgid() returns NULL,
+and find_msgid() will only stop once it has encountered the final NULL in the
+passed in string, find_msgid() can return false msgid hits for any string of the
+form &quot;&lt;.*&gt;&quot; that occur in header fields after the &quot;references:&quot; header field.
+
+The typical result of this bug is the failure to thread some related messages.
+However, this defect can result in a server crash.  Index_thread_compare()
+assumes that any two threads will either directly reference a message or
+have children.  If given a message that references messages that are not
+in the mailbox being sorted that just happens to have a field following the
+references field that contains a &quot;&lt;.*&gt;&quot; that appears in multiple unrelated
+messages, it is possible for the &quot;empty&quot; but referenced threads to never have
+children.  The code in ref_link_messages() will not reparent an already 
+referenced thread that has an existing parent, so if this &quot;bogus&quot; reference
+has been seen earlier in the mailbox, the chain: real references -&gt; bogus
+reference -&gt; current message, will never be completed.  The last case in
+ref_prune_tree() assumes that a thread with children will never have all of
+its children pruned away and so can leave the empty containers that will
+violate the assumptions in index_thread_compare().
+
+I&apos;m sure the above is clear as mud.  Sorry, the side effects are hard to
+describe.
+
+Attached is a patch for the find_msgid() issue.  It seemed most straight
+forward to find inside of find_msgid() rather than attempt to find the end
+of the references field, null terminate, look for msgids, replace original
+character at the end of the references field, etc.  In debuggin this, I
+first modified ref_prune_tree() to check for an empty, childless, thread
+object after the recursive call and to then prune the current thread.  Although
+not included in this patch, it may still be wise to do this as a safeguard
+against bogus headers.
+
+--- index.c.orig        Sun Aug 11 08:39:41 2002
++++ index.c     Wed Aug 14 20:59:53 2002
+@@ -3490,7 +3490,13 @@
+     src = str;
+
+     /* find the start of a msgid */
+-    while ((cp = src = strchr(src, &apos;&lt;&apos;)) != NULL) {
++    while ((cp = src = strpbrk(src, &quot;&lt;:&quot;)) != NULL) {
++
++       /* If we encounter a &apos;:&apos; before a &apos;&lt;&apos;, we&apos;ve gone
++        * past the header field of interest.
++        */
++       if (*cp == &apos;:&apos;)
++           break;
+
+        /* see if we have (and skip) a quoted localpart */
+        if (*++cp == &apos;\&quot;&apos;) {
+@@ -4113,7 +4119,7 @@
+            cur = prev;
+        }
+
+-       /* if we have empty container with children, AND
++       /* if we have an empty container with children, AND
+         * we&apos;re not at the root OR we only have one child,
+         * then remove the container but promote its children to this level
+         * (splice them into the current child list)
+@@ -4443,7 +4449,7 @@
+      * - We also will need containers for references to non-existent messages.
+      *   To make sure we have enough, we will take the worst case and
+      *   use the sum of the number of references for all messages.
+-     * - Finally, we will might need containers to group threads with the same
++     * - Finally, we will need containers to group threads with the same
+      *   subject together.  To make sure we have enough, we will take the
+      *   worst case which will be half of the number of messages.
+      *
+@@ -4451,6 +4457,10 @@
+      * ahead of time.  If we tried to use xrealloc(), the array might be moved,
+      * and our parent/child/next pointers will no longer be correct
+      * (been there, done that).
++     *
++     * JGibbs - 2002/08/11 You could use xrealloc so long as you record
++     *         the old array location and add the offset between it
++     *         and the new array location to all pointers into the array.
+      */
+     nnode = (int) (1.5 * nmsg + 1 + tref);
+     rootset.root = (Thread *) xmalloc(nnode * sizeof(Thread));</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-08-15 10:50:19 EDT</bug_when>
+            <thetext>I&apos;m confused as to how we find msgids in headers following the References: 
+header.  Are you saying that we somehow get past the end of the references 
+string, or that it isn&apos;t NUL terminated?
+
+This code was compatibility tested with the UW server on a mailbox with &gt;5K 
+messages and we didn&apos;t see this behavior.  Perhaps this is a malformed message 
+which puts us in GIGO mode (garbage in - garbage out).
+
+Can you send me a message that exhibits this behavior?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Justin T. Gibbs">gibbs@scsiguy.com</who>
+            <bug_when>2002-08-15 11:00:38 EDT</bug_when>
+            <thetext>Created an attachment (id=59)
+A valid message with two fields outside of the references field that find_msgid() will return as valid msgids.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Justin T. Gibbs">gibbs@scsiguy.com</who>
+            <bug_when>2002-08-15 11:07:02 EDT</bug_when>
+            <thetext>In imap/index.c:
+
+void index_get_ids(MsgData *msgdata, char *envtokens[], const char *headers)
+{
+    ...
+    /* grab the References header */
+    if ((refstr = stristr(headers, &quot;references:&quot;))) {
+        /* allocate some space for refs */
+        msgdata-&gt;ref = (char **) xmalloc(refsize * sizeof(char *));
+        /* find references */
+        while ((ref = find_msgid(refstr, &amp;refstr)) != NULL) {
+            /* reallocate space for this msgid if necessary */
+            if (msgdata-&gt;nref == refsize) {
+                refsize += REFGROWSIZE;
+                msgdata-&gt;ref = (char **)
+                    xrealloc(msgdata-&gt;ref, refsize * sizeof(char *));
+            }
+            /* store this msgid in the array */
+            msgdata-&gt;ref[msgdata-&gt;nref++] = ref;
+        }
+    }
+
+The references string is just a pointer into the message header.  It is
+not explicitly null terminated at the end of the references field prior
+to calling find_msgid() so false hits from other header fields are reported.
+
+The message I attached will always report &lt;gibbs@scsiguy.com&gt; as the last
+reference for the message.  I &quot;disted&quot; over 10K messages from my mh mailbox
+into cyrus during my conversion from MH to imap.  the Reset-From: field is
+valid, as is the location of the In-Reply-To: field which just happens to
+be after the References: field.
+
+I can provide a 10k message mailbox from the FreeBSD-CVS mailing list if you&apos;d
+like to have it for your regression tests.  Now that I have threading working
+though, it won&apos;t stay at 10k for long.  I&apos;m in the middle of a much needed
+house cleaning of these mailboxes. 8-)
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Justin T. Gibbs">gibbs@scsiguy.com</who>
+            <bug_when>2002-08-15 11:27:40 EDT</bug_when>
+            <thetext>One more change is required to make this scheme work.  The initial pointer
+into the references field must be advanced past the &quot;references:&quot; tag:
+
+@@ -3570,6 +3576,8 @@
+
+     /* grab the References header */
+     if ((refstr = stristr(headers, &quot;references:&quot;))) {
++       /* skip past references tag. */
++       refstr += 11;
+        /* allocate some space for refs */
+        msgdata-&gt;ref = (char **) xmalloc(refsize * sizeof(char *));
+        /* find references */
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-08-15 12:01:55 EDT</bug_when>
+            <thetext>Just committed a fix which is a little simpler and IMO more logical.
+
+http://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/index.c.diff?r
+1=1.182&amp;r2=1.183&amp;sortby=date
+
+In my testing with your sample message, this solves the problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Justin T. Gibbs">gibbs@scsiguy.com</who>
+            <bug_when>2002-08-15 13:10:11 EDT</bug_when>
+            <thetext>Are header fields in the cache &quot;unfolded&quot; (as specified in RFC822)?  If
+not, then the supplied patch will not catch all references in a &quot;folded&quot;
+references field.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Justin T. Gibbs">gibbs@scsiguy.com</who>
+            <bug_when>2002-08-15 15:36:20 EDT</bug_when>
+            <thetext>I should have said the &quot;committed&quot; fix will only work for &quot;unfolded&quot; reference
+header fields.  The patch I submitted doesn&apos;t care.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-08-16 13:46:58 EDT</bug_when>
+            <thetext>the stored headers in cyrus.cache are kept in unfolded form.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-08-16 13:51:42 EDT</bug_when>
+            <thetext>Great!  So we&apos;re done.  Closing the bug (again).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-08-16 13:53:19 EDT</bug_when>
+            <thetext>wait, hold on.
+i think i misspoke. they&apos;re kept in folded form, that is, wrapped to 80 columns
+like in the original message.
+
+this way the server can respond correctly to a request to fetch
+BODY[HEADER.FIELDS ...] for headers it has cached.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-08-19 10:27:29 EDT</bug_when>
+            <thetext>Committed and testing another fix.  Please review before I close this bug yet 
+again.
+
+http://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/index.c.diff?r
+1=1.183&amp;r2=1.184&amp;sortby=date</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Justin T. Gibbs">gibbs@scsiguy.com</who>
+            <bug_when>2002-08-19 11:31:33 EDT</bug_when>
+            <thetext>There are two problems with using isspace:
+
+isspace is affected by the current locale even though the locale
+for headers is strictly specified.
+
+isspace will treat \r and lots of other things not
+defined as whitespace in RFC2822 as whitespace.  This allows
+the committed code to treat &quot;\r\n\r\n&quot; as a fold when it is not.
+
+WSP in RFC2822 is &quot; &quot; and &quot;\t&quot;.  See section 2.2.2.
+
+Replacing the !ispace call with (*cp != &quot; &quot; &amp;&amp; *cp != &quot;\t&quot;) should
+work.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-08-19 12:22:27 EDT</bug_when>
+            <thetext>fixed WSP detection</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-08-21 15:05:36 EDT</bug_when>
+            <thetext>2.1.6 is out, pushing off.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-08-21 15:06:44 EDT</bug_when>
+            <thetext>2.1.8 actually</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-08-21 15:07:56 EDT</bug_when>
+            <thetext>actually I believe this is resolved as of 2.1.6</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>59</attachid>
+            <date>2002-08-15 11:00 EDT</date>
+            <desc>A valid message with two fields outside of the references field that find_msgid() will return as valid msgids.</desc>
+            <filename>msg.txt</filename>
+            <type>text/plain</type>
+            <size>3159</size>
+            <attacher>gibbs@scsiguy.com</attacher>
+            
+              <data encoding="base64">UmV0dXJuLVBhdGg6IDxnaWJic0BzY3NpZ3V5LmNvbT4KWC1TaWV2ZTogY211LXNpZXZlIDIuMApS
+ZWNlaXZlZDogZnJvbSBzY3NpZ3V5LmNvbSAobG9jYWxob3N0IFsxMjcuMC4wLjFdKQoJYnkgYXNs
+YW4uc2NzaWd1eS5jb20gKDguMTIuNS84LjEyLjUpIHdpdGggRVNNVFAgaWQgZzc1RXBibzIwNTg4
+MTkKCWZvciA8Z2liYnM+OyBNb24sIDUgQXVnIDIwMDIgMDg6NTE6MzcgLTA2MDAgKE1EVCkKCShl
+bnZlbG9wZS1mcm9tIGdpYmJzQHNjc2lndXkuY29tKQpSZXNlbnQtTWVzc2FnZS1JZDogPDIwMDIw
+ODA1MTQ1MS5nNzVFcGJvMjA1ODgxOUBhc2xhbi5zY3NpZ3V5LmNvbT4KUmVjZWl2ZWQ6IGZyb20g
+bXgyLmZyZWVic2Qub3JnIChteDIuRnJlZUJTRC5vcmcgWzIxNi4xMzYuMjA0LjExOV0pCglieSBh
+c2xhbi5zY3NpZ3V5LmNvbSAoOC4xMS42LzguMTEuNSkgd2l0aCBFU01UUCBpZCBnM0tINmY5NDQ5
+NDUKCWZvciA8Z2liYnNAc2NzaWd1eS5jb20+OyBTYXQsIDIwIEFwciAyMDAyIDExOjA2OjQyIC0w
+NjAwIChNRFQpCgkoZW52ZWxvcGUtZnJvbSBvd25lci1jdnMtY29tbWl0dGVyc0BGcmVlQlNELm9y
+ZykKUmVjZWl2ZWQ6IGZyb20gaHViLmZyZWVic2Qub3JnIChodWIuRnJlZUJTRC5vcmcgWzIxNi4x
+MzYuMjA0LjE4XSkKCWJ5IG14Mi5mcmVlYnNkLm9yZyAoUG9zdGZpeCkgd2l0aCBFU01UUCBpZCA4
+M0IwNjU2MUYwCglmb3IgPGdpYmJzQHNjc2lndXkuY29tPjsgU2F0LCAyMCBBcHIgMjAwMiAxMDow
+NzozMSAtMDcwMCAoUERUKQoJKGVudmVsb3BlLWZyb20gb3duZXItY3ZzLWNvbW1pdHRlcnNARnJl
+ZUJTRC5vcmcpClJlY2VpdmVkOiBieSBodWIuZnJlZWJzZC5vcmcgKFBvc3RmaXgpCglpZCA4MDIw
+NzM3QjQxOTsgU2F0LCAyMCBBcHIgMjAwMiAxMDowNzozMSAtMDcwMCAoUERUKQpEZWxpdmVyZWQt
+VG86IGdpYmJzQGZyZWVic2Qub3JnClJlY2VpdmVkOiBieSBodWIuZnJlZWJzZC5vcmcgKFBvc3Rm
+aXgsIGZyb20gdXNlcmlkIDUzOCkKCWlkIDBBMEVCMzdCNDA0OyBTYXQsIDIwIEFwciAyMDAyIDEw
+OjA3OjI3IC0wNzAwIChQRFQpCkRlbGl2ZXJlZC1UbzogY3ZzLWNvbW1pdHRlcnNAZnJlZWJzZC5v
+cmcKUmVjZWl2ZWQ6IGZyb20gbmFndWFsLnBwLnJ1IChwb2JyZWNpdGEuZnJlZWJzZC5ydSBbMTk0
+Ljg3LjEzLjQyXSkKCWJ5IGh1Yi5mcmVlYnNkLm9yZyAoUG9zdGZpeCkgd2l0aCBFU01UUAoJaWQg
+QTRGNDQzN0I0MTc7IFNhdCwgMjAgQXByIDIwMDIgMTA6MDc6MjMgLTA3MDAgKFBEVCkKUmVjZWl2
+ZWQ6IGZyb20gcG9icmVjaXRhLmZyZWVic2QucnUgKGFjaGVAbG9jYWxob3N0IFsxMjcuMC4wLjFd
+KQoJYnkgbmFndWFsLnBwLnJ1ICg4LjEyLjIvOC4xMi4yKSB3aXRoIEVTTVRQIGlkIGczS0g3S2lK
+MDA3NTE2OwoJU2F0LCAyMCBBcHIgMjAwMiAyMTowNzoyMiArMDQwMCAoTVNEKQoJKGVudmVsb3Bl
+LWZyb20gYWNoZUBwb2JyZWNpdGEuZnJlZWJzZC5ydSkKUmVjZWl2ZWQ6IChmcm9tIGFjaGVAbG9j
+YWxob3N0KQoJYnkgcG9icmVjaXRhLmZyZWVic2QucnUgKDguMTIuMy84LjEyLjIvU3VibWl0KSBp
+ZCBnM0tIN0s4WjAwNzUxNTsKCVNhdCwgMjAgQXByIDIwMDIgMjE6MDc6MjAgKzA0MDAgKE1TRCkK
+RGF0ZTogU2F0LCAyMCBBcHIgMjAwMiAyMTowNzoxOSArMDQwMApGcm9tOiAiQW5kcmV5IEEuIENo
+ZXJub3YiIDxhY2hlQG5hZ3VhbC5wcC5ydT4KVG86IFJvYmVydCBXYXRzb24gPHJ3YXRzb25ARnJl
+ZUJTRC5vcmc+CkNjOiAiSmFjcXVlcyBBLiBWaWRyaW5lIiA8bmVjdGFyQEZyZWVCU0Qub3JnPiwg
+Y3ZzLWNvbW1pdHRlcnNARnJlZUJTRC5vcmcsCiAgIGN2cy1hbGxARnJlZUJTRC5vcmcKU3ViamVj
+dDogUmU6IGN2cyBjb21taXQ6IHNyYy9jcnlwdG8vb3BlbnNzaCBzZXJ2Y29uZi5jIHNlc3Npb24u
+YwpNZXNzYWdlLUlEOiA8MjAwMjA0MjAxNzA3MTguR0E3NDAyQG5hZ3VhbC5wcC5ydT4KUmVmZXJl
+bmNlczogPDIwMDIwNDIwMTQzNTI1LkdCMjcxMDhAbWFkbWFuLm5lY3Rhci5jYz4gPFBpbmUuTkVC
+LjMuOTZMLjEwMjA0MjAxMDQ1MTUuNjQ5NzZQLTEwMDAwMEBmbGVkZ2Uud2F0c29uLm9yZz4gPDIw
+MDIwNDIwMTQ1NDM3LkdCNTM1MEBuYWd1YWwucHAucnU+Ck1pbWUtVmVyc2lvbjogMS4wCkNvbnRl
+bnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD11cy1hc2NpaQpDb250ZW50LURpc3Bvc2l0aW9u
+OiBpbmxpbmUKSW4tUmVwbHktVG86IDwyMDAyMDQyMDE0NTQzNy5HQjUzNTBAbmFndWFsLnBwLnJ1
+PgpVc2VyLUFnZW50OiBNdXR0LzEuMy4yOGkKU2VuZGVyOiBvd25lci1jdnMtY29tbWl0dGVyc0BG
+cmVlQlNELm9yZwpQcmVjZWRlbmNlOiBidWxrClgtTG9vcDogRnJlZUJTRC5PUkcKUmVzZW50LVRv
+OiBnaWJicwpSZXNlbnQtRGF0ZTogTW9uLCAwNSBBdWcgMjAwMiAwODo1MTozNyAtMDYwMApSZXNl
+bnQtRnJvbTogIkp1c3RpbiBULiBHaWJicyIgPGdpYmJzQHNjc2lndXkuY29tPgoKT24gU2F0LCBB
+cHIgMjAsIDIwMDIgYXQgMTg6NTQ6MzcgKzA0MDAsIEFuZHJleSBBLiBDaGVybm92IHdyb3RlOgoK
+PiBhbmQgd2FzIHJlbW92ZWQganVzdCByZWNlbnRseSwgbWFraW5nIGxhY2sgb2YgImxvZ2luIiBs
+b29rICYgZmVlbCB3aXRob3V0IAo+IGFueSByZWFzb24uIAoKV2VsbCwgSSBoYXZlIHN0cm9uZyBz
+dXNwaWNpb24gYWJvdXQgdGhlIHJlYXNvbi4gSXQgc2VlbXMgdGhhdCBzc2gKbWFpbnRhaW5lcnMg
+anVzdCBsZWF2ZSAhdXNlX2xvZ2luIGNhc2UgdG8gYmUgc2xvd2x5IHJvdHRlbiBpbiB0aW1lIG1v
+dmluZwp0b3dhcmRzIHVzZV9sb2dpbiBjYXNlLiBJdCBpcyBiZWNhdXNlIGxvZ2luIGVtdWxhdGlv
+biBpcyB2ZXJ5IGRpZmZlcmVudCBvbgpkaWZmZXJlbnQgbWFjaGluZXMsIHNvIGl0IGlzIG11Y2gg
+c2ltcGxlIHRvIGp1c3QgY2FsbCBleHRlcm5hbCBsb2dpbgpwcm9ncmFtLCBmcm9tIGNvZGUgc3Vw
+cG9ydCBwZXJzcGVjdGl2ZS4gQnV0IGl0IG5vdCBtZWFucyB0aGF0IEZyZWVCU0QgbXVzdApmb2xs
+b3cgdGhpcyBwYXRoLCB0aGVyZSBhcmUgYWxtb3N0IG5vIG5lZWRzIGN1cnJlbnRseSB0byBjYWxs
+IGV4dGVybmFsCmxvZ2luLCBtb3Jlb3ZlciBpdCBpcyBub3QgZWZmaWNpZW50IGFuZCBtYXkgY2F1
+c2UgYXV0aCBkdXBsaWNhdGlvbiBpbgpjZXJ0YWluIGNhc2VzLgoKLS0gCkFuZHJleSBBLiBDaGVy
+bm92Cmh0dHA6Ly9hY2hlLnBwLnJ1LwoK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

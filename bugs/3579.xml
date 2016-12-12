@@ -1,0 +1,143 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3579</bug_id>
+          
+          <creation_ts>2011-10-10 12:53 EDT</creation_ts>
+          <short_desc>saslauthd has broken RPATH when used with custom software locations</short_desc>
+          <delta_ts>2011-10-10 13:11:37 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Quanah Gibson-Mount">quanah@zimbra.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@zimbra.com</who>
+            <bug_when>2011-10-10 12:53:10 EDT</bug_when>
+            <thetext>We build all of our software into /opt/zimbra (openssl, heimdal, curl, etc).  When cyrus-sasl 2.1.25 is built against this software, it ends up missing RPATH values that are required:
+
+
+Dynamic section at offset 0x121848 contains 34 entries:
+  Tag        Type                         Name/Value
+ 0x0000000000000001 (NEEDED)             Shared library: [libz.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libcurl.so.4]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgssapi.so.3]
+ 0x0000000000000001 (NEEDED)             Shared library: [libkrb5.so.26]
+ 0x0000000000000001 (NEEDED)             Shared library: [libasn1.so.8]
+ 0x0000000000000001 (NEEDED)             Shared library: [libroken.so.18]
+ 0x0000000000000001 (NEEDED)             Shared library: [libcrypt.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libcrypto.so.1.0.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libcom_err.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libresolv.so.2]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libpthread.so.0]
+ 0x000000000000000f (RPATH)              Library rpath: [/opt/zimbra/openssl-1.0.0e/lib]
+
+
+(Note only OpenSSL is in the RPATH)
+
+This results in a broken binary:
+
+root@zre-ubuntu10-64:/home/build/p4/main/ThirdParty/cyrus-sasl/cyrus-sasl-2.1.25.3z/saslauthd# ldd saslauthd
+        linux-vdso.so.1 =&gt;  (0x00007fff4c7ff000)
+        libz.so.1 =&gt; /lib/libz.so.1 (0x00007f6dce1b7000)
+        libm.so.6 =&gt; /lib/libm.so.6 (0x00007f6dcdf34000)
+        libcurl.so.4 =&gt; not found
+        libgssapi.so.3 =&gt; not found
+        libkrb5.so.26 =&gt; not found
+        libasn1.so.8 =&gt; not found
+        libroken.so.18 =&gt; not found
+        libcrypt.so.1 =&gt; /lib/libcrypt.so.1 (0x00007f6dcdcf9000)
+        libcrypto.so.1.0.0 =&gt; /opt/zimbra/openssl-1.0.0e/lib/libcrypto.so.1.0.0 (0x00007f6dcd946000)
+        libcom_err.so.1 =&gt; not found
+        libresolv.so.2 =&gt; /lib/libresolv.so.2 (0x00007f6dcd72d000)
+        libc.so.6 =&gt; /lib/libc.so.6 (0x00007f6dcd3a9000)
+        libpthread.so.0 =&gt; /lib/libpthread.so.0 (0x00007f6dcd18c000)
+        libdl.so.2 =&gt; /lib/libdl.so.2 (0x00007f6dccf88000)
+        /lib64/ld-linux-x86-64.so.2 (0x00007f6dce3d4000)
+
+LDFLAGS shows the linking:
+
+root@zre-ubuntu10-64:/home/build/p4/main/ThirdParty/cyrus-sasl/cyrus-sasl-2.1.25.3z/saslauthd# grep LDFLAGS Makefile
+LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
+LDFLAGS = -L/opt/zimbra/openssl-1.0.0e/lib -Wl,-rpath,/opt/zimbra/openssl-1.0.0e/lib  -L/opt/zimbra/heimdal-1.5.1/lib -L/opt/zimbra/libxml2-2.7.8/lib -lxml2 -lz -lm -L/opt/zimbra/curl-7.22.0/lib -lcurl -L/opt/zimbra/openssl-1.0.0e/lib -L/opt/zimbra/heimdal-1.5.1/lib -L/opt/zimbra/curl-7.22.0/lib -R/opt/zimbra/openssl-1.0.0e/lib -R/opt/zimbra/heimdal-1.5.1/lib -R/opt/zimbra/curl-7.22.0/lib -L/opt/zimbra/heimdal-1.5.1/lib -L/opt/zimbra/openssl-1.0.0e/lib -L/usr/lib/lib
+
+
+
+If I manually modify the LDFLAGS thusly:
+
+LDFLAGS = -L/opt/zimbra/openssl-1.0.0e/lib -Wl,-rpath,/opt/zimbra/openssl-1.0.0e/lib -L/opt/zimbra/heimdal-1.5.1/lib -Wl,-rpath,/opt/zimbra/heimdal-1.5.1/lib -L/opt/zimbra/libxml2-2.7.8/lib -lxml2 -lz -lm -Wl,-rpath,/opt/zimbra/libxml2-2.7.8/lib -L/opt/zimbra/curl-7.22.0/lib -lcurl -Wl,-rpath,/opt/zimbra/curl-7.22.0/lib -L/opt/zimbra/openssl-1.0.0e/lib -L/opt/zimbra/heimdal-1.5.1/lib -L/opt/zimbra/curl-7.22.0/lib -R/opt/zimbra/openssl-1.0.0e/lib -R/opt/zimbra/heimdal-1.5.1/lib -R/opt/zimbra/curl-7.22.0/lib -L/opt/zimbra/heimdal-1.5.1/lib -L/opt/zimbra/openssl-1.0.0e/lib -L/usr/lib/lib
+
+
+I get a working saslauthd:
+
+root@zre-ubuntu10-64:/home/build/p4/main/ThirdParty/cyrus-sasl/cyrus-sasl-2.1.25.3z/saslauthd# ldd saslauthd
+        linux-vdso.so.1 =&gt;  (0x00007fff273ff000)
+        libz.so.1 =&gt; /lib/libz.so.1 (0x00007f9aea49c000)
+        libm.so.6 =&gt; /lib/libm.so.6 (0x00007f9aea218000)
+        libcurl.so.4 =&gt; /opt/zimbra/curl-7.22.0/lib/libcurl.so.4 (0x00007f9ae9fbb000)
+        libgssapi.so.3 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libgssapi.so.3 (0x00007f9ae9d7d000)
+        libkrb5.so.26 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libkrb5.so.26 (0x00007f9ae9afc000)
+        libasn1.so.8 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libasn1.so.8 (0x00007f9ae9862000)
+        libroken.so.18 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libroken.so.18 (0x00007f9ae964d000)
+        libcrypt.so.1 =&gt; /lib/libcrypt.so.1 (0x00007f9ae9413000)
+        libcrypto.so.1.0.0 =&gt; /opt/zimbra/openssl-1.0.0e/lib/libcrypto.so.1.0.0 (0x00007f9ae9061000)
+        libcom_err.so.1 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libcom_err.so.1 (0x00007f9ae8e5d000)
+        libresolv.so.2 =&gt; /lib/libresolv.so.2 (0x00007f9ae8c43000)
+        libc.so.6 =&gt; /lib/libc.so.6 (0x00007f9ae88c0000)
+        libpthread.so.0 =&gt; /lib/libpthread.so.0 (0x00007f9ae86a3000)
+        libssl.so.1.0.0 =&gt; /opt/zimbra/openssl-1.0.0e/lib/libssl.so.1.0.0 (0x00007f9ae8446000)
+        librt.so.1 =&gt; /lib/librt.so.1 (0x00007f9ae823e000)
+        libheimntlm.so.0 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libheimntlm.so.0 (0x00007f9ae8037000)
+        libheimbase.so.1 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libheimbase.so.1 (0x00007f9ae7e31000)
+        libhx509.so.5 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libhx509.so.5 (0x00007f9ae7be7000)
+        libwind.so.0 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libwind.so.0 (0x00007f9ae79be000)
+        libheimsqlite.so.0 =&gt; /opt/zimbra/heimdal-1.5.1/lib/libheimsqlite.so.0 (0x00007f9ae7733000)
+        libdl.so.2 =&gt; /lib/libdl.so.2 (0x00007f9ae752f000)
+        /lib64/ld-linux-x86-64.so.2 (0x00007f9aea6b9000)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@zimbra.com</who>
+            <bug_when>2011-10-10 13:11:37 EDT</bug_when>
+            <thetext>ugh, nm again.  Apparently our zimbra auth mechanism adds some additional dependencies to saslauthd that aren&apos;t part of the default package (something that predates me).  I&apos;ll fix on my side.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

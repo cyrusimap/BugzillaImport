@@ -1,0 +1,95 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3793</bug_id>
+          
+          <creation_ts>2013-05-11 20:39 EDT</creation_ts>
+          <short_desc>Why is PLAIN prefered over SCRAM-SHA-1?</short_desc>
+          <delta_ts>2013-12-11 19:56:14 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.25</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>REOPENED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Thijs Alkemade">me@thijsalkema.de</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Thijs Alkemade">me@thijsalkema.de</who>
+            <bug_when>2013-05-11 20:39:12 EDT</bug_when>
+            <thetext>I&apos;m trying to use Cyrus-SASL version 2.1.26 (previously we were using the library that is included in OS X, so version 2.1.22). Reason for me to update is SCRAM-SHA-1 support on XMPP.
+
+However, I&apos;ve noticed that when presented with &quot;PLAIN SCRAM-SHA-1 DIGEST-MD5&quot; (on a TLS-encrypted connection), Cyrus 2.1.26&apos;s first pick is PLAIN, even though I can confirm that for all three the plugin is available. That is not what I expect, as I consider it the weakest of those mechanisms.
+
+In a debugger I figured out the following is happening:
+
+* sasl_client_start() gets the list of mechanisms, and sorts them based on *-PLUS or not (which doesn&apos;t change the order, as none are PLUS).
+* The for-loop on line 749 of client.c starts with PLAIN, finds the mechanism and stores it in the bestm variable, as it was still NULL.
+* It comes to SCRAM-SHA-1, compares it to bestm, but rejects it on line 828 because SCRAM-SHA-1 does not have the SASL_SEC_PASS_CREDENTIALS &apos;security flag&apos; that PLAIN does have.
+* Same thing happens for DIGEST-MD5.
+
+I do not fully undertand the meaning of SASL_SEC_PASS_CREDENTIALS, but if I&apos;m correct that it means that the server can derive the credentials from the exchange... then I don&apos;t see how that is an advantage over mechanisms that do not have that property. In fact, I would say that the security flag should be inverted (never pick one with SASL_SEC_PASS_CREDENTIALS if the current bestm does not have SASL_SEC_PASS_CREDENTIALS).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2013-07-18 07:30:29 EDT</bug_when>
+            <thetext>Initial fix: 26dcfb2d7176b78e70757aa5d01951a28ca217c7
+
+Further improvements to the logic will be needed to make the fix more generic.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Thijs Alkemade">me@thijsalkema.de</who>
+            <bug_when>2013-12-11 19:56:14 EDT</bug_when>
+            <thetext>Sorry, it&apos;s been a while, but I&apos;ve finally been able to test the changes in 26dcfb2d7176b78e70757aa5d01951a28ca217c7.
+
+The situation is somewhat different, but the basic problem is the same: given the possibilities PLAIN SCRAM-SHA-1 DIGEST-MD5, Cyrus SASL will now prefer DIGEST-MD5, then PLAIN, then SCRAM-SHA-1.
+
+I think the reason it still happens is that SCRAM-SHA-1&apos;s max_ssf value is 0, so is PLAIN&apos;s, but DIGEST-MD5&apos;s value is at least 1 (depending on compile-time flags).
+
+So PLAIN is selected first, it is then compared to SCRAM-SHA-1. The flags are not worse, so it is not rejected there anymore, but the check:
+
+client.c:866:
+
+if (bestm &amp;&amp; m-&gt;m.plug-&gt;max_ssf &lt;= bestssf) {
+
+
+Will conclude that SCRAM-SHA-1 is not better than the mechanism we already have, so it is rejected. DIGEST-MD5 does succeed this test, so it is picked instead.
+
+I don&apos;t know what max_ssf means exactly, but it looks wrong to me that SCRAM-SHA-1 has the same score as PLAIN.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

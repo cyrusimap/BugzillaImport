@@ -1,0 +1,180 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1735</bug_id>
+          
+          <creation_ts>2002-12-19 16:04 EDT</creation_ts>
+          <short_desc>Long line bug in lmtpdengine.c:pushmsg()</short_desc>
+          <delta_ts>2010-10-18 12:08:40 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P4</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>iain@iainstevenson.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-12-19 16:04:48 EDT</bug_when>
+            <thetext>Date: Fri, 09 Aug 2002 22:41:16 +0100
+From: Iain Stevenson &lt;iain@iainstevenson.com&gt;
+
+It seems as though lmtpd does not handle mail messages containing lines 
+that are over length gracefully.  When I use deliver with a message 
+containing an over long line (deliver is usually called via postfix) the 
+delivery fails with a &quot;Message header error&quot; even though there is no header 
+error.  It seems as though lmtpengine.c transfers the message to imap which 
+fails on the long line.  However, lmtpengine continues to send characters 
+which imap then interprets as having a header error.
+
+I would have thought that lmtp should fail gracefully.  A quick fix is to 
+patch the routine pushmsg in lmtpengine.c to insert a line break in long 
+lines.  However, this obviously distorts the original message and does not 
+provide a notification of error.  For example:
+
+static void pushmsg(struct protstream *in, struct protstream *out,
+                    int isdotstuffed)
+{
+    char buf[8192], *p;
+
+    int lastline_hadendline = 1;
+
+    while (prot_fgets(buf, sizeof(buf)-1, in)) {
+        /* dot stuff */
+        if (!isdotstuffed &amp;&amp; (lastline_hadendline == 1) &amp;&amp; (buf[0]==&apos;.&apos;)) {
+            prot_putc(&apos;.&apos;, out);
+        }
+
+/* add this ,, */
+
+        if (strlen(buf) == sizeof(buf)-3) {
+        /* overran line */
+            p = buf + sizeof(buf);
+            p[ -3] = &apos;\r&apos;;
+            p[ -2] = &apos;\n&apos;;
+            p[ -1] = &apos;\0&apos;;
+        }
+/*  */
+
+  Iain Stevenson</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sean Jorden">sjorden@norada.com</who>
+            <bug_when>2004-09-15 15:49:16 EDT</bug_when>
+            <thetext>I have experienced this problem as well. Delivering via procmail returns 
+EX_DATAERR (code 65) which just means a general data format error. Through 
+trial and error, I have determined the maximum line length it will accept (not 
+including trailing line-feeds) is 8188 characters which matches with the static 
+buffer declared in the code snippet included here.
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sean Jorden">sjorden@norada.com</who>
+            <bug_when>2004-09-15 19:39:01 EDT</bug_when>
+            <thetext>The problem seems to be in the spool_copy_msg routine in spool.c, at least the 
+only number that I change that has an effect is in that routine.
+
+Without delving deeper into the code, changing the size of buf
+
+int spool_copy_msg(struct protstream *fin, FILE *fout)
+{
+    char buf[8192], *p;  &lt;=============
+
+allows messages to be delivered with line lengths up to the size of buf - 4 
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-05-19 08:01:10 EDT</bug_when>
+            <thetext>I have just found this problem too and think I found the reason.
+
+The function spool_copy_msg uses a buffer size of 8192 character.  It calls the
+function prot_fgets from lib/prot.c to read up to sizeof(buf) - 2 characters. 
+Later it checks with the following code:
+
+	else if (p[0] != &apos;\n&apos; &amp;&amp; (strlen(buf) &lt; sizeof(buf)-2)) {
+	    /* line contained a \0 not at the end */
+	    r = IMAP_MESSAGE_CONTAINSNULL;
+	    continue;
+	}
+
+if there was a NUL character in the input stream.
+
+However, there is a off-by-one bug here.  The prot_fgets function is implemented
+in that way that it reads up to (size - 1) character leaving one byte space for
+the NUL character at the end (the &quot;size--;&quot; line in the following code):
+
+char *prot_fgets(char *buf, unsigned size, struct protstream *s)
+{
+    char *p = buf;
+    int c;
+
+    assert(!s-&gt;write);
+
+    if (size &lt; 2 || s-&gt;eof) return 0;
+    size--;
+
+    while (size &amp;&amp; (c = prot_getc(s)) != EOF) {
+	size--;
+	*p++ = c;
+	if (c == &apos;\n&apos;) break;
+    }
+    if (p == buf) return 0;
+    *p++ = &apos;\0&apos;;
+    return buf;
+}
+
+This means, with the size argument 8190 given by the spool_copy_msg function a
+maximum of 8189 characters can be read.
+
+Reconsider the check for CONTAINSNULL:
+
+     ... strlen(buf) &lt; sizeof(buf)-2)
+
+If the maximum number of characters 8189 is being read this condition is true
+and the over-long line is reported as having NUL characters.
+
+As there is apparently no error code to report a over-long line this off-by-one
+is probably by design.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

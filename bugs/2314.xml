@@ -1,0 +1,137 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2314</bug_id>
+          
+          <creation_ts>2003-12-03 08:43 EDT</creation_ts>
+          <short_desc>perl: encoded packet size too big (4163 &gt; 4096)</short_desc>
+          <delta_ts>2010-10-25 18:46:33 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          <dependson>2457</dependson>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andreas Hasenack">andreas@conectiva.com.br</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2003-12-03 08:43:09 EDT</bug_when>
+            <thetext>After upgrading to sasl 2.1.17, I started getting the above error in syslog
+whenever I use cyradm (from cyrus-imapd-2.1.16) with GSSAPI and issue the &quot;lm&quot;
+command, which returns nothing. Using another mechanism (such as DIGEST-MD5),
+&quot;lm&quot; works and the error doesn&apos;t occur.
+
+The error goes away after downgrading sasl back to 2.1.15.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-12-03 17:03:46 EDT</bug_when>
+            <thetext>Did you upgrade both the client and the server or just one side?
+
+I cannot reproduce this, even with a very large mailbox list (the problem is
+most likely a bug in the handling of security layer sizes, which I think we
+actually *corrected* between 2.1.15 and 2.1.16, so I could believe a version
+mismatch is at fault)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2003-12-04 06:54:14 EDT</bug_when>
+            <thetext>The cyrus-imapd server is installed on the same machine where I attempt the
+cyradm command. The only thing that is somewhere else is the MIT KDC. So,
+whenever I install sasl, it&apos;s the same version used by both the server and the
+client.
+
+What I can&apos;t guarantee now is the sasl version with which cyrus-imapd was
+compiled with. Could this be the problem? Are there incompatible changes between
+2.1.15 and 2.1.17? I can try some combinations (compile imapd with 2.1.15, test
+with 2.1.15 and 2.1.17, compile imapd with 2.1.17, test with 2.1.15 and 2.1.17
+again).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2003-12-04 07:23:18 EDT</bug_when>
+            <thetext>I have 102 mailboxes under INBOX (including INBOX itself).
+
+I just tried the following combinations:
++-------------+---------------+-------------+
+|cyrus-imapd  |               |             |
+|compiled with|installed sasl |gssapi works?|
+|sasl version |   version     |(lm command) |
++-------------+---------------+-------------+
+|2.1.15       |    2.1.15     |      yes    |
++-------------+---------------+-------------+
+|2.1.15       |    2.1.17     |      no     |
++-------------+---------------+-------------+
+|2.1.17       |    2.1.17     |      no     |
++-------------+---------------+-------------+
+|2.1.17       |    2.1.15     |     yes     |
++-------------+---------------+-------------+
+
+What is your gssapi implementation, MIT or Heimdal? Could this make a
+difference? I&apos;m using MIT 1.3.1.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-03-11 10:35:47 EDT</bug_when>
+            <thetext>Just a FYI, the same problem still happens with cyrus-sasl-2.1.18 and
+cyrus-imapd-2.2.3, even after recompiling imapd with 2.1.18.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-07-06 08:41:22 EDT</bug_when>
+            <thetext>The patch at bug #2457 fixes the problem for me. I applied it to
+cyrus-sasl-2.1.18 and everything is fine now.
+$ cyradm pandora.conectiva
+pandora.conectiva&gt; lm
+INBOX (\HasChildren)
+INBOX.Drafts (\HasNoChildren)
+INBOX.Sent (\HasNoChildren)
+INBOX.Trash (\HasNoChildren)
+(...)
+
+Jul  6 09:37:52 pandora imap[28423]: login: pandora.conectiva [10.0.2.177]
+andreas GSSAPI User logged in</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-07-06 09:33:16 EDT</bug_when>
+            <thetext>patch to 2457 committed.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

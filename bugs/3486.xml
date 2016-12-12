@@ -1,0 +1,168 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3486</bug_id>
+          
+          <creation_ts>2011-06-30 04:45 EDT</creation_ts>
+          <short_desc>murder broken on master branch</short_desc>
+          <delta_ts>2011-08-10 05:44:21 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-06-30 04:45:16 EDT</bug_when>
+            <thetext>When using murder feature (standard configuration), account creation appears to be broken on both backend and proxy.
+
+
+On the backend, logged as admin user, issuing the CREATE command fails with the following error: NO no connection to server.
+Excerpt of the logs:
+Jun 30 10:09:09 w30648 imap1[3514]: login: localhost.localdomain [127.0.0.1] admproxy plaintext User logged in SESSIONID=&lt;cyrus-server1-3514-1309421342-1&gt;
+Jun 30 10:09:14 w30648 mupdate[3466]: accepted connection
+Jun 30 10:09:14 w30648 mupdate[3466]: login: localhost.localdomain [127.0.0.1] murderuser PLAIN User logged in
+Jun 30 10:09:14 w30648 mupdate[3466]: cmd_set(fd:12, user.fails)
+Jun 30 10:09:14 w30648 mupdate[3466]: cmd_set(fd:12, user.fails)
+Jun 30 10:09:14 w30648 mupdate[3490]: mupdate_scarf: -1627742718
+Jun 30 10:09:14 w30648 master[3464]: process 3466 exited, signaled to death by 11
+Jun 30 10:09:14 w30648 master[3464]: service mupdate pid 3466 in READY state: terminated abnormally
+Jun 30 10:09:14 w30648 mupdate[3490]: retrying connection to mupdate server in 20 seconds
+Jun 30 10:09:14 w30648 imap1[3514]: MUPDATE: can&apos;t commit mailbox entry for &apos;user.fails&apos;
+Jun 30 10:09:14 w30648 master[3554]: about to exec /mail/github/cyrus-imapd-randompart-master/bin/mupdate
+Jun 30 10:09:14 w30648 mupdate[3554]: executed
+Jun 30 10:09:14 w30648 mupdate[3554]: New worker thread started, for a total of 1
+Jun 30 10:09:14 w30648 mupdate[3554]: New worker thread started, for a total of 2
+Jun 30 10:09:14 w30648 mupdate[3554]: New worker thread started, for a total of 3
+Jun 30 10:09:14 w30648 mupdate[3554]: New worker thread started, for a total of 4
+Jun 30 10:09:14 w30648 mupdate[3554]: New worker thread started, for a total of 5
+Jun 30 10:09:14 w30648 imap1[3514]: Deleted mailbox user.fails
+
+The crash occurs in imap/mupdate.c database_lookup function. At some point, it calls mboxlist_lookup while the mailbox is in the &quot;reserved&quot; state; in that special case it just returns an error code and does not allocate/fill the mboxlist_entry structure. A few lines later the pointer to this structure is used by database_lookup function, which leads to the crash.
+
+As it appears the &quot;reserved&quot; state is part of the creation workflow, maybe the structure shall be alloced/filled in that particular case ?
+
+
+When trying to create the mailbox on the front server, the error returned is: NO Server(s) unavailable to complete operation.
+Excerpt of the logs:
+Jun 30 10:27:27 w30648 imapproxy[4177]: login: localhost.localdomain [127.0.0.1] admproxy plaintext User logged in SESSIONID=&lt;cyrus-front-4177-1309422443-1&gt;
+Jun 30 10:28:21 w30648 imapproxy[4177]: checking free space on server &apos;cyrus-server1&apos;
+Jun 30 10:28:21 w30648 imap1[4099]: accepted connection
+Jun 30 10:28:21 w30648 master[4181]: about to exec /mail/github/cyrus-imapd-randompart-master/bin/imapd
+Jun 30 10:28:21 w30648 imap1[4099]: login: localhost.localdomain [127.0.0.1] admproxy PLAIN User logged in
+Jun 30 10:28:21 w30648 imap1[4181]: executed
+Jun 30 10:28:21 w30648 imapproxy[4177]: checking free space on server &apos;cyrus-server2&apos;
+Jun 30 10:28:21 w30648 imap2[4100]: accepted connection
+Jun 30 10:28:21 w30648 master[4182]: about to exec /mail/github/cyrus-imapd-randompart-master/bin/imapd
+Jun 30 10:28:21 w30648 imap2[4100]: login: localhost.localdomain [127.0.0.2] admproxy PLAIN User logged in
+Jun 30 10:28:21 w30648 imap2[4182]: executed
+Jun 30 10:28:21 w30648 imap2[4182]: accepted connection
+Jun 30 10:28:21 w30648 imap2[4100]: couldn&apos;t authenticate to backend server: no mechanism available
+Jun 30 10:29:44 w30648 master[4098]: process 4182 exited, status 0
+
+The strange behaviour here: backend server &quot;cyrus-server2&quot; tries to connect to itself. Checking for what is sent over the network, we can see that the front server issues the following command to the backend it elected for creating the mailbox:
+. CREATE user.fails cyrus-server2
+Of course, the extra parameter &quot;cyrus-server2&quot; shall not be sent to the backend, which explains the strange behaviour.
+
+It appears the problem comes from the imap/imapd.c cmd_create function. Excerpt of the code:
+    if (!r &amp;&amp; !localonly &amp;&amp; config_mupdate_server) {
+	int guessedpart = 0;
+
+	/* determine if we&apos;re creating locally or remotely */
+	if (!partition &amp;&amp; !server) {
+	    char *foundpart = NULL;
+	    guessedpart = 1;
+	    r = mboxlist_createmailboxcheck(mailboxname, 0, 0,
+					    imapd_userisadmin || imapd_userisproxyadmin,
+					    imapd_userid, imapd_authstate,
+					    NULL, &amp;foundpart, 0);
+	    partition = foundpart;
+
+	    if (!r &amp;&amp; !partition &amp;&amp;
+		(config_mupdate_config == IMAP_ENUM_MUPDATE_CONFIG_STANDARD) &amp;&amp;
+		!config_getstring(IMAPOPT_PROXYSERVERS)) {
+		/* proxy-only server, and no parent mailbox */
+		guessedpart = 0;
+
+		/* use defaultserver if specified */
+		partition = config_getstring(IMAPOPT_DEFAULTSERVER);
+
+		/* otherwise, find most fitting server */
+		if (!partition) partition = find_free_server();
+
+		if (!partition) r = IMAP_SERVER_UNAVAILABLE;
+	    }
+	}
+
+	if (!r &amp;&amp; !config_partitiondir(partition)) {
+	    /* invalid partition, assume its a server (remote mailbox) */
+	    struct backend *s = NULL;
+	    int res;
+ 
+	    /* check for a remote partition */
+	    server = partition;
+	    if (guessedpart) partition = NULL;
+
+...
+
+	    if (!r) {
+		/* ok, send the create to that server */
+		prot_printf(s-&gt;out, &quot;%s CREATE &quot;, tag);
+		prot_printastring(s-&gt;out, name);
+		prot_putc(&apos; &apos;, s-&gt;out);
+		/* Send partition as an atom, since its all we accept */
+		if (partition) prot_printastring(s-&gt;out, partition);
+		prot_printf(s-&gt;out, &quot;\r\n&quot;);
+
+...
+
+What happens on the front:
+ - we did not give &quot;server&quot; nor &quot;partition&quot; parameters: cyrus checks each backend free space to select the most fitting one; thus &quot;partition&quot; now holds the selected server name, and &quot;guessedpart&quot; is 0
+ - since &quot;partition&quot; does not point to actual configured partition, cyrus connects to the corresponding backend server; and since &quot;partition&quot; still holds the server name, it issues the faulty &quot;CREATE user.name partition&quot; command
+
+In previous versions of the code, &quot;partition&quot; was automatically set to NULL when searching for &apos;!&apos; (which at that time was used to distinguish server and partition info given into the same parameter).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-10 05:44:21 EDT</bug_when>
+            <thetext>Just to confirm - yes, this is a bug in mailboxes.db management functions, and will be fixed before 2.5 is released.  There&apos;s still some more changes to make to the mailboxes.db format, and this will be fixed as part of those.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

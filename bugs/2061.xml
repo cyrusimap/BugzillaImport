@@ -1,0 +1,88 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2061</bug_id>
+          
+          <creation_ts>2003-05-19 09:21 EDT</creation_ts>
+          <short_desc>pop3proxyd segfaults in call to shut_down()</short_desc>
+          <delta_ts>2010-10-18 12:43:01 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Thomas Hager">thomas.hager@1012surf.net</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Thomas Hager">thomas.hager@1012surf.net</who>
+            <bug_when>2003-05-19 09:21:20 EDT</bug_when>
+            <thetext>version: 2.1.13 ( not available in drop down list )
+relevant compile options: --with-openssl --enable-murder
+component: pop3proxyd
+os: most likely all, tested on linux
+
+description:
+bitpipe()&apos;s done section closes the connection to the client and
+frees the corresponding popd_in and popd_out structures [L1324-1329].
+popd_in and popd_out still point to the corresponding memory regions,
+which contain garbage now, including an invalid tls_conn pointer in
+popd_in (in my case 0x0 prior to free() and 0x50 after free()).
+
+after bitpipe() and cmdloop() return, service_main() calls shut_down().
+because popd_in is not NULL, shut_down() calls prot_fill(popd_in)[L351].
+
+in line 352 in lib/prot.c, pop3proxyd receives the SIGSEGV, when 
+prot_fill calls SSL_pending with an invalid tls_conn pointer.
+
+bt:
+#0  0x400433e7 in SSL_pending () from /usr/lib/libssl.so.0.9.6
+#1  0x4000a660 in _dl_runtime_resolve () from /lib/ld-linux.so.2
+#2  0x0804c158 in shut_down (code=0) at pop3proxyd.c:351
+#3  0x0804c0eb in service_main () at pop3proxyd.c:321
+#4  0x0804fa86 in main (argc=1, argv=0xbfffe674, envp=0xbfffe67c)
+    at service.c:508
+#5  0x402131c4 in __libc_start_main () from /lib/libc.so.6</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-05-19 09:56:58 EDT</bug_when>
+            <thetext>ok, I just committed a patch to CVS to null the pointers at the end of bitpipe()
+which should fix this.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

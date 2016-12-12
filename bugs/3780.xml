@@ -1,0 +1,89 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3780</bug_id>
+          
+          <creation_ts>2013-02-23 10:46 EDT</creation_ts>
+          <short_desc>SQL backend failover mechanism</short_desc>
+          <delta_ts>2013-02-23 10:46:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2013-02-23 10:46:04 EDT</bug_when>
+            <thetext>Current SQL backend lacks a failover mechanism: when multiple hostnames are configured, the one to connect to is decided upon service instance, and the service sticks to it until the end.
+This is mainly an issue when connection to backend is temporarily broken after instance has been started: the backend becomes unusable.
+
+The following commit contains a pretty simple failover mechanism:
+Repository: git://github.com/worldline-messaging/cyrus-imapd.git
+Branch: sql-failover
+Commit: 7132b06bbd6532d33774b3814681f237e33bbb55 (https://github.com/worldline-messaging/cyrus-imapd/commit/7132b06bbd6532d33774b3814681f237e33bbb55)
+Commit message:
+SQL backend has two more options: sql_backoff_time (60s by default) and
+sql_idle_timeout (1h by default).
+
+Some SQL errors (database opening failure, or connections issues upon querying
+database) trigger failover to the other configured SQL hosts. In this case, the
+failed host is marked unavailable for a period of sql_backoff_time and we try to
+switch to one of the other available hosts.
+As a special case, if failed host was inactive for at least a period of
+sql_idle_timeout, we first try to reconnect to it.
+
+Each time a query is about to be performed, we first check if we are currently
+connected to the most preferred host (first one listed in configuration) and try
+to switch back to a more preferred one if available.
+
+Failover is disabled in the following cases:
+  - when the query is part of an ongoing transaction
+  - for the SQLite backend, since it does not use a network connection
+
+This commit also fixes:
+  - MySQL and PostgreSQL database structure not being properly closed (resource
+    freeing) upon database opening failure
+  - MySQL backend not logging actual error message upon database opening failure
+  - MySQL backend not handling possible failure in mysql_store_result
+  - SQLite database opening being considered a success even upon failure
+  - compilation warning in MySQL backend</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

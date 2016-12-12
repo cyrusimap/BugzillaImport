@@ -1,0 +1,159 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3650</bug_id>
+          
+          <creation_ts>2012-03-08 23:17 EDT</creation_ts>
+          <short_desc>ENVELOPE contains unexpected CRLF</short_desc>
+          <delta_ts>2012-03-12 08:17:30 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.14</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>murch@andrew.cmu.edu</cc>
+    
+    <cc>robm@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-08 23:17:14 EDT</bug_when>
+            <thetext>Reported by Rob Mueller (original data anonymised)
+
+Consider this header:
+
+CC: &quot;&apos;Smith, Charles&apos;&quot; &lt;Charles.Smith@nyumc.org&gt;, &quot;Alice Jones
+ (axj42@columbia.edu)&quot; &lt;axj42@columbia.edu&gt;, Delia Brown
+        &lt;Delia.Brown@rivkin.com&gt;
+
+The envelope for this ends up being:
+
+((&quot;&apos;Bob.Smith@gmail.com&apos;&quot; NIL &quot;Bob.Smith&quot; &quot;gmail.com&quot;))
+((&quot;&apos;Smith, Charles&apos;&quot; NIL &quot;Charles.Smith&quot; &quot;nyumc.org&quot;)({34}
+Alice Jones
+ (axj42@columbia.edu) NIL &quot;axj42&quot; &quot;columbia.edu&quot;)(&quot;Delia Brown&quot; NIL
+ &quot;Delia.Brown&quot; &quot;rivkin.com&quot;))
+
+Note that the newline in the Alice Jones part has been included.
+
+However:
+
+http://tools.ietf.org/html/rfc5322
+
+mailbox         =   name-addr / addr-spec
+name-addr       =   [display-name] angle-addr
+display-name    =   phrase
+phrase          =   1*word / obs-phrase
+word            =   atom / quoted-string
+quoted-string   =   [CFWS]
+                    DQUOTE *([FWS] qcontent) [FWS] DQUOTE
+                    [CFWS]
+qcontent        =   qtext / quoted-pair
+qtext           =   %d33 /             ; Printable US-ASCII
+                    %d35-91 /          ;  characters not including
+                    %d93-126 /         ;  &quot;\&quot; or the quote character
+                    obs-qtext
+
+
+   Semantically, neither the optional CFWS outside of the quote
+   characters nor the quote characters themselves are part of the
+   quoted-string; the quoted-string is what is contained between the two
+   quote characters.  As stated earlier, the &quot;\&quot; in any quoted-pair and
+   the CRLF in any FWS/CFWS that appears within the quoted-string are
+   semantically &quot;invisible&quot; and therefore not part of the quoted-string
+   either.
+
+As I read that, the CRLF that was used to fold the above header should
+be &quot;invisible&quot; in the result, so the envelope should be:
+
+((&quot;&apos;Bob.Smith@gmail.com&apos;&quot; NIL &quot;Bob.Smith&quot; &quot;gmail.com&quot;))
+((&quot;&apos;Smith, Charles&apos;&quot; NIL &quot;Charles.Smith&quot; &quot;nyumc.org&quot;)(&quot;Alice Jones
+(axj42@columbia.edu)&quot; NIL &quot;axj42&quot; &quot;columbia.edu&quot;)(&quot;Delia Brown&quot; NIL
+&quot;Delia.Brown&quot; &quot;rivkin.com&quot;))
+
+Comments?
+
+Rob Mueller
+robm@fastmail.fm</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-08 23:18:11 EDT</bug_when>
+            <thetext>Mine!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-08 23:26:24 EDT</bug_when>
+            <thetext>Fixed
+
+The following changes since commit cdaad5845ddee15341af128a9741a229c280947b:
+  Bron Gondwana (1):
+        twoskip: integer diff to avoid double checkpoint
+
+are available in the git repository at:
+
+  git://git.cyrusimap.org/cyrus-imapd.git master
+
+Greg Banks (3):
+      parseaddr: handle unbalanced &quot; in quoted-string
+      parseaddr: handle CRLF in quoted strings correctly
+      parseaddr: test that RFC2047 text is not decoded
+
+ cunit/parseaddr.c |   81 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ lib/parseaddr.c   |   25 ++++++++++++++--
+ 2 files changed, 103 insertions(+), 3 deletions(-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-03-10 03:28:57 EDT</bug_when>
+            <thetext>Have also backported to 2.4.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-12 04:29:18 EDT</bug_when>
+            <thetext>To be included in release 2.4.14 - adjusting milestone.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-12 08:17:30 EDT</bug_when>
+            <thetext>Closing ticket</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

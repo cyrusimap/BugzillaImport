@@ -1,0 +1,207 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3557</bug_id>
+          
+          <creation_ts>2011-09-21 10:35 EDT</creation_ts>
+          <short_desc>getquotaroot on murder frontend as admin user fails and no referral</short_desc>
+          <delta_ts>2014-10-21 12:02:18 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.4.11</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.6-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dave64@andrew.cmu.edu</cc>
+    
+    <cc>julien.coloos@atos.net</cc>
+    
+    <cc>murch@andrew.cmu.edu</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2011-09-21 10:35:57 EDT</bug_when>
+            <thetext>2.3.x always responded with a REFERRAL to the according backend if an admin user did a GETQUOTAROOT on a murder frontend.
+
+This part...
+-----
+        if (imapd_userisadmin) {
+            /* If they are an admin, they won&apos;t retain that privledge if we
+             * proxy for them, so we need to refer them -- even if they haven&apos;t
+             * told us they&apos;re able to handle it. */
+            imapd_refer(tag, server, name);
+        } else {
+-----
+was removed from 2.4.
+
+The request is proxied to the backend now for admin users. But if the admin user has no rights on that specific mailbox you get
+. getquotaroot user.xxxx
+. NO Mailbox does not exist
+otherwise the quotaroot is reported.
+
+The same user is admin user on the backend, too. But the proxy user the frontend uses on the backend is not. Backend is 2.3.16.
+
+I&apos;m not sure what the intended behavior for 2.4 should be. The 2.3 one was at least consistent and I used it to find the backendserver where i should do my provisioning.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-09-21 11:43:18 EDT</bug_when>
+            <thetext>Aside from the new behaviour, if you are looking for the server which hosts the mailbox, maybe you could rely on the &quot;/vendor/cmu/cyrus-imapd/server&quot; (shared value) annotation ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dave McMurtrie">dave64@andrew.cmu.edu</who>
+            <bug_when>2011-09-21 12:09:19 EDT</bug_when>
+            <thetext>This is an interoperability issue that came up when the ability to proxy admin commands (like GETQUOTAROOT) was added to the code, but I forget which version.  It was originally the case that admin commands could only be issued directly to the backend which contained the mailbox.  If you&apos;re running a version that supports proxying of admin commands on the frontends, the backends must all have a new enough version to support proxying admin commands as well.
+
+I know we have 2.4.x frontends that can proxy GETQUOTAROOT to 2.3.15 backends, but it&apos;s not impossible that we have a locally patched version of 2.3.15.
+
+I know that any 2.4.x frontend can proxy GETQUOTAROOT to any 2.4.x backend.
+
+I&apos;ll try to dig through the ChangeLog and determine when this happened.  At the very least we need to document which versions won&apos;t interoperate.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dave McMurtrie">dave64@andrew.cmu.edu</who>
+            <bug_when>2011-09-21 12:39:50 EDT</bug_when>
+            <thetext>This commit: http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.3&amp;id=1c3f6b72b21d4b82dc0f6f405cd5de94be3af123
+
+looks like it contains the code to allow proxying of GETQUOTAROOT and it was released in 2.3.15.  Your 2.3.16 backend should work.  Why isn&apos;t the user an admin or a proxyadmin on the backend if it is on the frontend?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2011-09-21 13:53:23 EDT</bug_when>
+            <thetext>All our cyrus have the same admin user. let&apos;s call it $admin. Our frontends have proxy_authname $proxyuser which is not admin but in proxyservers on the backends.
+
+If I
+# imtest -a $admin frontend
+and do a
+. getquotaroot user.xxx
+I see in the logs
+Sep 21 19:28:14 frontend Fimap[26126]: login: myws.univie.ac.at [131.130.x.xxx] $admin PLAIN User logged in
+Sep 21 19:28:21 backend Bimap[11648]: login: frontend.univie.ac.at [131.130.x.xxx] $admin PLAIN User logged in
+
+Since $admin is admin on the backend, I currently have no idea why cyrus answers
+. NO Mailbox does not exist
+
+IMO $proxyuser should be granted admin access if he authenticates for $admin.
+
+Thanks for the hint with the server annotation. I didn&apos;t know that and will use this since it obviously is the better way.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-09-21 14:18:56 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; Since $admin is admin on the backend, I currently have no idea why cyrus
+&gt; answers
+&gt; . NO Mailbox does not exist
+&gt; 
+
+Does user.xxx in fact exist? Please mind settings such as defaultdomain.
+
+In my 2.4.11 deployment:
+
+$ imtest -t &quot;&quot; -u cyrus-admin -a cyrus-admin -w ****** imap.test90.kolabsys.com
+S: * OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE MUPDATE=mupdate://test90-2.test90.kolabsys.com/ STARTTLS AUTH=LOGIN AUTH=PLAIN SASL-IR] test90-3.test90.kolabsys.com Cyrus IMAP Murder v2.4.11-Kolab-2.4.11-2.el5.kolab_2.4 server ready
+C: S01 STARTTLS
+S: S01 OK Begin TLS negotiation now
+verify error:num=19:self signed certificate in certificate chain
+TLS connection established: TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits)
+C: C01 CAPABILITY
+S: * CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY CATENATE CONDSTORE ESEARCH SORT SORT=MODSEQ SORT=DISPLAY THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE LIST-EXTENDED WITHIN QRESYNC SCAN XLIST URLAUTH URLAUTH=BINARY X-NETSCAPE MUPDATE=mupdate://test90-2.test90.kolabsys.com/ AUTH=LOGIN AUTH=PLAIN SASL-IR IDLE
+S: C01 OK Completed
+C: A01 AUTHENTICATE LOGIN
+S: + ****
+C: ****
+S: + ****
+C: ****
+S: A01 OK [CAPABILITY IMAP4rev1 LITERAL+ ID ENABLE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY CATENATE CONDSTORE ESEARCH SORT SORT=MODSEQ SORT=DISPLAY THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE LIST-EXTENDED WITHIN QRESYNC SCAN XLIST URLAUTH URLAUTH=BINARY X-NETSCAPE MUPDATE=mupdate://test90-2.test90.kolabsys.com/ LOGINDISABLED IDLE] Success (tls protection)
+Authenticated.
+Security strength factor: 256
+. GETQUOTAROOT user/jeroen.vanmeeuwen@test90.kolabsys.com
+* QUOTAROOT user/jeroen.vanmeeuwen@test90.kolabsys.com user/jeroen.vanmeeuwen@test90.kolabsys.com
+* QUOTA user/jeroen.vanmeeuwen@test90.kolabsys.com (STORAGE 706 2097152)
+. OK Completed</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2011-09-21 14:33:58 EDT</bug_when>
+            <thetext>(Mit Bezug zu comment #5)
+&gt; Does user.xxx in fact exist? Please mind settings such as defaultdomain.
+
+In fact it was my own mailbox;-)
+
+defaultdomain? We don&apos;t use virtdomains.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-09-25 13:58:27 EDT</bug_when>
+            <thetext>Targetting for 2.4.x</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-09-25 14:12:16 EDT</bug_when>
+            <thetext>(In reply to comment #6)
+&gt; (Mit Bezug zu comment #5)
+&gt; &gt; Does user.xxx in fact exist? Please mind settings such as defaultdomain.
+&gt; 
+&gt; In fact it was my own mailbox;-)
+&gt; 
+
+I take it you&apos;re pretty sure your own mailbox does exist :P Just checking!
+
+&gt; defaultdomain? We don&apos;t use virtdomains.
+
+We do, &apos;userid&apos; in fact, in case that gives Bron a hint! ;-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-10-04 14:42:25 EDT</bug_when>
+            <thetext>Not going to get to this for 2.4.12 sorry.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-01-19 07:53:01 EDT</bug_when>
+            <thetext>I&apos;m going to push this off to 2.5, since you appear to have a workaround.  I&apos;d like to open a discussion soon about how murder should work in 2.5 - keeping backwards compatibility, but also making it more safe, making unified murder safe and the default, and handling replication somehow.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-10-21 12:02:18 EDT</bug_when>
+            <thetext>Pushing off to 2.6.  Not sure if this is an actual bug in the code or a config problem</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

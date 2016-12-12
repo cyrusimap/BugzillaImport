@@ -1,0 +1,97 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3507</bug_id>
+          
+          <creation_ts>2011-08-10 07:20 EDT</creation_ts>
+          <short_desc>Replication reconciliation fails in default/immediate expunge mode</short_desc>
+          <delta_ts>2011-08-15 15:23:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.11</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-08-10 07:20:09 EDT</bug_when>
+            <thetext>When master and replica need to reconciliate over two mails using the same UID on both ends, syncserver crashes. This happens when using the default or immediate expunge mode.
+
+How to reproduce:
+Server A is the master, and server B is the replica. Rolling replication is disabled to make things easier. The replica is up-to-date for a &apos;test&apos; mailbox.
+A receives a new mail on &apos;test&apos; mailbox, which uses last_uid+1 as UID. A is &apos;removed&apos; from the network (e.g. in real life: crash) before the new mail could be replicated on B; B is changed to become the new master.
+B receives a new mail on &apos;test&apos; mailbox, which also uses last_uid+1 as UID (same as for A, since the mail was not replicated).
+A is brought back online, and becomes replica for A.
+sync_client is called to replicate &apos;test&apos; mailbox from B to A: reconciliation happens because the same UID is used on both ends for different mails. Then syncserver on server A crashes.
+
+The dialog between the servers shows that B renumbers the mail on its side (that is give it a new UID), fetches the new mail from replica, uploads that new mail back to replica (because the original one will lose its UID) and tries to apply the changes. The crash occurs because the new mail from B was not uploaded to replica.
+
+According to source code, and mbexamine results, the new (renumbered) mail from B is not uploaded to the replica because it has the UNLINKED flag.
+
+This happens in the copy_local function of imap/sync_client.c:
+ - the mail record (to renumber) is loaded in memory
+ - the EXPUNGED flag is set in the record
+ - the index file record is updated by the mailbox_rewrite_index_record function
+ - the EXPUNGED flag is removed from the record
+ - the record uid is changed to last_uid+1
+ - at last the record is appended with the new uid at the end of the index file (that&apos;s the renumbered mail record)
+But in default or immediate expunge mode, mailbox_rewrite_index_record automatically sets the UNLINKED flag on the record if it has the EXPUNGED flag. That&apos;s the reason the renumbered mail ends up with the UNLINKED flag.
+
+
+An easy fix would be to remove both EXPUNGED *and* UNLINKED flags for the renumbered record. For example:
+            /* create the new record */
+-           record.system_flags &amp;= ~FLAG_EXPUNGED;
++           record.system_flags &amp;= ~(FLAG_EXPUNGED | FLAG_UNLINKED);
+
+Alternatively the record (or at least the system flags) could be duplicated (in memory) before updating the original record, and used when writing the new renumbered record on disk.
+
+
+PS: the issue can be observed in 2.4.x and &apos;master&apos; branch (future 2.5) versions.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-10 07:33:34 EDT</bug_when>
+            <thetext>Ok - fixed and applied to master and stable for 2.4.11.
+
+I took your alternative idea - in the end I duplicate the entire record.  It&apos;s always possible in future that rewrite_index_record will update other fields, trying to catch them all in copy_local is a losing idea.
+
+The code is also a lot clearer, and writes the new record (and copies the file) before expunging the old one.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

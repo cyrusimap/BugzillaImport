@@ -1,0 +1,140 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1795</bug_id>
+          
+          <creation_ts>2003-02-03 05:43 EDT</creation_ts>
+          <short_desc>Missing CPPFLAGS results build failure when trying to use BerkeleyDB</short_desc>
+          <delta_ts>2010-10-25 18:46:31 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>sasldb</component>
+          <version>2.1.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Leena Heino">Leena.Heino@uta.fi</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-03 05:43:25 EDT</bug_when>
+            <thetext>BerkeleyDB is not found due to a missing CPPFLAGS in the cmulocal/berkdb.m4.
+Here&apos;s the patch to fix the situation:
+--- cmulocal/berkdb.m4.orig     Tue Jan 28 19:19:12 2003
++++ cmulocal/berkdb.m4  Mon Feb  3 12:26:33 2003
+@@ -242,6 +242,7 @@
+        AC_REQUIRE([CYRUS_BERKELEY_DB_OPTS])
+ 
+        if test -d $with_bdb_inc; then
++           CPPFLAGS=&quot;$CPPFLAGS -I$with_bdb_inc&quot;
+            BDB_INCADD=&quot;-I$with_bdb_inc&quot;
+        else
+            BDB_INCADD=&quot;&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-03 08:39:59 EDT</bug_when>
+            <thetext>It seems that missing LDFLAGS causes failures in linking sasldb compilation.
+Here&apos;s a patch to fix the situation:
+--- config/sasldb.m4.orig       Tue Jan 28 19:23:39 2003
++++ config/sasldb.m4    Mon Feb  3 15:29:26 2003
+@@ -19,6 +19,7 @@
+   berkeley)
+        CYRUS_BERKELEY_DB_CHK()
+        CPPFLAGS=&quot;${CPPFLAGS} ${BDB_INCADD}&quot;
++       LDFLAGS=&quot;${LDFLAGS} ${BDB_LIBADD}&quot;
+        SASL_DB_INC=$BDB_INCADD
+        SASL_DB_LIB=&quot;-l${dbname}&quot;
+        ;;
+@@ -76,6 +77,7 @@
+        else
+          dnl we took Berkeley
+          CPPFLAGS=&quot;${CPPFLAGS} ${BDB_INCADD}&quot;
++         LDFLAGS=&quot;${LDFLAGS} ${BDB_LIBADD}&quot;
+          SASL_DB_INC=$BDB_INCADD
+           SASL_DB_LIB=&quot;-l${dbname}&quot;
+        fi
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-03 09:06:41 EDT</bug_when>
+            <thetext>Oops, the previous config/sasldb.m4 patch was a bit too agressive in linking
+BerkeleyDB. It linked BerkeleyDB with every plugin.
+
+Here&apos;s the correct patch
+--- config/sasldb.m4.orig       Tue Jan 28 19:23:39 2003
++++ config/sasldb.m4    Mon Feb  3 15:57:45 2003
+@@ -20,7 +20,7 @@
+        CYRUS_BERKELEY_DB_CHK()
+        CPPFLAGS=&quot;${CPPFLAGS} ${BDB_INCADD}&quot;
+        SASL_DB_INC=$BDB_INCADD
+-       SASL_DB_LIB=&quot;-l${dbname}&quot;
++       SASL_DB_LIB=&quot;${BDB_LIBADD}&quot;
+        ;;
+   gdbm)
+        AC_ARG_WITH(with-gdbm,[  --with-gdbm=PATH        use gdbm from PATH],
+@@ -77,7 +77,7 @@
+          dnl we took Berkeley
+          CPPFLAGS=&quot;${CPPFLAGS} ${BDB_INCADD}&quot;
+          SASL_DB_INC=$BDB_INCADD
+-          SASL_DB_LIB=&quot;-l${dbname}&quot;
++          SASL_DB_LIB=&quot;${BDB_LIBADD}&quot;
+        fi
+        ;;
+   none)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-03 09:35:52 EDT</bug_when>
+            <thetext>I&apos;ve now tested configuration, compilation and linking with patches from
+comment#0 (the berkdb patch) and comment#2 (the sasldb patch) with Solaris 8
+using gcc, and:
+- configure now finds correct BerkeleyDB libraries
+- sasldb is able to use the BerkeleyDB libraries
+- Only sasldb plugin is linked with BerkeleyDB
+- saslpasswd2 and sasldblistusers2 works
+- saslauth works</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-02-03 12:52:15 EDT</bug_when>
+            <thetext>committed, with minor modification of saving /restoring value of CPPFLAGS in
+berkdb.m4</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

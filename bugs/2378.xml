@@ -1,0 +1,158 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2378</bug_id>
+          
+          <creation_ts>2004-02-25 16:20 EDT</creation_ts>
+          <short_desc>error while deleting mailbox</short_desc>
+          <delta_ts>2010-10-18 12:43:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andreas Hasenack">andreas@conectiva.com.br</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-02-25 16:20:40 EDT</bug_when>
+            <thetext>cyrus-imapd-2.1.16 
+cyrus-sasl-2.1.17 
+berkeley db 4.2.52 + their two official patches 
+ 
+localhost.distro.conectiva&gt; cm INBOX.test 
+localhost.distro.conectiva&gt; dm INBOX.test 
+deletemailbox: System I/O error 
+localhost.distro.conectiva&gt; 
+ 
+Logs: 
+Feb 25 14:53:18 pandora imapd[25128]: DBERROR db4: DB handle previously used 
+in transaction, missing transaction handle 
+Feb 25 14:53:18 pandora imapd[25128]: DBERROR: error fetching 
+user.andreas.test: Invalid argument 
+Feb 25 14:53:18 pandora imapd[25128]: DBERROR: error fetching 
+user.andreas.test: cyrusdb error 
+ 
+Comparing the mailbox_deletemailbox code with mailbox_renamemailbox (which 
+works), I noticed that mboxlist_mylookup is called with struct txn **tid = 
+NULL instead of &amp;tid. 
+ 
+I&apos;m attaching a patch which seems to fix the issue here, please take a look.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-02-25 16:22:07 EDT</bug_when>
+            <thetext>Created an attachment (id=264)
+Suggested patch for imap/mboxlist.c
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-02-25 16:30:19 EDT</bug_when>
+            <thetext>Cyrus 2.1.16 doesn&apos;t work with DB 4.2.
+
+Either downgrade berkeley db or upgrade cyrus.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-02-25 16:43:07 EDT</bug_when>
+            <thetext>So this change: 
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/lib/cyrusdb_berkeley.c.diff?r1=1.2&amp;r2=1.3&amp;f=u 
+ 
+is not valid/enough for 2.1.16? 
+ 
+I was under the impression it should work (see this thread starting here: 
+http://www.mail-archive.com/info-cyrus%40lists.andrew.cmu.edu/msg15554.html) </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-02-25 16:46:48 EDT</bug_when>
+            <thetext>I would suspect it would but there has been no direct testing done.  There are
+no plans to do any significant further development (other than security
+bugfixes) on the 2.1 branch.
+
+You should probably use the skiplist database backend anyway.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-02-26 05:37:47 EDT</bug_when>
+            <thetext>Sorry for being such a pain, I would rather have this discussion in the mailing
+list :(
+So this patch won&apos;t even be considered for an eventual future 2.1.17 release? I
+notice that the same code is in cyrus-imapd-2.2.3, I&apos;ll shortly try that one.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Hasenack">andreas@conectiva.com.br</who>
+            <bug_when>2004-02-26 09:33:32 EDT</bug_when>
+            <thetext>I just tested and the exact same problem happens with cyrus-imapd-2.2.3, and the
+exact same patch seems to fix it (the error doesn&apos;t show up anymore and I can
+remove the mailbox).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-02-26 17:56:04 EDT</bug_when>
+            <thetext>ok, I don&apos;t really understand the Berkeley DB implications here, but
+I think this is something we should be doing anyway, so its committed to 2.2
+(and 2.1 shortly).</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>264</attachid>
+            <date>2004-02-25 16:22 EDT</date>
+            <desc>Suggested patch for imap/mboxlist.c</desc>
+            <filename>cyrus-imapd-2.1.16-tid.patch</filename>
+            <type>text/plain</type>
+            <size>425</size>
+            <attacher>andreas@conectiva.com.br</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMS4xNi9pbWFwL21ib3hsaXN0LmMub3JpZwkyMDA0LTAyLTI1IDE3
+OjAwOjI0LjY4NDU3MjgzMiAtMDMwMAorKysgY3lydXMtaW1hcGQtMi4xLjE2L2ltYXAvbWJveGxp
+c3QuYwkyMDA0LTAyLTI1IDE3OjAwOjI4LjM4MDYzMDI3OSAtMDMwMApAQCAtODU1LDcgKzg1NSw3
+IEBACiAJaWYgKCFpc2FkbWluKSB7IHIgPSBJTUFQX1BFUk1JU1NJT05fREVOSUVEOyBnb3RvIGRv
+bmU7IH0KICAgICB9CiAKLSAgICByID0gbWJveGxpc3RfbXlsb29rdXAobmFtZSwgJm1idHlwZSwg
+JnBhdGgsIE5VTEwsICZhY2wsIE5VTEwsIDEpOworICAgIHIgPSBtYm94bGlzdF9teWxvb2t1cChu
+YW1lLCAmbWJ0eXBlLCAmcGF0aCwgTlVMTCwgJmFjbCwgJnRpZCwgMSk7CiAgICAgc3dpdGNoIChy
+KSB7CiAgICAgY2FzZSAwOgogCWJyZWFrOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

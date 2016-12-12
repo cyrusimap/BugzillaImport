@@ -1,0 +1,115 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3227</bug_id>
+          
+          <creation_ts>2010-05-25 10:14 EDT</creation_ts>
+          <short_desc>Recursive reconstruct and @ in mailbox name</short_desc>
+          <delta_ts>2010-05-25 10:14:50 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-05-25 10:14:50 EDT</bug_when>
+            <thetext>Created an attachment (id=1281)
+patch to fix recursive reconstruct for mailbox with @ characters
+
+There is an issue when recursively reconstructing a mailbox which name contains the &apos;@&apos; character, with virtual domains off.
+The requested mailbox is processed first, taking into account the domain when necessary. Then submailboxes are processed, but the pattern used to do it always truncate the parent mailbox on the first &apos;@&apos; found, then appends &apos;.*&apos;. Code excerpt from current trunk version (imap/reconstruct.c, starting at line 326):
+
+    for (i = optind; i &lt; argc; i++) {
+	char *domain = NULL;
+
+	/* save domain */
+	if (config_virtdomains) domain = strchr(argv[i], &apos;@&apos;);
+
+...
+	if (rflag) {
+	    /* build a pattern for submailboxes */
+	    char *p = strchr(buf, &apos;@&apos;);
+	    if (p) *p = &apos;\0&apos;;
+	    strlcat(buf, &quot;.*&quot;, sizeof(buf));
+
+	    /* append the domain */
+	    if (domain) strlcat(buf, domain, sizeof(buf));
+
+	    /* reconstruct the submailboxes */
+	    (*recon_namespace.mboxlist_findall)(&amp;recon_namespace, buf, 1, 0,
+						0, do_reconstruct, 
+						fflag ? &amp;head : NULL);
+	}
+    }
+
+So for example when processing the &apos;user.abc@def&apos; mailbox, the pattern to process submailboxes will be &apos;user.abc.*&apos;.
+To achieve the expected result (&apos;user.abc@def.*&apos; pattern), truncation on &apos;@&apos; should only be performed when necessary.
+
+The attached patch (against current trunk) fixes this issue.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1281</attachid>
+            <date>2010-05-25 10:14 EDT</date>
+            <desc>patch to fix recursive reconstruct for mailbox with @ characters</desc>
+            <filename>reconstruct_recursive.patch</filename>
+            <type>text/plain</type>
+            <size>556</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdSAtciBjeXJ1cy10cnVuay5vcmlnaW5hbC9pbWFwL3JlY29uc3RydWN0LmMgY3lydXMt
+dHJ1bmsvaW1hcC9yZWNvbnN0cnVjdC5jCi0tLSBjeXJ1cy10cnVuay5vcmlnaW5hbC9pbWFwL3Jl
+Y29uc3RydWN0LmMJMjAxMC0wNS0yNSAxNTo1NjoxNy4wMDAwMDAwMDAgKzAyMDAKKysrIGN5cnVz
+LXRydW5rL2ltYXAvcmVjb25zdHJ1Y3QuYwkyMDEwLTA1LTI1IDE1OjU3OjEwLjAwMDAwMDAwMCAr
+MDIwMApAQCAtMzQxLDggKzM0MSwxMCBAQAogCQkJCQkgICAgZmZsYWcgPyAmaGVhZCA6IE5VTEwp
+OwogCWlmIChyZmxhZykgewogCSAgICAvKiBidWlsZCBhIHBhdHRlcm4gZm9yIHN1Ym1haWxib3hl
+cyAqLwotCSAgICBjaGFyICpwID0gc3RyY2hyKGJ1ZiwgJ0AnKTsKLQkgICAgaWYgKHApICpwID0g
+J1wwJzsKKwkgICAgaWYgKGRvbWFpbikgeworCQljaGFyICpwID0gc3RyY2hyKGJ1ZiwgJ0AnKTsK
+KwkJaWYgKHApICpwID0gJ1wwJzsKKwkgICAgfQogCSAgICBzdHJsY2F0KGJ1ZiwgIi4qIiwgc2l6
+ZW9mKGJ1ZikpOwogCiAJICAgIC8qIGFwcGVuZCB0aGUgZG9tYWluICovCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

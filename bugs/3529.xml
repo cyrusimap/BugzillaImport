@@ -1,0 +1,132 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3529</bug_id>
+          
+          <creation_ts>2011-08-24 13:33 EDT</creation_ts>
+          <short_desc>Setting annotation on many mails does not update annotation storage usage correctly</short_desc>
+          <delta_ts>2011-09-19 05:35:40 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-08-24 13:33:38 EDT</bug_when>
+            <thetext>For &apos;annotate&apos; branch on git://github.com/gnb/cyrus-imapd.git.
+
+How to reproduce:
+ - create a user folder
+ - add two (or more) mails
+ - set annotation on all mails at once
+Annotation storage usage is only updated as if only one mail had the annotation set.
+
+It appears this is because all mails are updated during one quota transaction: annotatemore_begin and annotatemore_commit are used once around the loop that process all mails in annotatemore_index.c:index_store, and annotatemore_commit commits the quota transaction.
+At least in quotalegacy mode the quota information are cached in memory until the quota transaction is committed. Thus even though quota_write does write the correct information, when quota_read is called upon processing each mail what is taken into account is the cached quota (actually read upon processing the first mail) and not the updated value.
+
+Calling annotatemore_begin/annotatemore_commit for each mail being processed fixed this issue. However I am not familiar enough with annotations and backend transactions to propose an optimal solution.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-08-31 03:16:13 EDT</bug_when>
+            <thetext>Without looking at the code, it seems like the quotalegacy backend is behaving differently from the skiplist backend with which the annotate-quota code was tested.  And by differently, I mean incorrectly.  Bron and I discussed this in private IRC, humourous asides [redacted]:
+
+(16:54:48) gnb: so, one question
+(16:54:56) gnb: about cyrusdb.h semantics
+(16:55:08) brong: yes
+(16:55:43) gnb: in a transaction, when you do a read(), do you get back the last value you wrote or the value at the start of the txn ?
+(16:55:56) brong: last value you wrote
+(16:56:16) gnb: oh good, that was what I figured
+(16:56:25) brong: I&apos;m not sure about berkeley, but skiplist is single-access anyway
+(16:56:42) gnb: ok, now to write the test to prove that quotalegacy is busted
+[...]
+(16:57:05) brong: which particular way?
+(16:57:30) gnb: according to Julien, the 2nd read gets back the value at the start of the txn
+(16:57:40) brong: hmm
+(16:57:42) gnb: which is cached in memory and not updated or invalidated by the write in between
+(16:57:50) brong: HMM
+(16:57:54) brong: that&apos;s [bad]
+(16:58:20) gnb: yeah, but nobody noticed before because the mailbox code was doing:
+(16:58:35) gnb: start txn, read, modify, write, commit
+(16:58:47) gnb: whereas the annotate quota stuff is doing
+(16:59:00) gnb: start txn, read, modify, write, read, modify, write, commit
+(16:59:10) brong: hmm
+(16:59:12) brong: I&apos;m not convinced
+(16:59:16) brong: I&apos;d like to see the test
+(16:59:29) brong: oooh... hang on
+[...]
+(17:00:39) brong: so here&apos;s how it goes down
+(17:00:46) brong: when you first read, it caches the FD
+(17:00:49) brong: for ever
+(17:01:05) brong: because it&apos;s the only way it can provide some semblance of &quot;locking&quot;
+(17:01:21) brong: but when you write - it doesn&apos;t update the same file
+(17:01:27) brong: instead, it writes a .NEW and renames over
+(17:01:32) brong: but the read handle still points at the old FD
+(17:01:40) brong: talk about [bad]
+(17:02:06) brong: commit e25cb63edff6dd97d3f65aeeceee81abde20e018
+(17:02:07) brong: Author: Ken Murchison &lt;murch@andrew.cmu.edu&gt;
+(17:02:07) brong: Date:   Wed Jun 2 01:12:17 2004 +0000
+(17:02:07) brong:     don&apos;t reopen the .NEW file when its already open
+(17:02:44) brong: I&apos;d say that&apos;s the commit which broke the design
+
+So my plan is to write a unit test for db semantics (which Bron has been asking me to do for months anyway) and prove that quotalegacy is broken, then fix it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-09-19 05:35:40 EDT</bug_when>
+            <thetext>&gt; So my plan is to write a unit test for db semantics (which Bron has been
+&gt; asking me to do for months anyway) and prove that quotalegacy is broken,
+&gt; then fix it.
+
+Or not.  I did actually write that but I haven&apos;t bothered checking it in
+because
+
+a) I&apos;m not going to fix the quotalegacy db, really
+
+b) since then I&apos;ve rewritten the annotation storage quota code so that
+   does only a single quota RMW cycle per quota transaction, which
+   avoids the problem.
+
+I&apos;ve added a regression test to Cassandane, Quota.bz3529, which fails in
+the expected way with the old code and passes with the new code.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

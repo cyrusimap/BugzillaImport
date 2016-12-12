@@ -1,0 +1,633 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2861</bug_id>
+          
+          <creation_ts>2006-07-10 08:27 EDT</creation_ts>
+          <short_desc>Cyrus IMAP 2.3.6: alignment error</short_desc>
+          <delta_ts>2010-10-25 18:46:39 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alex Deiter">tiamat@komi.mts.ru</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>j.s.goodlet@sussex.ac.uk</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alex Deiter">tiamat@komi.mts.ru</who>
+            <bug_when>2006-07-10 08:27:38 EDT</bug_when>
+            <thetext>Hi,
+
+Cyrus IMAP 2.3.6 have a bug on 64bit BIG-endian arch:
+
+program terminated by signal BUS (invalid address alignment)
+Current function is mailbox_read_index_header
+  946           ntohll(*((bit64 *)(mailbox-&gt;index_base+OFFSET_HIGHESTMODSEQ_64)));
+(dbx) where
+=&gt;[1] mailbox_read_index_header(mailbox = 0xffffffff7fffd858), line 946 in
+&quot;mailbox.c&quot;
+  [2] mailbox_open_index(mailbox = 0xffffffff7fffd858), line 675 in &quot;mailbox.c&quot;
+  [3] cmd_select(tag = 0x1002ac920 &quot;s&quot;, cmd = 0x1002ac9a0 &quot;Select&quot;, name =
+0x1002aca20 &quot;INBOX&quot;), line 3388 in &quot;imapd.c&quot;
+  [4] cmdloop(), line 1650 in &quot;imapd.c&quot;
+  [5] service_main(argc = 1, argv = 0x100299ba0, envp = 0xffffffff7ffffcb8),
+line 789 in &quot;imapd.c&quot;
+  [6] main(argc = 1, argv = 0xffffffff7ffffca8, envp = 0xffffffff7ffffcb8), line
+532 in &quot;service.c&quot;
+
+Thanks!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-14 13:54:54 EDT</bug_when>
+            <thetext>Created an attachment (id=452)
+64bit alignment patch
+
+Please test this patch on your system and see if it solves the problem for you.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-28 17:05:44 EDT</bug_when>
+            <thetext>Which compiler are you using?  I can&apos;t reproduce with gcc on Solaris 8</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alex Deiter">tiamat@komi.mts.ru</who>
+            <bug_when>2006-11-22 07:54:58 EDT</bug_when>
+            <thetext>i&apos;m used Sun Studio 11 on Solaris 9.
+
+This patch broken build:
+
+cc -c -I.. -I./../lib  -I./../sieve  -D_LARGEFILE64_SOURCE -D_REENTRANT
+-I/usr/local/include -DKRB5_HEIMDAL -I/usr/local/include  -DHAVE_CONFIG_H 
+-xarch=v9 -xO5 -xspace -D_LARGEFILE64_SOURCE -D_REENTRANT -I/usr/local/include 
+-KPIC -DPIC \
+        index.c
+&quot;mailbox.h&quot;, line 112: warning: unnamed struct member
+&quot;index.c&quot;, line 236: improper member use: index_base
+&quot;index.c&quot;, line 1951: warning: argument #6 is incompatible with prototype:
+        prototype: pointer to int : &quot;./../lib/charset.h&quot;, line 75
+        argument : pointer to unsigned int
+&quot;index.c&quot;, line 3533: warning: argument #2 is incompatible with prototype:
+        prototype: pointer to const char : &quot;./../lib/message_uuid.h&quot;, line 61
+        argument : pointer to unsigned char
+cc: acomp failed for index.c
+gmake[1]: *** [index.o] Error 2
+gmake[1]: Leaving directory
+`/home/devel/build/mail/cyrus-imapd/64/cyrus-imapd-2.3.7/imap&apos;
+gmake: *** [all] Error 1
+*** Error code 2
+
+Stop.
+
+Thanks a lot!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="James Goodlet">j.s.goodlet@sussex.ac.uk</who>
+            <bug_when>2007-03-30 07:20:22 EDT</bug_when>
+            <thetext>Hi,
+
+I&apos;ve just tripped across this issue too.  We&apos;re running 2.2.13 on Solaris 10 (64 bit, sparc, gcc 4.0.3, now 
+gcc 4.1.2), and attempting to migrate to 2.3.8.  We&apos;re getting bus errors in imapd in 
+mailbox_read_index_header as it tries to read mailbox-&gt;highestmodseq from an existing header file.  
+The back trace is:
+
+#0  mailbox_read_index_header (mailbox=0xffbfd5e0) at mailbox.c:947
+#1  0x00043548 in mailbox_open_index (mailbox=0xffbfd5e0) at mailbox.c:677
+#2  0x0002a1d8 in cmd_select (tag=0x15e920 &quot;.&quot;, cmd=0x15e990 &quot;Select&quot;, 
+    name=0x15ea00 &quot;inbox&quot;) at imapd.c:3451
+#3  0x0002e694 in cmdloop () at imapd.c:1656
+#4  0x00030f98 in service_main (argc=1278976, argv=0x1567c0, envp=0xffbff89c)
+    at imapd.c:797
+#5  0x0001b6ec in main (argc=&lt;value optimized out&gt;, 
+    argv=&lt;value optimized out&gt;, envp=0xffbff89c) at service.c:539
+
+and the specific line which throws the error is (on mailbox.c:947):
+
+946     #ifdef HAVE_LONG_LONG_INT
+947         mailbox-&gt;highestmodseq =
+948             ntohll(*((bit64 *)(mailbox-&gt;index_base+OFFSET_HIGHESTMODSEQ_64)));
+949     #else
+
+The bus error is caused by the attempt to read a 64 bit value from a non-64 bit aligned address.  
+index_base is fine with a value of 0xfe8d0000, but the problem comes because 
+OFFSET_HIGHESTMODSEQ_64 is defined to be 68, hence the resulting address doesn&apos;t align on a 64 bit 
+boundary (i.e. mod 64 will equal 32 not 0).
+
+Reading around, I found this similar bug report for Dovecot
+
+  &lt;http://www.dovecot.org/list/dovecot/2005-January/005925.html&gt;
+
+which has a useful summary and link to a discussion on a GCC bugs forum and suggests strongly that 
+the problem is made apparent when gcc&apos;s optimisation is turned on.
+
+Whilst I haven&apos;t tested your proposed patch, I don&apos;t see that it will fix the problem of the 
+OFFSET_HIGHESTMODSEQ_64 offset causing the non-64 bit aligned addresses.  I&apos;ll put together a patch 
+(based on the approach in the Dovecot message), since I both need to go to 2.3.8 and to get benefit 
+from the &quot;64 bit&quot; quota patch.  I doubt my patch will be very elegant, but I&apos;ll submit it here when I&apos;ve 
+completed it, which should be in a couple of hours.
+
+James
+
+For reference, here&apos;s the dump of *mailbox at the point of the crash:
+
+(gdb) p *mailbox
+$3 = {
+  header_fd = 10, 
+  index_fd = 13, 
+  cache_fd = 14, 
+  header_base = 0xfed90000 &quot;?\002\213\rCyrus mailbox header\n\&quot;The best thing about this system 
+was that it had lots of goals.\&quot;\n\t--Jim Morris on Andrew\nuser.test\t14292238454f6335\nNotJunk 
+$NotJunk JunkRecorded Forwarded MessageJunkMailLev&quot;..., 
+  header_len = 253, 
+  index_base = 0xfe8d0000 &quot;&quot;, 
+  index_len = 16384, 
+  cache_base = 0xfe8b0000 &quot;&quot;, 
+  cache_len = 65536, 
+  cache_size = 50656, 
+  header_lock_count = 0, 
+  index_lock_count = 0, 
+  seen_lock_count = 0, 
+  pop_lock_count = 0, 
+  header_ino = 11504296, 
+  index_mtime = 1174669417, 
+  index_ino = 10154440, 
+  index_size = 3616, 
+  name = 0x156ff0 &quot;user.test&quot;, 
+  path = 0x15ea70 &quot;/tmp/mailstoretmp/spool1/user/test&quot;, 
+  mpath = 0x0, 
+  acl = 0x157008 &quot;test\tlrswipcda\t&quot;, 
+  myrights = 2047, 
+  uniqueid = 0x159a18 &quot;14292238454f6335&quot;, 
+  flagname = {0x156a98 &quot;NotJunk&quot;, 0x157038 &quot;$NotJunk&quot;, 
+    0x157050 &quot;JunkRecorded&quot;, 0x157068 &quot;Forwarded&quot;, 
+    0x159a38 &quot;MessageJunkMailLevel&quot;, 0x157080 &quot;$Forwarded&quot;, 0x156aa8 &quot;Junk&quot;, 
+    0x156ab8 &quot;$Junk&quot;, 0x157098 &quot;Redirected&quot;, 0x0 &lt;repeats 119 times&gt;}, 
+  generation_no = 15, 
+  format = 0, 
+  minor_version = 9, 
+  start_offset = 96, 
+  record_size = 80, 
+  exists = 44, 
+  last_appenddate = 1174291915, 
+  last_uid = 4416, 
+  quota_mailbox_used = 472087, 
+  pop3_last_login = 0, 
+  uidvalidity = 0, 
+  deleted = 0, 
+  answered = 0, 
+  flagged = 0, 
+  dirty = 0, 
+  options = 0, 
+  leaked_cache_records = 0, 
+  highestmodseq = 0, 
+  spares = {0, 0, 0, 0}, 
+  quota = {
+    root = 0x157020 &quot;user.test&quot;, 
+    used = 0, 
+    limit = 0
+  }, 
+  examining = 1, 
+  keepingseen = 0, 
+  allseen = 0, 
+  recentuid = 0
+}</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="James Goodlet">j.s.goodlet@sussex.ac.uk</who>
+            <bug_when>2007-03-30 13:48:26 EDT</bug_when>
+            <thetext>Created an attachment (id=534)
+highestmodseq 64bit alignment patch
+
+This seems to work (64 bit quotas are enabled and working, but I no longer get
+bus errors (10) caused by the alignment of the 64 bit highestmodseq entry in
+the mailbox struct).  For reasons that escape me, I couldn&apos;t use memset in my
+new helper function (cpy_bit64, in mailbox.c), and still got sigbus or even
+segfault.  After staring at a very, very small function for many hours, and
+threw the towel in and wrote it an even more ugly way.
+
+I&apos;m certain you can find a more elegant way of fixing the bug than that in this
+patch.	Of course, the most direct route is to change the position of the
+highestmodseq in struct mailbox, but I&apos;m nowhere near well read enough into
+this code to attempt that kind of fix myself.
+
+BTW, one of my modifications in sync_commit.c (around line 315) changes the
+behaviour of the function since I&apos;ve added what I believe is a missing htonll
+call in the comparison operation.  I&apos;ve submitted a separate bug report for
+that possible problem at:
+
+    &lt;http://bugzilla.andrew.cmu.edu/show_bug.cgi?id=2928&gt;
+
+Thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-04-02 16:09:47 EDT</bug_when>
+            <thetext>Created an attachment (id=561)
+alternate highestmodeseq 64bit alignment patch
+
+Could you please try this alternate patch to see if it works on your platform?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="James Goodlet">j.s.goodlet@sussex.ac.uk</who>
+            <bug_when>2007-04-03 06:47:48 EDT</bug_when>
+            <thetext>Yes, that works fine.  Built, installed, tested on Solaris 10 on sparcv9 architecture running with 64 bit 
+kernel space, and 32/64-bit user space.  Cyrus IMAPD is built as a 32 bit application using gcc 4.1.2.  The 
+64 bit extensions are working fine now.
+
+Thanks for the prompt response, and keep up the good work.
+
+James</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-04-03 09:01:39 EDT</bug_when>
+            <thetext>Applied alternate patch to CVS</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>452</attachid>
+            <date>2006-08-14 13:54 EDT</date>
+            <desc>64bit alignment patch</desc>
+            <filename>64bit_alignment.diff</filename>
+            <type>text/plain</type>
+            <size>4401</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IG1haWxib3guYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0v
+Y3ZzL3NyYy9jeXJ1cy9pbWFwL21haWxib3guYyx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS4xNDcu
+Mi4zOApkaWZmIC11IC1yMS4xNDcuMi4zOCBtYWlsYm94LmMKLS0tIG1haWxib3guYwk0IEF1ZyAy
+MDA2IDE0OjQwOjM5IC0wMDAwCTEuMTQ3LjIuMzgKKysrIG1haWxib3guYwkxNCBBdWcgMjAwNiAx
+Nzo1Mzo0NyAtMDAwMApAQCAtMTI4MSw3ICsxMjgxLDEzIEBACiAgKi8KIGludCBtYWlsYm94X3dy
+aXRlX2luZGV4X2hlYWRlcihzdHJ1Y3QgbWFpbGJveCAqbWFpbGJveCkKIHsKLSAgICBjaGFyIGJ1
+ZltJTkRFWF9IRUFERVJfU0laRV07CisgICAgc3RydWN0IHsKKwljaGFyIGJ1ZltJTkRFWF9IRUFE
+RVJfU0laRV07CisjaWZkZWYgSEFWRV9MT05HX0xPTkdfSU5UCisJYml0NjQgYWxpZ244OworI2Vu
+ZGlmCisgICAgfSBhbGlnbjhidWY7CisgICAgY2hhciAqYnVmID0gYWxpZ244YnVmLmJ1ZjsKICAg
+ICB1bnNpZ25lZCBsb25nIGhlYWRlcl9zaXplID0gc2l6ZW9mKGJ1Zik7CiAgICAgaW50IG47CiAg
+ICAgCkBAIC0xMzg2LDcgKzEzOTIsMTMgQEAKIAkJCSAgIGludCBzeW5jKQogewogICAgIGludCBu
+OwotICAgIGNoYXIgYnVmW0lOREVYX1JFQ09SRF9TSVpFXTsKKyAgICBzdHJ1Y3QgeworCWNoYXIg
+YnVmW0lOREVYX1JFQ09SRF9TSVpFXTsKKyNpZmRlZiBIQVZFX0xPTkdfTE9OR19JTlQKKwliaXQ2
+NCBhbGlnbjg7CisjZW5kaWYKKyAgICB9IGFsaWduOGJ1ZjsKKyAgICBjaGFyICpidWYgPSBhbGln
+bjhidWYuYnVmOwogCiAgICAgbWFpbGJveF9pbmRleF9yZWNvcmRfdG9fYnVmKHJlY29yZCwgYnVm
+KTsKIApAQCAtMTQyMSw3ICsxNDMzLDE0IEBACiB7CiAgICAgdW5zaWduZWQgaTsKICAgICBpbnQg
+bGVuLCBuOwotICAgIGNoYXIgKmJ1ZiwgKnA7CisgICAgc3RydWN0IHsKKwljaGFyICpidWY7Cisj
+aWZkZWYgSEFWRV9MT05HX0xPTkdfSU5UCisJYml0NjQgYWxpZ244OworI2VuZGlmCisgICAgfSBh
+bGlnbjhidWY7CisgICAgY2hhciAqYnVmID0gYWxpZ244YnVmLmJ1ZjsKKyAgICBjaGFyICpwOwog
+ICAgIGxvbmcgbGFzdF9vZmZzZXQ7CiAgICAgdGltZV90IG5vdyA9IHRpbWUoTlVMTCk7CiAKQEAg
+LTE1MjAsOCArMTUzOSwxNCBAQAogICAgIHVuc2lnbmVkIGxvbmcgZXhpc3RzOwogICAgIHVuc2ln
+bmVkIG1zZ25vOwogICAgIGJpdDMyIG9sZHN0YXJ0X29mZnNldCwgb2xkcmVjb3JkX3NpemUsIHJl
+Y3NpemVfZGlmZjsKLSAgICBjaGFyIGJ1ZltJTkRFWF9IRUFERVJfU0laRSA+IElOREVYX1JFQ09S
+RF9TSVpFID8KLQkgICAgIElOREVYX0hFQURFUl9TSVpFIDogSU5ERVhfUkVDT1JEX1NJWkVdOwor
+ICAgIHN0cnVjdCB7CisJY2hhciBidWZbSU5ERVhfSEVBREVSX1NJWkUgPiBJTkRFWF9SRUNPUkRf
+U0laRSA/CisJCSBJTkRFWF9IRUFERVJfU0laRSA6IElOREVYX1JFQ09SRF9TSVpFXTsKKyNpZmRl
+ZiBIQVZFX0xPTkdfTE9OR19JTlQKKwliaXQ2NCBhbGlnbjg7CisjZW5kaWYKKyAgICB9IGFsaWdu
+OGJ1ZjsKKyAgICBjaGFyICpidWYgPSBhbGlnbjhidWYuYnVmOwogICAgIGNoYXIgKmJ1ZnA7CiAg
+ICAgaW50IHF1b3RhX29mZnNldCA9IDA7CiAgICAgaW50IGNhbGN1bGF0ZV9mbGFnY291bnRzID0g
+MDsKQEAgLTE4NDksOCArMTg3NCwxNCBAQAogCQkJICAgbWFpbGJveF9kZWNpZGVwcm9jX3QgKmRl
+Y2lkZXByb2MsIHZvaWQgKmRlY2lkZXJvY2ssCiAJCQkgICBpbnQgZXhwdW5nZV9mbGFncykKIHsK
+LSAgICBjaGFyIGJ1ZltJTkRFWF9IRUFERVJfU0laRSA+IElOREVYX1JFQ09SRF9TSVpFID8KLQkg
+ICAgIElOREVYX0hFQURFUl9TSVpFIDogSU5ERVhfUkVDT1JEX1NJWkVdOworICAgIHN0cnVjdCB7
+CisJY2hhciBidWZbSU5ERVhfSEVBREVSX1NJWkUgPiBJTkRFWF9SRUNPUkRfU0laRSA/CisJCSBJ
+TkRFWF9IRUFERVJfU0laRSA6IElOREVYX1JFQ09SRF9TSVpFXTsKKyNpZmRlZiBIQVZFX0xPTkdf
+TE9OR19JTlQKKwliaXQ2NCBhbGlnbjg7CisjZW5kaWYKKyAgICB9IGFsaWduOGJ1ZjsKKyAgICBj
+aGFyICpidWYgPSBhbGlnbjhidWYuYnVmOwogICAgIHVuc2lnbmVkIG1zZ25vOwogICAgIHVuc2ln
+bmVkIG5ld2V4cHVuZ2VkOwogICAgIHVuc2lnbmVkIG5ld2V4aXN0czsKSW5kZXg6IG1haWxib3gu
+aAo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0vY3ZzL3NyYy9jeXJ1cy9p
+bWFwL21haWxib3guaCx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS43Ny4yLjE0CmRpZmYgLXUgLXIx
+Ljc3LjIuMTQgbWFpbGJveC5oCi0tLSBtYWlsYm94LmgJMiBKdW4gMjAwNiAxNjo0MTo1NyAtMDAw
+MAkxLjc3LjIuMTQKKysrIG1haWxib3guaAkxNCBBdWcgMjAwNiAxNzo1Mzo0NyAtMDAwMApAQCAt
+MTA0LDcgKzEwNCwxMiBAQAogCiAgICAgY29uc3QgY2hhciAqaGVhZGVyX2Jhc2U7CiAgICAgdW5z
+aWduZWQgbG9uZyBoZWFkZXJfbGVuOwotICAgIGNvbnN0IGNoYXIgKmluZGV4X2Jhc2U7CisgICAg
+dW5pb24geworCWNvbnN0IGNoYXIgKmluZGV4X2Jhc2U7CisjaWZkZWYgSEFWRV9MT05HX0xPTkdf
+SU5UCisJYml0NjQgYWxpZ244OworI2VuZGlmCisgICAgfTsKICAgICB1bnNpZ25lZCBsb25nIGlu
+ZGV4X2xlbjsJLyogbWFwcGVkIHNpemUgKi8KICAgICBjb25zdCBjaGFyICpjYWNoZV9iYXNlOwog
+ICAgIHVuc2lnbmVkIGxvbmcgY2FjaGVfbGVuOwkvKiBtYXBwZWQgc2l6ZSAqLwpJbmRleDogcmVj
+b25zdHJ1Y3QuYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0vY3ZzL3Ny
+Yy9jeXJ1cy9pbWFwL3JlY29uc3RydWN0LmMsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuODEuMi4y
+MQpkaWZmIC11IC1yMS44MS4yLjIxIHJlY29uc3RydWN0LmMKLS0tIHJlY29uc3RydWN0LmMJMiBK
+dW4gMjAwNiAxNjo0MTo1NyAtMDAwMAkxLjgxLjIuMjEKKysrIHJlY29uc3RydWN0LmMJMTQgQXVn
+IDIwMDYgMTc6NTM6NDggLTAwMDAKQEAgLTQwOSw4ICs0MDksMTQgQEAKICAqLwogaW50IHJlY29u
+c3RydWN0KGNoYXIgKm5hbWUsIHN0cnVjdCBkaXNjb3ZlcmVkICpmb3VuZCkKIHsKLSAgICBjaGFy
+IGJ1ZlsoKElOREVYX0hFQURFUl9TSVpFID4gSU5ERVhfUkVDT1JEX1NJWkUpID8KLQkgICAgIElO
+REVYX0hFQURFUl9TSVpFIDogSU5ERVhfUkVDT1JEX1NJWkUpXTsKKyAgICBzdHJ1Y3QgeworCWNo
+YXIgYnVmW0lOREVYX0hFQURFUl9TSVpFID4gSU5ERVhfUkVDT1JEX1NJWkUgPworCQkgSU5ERVhf
+SEVBREVSX1NJWkUgOiBJTkRFWF9SRUNPUkRfU0laRV07CisjaWZkZWYgSEFWRV9MT05HX0xPTkdf
+SU5UCisJYml0NjQgYWxpZ244OworI2VuZGlmCisgICAgfSBhbGlnbjhidWY7CisgICAgY2hhciAq
+YnVmID0gYWxpZ244YnVmLmJ1ZjsKICAgICBjaGFyIHF1b3RhX3Jvb3RbTUFYX01BSUxCT1hfUEFU
+SCsxXTsKICAgICBiaXQzMiB2YWxpZF91c2VyX2ZsYWdzW01BWF9VU0VSX0ZMQUdTLzMyXTsKIApJ
+bmRleDogc3luY19jb21taXQuYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0
+ZW0vY3ZzL3NyYy9jeXJ1cy9pbWFwL0F0dGljL3N5bmNfY29tbWl0LmMsdgpyZXRyaWV2aW5nIHJl
+dmlzaW9uIDEuMS4yLjEyCmRpZmYgLXUgLXIxLjEuMi4xMiBzeW5jX2NvbW1pdC5jCi0tLSBzeW5j
+X2NvbW1pdC5jCTExIEp1bCAyMDA2IDE0OjM2OjI0IC0wMDAwCTEuMS4yLjEyCisrKyBzeW5jX2Nv
+bW1pdC5jCTE0IEF1ZyAyMDA2IDE3OjUzOjQ4IC0wMDAwCkBAIC05Miw3ICs5MiwxMyBAQAogICAg
+IGNoYXIgKnBhdGg7CiAgICAgRklMRSAqbmV3aW5kZXggPSBOVUxMOwogICAgIEZJTEUgKm5ld2Nh
+Y2hlID0gTlVMTDsKLSAgICB1bnNpZ25lZCBjaGFyICpidWYgID0gTlVMTDsKKyAgICBzdHJ1Y3Qg
+eworCXVuc2lnbmVkIGNoYXIgKmJ1ZjsKKyNpZmRlZiBIQVZFX0xPTkdfTE9OR19JTlQKKwliaXQ2
+NCBhbGlnbjg7CisjZW5kaWYKKyAgICB9IGFsaWduOGJ1ZjsKKyAgICB1bnNpZ25lZCBjaGFyICpi
+dWYgPSBhbGlnbjhidWYuYnVmID0gTlVMTDsKICAgICBzdHJ1Y3Qgc3luY191cGxvYWRfaXRlbSAq
+aXRlbTsKICAgICBzdHJ1Y3Qgc3luY19tZXNzYWdlICAgICAqbWVzc2FnZTsKICAgICBsb25nIHF1
+b3RhX2FkZCAgICAgICA9IDA7ICAvKiBGb2xsb3dpbmcgbWF5IGJlIG5lZ2F0aXZlIG9uIFVVSUQg
+Y29uZmxpY3QgKi8K
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>534</attachid>
+            <date>2007-03-30 13:48 EDT</date>
+            <desc>highestmodseq 64bit alignment patch</desc>
+            <filename>cyrus-imapd-2.3.8-highestmodseq-64bit-alignment-patch</filename>
+            <type>text/plain</type>
+            <size>7197</size>
+            <attacher>j.s.goodlet@sussex.ac.uk</attacher>
+            
+              <data encoding="base64">KioqIGltYXAvbWFpbGJveC5oLm9yaWcJVGh1IE5vdiAzMCAxNzoxMToxOSAyMDA2Ci0tLSBpbWFw
+L21haWxib3guaAlGcmkgTWFyIDMwIDE0OjI5OjU4IDIwMDcKKioqKioqKioqKioqKioqCioqKiAz
+MjQsMzI5ICoqKioKLS0tIDMyNCwzMzggLS0tLQogIGV4dGVybiBpbnQgbWFpbGJveF9vcGVuX2lu
+ZGV4KHN0cnVjdCBtYWlsYm94ICptYWlsYm94KTsKICBleHRlcm4gdm9pZCBtYWlsYm94X2Nsb3Nl
+KHN0cnVjdCBtYWlsYm94ICptYWlsYm94KTsKICAKKyAjaWZkZWYgSEFWRV9MT05HX0xPTkdfSU5U
+CisgdHlwZWRlZiBlbnVtIHsKKyAgICAgQ1BZX05UT0ggPSAoMTw8MCksCisgICAgIENQWV9IVE9O
+ID0gKDE8PDEpCisgfSBjcHlfZGlyZWN0aW9uX3Q7CisgCisgZXh0ZXJuIHZvaWQgY3B5X2JpdDY0
+KGJpdDY0ICp0YXJnZXQsIGJpdDY0ICpzb3VyY2UsIGNweV9kaXJlY3Rpb25fdCBkaXIpOworICNl
+bmRpZgorIAogIGV4dGVybiBpbnQgbWFpbGJveF9yZWFkX2hlYWRlcihzdHJ1Y3QgbWFpbGJveCAq
+bWFpbGJveCk7CiAgZXh0ZXJuIGludCBtYWlsYm94X3JlYWRfaGVhZGVyX2FjbChzdHJ1Y3QgbWFp
+bGJveCAqbWFpbGJveCk7CiAgZXh0ZXJuIGludCBtYWlsYm94X3JlYWRfYWNsKHN0cnVjdCBtYWls
+Ym94ICptYWlsYm94LCAKKioqIGltYXAvbWFpbGJveC5jLm9yaWcJTW9uIEZlYiAgNSAxODo0MTo0
+NyAyMDA3Ci0tLSBpbWFwL21haWxib3guYwlGcmkgTWFyIDMwIDE4OjI3OjQ2IDIwMDcKKioqKioq
+KioqKioqKioqCioqKiA4NjMsODY5ICoqKioKLS0tIDg2Myw4OTkgLS0tLQogICAgICByZXR1cm4g
+MDsKICB9CiAgCisgI2lmZGVmIEhBVkVfTE9OR19MT05HX0lOVAogIC8qCisgICogQSBoZWxwZXIg
+ZnVuY3Rpb24gZm9yIGNvcGluZyB3aXRoIDY0IGJpdCBhbGlnbm1lbnQgaXNzdWVzIHdpdGggaGln
+aGVzdG1vZHNlcQorICAqIGluIHRoZSBtYWlsYm94IHN0cnVjdC4KKyAgKi8KKyB2b2lkIGNweV9i
+aXQ2NChiaXQ2NCAqdGFyZ2V0LCBiaXQ2NCAqc291cmNlLCBjcHlfZGlyZWN0aW9uX3QgZGlyZWN0
+aW9uKQorIHsKKyAgICAgYml0NjQgKnRtcDsKKyAgICAgY2hhciAqcywgKnQ7CisgICAgIGludCBu
+OworIAorICAgICAvKiBnZXQgc29tZSB3b3JraW5nIHNwYWNlICovCisgICAgIHRtcCA9IChiaXQ2
+NCAqKXhtYWxsb2Moc2l6ZW9mKGJpdDY0KSk7CisgCisgICAgIGZvciAobj0wLCBzPShjaGFyICop
+c291cmNlLCB0PShjaGFyICopdG1wOyBuIDwgc2l6ZW9mKGJpdDY0KTsgbisrKSB7CisgCSoodCsr
+KSA9ICoocysrKTsKKyAgICAgfQorICAgICBpZiAoZGlyZWN0aW9uID09IENQWV9OVE9IKSB7Cisg
+CSp0bXAgPSBudG9obGwoKnRtcCk7CisgICAgIH0gZWxzZSB7CisgCSp0bXAgPSBodG9ubGwoKnRt
+cCk7CisgICAgIH0KKyAgICAgZm9yIChuPTAsIHM9KGNoYXIgKil0bXAsIHQ9KGNoYXIgKil0YXJn
+ZXQ7IG4gPCBzaXplb2YoYml0NjQpOyBuKyspIHsKKyAJKih0KyspID0gKihzKyspOworICAgICB9
+CisgCisgICAgIGZyZWUodG1wKTsKKyB9CisgI2VuZGlmCisgCisgLyoKICAgKiBSZWFkIHRoZSBo
+ZWFkZXIgb2YgdGhlIGluZGV4IGZpbGUgZm9yIG1haWxib3gKICAgKi8KICBpbnQgbWFpbGJveF9y
+ZWFkX2luZGV4X2hlYWRlcihzdHJ1Y3QgbWFpbGJveCAqbWFpbGJveCkKKioqKioqKioqKioqKioq
+CioqKiA5NDQsOTUxICoqKioKICAgICAgbWFpbGJveC0+bGVha2VkX2NhY2hlX3JlY29yZHMgPQog
+IAludG9obCgqKChiaXQzMiAqKShtYWlsYm94LT5pbmRleF9iYXNlK09GRlNFVF9MRUFLRURfQ0FD
+SEUpKSk7CiAgI2lmZGVmIEhBVkVfTE9OR19MT05HX0lOVAohICAgICBtYWlsYm94LT5oaWdoZXN0
+bW9kc2VxID0KISAJbnRvaGxsKCooKGJpdDY0ICopKG1haWxib3gtPmluZGV4X2Jhc2UrT0ZGU0VU
+X0hJR0hFU1RNT0RTRVFfNjQpKSk7CiAgI2Vsc2UKICAgICAgbWFpbGJveC0+aGlnaGVzdG1vZHNl
+cSA9CiAgCW50b2hsKCooKGJpdDMyICopKG1haWxib3gtPmluZGV4X2Jhc2UrT0ZGU0VUX0hJR0hF
+U1RNT0RTRVEpKSk7Ci0tLSA5NzQsOTgyIC0tLS0KICAgICAgbWFpbGJveC0+bGVha2VkX2NhY2hl
+X3JlY29yZHMgPQogIAludG9obCgqKChiaXQzMiAqKShtYWlsYm94LT5pbmRleF9iYXNlK09GRlNF
+VF9MRUFLRURfQ0FDSEUpKSk7CiAgI2lmZGVmIEhBVkVfTE9OR19MT05HX0lOVAohICAgICBjcHlf
+Yml0NjQoJm1haWxib3gtPmhpZ2hlc3Rtb2RzZXEsCiEgCSAgICAgIChiaXQ2NCAqKShtYWlsYm94
+LT5pbmRleF9iYXNlK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSwKISAJICAgICAgQ1BZX05UT0gp
+OwogICNlbHNlCiAgICAgIG1haWxib3gtPmhpZ2hlc3Rtb2RzZXEgPQogIAludG9obCgqKChiaXQz
+MiAqKShtYWlsYm94LT5pbmRleF9iYXNlK09GRlNFVF9ISUdIRVNUTU9EU0VRKSkpOwoqKioqKioq
+KioqKioqKioKKioqIDEzMTgsMTMyNCAqKioqCiAgICAgICooKGJpdDMyICopKGJ1ZitPRkZTRVRf
+TEVBS0VEX0NBQ0hFKSkgPQogIAlodG9ubChtYWlsYm94LT5sZWFrZWRfY2FjaGVfcmVjb3Jkcyk7
+CiAgI2lmZGVmIEhBVkVfTE9OR19MT05HX0lOVAohICAgICAqKChiaXQ2NCAqKShidWYrT0ZGU0VU
+X0hJR0hFU1RNT0RTRVFfNjQpKSA9IGh0b25sbChtYWlsYm94LT5oaWdoZXN0bW9kc2VxKTsKICAj
+ZWxzZQogICAgICAvKiB6ZXJvIHRoZSB1bnVzZWQgMzJiaXRzICovCiAgICAgICooKGJpdDMyICop
+KGJ1ZitPRkZTRVRfSElHSEVTVE1PRFNFUV82NCkpID0gaHRvbmwoMCk7Ci0tLSAxMzQ5LDEzNTcg
+LS0tLQogICAgICAqKChiaXQzMiAqKShidWYrT0ZGU0VUX0xFQUtFRF9DQUNIRSkpID0KICAJaHRv
+bmwobWFpbGJveC0+bGVha2VkX2NhY2hlX3JlY29yZHMpOwogICNpZmRlZiBIQVZFX0xPTkdfTE9O
+R19JTlQKISAgICAgY3B5X2JpdDY0KChiaXQ2NCAqKWJ1ZitPRkZTRVRfSElHSEVTVE1PRFNFUV82
+NCwgCiEgCSAgICAgICZtYWlsYm94LT5oaWdoZXN0bW9kc2VxLAohIAkgICAgICBDUFlfSFRPTik7
+CiAgI2Vsc2UKICAgICAgLyogemVybyB0aGUgdW51c2VkIDMyYml0cyAqLwogICAgICAqKChiaXQz
+MiAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQpKSA9IGh0b25sKDApOwoqKioqKioqKioq
+KioqKioKKioqIDE1NDcsMTU1MyAqKioqCiAgCiAgICAgIGlmIChudG9obCgqKChiaXQzMiAqKShi
+dWYrT0ZGU0VUX01JTk9SX1ZFUlNJT04pKSkgPCA4KSB7CiAgI2lmZGVmIEhBVkVfTE9OR19MT05H
+X0lOVAohIAkqKChiaXQ2NCAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQpKSA9IGh0b25s
+bCgxKTsKICAjZWxzZQogIAkqKChiaXQzMiAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQp
+KSA9IGh0b25sKDApOwogIAkqKChiaXQzMiAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVEpKSA9
+IGh0b25sKDEpOwotLS0gMTU4MCwxNTg4IC0tLS0KICAKICAgICAgaWYgKG50b2hsKCooKGJpdDMy
+ICopKGJ1ZitPRkZTRVRfTUlOT1JfVkVSU0lPTikpKSA8IDgpIHsKICAjaWZkZWYgSEFWRV9MT05H
+X0xPTkdfSU5UCiEgCWJpdDY0IHRtcCA9IChiaXQ2NCkxOwohIAohIAljcHlfYml0NjQoKGJpdDY0
+ICopYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0LCAmdG1wLCBDUFlfSFRPTik7CiAgI2Vsc2UK
+ICAJKigoYml0MzIgKikoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSkgPSBodG9ubCgwKTsK
+ICAJKigoYml0MzIgKikoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRKSkgPSBodG9ubCgxKTsKKioq
+KioqKioqKioqKioqCioqKiAxNTkyLDE2MDAgKioqKgogIAkqKChiaXQzMiAqKShidWYrT0ZGU0VU
+X01BSUxCT1hfT1BUSU9OUykpID0gaHRvbmwob3B0aW9ucyk7CiAgICAgIH0KICAjaWYgMAohICAg
+ICBpZiAob2xkc3RhcnRfb2Zmc2V0IDwgT0ZGU0VUX0hJR0hFU1RNT0RTRVEtcXVvdGFfb2Zmc2V0
+K3NpemVvZihiaXQzMikgfHwKISAJIW50b2hsbCgqKChiaXQ2NCAqKShidWYrT0ZGU0VUX0hJR0hF
+U1RNT0RTRVFfNjQpKSkpIHsKISAJKigoYml0NjQgKikoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VR
+XzY0KSkgPSBodG9ubGwoMSk7CiAgICAgIH0KICAjZW5kaWYKICAgICAgKigoYml0MzIgKikoYnVm
+K09GRlNFVF9TUEFSRTApKSA9IGh0b25sKDApOyAvKiBSRVNFUlZFRCAqLwotLS0gMTYyNywxNjQx
+IC0tLS0KICAJKigoYml0MzIgKikoYnVmK09GRlNFVF9NQUlMQk9YX09QVElPTlMpKSA9IGh0b25s
+KG9wdGlvbnMpOwogICAgICB9CiAgI2lmIDAKISAgICAgewohIAliaXQ2NCB0bXA7CiEgCiEgCWNw
+eV9iaXQ2NCgmdG1wLCAoYml0NjQgKilidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQsIENQWV9O
+VE9IKTsKISAJaWYgKG9sZHN0YXJ0X29mZnNldCA8IE9GRlNFVF9ISUdIRVNUTU9EU0VRLXF1b3Rh
+X29mZnNldCtzaXplb2YoYml0MzIpIHx8CiEgCQkhdG1wKSB7CiEgCSAgICB0bXAgPSAoYml0NjQp
+MTsKISAJICAgIGNweV9iaXQ2NCgoYml0NjQgKilidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQs
+ICZ0bXAsIENQWV9IVE9OKTsKISAJfQogICAgICB9CiAgI2VuZGlmCiAgICAgICooKGJpdDMyICop
+KGJ1ZitPRkZTRVRfU1BBUkUwKSkgPSBodG9ubCgwKTsgLyogUkVTRVJWRUQgKi8KKioqIGltYXAv
+cmVjb25zdHJ1Y3QuYy5vcmlnCU1vbiBGZWIgIDUgMTg6NDE6NDggMjAwNwotLS0gaW1hcC9yZWNv
+bnN0cnVjdC5jCUZyaSBNYXIgMzAgMTQ6NDc6MTEgMjAwNwoqKioqKioqKioqKioqKioKKioqIDEw
+NzMsMTA3OSAqKioqCiAgICAgICooKGJpdDMyICopKGJ1ZitPRkZTRVRfTUFJTEJPWF9PUFRJT05T
+KSkgPSBodG9ubChtYWlsYm94Lm9wdGlvbnMpOwogICAgICAqKChiaXQzMiAqKShidWYrT0ZGU0VU
+X0xFQUtFRF9DQUNIRSkpID0gaHRvbmwoMCk7CiAgI2lmZGVmIEhBVkVfTE9OR19MT05HX0lOVAoh
+ICAgICAqKChiaXQ2NCAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQpKSA9IGh0b25sbCht
+YWlsYm94LmhpZ2hlc3Rtb2RzZXEpOwogICNlbHNlCiAgICAgIC8qIHplcm8gdGhlIHVudXNlZCAz
+MmJpdHMgKi8KICAgICAgKigoYml0MzIgKikoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSkg
+PSBodG9ubCgwKTsKLS0tIDEwNzMsMTA4MSAtLS0tCiAgICAgICooKGJpdDMyICopKGJ1ZitPRkZT
+RVRfTUFJTEJPWF9PUFRJT05TKSkgPSBodG9ubChtYWlsYm94Lm9wdGlvbnMpOwogICAgICAqKChi
+aXQzMiAqKShidWYrT0ZGU0VUX0xFQUtFRF9DQUNIRSkpID0gaHRvbmwoMCk7CiAgI2lmZGVmIEhB
+VkVfTE9OR19MT05HX0lOVAohICAgICBjcHlfYml0NjQoKGJpdDY0ICopYnVmK09GRlNFVF9ISUdI
+RVNUTU9EU0VRXzY0LAohIAkgICAgICAmbWFpbGJveC5oaWdoZXN0bW9kc2VxLAohIAkgICAgICBD
+UFlfSFRPTik7CiAgI2Vsc2UKICAgICAgLyogemVybyB0aGUgdW51c2VkIDMyYml0cyAqLwogICAg
+ICAqKChiaXQzMiAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQpKSA9IGh0b25sKDApOwoq
+KiogaW1hcC9zeW5jX2NvbW1pdC5jLm9yaWcJVGh1IE5vdiAzMCAxNzoxMToyMCAyMDA2Ci0tLSBp
+bWFwL3N5bmNfY29tbWl0LmMJRnJpIE1hciAzMCAxNDo0NjoxNSAyMDA3CioqKioqKioqKioqKioq
+KgoqKiogMzExLDMxOSAqKioqCiAgCiAgICAgIC8qIEZpeCB1cCBoaWdoZXN0IG1vZHNlcSAqLwog
+ICNpZmRlZiBIQVZFX0xPTkdfTE9OR19JTlQKISAgICAgaWYgKGhpZ2hlc3Rtb2RzZXEgPiAqKChi
+aXQ2NCAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQpKSkgewohIAkqKChiaXQ2NCAqKShi
+dWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQpKSA9IGh0b25sbChoaWdoZXN0bW9kc2VxKTsKICAg
+ICAgfQogICNlbHNlCiAgICAgIGlmIChoaWdoZXN0bW9kc2VxID4gKigoYml0MzIgKikoYnVmK09G
+RlNFVF9ISUdIRVNUTU9EU0VRKSkpIHsKICAJKigoYml0MzIgKikoYnVmK09GRlNFVF9ISUdIRVNU
+TU9EU0VRXzY0KSkgPSBodG9ubCgwKTsKLS0tIDMxMSwzMjYgLS0tLQogIAogICAgICAvKiBGaXgg
+dXAgaGlnaGVzdCBtb2RzZXEgKi8KICAjaWZkZWYgSEFWRV9MT05HX0xPTkdfSU5UCiEgewohICAg
+ICBiaXQ2NCB0bXA7CiEgCiEgICAgIGNweV9iaXQ2NCgmdG1wLCAoYml0NjQgKilidWYrT0ZGU0VU
+X0hJR0hFU1RNT0RTRVFfNjQsIENQWV9OVE9IKTsKISAgICAgaWYgKGhpZ2hlc3Rtb2RzZXEgPiB0
+bXApIHsKISAJY3B5X2JpdDY0KChiaXQ2NCAqKWJ1ZitPRkZTRVRfSElHSEVTVE1PRFNFUV82NCwK
+ISAJCSAgJmhpZ2hlc3Rtb2RzZXEsCiEgCQkgIENQWV9IVE9OKTsKICAgICAgfQorIH0KICAjZWxz
+ZQogICAgICBpZiAoaGlnaGVzdG1vZHNlcSA+ICooKGJpdDMyICopKGJ1ZitPRkZTRVRfSElHSEVT
+VE1PRFNFUSkpKSB7CiAgCSooKGJpdDMyICopKGJ1ZitPRkZTRVRfSElHSEVTVE1PRFNFUV82NCkp
+ID0gaHRvbmwoMCk7CioqKioqKioqKioqKioqKgoqKiogNjE2LDYyNCAqKioqCiAgCQogICAgICAv
+KiBGaXggdXAgaGlnaGVzdCBtb2RzZXEgKi8KICAjaWZkZWYgSEFWRV9MT05HX0xPTkdfSU5UCiEg
+ICAgIGlmIChoaWdoZXN0bW9kc2VxID4gbnRvaGxsKCooKGJpdDY0ICopKGhidWYrT0ZGU0VUX0hJ
+R0hFU1RNT0RTRVFfNjQpKSkpIHsKISAJKigoYml0NjQgKikoaGJ1ZitPRkZTRVRfSElHSEVTVE1P
+RFNFUV82NCkpID0gaHRvbmxsKGhpZ2hlc3Rtb2RzZXEpOwogICAgICB9CiAgI2Vsc2UKICAgICAg
+aWYgKGhpZ2hlc3Rtb2RzZXEgPiBudG9obCgqKChiaXQzMiAqKShoYnVmK09GRlNFVF9ISUdIRVNU
+TU9EU0VRKSkpKSB7CiAgCSooKGJpdDMyICopKGhidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQp
+KSA9IGh0b25sKDApOwotLS0gNjIzLDYzOCAtLS0tCiAgCQogICAgICAvKiBGaXggdXAgaGlnaGVz
+dCBtb2RzZXEgKi8KICAjaWZkZWYgSEFWRV9MT05HX0xPTkdfSU5UCiEgewohICAgICBiaXQ2NCB0
+bXA7CiEgCiEgICAgIGNweV9iaXQ2NCgmdG1wLCAoYml0NjQgKiloYnVmK09GRlNFVF9ISUdIRVNU
+TU9EU0VRXzY0LCBDUFlfTlRPSCk7CiEgICAgIGlmIChoaWdoZXN0bW9kc2VxID4gdG1wKSB7CiEg
+CWNweV9iaXQ2NCgoYml0NjQgKiloYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0LAohIAkJICAm
+aGlnaGVzdG1vZHNlcSwKISAJCSAgQ1BZX0hUT04pOwogICAgICB9CisgfQogICNlbHNlCiAgICAg
+IGlmIChoaWdoZXN0bW9kc2VxID4gbnRvaGwoKigoYml0MzIgKikoaGJ1ZitPRkZTRVRfSElHSEVT
+VE1PRFNFUSkpKSkgewogIAkqKChiaXQzMiAqKShoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0
+KSkgPSBodG9ubCgwKTsK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>561</attachid>
+            <date>2007-04-02 16:09 EDT</date>
+            <desc>alternate highestmodeseq 64bit alignment patch</desc>
+            <filename>64bit_alignment.patch</filename>
+            <type>text/plain</type>
+            <size>5547</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXAvbWFpbGJveC5jCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9hZnMvYW5kcmV3L3N5
+c3RlbS9jdnMvc3JjL2N5cnVzL2ltYXAvbWFpbGJveC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAx
+LjE2NQpkaWZmIC11IC1yMS4xNjUgbWFpbGJveC5jCi0tLSBpbWFwL21haWxib3guYwkyNyBNYXIg
+MjAwNyAxOTo1MzowOCAtMDAwMAkxLjE2NQorKysgaW1hcC9tYWlsYm94LmMJMiBBcHIgMjAwNyAy
+MDowNzowNCAtMDAwMApAQCAtOTQ1LDcgKzk0NSw3IEBACiAJbnRvaGwoKigoYml0MzIgKikobWFp
+bGJveC0+aW5kZXhfYmFzZStPRkZTRVRfTEVBS0VEX0NBQ0hFKSkpOwogI2lmZGVmIEhBVkVfTE9O
+R19MT05HX0lOVAogICAgIG1haWxib3gtPmhpZ2hlc3Rtb2RzZXEgPQotCW50b2hsbCgqKChiaXQ2
+NCAqKShtYWlsYm94LT5pbmRleF9iYXNlK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSkpOworCWFs
+aWduX250b2hsbChtYWlsYm94LT5pbmRleF9iYXNlK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KTsK
+ICNlbHNlCiAgICAgbWFpbGJveC0+aGlnaGVzdG1vZHNlcSA9CiAJbnRvaGwoKigoYml0MzIgKiko
+bWFpbGJveC0+aW5kZXhfYmFzZStPRkZTRVRfSElHSEVTVE1PRFNFUSkpKTsKQEAgLTEzMTgsNyAr
+MTMxOCw3IEBACiAgICAgKigoYml0MzIgKikoYnVmK09GRlNFVF9MRUFLRURfQ0FDSEUpKSA9CiAJ
+aHRvbmwobWFpbGJveC0+bGVha2VkX2NhY2hlX3JlY29yZHMpOwogI2lmZGVmIEhBVkVfTE9OR19M
+T05HX0lOVAotICAgICooKGJpdDY0ICopKGJ1ZitPRkZTRVRfSElHSEVTVE1PRFNFUV82NCkpID0g
+aHRvbmxsKG1haWxib3gtPmhpZ2hlc3Rtb2RzZXEpOworICAgIGFsaWduX2h0b25sbChidWYrT0ZG
+U0VUX0hJR0hFU1RNT0RTRVFfNjQsIG1haWxib3gtPmhpZ2hlc3Rtb2RzZXEpOwogI2Vsc2UKICAg
+ICAvKiB6ZXJvIHRoZSB1bnVzZWQgMzJiaXRzICovCiAgICAgKigoYml0MzIgKikoYnVmK09GRlNF
+VF9ISUdIRVNUTU9EU0VRXzY0KSkgPSBodG9ubCgwKTsKQEAgLTE1NDcsNyArMTU0Nyw3IEBACiAK
+ICAgICBpZiAobnRvaGwoKigoYml0MzIgKikoYnVmK09GRlNFVF9NSU5PUl9WRVJTSU9OKSkpIDwg
+OCkgewogI2lmZGVmIEhBVkVfTE9OR19MT05HX0lOVAotCSooKGJpdDY0ICopKGJ1ZitPRkZTRVRf
+SElHSEVTVE1PRFNFUV82NCkpID0gaHRvbmxsKDEpOworCWFsaWduX2h0b25sbChidWYrT0ZGU0VU
+X0hJR0hFU1RNT0RTRVFfNjQsIDEpOwogI2Vsc2UKIAkqKChiaXQzMiAqKShidWYrT0ZGU0VUX0hJ
+R0hFU1RNT0RTRVFfNjQpKSA9IGh0b25sKDApOwogCSooKGJpdDMyICopKGJ1ZitPRkZTRVRfSElH
+SEVTVE1PRFNFUSkpID0gaHRvbmwoMSk7CkBAIC0xNTkzLDggKzE1OTMsOCBAQAogICAgIH0KICNp
+ZiAwCiAgICAgaWYgKG9sZHN0YXJ0X29mZnNldCA8IE9GRlNFVF9ISUdIRVNUTU9EU0VRLXF1b3Rh
+X29mZnNldCtzaXplb2YoYml0MzIpIHx8Ci0JIW50b2hsbCgqKChiaXQ2NCAqKShidWYrT0ZGU0VU
+X0hJR0hFU1RNT0RTRVFfNjQpKSkpIHsKLQkqKChiaXQ2NCAqKShidWYrT0ZGU0VUX0hJR0hFU1RN
+T0RTRVFfNjQpKSA9IGh0b25sbCgxKTsKKwkhYWxpZ25fbnRvaGxsKGJ1ZitPRkZTRVRfSElHSEVT
+VE1PRFNFUV82NCkpIHsKKwlhbGlnbl9odG9ubGwoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0
+LCAxKTsKICAgICB9CiAjZW5kaWYKICAgICAqKChiaXQzMiAqKShidWYrT0ZGU0VUX1NQQVJFMCkp
+ID0gaHRvbmwoMCk7IC8qIFJFU0VSVkVEICovCkluZGV4OiBpbWFwL3JlY29uc3RydWN0LmMKPT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2cy9zcmMvY3lydXMvaW1hcC9y
+ZWNvbnN0cnVjdC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjkyCmRpZmYgLXUgLXIxLjkyIHJl
+Y29uc3RydWN0LmMKLS0tIGltYXAvcmVjb25zdHJ1Y3QuYwkzMCBNYXIgMjAwNyAxODo0MDoyMCAt
+MDAwMAkxLjkyCisrKyBpbWFwL3JlY29uc3RydWN0LmMJMiBBcHIgMjAwNyAyMDowNzowNCAtMDAw
+MApAQCAtMTA3NCw3ICsxMDc0LDcgQEAKICAgICAqKChiaXQzMiAqKShidWYrT0ZGU0VUX01BSUxC
+T1hfT1BUSU9OUykpID0gaHRvbmwobWFpbGJveC5vcHRpb25zKTsKICAgICAqKChiaXQzMiAqKShi
+dWYrT0ZGU0VUX0xFQUtFRF9DQUNIRSkpID0gaHRvbmwoMCk7CiAjaWZkZWYgSEFWRV9MT05HX0xP
+TkdfSU5UCi0gICAgKigoYml0NjQgKikoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSkgPSBo
+dG9ubGwobWFpbGJveC5oaWdoZXN0bW9kc2VxKTsKKyAgICBhbGlnbl9odG9ubGwoYnVmK09GRlNF
+VF9ISUdIRVNUTU9EU0VRXzY0LCBtYWlsYm94LmhpZ2hlc3Rtb2RzZXEpOwogI2Vsc2UKICAgICAv
+KiB6ZXJvIHRoZSB1bnVzZWQgMzJiaXRzICovCiAgICAgKigoYml0MzIgKikoYnVmK09GRlNFVF9I
+SUdIRVNUTU9EU0VRXzY0KSkgPSBodG9ubCgwKTsKSW5kZXg6IGltYXAvc3luY19jb21taXQuYwo9
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0vY3ZzL3NyYy9jeXJ1cy9pbWFw
+L3N5bmNfY29tbWl0LmMsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMwpkaWZmIC11IC1yMS4zIHN5
+bmNfY29tbWl0LmMKLS0tIGltYXAvc3luY19jb21taXQuYwkyIEFwciAyMDA3IDE4OjI1OjUxIC0w
+MDAwCTEuMworKysgaW1hcC9zeW5jX2NvbW1pdC5jCTIgQXByIDIwMDcgMjA6MDc6MDQgLTAwMDAK
+QEAgLTMxMSw4ICszMTEsOCBAQAogCiAgICAgLyogRml4IHVwIGhpZ2hlc3QgbW9kc2VxICovCiAj
+aWZkZWYgSEFWRV9MT05HX0xPTkdfSU5UCi0gICAgaWYgKGhpZ2hlc3Rtb2RzZXEgPiBudG9obGwo
+KigoYml0NjQgKikoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSkpKSB7Ci0JKigoYml0NjQg
+KikoYnVmK09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSkgPSBodG9ubGwoaGlnaGVzdG1vZHNlcSk7
+CisgICAgaWYgKGhpZ2hlc3Rtb2RzZXEgPiBhbGlnbl9udG9obGwoYnVmK09GRlNFVF9ISUdIRVNU
+TU9EU0VRXzY0KSkgeworCWFsaWduX2h0b25sbChidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQs
+IGhpZ2hlc3Rtb2RzZXEpOwogICAgIH0KICNlbHNlCiAgICAgaWYgKGhpZ2hlc3Rtb2RzZXEgPiBu
+dG9obCgqKChiaXQzMiAqKShidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVEpKSkpIHsKQEAgLTYxNiw4
+ICs2MTYsOCBAQAogCQogICAgIC8qIEZpeCB1cCBoaWdoZXN0IG1vZHNlcSAqLwogI2lmZGVmIEhB
+VkVfTE9OR19MT05HX0lOVAotICAgIGlmIChoaWdoZXN0bW9kc2VxID4gbnRvaGxsKCooKGJpdDY0
+ICopKGhidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVFfNjQpKSkpIHsKLQkqKChiaXQ2NCAqKShoYnVm
+K09GRlNFVF9ISUdIRVNUTU9EU0VRXzY0KSkgPSBodG9ubGwoaGlnaGVzdG1vZHNlcSk7CisgICAg
+aWYgKGhpZ2hlc3Rtb2RzZXEgPiBhbGlnbl9udG9obGwoaGJ1ZitPRkZTRVRfSElHSEVTVE1PRFNF
+UV82NCkpIHsKKwlhbGlnbl9odG9ubGwoaGJ1ZitPRkZTRVRfSElHSEVTVE1PRFNFUV82NCwgaGln
+aGVzdG1vZHNlcSk7CiAgICAgfQogI2Vsc2UKICAgICBpZiAoaGlnaGVzdG1vZHNlcSA+IG50b2hs
+KCooKGJpdDMyICopKGhidWYrT0ZGU0VUX0hJR0hFU1RNT0RTRVEpKSkpIHsKSW5kZXg6IGxpYi9i
+eXRlb3JkZXI2NC5jCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9hZnMvYW5kcmV3L3N5c3RlbS9jdnMv
+c3JjL2N5cnVzL2xpYi9ieXRlb3JkZXI2NC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjIKZGlm
+ZiAtdSAtcjEuMiBieXRlb3JkZXI2NC5jCi0tLSBsaWIvYnl0ZW9yZGVyNjQuYwkzMCBOb3YgMjAw
+NiAxNzoxMToyMiAtMDAwMAkxLjIKKysrIGxpYi9ieXRlb3JkZXI2NC5jCTIgQXByIDIwMDcgMjA6
+MDc6MDQgLTAwMDAKQEAgLTQyLDggKzQyLDExIEBACiAgKi8KIAogI2luY2x1ZGUgPGNvbmZpZy5o
+PgorI2luY2x1ZGUgImJ5dGVvcmRlcjY0LmgiCiAKLSNpZiBkZWZpbmVkKEhBVkVfTE9OR19MT05H
+X0lOVCkgJiYgIWRlZmluZWQoV09SRFNfQklHRU5ESUFOKQorI2lmIGRlZmluZWQoSEFWRV9MT05H
+X0xPTkdfSU5UKQorCisjaWYgIWRlZmluZWQoV09SRFNfQklHRU5ESUFOKQogCiAjaW5jbHVkZSA8
+bmV0aW5ldC9pbi5oPgogCkBAIC05Miw0ICs5NSwyNCBAQAogICAgIHJldHVybiB1Mi5hOwogfQog
+Ci0jZW5kaWYgLyogZGVmaW5lZChIQVZFX0xPTkdfTE9OR19JTlQpICYmICFkZWZpbmVkKFdPUkRT
+X0JJR0VORElBTikgKi8KKyNlbmRpZiAvKiAhZGVmaW5lZChXT1JEU19CSUdFTkRJQU4pICovCisK
+KyNpbmNsdWRlIDxzdHJpbmcuaD4KKwordm9pZCBhbGlnbl9odG9ubGwodm9pZCAqZHN0LCB1bnNp
+Z25lZCBsb25nIGxvbmcgc3JjKQoreworICAgIHVuc2lnbmVkIGxvbmcgbG9uZyB0bXA7CisKKyAg
+ICB0bXAgPSBodG9ubGwoc3JjKTsKKyAgICBtZW1jcHkoZHN0LCAodm9pZCAqKSAmdG1wLCBzaXpl
+b2YodW5zaWduZWQgbG9uZyBsb25nKSk7Cit9CisKK3Vuc2lnbmVkIGxvbmcgbG9uZyBhbGlnbl9u
+dG9obGwoY29uc3Qgdm9pZCAqc3JjKQoreworICAgIHVuc2lnbmVkIGxvbmcgbG9uZyBkc3Q7CisK
+KyAgICBtZW1jcHkoKHZvaWQgKikgJmRzdCwgc3JjLCBzaXplb2YodW5zaWduZWQgbG9uZyBsb25n
+KSk7CisgICAgcmV0dXJuIG50b2hsbChkc3QpOworfQorCisjZW5kaWYgLyogZGVmaW5lZChIQVZF
+X0xPTkdfTE9OR19JTlQpICovCkluZGV4OiBsaWIvYnl0ZW9yZGVyNjQuaAo9PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJD
+UyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0vY3ZzL3NyYy9jeXJ1cy9saWIvYnl0ZW9yZGVyNjQu
+aCx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS4yCmRpZmYgLXUgLXIxLjIgYnl0ZW9yZGVyNjQuaAot
+LS0gbGliL2J5dGVvcmRlcjY0LmgJMzAgTm92IDIwMDYgMTc6MTE6MjIgLTAwMDAJMS4yCisrKyBs
+aWIvYnl0ZW9yZGVyNjQuaAkyIEFwciAyMDA3IDIwOjA3OjA0IC0wMDAwCkBAIC02MSw1ICs2MSwx
+MCBAQAogZXh0ZXJuIHVuc2lnbmVkIGxvbmcgbG9uZyBfbnRvaGxsKHVuc2lnbmVkIGxvbmcgbG9u
+Zyk7CiAKICNlbmRpZiAvKiBXT1JEU19CSUdFTkRJQU4gKi8KKworLyogNjQtYml0IGhvc3QvbmV0
+d29yayBieXRlLW9yZGVyIHN3YXAgZnVuY3Rpb25zIHRvL2Zyb20gbm9uLWFsaWduZWQgYnVmZmVy
+cyAqLworZXh0ZXJuIHZvaWQgYWxpZ25faHRvbmxsKHZvaWQgKmRzdCwgdW5zaWduZWQgbG9uZyBs
+b25nIHNyYyk7CitleHRlcm4gdW5zaWduZWQgbG9uZyBsb25nIGFsaWduX250b2hsbChjb25zdCB2
+b2lkICpzcmMpOworCiAjZW5kaWYgLyogSEFWRV9MT05HX0xPTkdfSU5UICovCiAjZW5kaWYgLyog
+X0JZVEVPUkRFUjY0X0ggKi8K
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,143 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2309</bug_id>
+          
+          <creation_ts>2003-12-01 19:25 EDT</creation_ts>
+          <short_desc>2.1.17, auxprop_store, OTP, SRP problem</short_desc>
+          <delta_ts>2010-10-25 18:46:33 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>plugins</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Howard Chu">hyc@openldap.org</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>ken@oceana.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Howard Chu">hyc@openldap.org</who>
+            <bug_when>2003-12-01 19:25:32 EDT</bug_when>
+            <thetext>While testing the auxprop_store code in slapd&apos;s internal auxprop module I ran 
+into a problem; slapd sets some information it needs in the propctx but the 
+OTP module does a prop_clear() and wipes it out. Please consider just using 
+prop_erase() instead:
+
+Index: otp.c
+===================================================================
+RCS file: /cvs/src/sasl/plugins/otp.c,v
+retrieving revision 1.30
+diff -u -r1.30 otp.c
+--- otp.c       3 Nov 2003 18:25:25 -0000       1.30
++++ otp.c       29 Nov 2003 05:45:44 -0000
+@@ -1027,7 +1027,7 @@
+            return SASL_FAIL;
+        }
+
+-       params-&gt;utils-&gt;prop_clear(params-&gt;propctx, 1);
++       params-&gt;utils-&gt;prop_erase(params-&gt;propctx, lookup_request[0]);
+
+        text-&gt;timestamp = time(0);
+     }
+Index: srp.c
+===================================================================
+RCS file: /cvs/src/sasl/plugins/srp.c,v
+retrieving revision 1.52
+diff -u -r1.52 srp.c
+--- srp.c       3 Nov 2003 18:25:25 -0000       1.52
++++ srp.c       29 Nov 2003 05:45:47 -0000
+@@ -1930,7 +1930,7 @@
+        goto cleanup;
+     }
+
+-    params-&gt;utils-&gt;prop_clear(params-&gt;propctx, 1);
++    params-&gt;utils-&gt;prop_erase(params-&gt;propctx, password_request[0]);
+
+     /* Calculate B */
+     result = CalculateB(text, &amp;text-&gt;v, &amp;text-&gt;N, &amp;text-&gt;g,
+
+And while we&apos;re on the subject of OTP - it seems I need a standalone OTP 
+generator if I&apos;m going to answer the challenge prompt. The OTP module only 
+prompts for the secret passphrase if there is no SASL_CB_ECHOPROMPT callback. 
+If this callback exists, a user gets the challenge prompt instead of the 
+password prompt. I guess that&apos;s as it should be, since the idea is to protect 
+the secret passphrase. But I don&apos;t appear to have any utility on my system to 
+generate the correct response to an OTP challenge.
+
+Meanwhile, in auxprop land, I kinda wish there was a connection-specific 
+context handle as well as the auxprop&apos;s glob_context. I suppose I can hang a 
+list off the glob_context, but the other feature that&apos;s missing is an 
+auxprop_close() so that the module can clean up any session-specific context 
+that it has created.
+
+  -- Howard Chu
+  Chief Architect, Symas Corp.       Director, Highland Sun
+  http://www.symas.com               http://highlandsun.com/hyc
+  Symas: Premier OpenSource Development and Support</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2003-12-03 10:47:25 EDT</bug_when>
+            <thetext>To be honest, I&apos;m not even sure why the prop_clear() calls are there, since none
+of the other mech plugins have it.  I must have borrowed this code from
+somewhere else, since I don&apos;t think I&apos;m smart enough to come up with it on my
+own  ;)  All I can think of is that we&apos;re trying to blank out the plaintext
+password for security reasons.  I&apos;m fine changing these to prop_erase() or just
+removing the prop_clear().  Rob, is there a potential for a memory leak here?
+
+As far as OTP generation, you can use opiekey or any of the contrib programs
+from http://inner.net/opie
+Or, you could try this: http://www.cs.umd.edu/~harry/jotp/index.html</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-12-03 14:55:06 EDT</bug_when>
+            <thetext>memory leak isn&apos;t really an issue, since propctx&apos;s are specifically designed to
+be memory-poolish in nature</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2003-12-03 15:13:01 EDT</bug_when>
+            <thetext>So, is it worth erasing the userPassword, and if so, should we do this for the
+other plugins?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2003-12-06 19:35:36 EDT</bug_when>
+            <thetext>Per Howard&apos;s suggestion, just erase the plaintext password.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

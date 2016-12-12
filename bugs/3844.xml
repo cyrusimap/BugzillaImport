@@ -1,0 +1,142 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3844</bug_id>
+          
+          <creation_ts>2014-02-13 09:55 EDT</creation_ts>
+          <short_desc>SELECT writes .lock file for unknown/inexistent mailboxes</short_desc>
+          <delta_ts>2014-06-30 07:56:34 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2014-02-13 09:55:09 EDT</bug_when>
+            <thetext>If I authenticate successfully to imapd and send SELECT statements for inexistent mailboxes I can generate .lock files randomly.
+
+It seems that the reason is that in mailbox.c:mailbox_open_advanced() 
+mboxname_lock() is called before mboxlist_lookup() is called and successful. I can&apos;t see a reason why this order is necessary.
+
+This causes &quot;.lock&quot; files with the name given in any SELECT with inexistent mboxname. In a murder environment the .lock files are written on the frontends and hashimapspool: gets a meaning on frontends as well.
+
+Maybe there is a potential DoS scenario since users with a valid account are able to fill up the mboxname_lockpath: with random names. Most likely one reaches the inode limit of the filesystem first on a real filesystem and space limit on RAM discs.
+
+And it&apos;s difficult to nail down the abuser since the failing SELECT is not written to the log.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2014-06-27 11:24:12 EDT</bug_when>
+            <thetext>Created an attachment (id=1538)
+change order of commands to  prevent rouge .lock files
+
+I&apos;ve this patch running on production for month without troubles and problem is fixed. Version running: 2.4.17</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-06-27 11:27:06 EDT</bug_when>
+            <thetext>Really, you need to do the mboxlist_lookup again after getting the mboxname lock - otherwise you&apos;re opening yourself up to a race where the mailbox entry doesn&apos;t exist any more once you&apos;ve got the namelock.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2014-06-30 07:56:34 EDT</bug_when>
+            <thetext>Created an attachment (id=1540)
+only add mboxlist_lookup without removing the second one
+
+My knowledge about cyrus internals is not good enough to completely understand the race condition. I did what you recommended and only added the mboxlist_lookup in front of _lock without removing the second one.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1538</attachid>
+            <date>2014-06-27 11:24 EDT</date>
+            <desc>change order of commands to  prevent rouge .lock files</desc>
+            <filename>cyrus2417-lockfix.patch</filename>
+            <type>text/plain</type>
+            <size>739</size>
+            <attacher>wbreyha@gmx.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXJOIGN5cnVzLWltYXBkLTIuNC4xNy9pbWFwL21haWxib3guYyBjeXJ1cy1pbWFwZC0y
+LjQuMTcubG9ja2ZpeC9pbWFwL21haWxib3guYwotLS0gY3lydXMtaW1hcGQtMi40LjE3L2ltYXAv
+bWFpbGJveC5jCTIwMTItMTItMDEgMjA6NTc6NTQuMDAwMDAwMDAwICswMTAwCisrKyBjeXJ1cy1p
+bWFwZC0yLjQuMTcubG9ja2ZpeC9pbWFwL21haWxib3guYwkyMDE0LTAyLTI1IDE1OjM4OjExLjAw
+MDAwMDAwMCArMDEwMApAQCAtODQ1LDYgKzg0NSw5IEBACiAgICAgbGlzdGl0ZW0gPSBjcmVhdGVf
+bGlzdGl0ZW0obmFtZSk7CiAgICAgbWFpbGJveCA9ICZsaXN0aXRlbS0+bTsKIAorICAgIHIgPSBt
+Ym94bGlzdF9sb29rdXAobmFtZSwgJm1iZW50cnksIE5VTEwpOworICAgIGlmIChyKSBnb3RvIGRv
+bmU7CisKICAgICByID0gbWJveG5hbWVfbG9jayhuYW1lLCAmbGlzdGl0ZW0tPmwsIGxvY2t0eXBl
+KTsKICAgICBpZiAocikgewogCS8qIGxvY2tlZCBpcyBub3QgYW4gZXJyb3IgLSBqdXN0IG1lYW5z
+IHdlIGFza2VkIGZvciBOT05CTE9DS0lORyAqLwpAQCAtODUzLDkgKzg1Niw2IEBACiAJZ290byBk
+b25lOwogICAgIH0KIAotICAgIHIgPSBtYm94bGlzdF9sb29rdXAobmFtZSwgJm1iZW50cnksIE5V
+TEwpOwotICAgIGlmIChyKSBnb3RvIGRvbmU7Ci0KICAgICBpZiAobWJlbnRyeS5tYnR5cGUgJiBN
+QlRZUEVfTU9WSU5HKSB7CiAJciA9IElNQVBfTUFJTEJPWF9NT1ZFRDsKIAlnb3RvIGRvbmU7Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1540</attachid>
+            <date>2014-06-30 07:56 EDT</date>
+            <desc>only add mboxlist_lookup without removing the second one</desc>
+            <filename>cyrus2417-lockfix.patch</filename>
+            <type>text/plain</type>
+            <size>542</size>
+            <attacher>wbreyha@gmx.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXJOIGN5cnVzLWltYXBkLTIuNC4xNy9pbWFwL21haWxib3guYyBjeXJ1cy1pbWFwZC0y
+LjQuMTcubG9ja2ZpeC9pbWFwL21haWxib3guYwotLS0gY3lydXMtaW1hcGQtMi40LjE3L2ltYXAv
+bWFpbGJveC5jCTIwMTItMTItMDEgMjA6NTc6NTQuMDAwMDAwMDAwICswMTAwCisrKyBjeXJ1cy1p
+bWFwZC0yLjQuMTcubG9ja2ZpeC9pbWFwL21haWxib3guYwkyMDE0LTAyLTI1IDE1OjM4OjExLjAw
+MDAwMDAwMCArMDEwMApAQCAtODQ1LDYgKzg0NSw5IEBACiAgICAgbGlzdGl0ZW0gPSBjcmVhdGVf
+bGlzdGl0ZW0obmFtZSk7CiAgICAgbWFpbGJveCA9ICZsaXN0aXRlbS0+bTsKIAorICAgIHIgPSBt
+Ym94bGlzdF9sb29rdXAobmFtZSwgJm1iZW50cnksIE5VTEwpOworICAgIGlmIChyKSBnb3RvIGRv
+bmU7CisKICAgICByID0gbWJveG5hbWVfbG9jayhuYW1lLCAmbGlzdGl0ZW0tPmwsIGxvY2t0eXBl
+KTsKICAgICBpZiAocikgewogCS8qIGxvY2tlZCBpcyBub3QgYW4gZXJyb3IgLSBqdXN0IG1lYW5z
+IHdlIGFza2VkIGZvciBOT05CTE9DS0lORyAqLwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

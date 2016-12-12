@@ -1,0 +1,253 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2763</bug_id>
+          
+          <creation_ts>2005-12-05 19:12 EDT</creation_ts>
+          <short_desc>lmtpd  glibc detected *** double free or corruption</short_desc>
+          <delta_ts>2008-10-24 16:24:41 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Adrian Buciuman">adibuciuman@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>adibuciuman@gmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Adrian Buciuman">adibuciuman@gmail.com</who>
+            <bug_when>2005-12-05 19:12:03 EDT</bug_when>
+            <thetext>While doing some tests, I&apos;ve found the following weird thing:
+
+root@myhost:/# socat STDIO,raw tcp4:localhost:lmtp
+220 myhost LMTP Cyrus v2.2.12 ready
+lhlo test^J250-myhost
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-PIPELINING
+250-SIZE
+250-AUTH EXTERNAL
+250 IGNOREQUOTA
+mail from:&lt;&gt;^J250 2.1.0 ok
+rcpt to:&lt;adib&gt;^J250 2.1.5 ok
+data^J354 go ahead
+Subject: test^J.^J250 2.1.5 Ok
+quit^J*** glibc detected *** double free or corruption (out): 0x0812f058 ***
+                                                                            221 
+2.0.0 bye
+
+I&apos;ve used socat from http://www.dest-unreach.org/socat/
+with the STDIO,raw option.
+I can also reproduce it with telnet from Windows 98, and a VMS telnet.
+Both send on the network character by character, not line by line.
+(well, windows telnet can sometimes mix modes in strange ways)
+
+It only happens if the email has no body and no line after the headers.
+The email will however arrive in the mailbox.
+
+in the log files I can see:
+master[28883]: process 28970 exited, signaled to death by 6
+and
+master[28883]: service lmtp pid 28970 in BUSY state: terminated abnormally</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Buciuman">adibuciuman@gmail.com</who>
+            <bug_when>2005-12-05 19:28:37 EDT</bug_when>
+            <thetext>I am using slackware 10.1
+linux kernel 2.4.29
+glibc 2.3.4
+
+cyrus-imapd was compiled from source</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-06 08:44:16 EDT</bug_when>
+            <thetext>I can&apos;t reproduce this problem on my FC4 dev box.  I&apos;ve tried both a stock
+2.2.12 and the 2.2 code from CVS.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Buciuman">adibuciuman@gmail.com</who>
+            <bug_when>2005-12-06 12:45:45 EDT</bug_when>
+            <thetext>Using host libthread_db library &quot;/lib/libthread_db.so.1&quot;.
+0x402e4332 in select () from /lib/libc.so.6
+
+Program received signal SIGABRT, Aborted.
+0x40259ef1 in kill () from /lib/libc.so.6
+#0  0x40259ef1 in kill () from /lib/libc.so.6
+#1  0x40259b15 in raise () from /lib/libc.so.6
+#2  0x4025b3fd in abort () from /lib/libc.so.6
+#3  0x4028c76c in __libc_message () from /lib/libc.so.6
+#4  0x40295066 in malloc_printerr () from /lib/libc.so.6
+#5  0x40293d2f in _int_free () from /lib/libc.so.6
+#6  0x4029294f in free () from /lib/libc.so.6
+#7  0x08088eea in prot_free (s=0x8140200) at prot.c:116
+#8  0x0804d39b in service_main (argc=2, argv=0x8135ed8, envp=0xbffff744)
+    at lmtpd.c:232
+#9  0x0804d10d in main (argc=3, argv=0xbffff734, envp=0xbffff744)
+    at service.c:530
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Buciuman">adibuciuman@gmail.com</who>
+            <bug_when>2005-12-06 12:49:44 EDT</bug_when>
+            <thetext>with a stock 2.2.12</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-06 13:22:05 EDT</bug_when>
+            <thetext>Your backtrace suggests that s-&gt;buf is NULL at line 116 of prot.c, which really
+can&apos;t happen.  You could try changing line 116 to:
+
+if (s-&gt;buf) free(s-&gt;buf);
+
+to see if it makes a difference.  I still can&apos;t reproduce the problem locally.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Buciuman">adibuciuman@gmail.com</who>
+            <bug_when>2005-12-09 21:11:49 EDT</bug_when>
+            <thetext>I&apos;ve done a ltrace.
+
+s-&gt;buf is not NULL
+(glibc is complaining about a double free)
+
+I can&apos;t find on the ltrace where is the &quot;first&quot; free.
+
+It may be a bug in glibc.
+
+I&apos;ve tested on another Slackware box, with imapd compiled there. I&apos;ve tested 
+with glibc 2.3.6. I&apos;ve tested with imapd compiled with -O0. The same problem.
+
+When I&apos;ll have time, I will try valgrind.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-29 18:36:47 EDT</bug_when>
+            <thetext> valgrind --trace-children=yes --log-file=/tmp/valgrind /usr/cyrus/bin/master
+
+
+==29148== Memcheck, a memory error detector.
+==29148== Copyright (C) 2002-2005, and GNU GPL&apos;d, by Julian Seward et al.
+==29148== Using LibVEX rev 1471, a library for dynamic binary translation.
+==29148== Copyright (C) 2004-2005, and GNU GPL&apos;d, by OpenWorks LLP.
+==29148== Using valgrind-3.1.0, a dynamic binary instrumentation framework.
+==29148== Copyright (C) 2000-2005, and GNU GPL&apos;d, by Julian Seward et al.
+==29148== For more details, rerun with: -v
+==29148==
+==29148== My PID = 29148, parent PID = 29129.  Prog and args are:
+==29148==    /usr/cyrus/bin/lmtpd
+==29148==
+==29148== Invalid write of size 1
+==29148==    at 0x80515AC: parseheader (spool.c:293)
+==29148==    by 0x8051B42: spool_fill_hdrcache (spool.c:355)
+==29148==    by 0x804ECDF: savemsg (lmtpengine.c:713)
+==29148==    by 0x804FE0D: lmtpmode (lmtpengine.c:1282)
+==29148==    by 0x804D293: service_main (lmtpd.c:229)
+==29148==    by 0x804CD6D: main (service.c:530)
+==29148==  Address 0x436E58F is 1 bytes before a block of size 4,096 alloc&apos;d
+==29148==    at 0x401A477: malloc (vg_replace_malloc.c:149)
+==29148==    by 0x8089E9E: xmalloc (xmalloc.c:56)
+==29148==    by 0x807E6DF: prot_new (prot.c:95)
+==29148==    by 0x804D206: service_main (lmtpd.c:210)
+==29148==    by 0x804CD6D: main (service.c:530)
+==29148==
+==29148== Invalid read of size 1
+==29148==    at 0x80800C6: prot_fgets (prot.c:1144)
+==29148==    by 0x8051D1C: spool_copy_msg (spool.c:428)
+==29148==    by 0x804ED71: savemsg (lmtpengine.c:751)
+==29148==    by 0x804FE0D: lmtpmode (lmtpengine.c:1282)
+==29148==    by 0x804D293: service_main (lmtpd.c:229)
+==29148==    by 0x804CD6D: main (service.c:530)
+==29148==  Address 0x436E58F is 1 bytes before a block of size 4,096 alloc&apos;d
+==29148==    at 0x401A477: malloc (vg_replace_malloc.c:149)
+==29148==    by 0x8089E9E: xmalloc (xmalloc.c:56)
+==29148==    by 0x807E6DF: prot_new (prot.c:95)
+==29148==    by 0x804D206: service_main (lmtpd.c:210)
+==29148==    by 0x804CD6D: main (service.c:530)
+==29148==
+==29148== ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 47 from 1)
+==29148== malloc/free: in use at exit: 12,027 bytes in 85 blocks.
+==29148== malloc/free: 341 allocs, 256 frees, 186,599 bytes allocated.
+==29148== For counts of detected errors, rerun with: -v
+==29148== searching for pointers to 85 not-freed blocks.
+==29148== checked 454,284 bytes.
+==29148==
+==29148== LEAK SUMMARY:
+==29148==    definitely lost: 318 bytes in 23 blocks.
+==29148==      possibly lost: 0 bytes in 0 blocks.
+==29148==    still reachable: 11,709 bytes in 62 blocks.
+==29148==         suppressed: 0 bytes in 0 blocks.
+==29148== Use --leak-check=full to see details of leaked memory.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-11 15:41:35 EDT</bug_when>
+            <thetext>I believe that I just fixed the first of the two problems (invalid write) in CVS.  This can only occur if the if prot_getc() returns EOF, which typically means we lost the connection.  I have yet to figure out what part of the code is causing the invalid read.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Buciuman">adibuciuman@gmail.com</who>
+            <bug_when>2008-10-24 16:15:12 EDT</bug_when>
+            <thetext>I&apos;ve just tested 2.3.13 and both &quot;invalid read&quot; and &quot;invalid write&quot;  are still there. Can you reproduce? Try starting master like this:
+MALLOC_CHECK_=2 /usr/cyrus/bin/master &amp;
+(It seems to be another minor bug: master, even if started in the background, is not detaching properly, so if the terminal from which it was started is still there, it will issue the error message to that terminal, not to the lmtp connection)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Adrian Buciuman">adibuciuman@gmail.com</who>
+            <bug_when>2008-10-24 16:24:41 EDT</bug_when>
+            <thetext>       
+From malloc(3) man page:
+(also note the final underscore in MALLOC_CHECK_  )
+
+
+       Recent  versions of Linux libc (later than 5.4.23) and GNU
+       libc (2.x) include a malloc implementation which  is  tun­
+       able  via  environment  variables.   When MALLOC_CHECK_ is
+       set, a special (less  efficient)  implementation  is  used
+       which  is  designed  to be tolerant against simple errors,
+       such as double calls of free() with the same argument,  or
+       overruns of a single byte (off-by-one bugs).  Not all such
+       errors can be protected against, however, and memory leaks
+       can  result.   If  MALLOC_CHECK_ is set to 0, any detected
+       heap corruption is silently ignored; if set to 1, a  diag­
+       nostic  is  printed  on  stderr;  if  set to 2, abort() is
+       called immediately.  This can be useful because  otherwise
+       a  crash may happen much later, and the true cause for the
+       problem is then very hard to track down.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

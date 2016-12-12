@@ -1,0 +1,112 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3128</bug_id>
+          
+          <creation_ts>2008-12-18 18:26 EDT</creation_ts>
+          <short_desc>A possible file locking problem</short_desc>
+          <delta_ts>2011-04-01 16:36:12 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Macintosh</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Kevin Marinelli">marinell@math.uconn.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>nathan.stocks@gmail.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Kevin Marinelli">marinell@math.uconn.edu</who>
+            <bug_when>2008-12-18 18:26:05 EDT</bug_when>
+            <thetext>When two mail clients try to access the same mailbox, on my MacOS X mail server, the server starts to fail on delivery to local mailboxes.
+
+The error reported in the mail log is:
+
+Dec  9 16:04:02 mail postfix/pipe[149]: AE9D14E2CF26: to=&lt;troby@math.uconn.edu&gt;, orig_to=&lt;helpdesk@math.uconn.edu&gt;, relay=cyrus, delay=2.9, delays=0.23/0/0/2.7, dsn=4.3.0, status=deferred (temporary failure. Command output: couldn&apos;t connect to lmtpd: Connection refused_ 421 4.3.0 deliver: couldn&apos;t connect to lmtpd_ )
+
+Using /usr/sbin/lsof to look at the list of open files shows that multiple /usr/bin/cyrus/bin/imapd processes have the same cyrus.cache, cyrus.header, cyrus.index for one of the mailboxes opened.
+
+Using &quot;/bin/kill -9&quot; on the imapd processes with the duplicate opened mailbox fails to kill the process. Killing  /usr/bin/cyrus/bin/imap processes that have other mailboxes open properly kills the process.
+
+This seems to indicate some sort of file interlock problem.
+
+Rebooting the server seems to be the only cure to return the server to proper operation. Using /usr/bin/cyrus/bin/reconstruct on the mailbox that was multiply accessed seems to be necessary to rebuild the state of the mailbox after the server is restarted.
+
+The version of Cyrus IMAP is reported in the system log as:
+
+Dec 18 17:55:20 mail master[43588]: Cyrus POP/IMAP Server v2.3.8 ready for work
+
+The Server O/S was Mac OS X 10.5.5 and has been recently upgraded to Mac OS X 10.5.6. The /usr/sbin/system_profiler tool reports &quot;System Version: Mac OS X Server 10.5.6 (9G55)&quot;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Nathan">nathan.stocks@gmail.com</who>
+            <bug_when>2009-01-08 13:32:47 EDT</bug_when>
+            <thetext>I ran across this bug while researching our Cyrus problems on our OS X 10.5.6 server.  We are experiencing the exact same symptoms and often have to reboot our server to fix it, since we haven&apos;t yet found a workaround.
+
+We will check to see if we can find multiple users connected to the same IMAP account the next time the symptoms occur.  We are _very_ interested in a workaround or bug-fix for this issue.  We typically have over 200 employees simultaneously connected to our server via IMAP at any given time in the business day.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Nathan">nathan.stocks@gmail.com</who>
+            <bug_when>2009-01-09 18:44:27 EDT</bug_when>
+            <thetext>So, we continue to have the problems and we&apos;ve checked out the open files on the server and ALL of my users have more than one instance of cyrus.cache, cyrus.header, cyrus.index, etc. open.  Even mine, and I can verify without a doubt that I only have one IMAP client running on my own account.
+
+Soo...I&apos;m doubtful as to whether or not this is a file-locking problem per se, but it&apos;s definitely a problem--a huge one.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Kevin Marinelli">marinell@math.uconn.edu</who>
+            <bug_when>2009-01-09 23:48:22 EDT</bug_when>
+            <thetext>From what I have observed in the past, an imap client can have multiple mailboxes open at the same time. Each mailbox will have its own cyrus.cache, cyrus.index and cyrus.header files. This is not a problem. When you use &apos;lsof&apos; to examine the opened files, the full path for each of these database files should be different.
+
+There is only a problem when multiple instances of the same mailbox are open for updating at the same time. Then you get the file interlock problem. You can tell that it is an interlock problem because you can use &apos;kill -9&apos; to terminate each of the imapd processes on the mail server except the ones that are interlocked.
+
+At this point you it is best to clean up the interlock problem by restarting the server. Usually I have to resort to killing the power because the offending processes are interlocked and cannot be killed, which prevents a normal reboot.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Nathan">nathan.stocks@gmail.com</who>
+            <bug_when>2009-01-29 13:34:06 EDT</bug_when>
+            <thetext>I found the root of the problem, I believe.  See my comment on this bug:
+
+https://bugzilla.andrew.cmu.edu/show_bug.cgi?id=3131</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-01 16:36:12 EDT</bug_when>
+            <thetext>This was another OS X process limit issue</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

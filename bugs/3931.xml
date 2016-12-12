@@ -1,0 +1,158 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3931</bug_id>
+          
+          <creation_ts>2016-04-19 18:47 EDT</creation_ts>
+          <short_desc>Bug in cache lookup retrieving the bucket when the timeout is expired</short_desc>
+          <delta_ts>2016-04-19 19:11:22 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.1-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ettore">ettoreelio.caprella@it.telecomitalia.it</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>ettoreelio.caprella@it.telecomitalia.it</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ettore">ettoreelio.caprella@it.telecomitalia.it</who>
+            <bug_when>2016-04-19 18:47:52 EDT</bug_when>
+            <thetext>Created an attachment (id=1570)
+cache_lookup patch
+
+In the cache lookup we try to find the &quot;correct&quot; bucket from the cache in order to check the password. The check is based only on the username, the realm and the service.
+Unfortunately, when the timeout is expired the cache_commit could add a new bucket to the row. This new bucket will have the same username, realm and service of the &quot;expired&quot; bucket.
+In this case the cache_lookup function will get a bucket but it is possible that it will get the expired bucket and we will have a cache miss although we have a valid bucket in cache.
+You can verify this behavior using the following steps:
+1. start saslauthd
+2. authenticate --&gt; cache miss (OK)
+3. wait for timeout expires
+4. authenticate --&gt; cache miss (OK)
+5. authenticate --&gt; cache miss (KO)
+
+Usually you cannot identify the issue since the authentication result will be ok, if you write the correct password, but if the authentication is based on an OTP system you will see this bug immediately because you need a new OTP in order to authenticate yourself.
+
+Attached you can find a patch that allow us to get the valid bucket from the row.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ettore">ettoreelio.caprella@it.telecomitalia.it</who>
+            <bug_when>2016-04-19 19:11:22 EDT</bug_when>
+            <thetext>Created an attachment (id=1571)
+cache_lookup patch</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1570</attachid>
+            <date>2016-04-19 18:47 EDT</date>
+            <desc>cache_lookup patch</desc>
+            <filename>patch0001.patch</filename>
+            <type>text/plain</type>
+            <size>1359</size>
+            <attacher>ettoreelio.caprella@it.telecomitalia.it</attacher>
+            
+              <data encoding="base64">Y29tbWl0IGJiMWIyZWUyZTlkN2VhZTEzMzIwZmQzMTFmMDdkNDcxYWJmM2NkZDUKQXV0aG9yOiBF
+dHRvcmUgRWxpbyBDYXByZWxsYSA8ZXR0b3JlZWxpby5jYXByZWxsYUBpdC50ZWxlY29taXRhbGlh
+Lml0PgpEYXRlOiAgIFdlZCBBcHIgMjAgMDA6NDE6MTUgMjAxNiArMDIwMAoKICAgIGFkZCBjaGVj
+ayBpbiBjYWNoZSBsb29rdXAgaW4gb3JkZXIgdG8gZ2V0IHRoZSB2YWxpZCBidWNrZXQgKG5vdCB5
+ZXQgZXhwaXJlZCkgaWYgaXQgZXhpc3RzCgpkaWZmIC0tZ2l0IGEvc2FzbGF1dGhkL2NhY2hlLmMg
+Yi9zYXNsYXV0aGQvY2FjaGUuYwppbmRleCAyYjc4NDY0Li4xY2EyMWU0IDEwMDY0NAotLS0gYS9z
+YXNsYXV0aGQvY2FjaGUuYworKysgYi9zYXNsYXV0aGQvY2FjaGUuYwpAQCAtMjQ0LDcgKzI0NCw4
+IEBAIGludCBjYWNoZV9sb29rdXAoY29uc3QgY2hhciAqdXNlciwgY29uc3QgY2hhciAqcmVhbG0s
+IGNvbnN0IGNoYXIgKnNlcnZpY2UsIGNvbnN0CiAJZm9yIChyZWZfYnVja2V0ID0gbG93X2J1Y2tl
+dDsgcmVmX2J1Y2tldCA8IGhpZ2hfYnVja2V0OyByZWZfYnVja2V0KyspIHsKIAkJaWYgKHN0cmNt
+cCh1c2VyLCByZWZfYnVja2V0LT5jcmVkcyArIHJlZl9idWNrZXQtPnVzZXJfb2ZmdCkgPT0gMCAm
+JiBcCiAJCSAgICBzdHJjbXAgKHJlYWxtLCByZWZfYnVja2V0LT5jcmVkcyArIHJlZl9idWNrZXQt
+PnJlYWxtX29mZnQpID09IDAgJiYgXAotCQkgICAgc3RyY21wKHNlcnZpY2UsIHJlZl9idWNrZXQt
+PmNyZWRzICsgcmVmX2J1Y2tldC0+c2VydmljZV9vZmZ0KSA9PSAwKSB7CisJCSAgICBzdHJjbXAo
+c2VydmljZSwgcmVmX2J1Y2tldC0+Y3JlZHMgKyByZWZfYnVja2V0LT5zZXJ2aWNlX29mZnQpID09
+IDApICAmJiBcCisJCSAgICByZWZfYnVja2V0LT5jcmVhdGVkID4gZXBvY2hfdGltZW91dCkgewog
+CQkJcmVhZF9idWNrZXQgPSByZWZfYnVja2V0OwogCQkJYnJlYWs7CiAJCX0KQEAgLTI1OSw3ICsy
+NjAsNyBAQCBpbnQgY2FjaGVfbG9va3VwKGNvbnN0IGNoYXIgKnVzZXIsIGNvbnN0IGNoYXIgKnJl
+YWxtLCBjb25zdCBjaGFyICpzZXJ2aWNlLCBjb25zdAogCSAqIGJlc3QgYnVja2V0IHRvIHBsYWNl
+IHRoZSBuZXcgZW50cnkgKENBQ0hFX0ZMVVNIX1dJVEhfUkVTQ0FOKS4KIAkgKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCiAKLQlp
+ZiAocmVhZF9idWNrZXQgIT0gTlVMTCAmJiByZWFkX2J1Y2tldC0+Y3JlYXRlZCA+IGVwb2NoX3Rp
+bWVvdXQpIHsKKwlpZiAocmVhZF9idWNrZXQgIT0gTlVMTCkgewogCiAJCWlmIChtZW1jbXAocHdk
+X2RpZ2VzdCwgcmVhZF9idWNrZXQtPnB3ZF9kaWdlc3QsIDE2KSA9PSAwKSB7CiAK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1571</attachid>
+            <date>2016-04-19 19:11 EDT</date>
+            <desc>cache_lookup patch</desc>
+            <filename>patch0002.patch</filename>
+            <type>text/plain</type>
+            <size>1358</size>
+            <attacher>ettoreelio.caprella@it.telecomitalia.it</attacher>
+            
+              <data encoding="base64">Y29tbWl0IGI3OWU4OGYwNjhjZGMwZjAwOTZlMjVlZjJhZTYxZDNlNGQyY2Q2MmQKQXV0aG9yOiBF
+dHRvcmUgRWxpbyBDYXByZWxsYSA8ZXR0b3JlZWxpby5jYXByZWxsYUBpdC50ZWxlY29taXRhbGlh
+Lml0PgpEYXRlOiAgIFdlZCBBcHIgMjAgMDE6MDk6MzQgMjAxNiArMDIwMAoKICAgIGFkZCBjaGVj
+ayBpbiBjYWNoZSBsb29rdXAgaW4gb3JkZXIgdG8gZ2V0IHRoZSB2YWxpZCBidWNrZXQgKG5vdCB5
+ZXQgZXhwaXJlZCkgaWYgaXQgZXhpc3RzCgpkaWZmIC0tZ2l0IGEvc2FzbGF1dGhkL2NhY2hlLmMg
+Yi9zYXNsYXV0aGQvY2FjaGUuYwppbmRleCAyYjc4NDY0Li44YTdlZDlhIDEwMDY0NAotLS0gYS9z
+YXNsYXV0aGQvY2FjaGUuYworKysgYi9zYXNsYXV0aGQvY2FjaGUuYwpAQCAtMjQ0LDcgKzI0NCw4
+IEBAIGludCBjYWNoZV9sb29rdXAoY29uc3QgY2hhciAqdXNlciwgY29uc3QgY2hhciAqcmVhbG0s
+IGNvbnN0IGNoYXIgKnNlcnZpY2UsIGNvbnN0CiAJZm9yIChyZWZfYnVja2V0ID0gbG93X2J1Y2tl
+dDsgcmVmX2J1Y2tldCA8IGhpZ2hfYnVja2V0OyByZWZfYnVja2V0KyspIHsKIAkJaWYgKHN0cmNt
+cCh1c2VyLCByZWZfYnVja2V0LT5jcmVkcyArIHJlZl9idWNrZXQtPnVzZXJfb2ZmdCkgPT0gMCAm
+JiBcCiAJCSAgICBzdHJjbXAgKHJlYWxtLCByZWZfYnVja2V0LT5jcmVkcyArIHJlZl9idWNrZXQt
+PnJlYWxtX29mZnQpID09IDAgJiYgXAotCQkgICAgc3RyY21wKHNlcnZpY2UsIHJlZl9idWNrZXQt
+PmNyZWRzICsgcmVmX2J1Y2tldC0+c2VydmljZV9vZmZ0KSA9PSAwKSB7CisJCSAgICBzdHJjbXAo
+c2VydmljZSwgcmVmX2J1Y2tldC0+Y3JlZHMgKyByZWZfYnVja2V0LT5zZXJ2aWNlX29mZnQpID09
+IDAgICYmIFwKKwkJICAgIHJlZl9idWNrZXQtPmNyZWF0ZWQgPiBlcG9jaF90aW1lb3V0KSB7CiAJ
+CQlyZWFkX2J1Y2tldCA9IHJlZl9idWNrZXQ7CiAJCQlicmVhazsKIAkJfQpAQCAtMjU5LDcgKzI2
+MCw3IEBAIGludCBjYWNoZV9sb29rdXAoY29uc3QgY2hhciAqdXNlciwgY29uc3QgY2hhciAqcmVh
+bG0sIGNvbnN0IGNoYXIgKnNlcnZpY2UsIGNvbnN0CiAJICogYmVzdCBidWNrZXQgdG8gcGxhY2Ug
+dGhlIG5ldyBlbnRyeSAoQ0FDSEVfRkxVU0hfV0lUSF9SRVNDQU4pLgogCSAqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKi8KIAotCWlm
+IChyZWFkX2J1Y2tldCAhPSBOVUxMICYmIHJlYWRfYnVja2V0LT5jcmVhdGVkID4gZXBvY2hfdGlt
+ZW91dCkgeworCWlmIChyZWFkX2J1Y2tldCAhPSBOVUxMKSB7CiAKIAkJaWYgKG1lbWNtcChwd2Rf
+ZGlnZXN0LCByZWFkX2J1Y2tldC0+cHdkX2RpZ2VzdCwgMTYpID09IDApIHsKIAo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

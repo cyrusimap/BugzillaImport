@@ -1,0 +1,127 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2773</bug_id>
+          
+          <creation_ts>2005-12-19 12:46 EDT</creation_ts>
+          <short_desc>IMAP.pm shows errors in logfile although its working</short_desc>
+          <delta_ts>2013-02-26 22:33:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>perl</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>WORKSFORME</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Torsten Krah">tkrah@fachschaft.imn.htwk-leipzig.de</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Torsten Krah">tkrah@fachschaft.imn.htwk-leipzig.de</who>
+            <bug_when>2005-12-19 12:46:13 EDT</bug_when>
+            <thetext>I am using the IMAP.pm provided ( 2.2.12 version )
+
+Following command i am using to connect to cyrus imap server:
+
+my $cyradm = Cyrus::IMAP::Admin-&gt;new( $server, $port );
+$cyradm-&gt;authenticate( -authz =&gt; $authz, -user =&gt; $auth, -password =&gt; $pw );
+
+$server = localhost, $port = 143, $authz = login, $auth = cyrus, $pw = meinpasswort
+
+Login works and i can do what i want.
+
+But following errors are shown in log:
+
+[Mon Dec 19 17:49:56 2005] [error] [client 127.0.0.1] [Mon Dec 19 17:49:56 2005]
+domain.cgi: Use of uninitialized value in string ne at
+/usr/lib/perl5/site_perl/5.8.6/i686-linux/Cyrus/IMAP.pm line 173.
+[Mon Dec 19 17:49:56 2005] [error] [client 127.0.0.1] [Mon Dec 19 17:49:56 2005]
+domain.cgi: Use of uninitialized value in concatenation (.) or string at
+/usr/lib/perl5/site_perl/5.8.6/i686-linux/Cyrus/IMAP.pm line 181.
+
+I looked in manpage, but i got no idea whats wrong.
+
+So it maybe a bug - some hints or something?
+
+kind regards</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Krah">tkrah@fachschaft.imn.htwk-leipzig.de</who>
+            <bug_when>2006-01-10 11:15:47 EDT</bug_when>
+            <thetext>Correction to routine call:
+
+$cyradm-&gt;authenticate( -authz =&gt; $auth, -user =&gt; $auth, -auth =&gt; $mech,
+-password =&gt; $pw )
+
+this is what i am doing - auth and authz are the same, but auth becomes login as
+mechanism.
+
+But the error is still there, so i did a little patch to imap.pm:
+
+--- IMAP.pm       2006-01-10 16:31:22.231261750 +0100
++++ IMAP.pm     2006-01-10 17:06:42.891794750 +0100
+@@ -168,6 +168,9 @@
+
+ sub _stringize {
+   my ($self, $str) = @_;
++  if(!defined $str){
++       $str = &apos;&apos;;
++  }
+   my $res;
+   my $cc = _cc($str);
+   my $nz = ($str ne &apos;&apos;);
+
+To solve these errors i did this little patch to IMAP.pm.
+
+It&apos;s still working but without those annoying errors, dont know if this patch
+will break some things, but so far i can say it works like before.
+
+I also did some debug routines to imap.pm and discovered, that argv of stringize
+subroutine often got length of 1 instead of 2 or more, so $str becomes undefined.
+I added the check for defined and if not $str will be initialized with &apos;&apos; .
+
+Some comments to this patch or the error would be helpful.
+
+kind regards</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-26 22:33:04 EDT</bug_when>
+            <thetext>I ran the given code.  It doesn&apos;t authenticate correctly, but it
+also doesn&apos;t complain to syslog or stderr about undefined variables.
+Apparently someone fixed this bug in the last 7 years.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

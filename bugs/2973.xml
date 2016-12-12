@@ -1,0 +1,156 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2973</bug_id>
+          
+          <creation_ts>2007-07-01 05:47 EDT</creation_ts>
+          <short_desc>Unified murder - if one node is down during mailbox deletion, deleted remote mailboxes end up local mailboxes of that node with an invalid partition upon startup</short_desc>
+          <delta_ts>2010-08-06 13:53:15 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Janne Peltonen">janne.peltonen@helsinki.fi</reporter>
+          <assigned_to name="Wes Craig">wes@umich.edu</assigned_to>
+          <cc>bawood@umich.edu</cc>
+    
+    <cc>janne.peltonen@helsinki.fi</cc>
+    
+    <cc>Lesley.Longhurst@opus.co.nz</cc>
+    
+    <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Janne Peltonen">janne.peltonen@helsinki.fi</who>
+            <bug_when>2007-07-01 05:47:40 EDT</bug_when>
+            <thetext>Scenario: unified murder. One of the murder nodes is down (say, node i02). I delete a mailbox, say, user.jmmpelto.Trash (it&apos;s on node i08). Now, let&apos;s have a look at the mailboxes list on the (still down) i02:
+
+[jmmpelto@pcn1 ~]$ sudo su - cyrus -c &quot;/usr/lib/cyrus-imapd/ctl_mboxlist -C /etc/imapd.conf.i02.master -d&quot;|grep &apos;user.jmmpelto.Trash&apos;
+user.jmmpelto.Trash     1 i08.mappi.helsinki.fi!jjjr    jmmpelto      lrswipkxtecda   anyone  p
+
+Looks as it should: the deleted mailbox appears on a remote partition (signified by 1) and the host is i08, partition jjjr.
+
+Then I start up node i02, wait for ctl_mboxlist -m and initial mupdate synch. Now:
+
+[jmmpelto@pcn1 ~]$ sudo su - cyrus -c &quot;/usr/lib/cyrus-imapd/ctl_mboxlist -C /etc/imapd.conf.i02.master -d&quot;|grep &apos;user.jmmpelto.Trash&apos;
+user.jmmpelto.Trash     0 i08.mappi.helsinki.fi!jjjr    jmmpelto        lrswipkxtecda   anyone  p
+
+Apparently, because the mupdate master no longer knows anything about the mailbox, the mailbox is resolved to be local to node i02, and is therefore not deleted. And this new &apos;local to i02&apos; mailbox entry is now spread to the rest of the murder, see mupdate master:
+
+[jmmpelto@pcnm ~]$ sudo su - cyrus -c &quot;/usr/lib/cyrus-imapd/ctl_mboxlist -C /etc/imapd.conf.mupdatemast -d&quot;|grep user.jmmpelto.Trash
+user.jmmpelto.Trash     1 i02.mappi.helsinki.fi!i08.mappi.helsinki.fi!jjjr      jmmpelto        lrswipkxtecda   anyone  p
+
+This can be continued ad absurdum. See what happens if I now shut down an another node, say i07, get rid of the mailbox while i07 is down (by editing the mailboxes list dump on an offline i02 and undumping it and restarting i02), and get i07 back online:
+
+[jmmpelto@pcn3 ~]$ sudo su - cyrus -c &quot;/usr/lib/cyrus-imapd/ctl_mboxlist -C /etc/imapd.conf.i07.master -d&quot;|grep &apos;user.jmmpelto.Trash&apos;
+user.jmmpelto.Trash     0 i02.mappi.helsinki.fi!i08.mappi.helsinki.fi!jjjr      jmmpelto        lrswipkxtecda   anyone  p
+
+On mupdate master:
+
+[jmmpelto@pcnm ~]$ sudo su - cyrus -c &quot;/usr/lib/cyrus-imapd/ctl_mboxlist -C /etc/imapd.conf.mupdatemast -d&quot;|grep user.jmmpelto.Trash
+user.jmmpelto.Trash     1 i07.mappi.helsinki.fi!i02.mappi.helsinki.fi!i08.mappi.helsinki.fi!jjjr        jmmpelto        lrswipkxtecda   anyone  p
+
+What is especially not nice from the user&apos;s perspective is that the mailbox they thought deleted mysteriously reappears out of the blue - and cannot be deleted anymore, since it doesn&apos;t actually reside anywhere:
+
+Really delete mailbox &quot;INBOX.Trash&quot;? ([no]/yes): yes
+
+..and mutt waits for acknowledgement which never comes. (In the logs there is the proxy login to i07, but nothing else.) If I try to open the mailbox, I get &quot;Unknown/Invalid partition&quot; (which is as well).
+
+One way to work around this bug is to stop mupdate master, dump its mailboxes list, modify it to suit the node that is down, undump it there, turn on the node, and, last, turn on the mupdate master. This is a bit irritating ;)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Brian Awood">bawood@umich.edu</who>
+            <bug_when>2008-10-13 17:40:23 EDT</bug_when>
+            <thetext>Created an attachment (id=1034)
+patch #2 to ctl_mboxlist.c to help correct running -m on unified murder machine
+
+I believe this is an issue with the way ctl_mboxlist -m determines the &quot;real partition&quot;.  It is simply adding the hostname prefix to the partition and trying to use that for comparison, however in a mailboxes.db on a unified murder machine all the mailboxes already list the &quot;real partition&quot;.  So in this case it incorrectly ends up with a &apos;realpart&apos; of &quot;hostrunningthis!actualhost!default&quot;.  Then later it incorrectly tries to force activate this mailbox as local.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Brian Awood">bawood@umich.edu</who>
+            <bug_when>2008-10-13 18:02:20 EDT</bug_when>
+            <thetext>I should clarify that remote mailboxes in the database already list the &quot;real partition&quot; so this patch uses that if the mailbox is remote, but if it&apos;s local it adds the hostname! to the &apos;part&apos; name. </thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1034</attachid>
+            <date>2008-10-13 17:40 EDT</date>
+            <desc>patch #2 to ctl_mboxlist.c to help correct running -m on unified murder machine</desc>
+            <filename>ctl_mboxlist_unified2.diff</filename>
+            <type>text/plain</type>
+            <size>1738</size>
+            <attacher>bawood@umich.edu</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMy4xMnAyL2ltYXAvY3RsX21ib3hsaXN0LmMJMjAwOC0wNC0wMiAy
+MjowNjozOC4wMDAwMDAwMDAgLTA0MDAKKysrIGN5cnVzLWltYXBkLTIuMy4xMnAxMy9pbWFwL2N0
+bF9tYm94bGlzdC5jCTIwMDgtMTAtMTMgMTY6MzM6MzEuMDAwMDAwMDAwIC0wNDAwCkBAIC0yMjAs
+MTggKzIyMCwyMyBAQAogCWJyZWFrOwogICAgIGNhc2UgTV9QT1BVTEFURTogCiAgICAgewotCWNo
+YXIgKnJlYWxwYXJ0ID0geG1hbGxvYyhzdHJsZW4oY29uZmlnX3NlcnZlcm5hbWUpICsgMQotCQkJ
+CSArIHN0cmxlbihwYXJ0KSArIDEpOworCWNoYXIgKnJlYWxwYXJ0OwogCWludCBza2lwX2ZsYWc7
+CiAKKwlpZighKG1idHlwZSAmIE1CVFlQRV9SRU1PVEUpKSB7CisJICAgIHJlYWxwYXJ0ID0geG1h
+bGxvYyhzdHJsZW4oY29uZmlnX3NlcnZlcm5hbWUpICsgMQorCQkJCSArIHN0cmxlbihwYXJ0KSAr
+IDEpOworCSAgICAvKiByZWFscGFydCBpcyAnaG9zdG5hbWUhcGFydGl0aW9uJyAqLworCSAgICBz
+cHJpbnRmKHJlYWxwYXJ0LCAiJXMhJXMiLCBjb25maWdfc2VydmVybmFtZSwgcGFydCk7CisJfSBl
+bHNlIHsKKwkgICAgcmVhbHBhcnQgPSB4c3RyZHVwKHBhcnQpOworCX0KKwogCS8qIElmIGl0IGlz
+IG1hcmtlZCBNQlRZUEVfTU9WSU5HLCBhbmQgaXQgRE9FUyBtYXRjaCB0aGUgZW50cnksCiAJICog
+d2UgbmVlZCB0byB1bm1hcmsgaXQuICBJZiBpdCBkb2VzIG5vdCBtYXRjaCB0aGUgZW50cnkgaW4g
+b3VyCiAJICogbGlzdCwgdGhlbiB3ZSBhc3N1bWUgdGhhdCBpdCBzdWNjZXNzZnVsbHkgbWFkZSB0
+aGUgbW92ZSBhbmQKIAkgKiB3ZSBkZWxldGUgaXQgZnJvbSB0aGUgbG9jYWwgZGlzayAqLwogCQot
+CS8qIHJlYWxwYXJ0IGlzICdob3N0bmFtZSFwYXJ0aXRpb24nICovCi0Jc3ByaW50ZihyZWFscGFy
+dCwgIiVzISVzIiwgY29uZmlnX3NlcnZlcm5hbWUsIHBhcnQpOwotCiAJLyogSWYgdGhleSBtYXRj
+aCwgdGhlbiB3ZSBzaG91bGQgY2hlY2sgdGhhdCB3ZSBhY3R1YWxseSBuZWVkCiAJICogdG8gdXBk
+YXRlIGl0LiAgSWYgdGhleSAqZG9uJ3QqIG1hdGNoLCB0aGVuIHdlIGJlbGlldmUgdGhhdCB3ZQog
+CSAqIG5lZWQgdG8gc2VuZCBmcmVzaCBkYXRhLiAgVGhlcmUgd2lsbCBiZSBubyBwb2ludCBhdCB3
+aGljaCBzb21ldGhpbmcKQEAgLTMyOSw2ICszMzEsMTggQEAKIAkJICAgIC8qIE5vIG5lZWQgdG8g
+dXBkYXRlIG11cGRhdGUgbm93LCB3ZSdsbCBnZXQgaXQgd2hlbiB3ZQogCQkgICAgICogdW50YWcg
+dGhlIG1haWxib3ggKi8KIAkJICAgIHNraXBfZmxhZyA9IDE7CisJCX0gZWxzZSBpZihtYnR5cGUg
+JiBNQlRZUEVfUkVNT1RFKSB7CisJCSAgICBzdHJ1Y3QgbWJfbm9kZSAqbmV4dDsKKworCQkgICAg
+aWYod2Fybl9vbmx5KSB7CisJCQlwcmludGYoIlJlbW92ZSBNYWlsYm94IEZyb20gTG9jYWwgRGF0
+YWJhc2U6ICVzXG4iLCBuYW1lKTsKKwkJICAgIH0gZWxzZSB7CisJCQluZXh0ID0geHptYWxsb2Mo
+c2l6ZW9mKHN0cnVjdCBtYl9ub2RlKSk7CisJCQlzdHJsY3B5KG5leHQtPm1haWxib3gsIG5hbWUs
+IHNpemVvZihuZXh0LT5tYWlsYm94KSk7CisJCQluZXh0LT5uZXh0ID0gd2lwZV9oZWFkOworCQkJ
+d2lwZV9oZWFkID0gbmV4dDsKKwkJICAgIH0KKwkJICAgIHNraXBfZmxhZyA9IDE7CiAJCX0gZWxz
+ZSB7CiAJCSAgICAvKiB3ZSBzaG91bGQganVzdCBwdXNoIHRoZSBjaGFuZ2UgdG8gbXVwZGF0ZSBu
+b3cgKi8KIAkJICAgIHNraXBfZmxhZyA9IDA7Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

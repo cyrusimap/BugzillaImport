@@ -1,0 +1,270 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3938</bug_id>
+          
+          <creation_ts>2016-06-21 05:47 EDT</creation_ts>
+          <short_desc>squat broken after upgrade from 2.4 to 2.5</short_desc>
+          <delta_ts>2016-07-21 21:12:07 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-06-21 05:47:42 EDT</bug_when>
+            <thetext>As initially asked on the ML...
+
+I upgraded some murder backend hosts from 2.4.18 to 2.5.8. All mailboxes still exist with their V12 index tables and some with their incrementally updated squat databases. Since I use
+squatter      cmd=&quot;squatter -asir *&quot; at=0500
+only a few mailbox with squat annotation use the search tables.
+
+I recognized the bug after my own mailbox was migrated. I use thunderbird (currently 45.1.1) with quicksearch bar. If I search for &quot;sender&quot;, &quot;recipient&quot; or &quot;subject&quot; everything works well. Thunderbird seems to search in his own header database then. If &quot;body&quot; is used only &quot;some&quot; or &quot;no&quot; results are returned and I see the IMAP command in the session log...
+
+-------
+&lt;1466413141&lt;18 UID Search UNDELETED (OR (OR OR TO &quot;search&quot; HEADER CC &quot;search&quot; SUBJECT &quot;search&quot;) BODY &quot;search&quot;)
+&lt;1466413141&gt;* SEARCH
+18 OK Completed (0 msgs in 0.010 secs)
+-------
+This result shows the broken squat database case.
+
+As a first step I renamed cyrus.squat and the result changed to
+&lt;1466414132&lt;28 UID Search UNDELETED (OR (OR OR TO &quot;romana&quot; HEADER CC &quot;romana&quot; SUBJECT &quot;romana&quot;) BODY &quot;romana&quot;)
+&gt;1466414132&gt;* SEARCH 1914 ... 8555
+28 OK Completed (214 msgs in 1.230 secs)
+
+After I rebuilt the cyrus.squat database using
+squatter -av user....
+the exact same result was returned except
+28 OK Completed (214 msgs in 0.030 secs)&lt;-- note the time
+
+In this case *no* result was returned with the broken cyrus.squat. I found others were eg. 52 results were returned instead of ~600.
+
+There are no errors or warnings coming from squatter or imapd in the logs.
+
+The rebuilt cyrus.squat files are always smaller in size then the 2.4 versions.
+eg.:
+-rw------- 1 cyrus mail 6823097 Jun 15 05:00 cyrus.squat.24
+-rw------- 1 cyrus mail 6663017 Jun 21 11:27 cyrus.squat
+for...
+Indexed 1241 messages (10867460 bytes) into 6663017 index bytes in 2 seconds
+
+Maybe I can provide copies of the cyrus.squat files if needed. I hope we find at least one mailbox without privacy concerns in the list of the remaining broken mailboxes. 
+
+As mentioned on the ML as well. The really bad thing is that:
+*) no error is thrown and everything looks ok, but it obviously isn&apos;t at all
+*) both cyrus.squat files state &quot;SQUAT 1&quot; in their headers, but they are not compatible
+*) results are zero to some of the correct results. Very difficult to detect</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-06-22 00:33:48 EDT</bug_when>
+            <thetext>&gt; *) both cyrus.squat files state &quot;SQUAT 1&quot; in their headers, but they are not compatible
+
+Are their headers otherwise the same, or are there other differences?
+
+&gt; Maybe I can provide copies of the cyrus.squat files if needed. I hope we find
+&gt; at least one mailbox without privacy concerns in the list of the remaining
+&gt; broken mailboxes. 
+
+Is providing copies of just the header sections of the files a possibility?
+
+I&apos;m not really familiar with squatter or its database format yet, so at the moment I&apos;m just looking for a starting point to grasp onto...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-06-22 00:51:44 EDT</bug_when>
+            <thetext>Skimmed through all the commits to imap/*squat* between 2.4.18 and 2.5.8.  None of the log messages are really jumping out at me, none of them look like deliberate compatibility breaks.
+
+I thought maybe something had been upgraded but the database versioning hadn&apos;t been bumped along with it, but now it looks more like something has changed accidentally?
+
+$git log --format=fuller cyrus-imapd-2.4.18..cyrus-imapd-2.5.8 -- imap/*squat*</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2016-06-22 01:08:48 EDT</bug_when>
+            <thetext>I wonder if it&apos;s something as dumb as looking for the file in another location?
+
+It shouldn&apos;t be though, because the point of squatter indexing is that if the document isn&apos;t in the index, it does a non-indexed search anyway... so a partial squatter index doesn&apos;t mean only partial results.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-06-22 01:26:37 EDT</bug_when>
+            <thetext>&gt; I wonder if it&apos;s something as dumb as looking for the file in another location?
+
+Wolfgang mentions that some of the broken ones get non-zero matches (but a different non-zero to after they&apos;ve been rebuilt), which I&apos;m not sure if it rules out this possibility but it might.
+
+
+
+There&apos;s like a hundred commits to the squat sources *since* 2.5.8... I wonder if whatever this is has already been fixed at some point, but didn&apos;t get backported to the 2.5 branch?  Did FM have any squat fixes hanging around for ages that didn&apos;t make it upstream until after 2.5 and master had already diverged?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2016-06-22 01:38:30 EDT</bug_when>
+            <thetext>We haven&apos;t used squatter since the 2.4 days, which is probably why it doesn&apos;t get much testing :(</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-06-22 05:06:09 EDT</bug_when>
+            <thetext>It&apos;s not the location of the cyrus.squat database. I keep them in the mailbox folder itself and renaming the old one and calling squatter generates it at the exact same place. The old database returns varying results from zero to some, but always less then a fresh database. I can switch between the three states old database, new database, no database and the results are according wrong results, all results and again all results.
+
+Since I still have some backends running 2.4.18 I will try to build a mailbox I can provide for debugging. Can you give me a contact I can send the data then? I will not attach it here in bugzilla;-)
+
+Who is working on SQUAT if FM doesn&apos;t use (and change?) it?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2016-06-22 05:17:29 EDT</bug_when>
+            <thetext>Right, so it smells like the key format changed somehow then... that would be consistent with it thinking it had indexed messages, but not returning results for them.  Hopefully a small test mailbox will be enough to show the cause of the bug.
+
+As for who&apos;s maintaining it... we try not to break the existing Cassandane tests if we change things that might impact when touching related code (anything in search or index).
+
+At the moment, there&apos;s Ken from CMU, ellie, Robert, Nicola, Chris and myself who are regulars at the weekly Cyrus meetings.  Apart from Ken, we&apos;re all FastMail or paid by FastMail - so things that FastMail care about obviously get higher priority.  Anyone else is welcome to sponsor somebody to maintain things they need or maintain them themselves of course - we&apos;re very welcoming of quality patches.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-06-22 10:56:47 EDT</bug_when>
+            <thetext>Ok, meanwhile I&apos;m able to reproduce this &quot;at will&quot;;-)
+
+I took one folder containing mainly bounces and out-of-office replies back to one of our &quot;mailer-daemon@....&quot; addresses. I copied the contents to a fresh account and folder on one of our 2.4 backends and reconstructed it. I added the squat annotation and launched squatter.
+
+Then I moved cyrus.squat away and XFER&apos;d it to a 2.5 backend. XFER would drop the cyrus.squat otherwise. I&apos;m not aware of a good reason (besides this bugreport;-)) why it is not XFER&apos;d, but it isn&apos;t.
+
+I then scp&apos;d the cyrus.squat to the new folder to simulate the &quot;in place upgrade 2.4-&gt;2.5&quot; case. The indices/caches are still V12 and not changed in any way after XFER.
+
+As soon as the cyrus.squat file is in place I get false search results. Moving it away and rebuilding it by calling squatter again fixes it.
+
+So, I&apos;ve a 6MB .tar.gz containing a full copy of the cyrus mailbox with all cyrus.* files intact. Both cyrus.squat versions from 2.4 and 2.5 available as well. It should be possible to import it on any 2.4 or 2.5 server.
+
+But I will not attach it for public availability to this bugreport. Please contact me personally (PGP signed?).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2016-06-23 09:05:36 EDT</bug_when>
+            <thetext>OK - here&apos;s the results of the investigation:
+
+* 2.4 indexes and searches by lowercase letter
+* 2.5 indexes and searches by uppercase letter
+
+Plan to fix this:
+
+1) new format &apos;SQUAT 2&apos; to replace &apos;SQUAT 1&apos; which is uppercase letters only and otherwise unchanged
+2) write all new files in 2.5 with &apos;SQUAT 2&apos;
+3) if searching a &apos;SQUAT 1&apos; file with 2.5, search both uppercase AND lowercase versions of each string.
+
+Bah humbug.
+
+Next point - in 3.0, squat searching is broken completely.  It looks for a flag called &apos;internalised&apos; on the search expression and will only call the engine if internalised is set.  The squat engine file doesn&apos;t set internalised on any fields, so nothing can use the squatter index.  *sigh*.
+
+That will need to be fixed separately.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-06-23 09:10:51 EDT</bug_when>
+            <thetext>&gt; Plan to fix this:
+&gt; 
+&gt; 1) new format &apos;SQUAT 2&apos; to replace &apos;SQUAT 1&apos; which is uppercase letters only
+&gt; and otherwise unchanged
+&gt; 2) write all new files in 2.5 with &apos;SQUAT 2&apos;
+&gt; 3) if searching a &apos;SQUAT 1&apos; file with 2.5, search both uppercase AND lowercase
+&gt; versions of each string.
+
+Care must be taken for &quot;squatter -i&quot; incremental updates!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-07-03 23:29:43 EDT</bug_when>
+            <thetext>&gt; * 2.4 indexes and searches by lowercase letter
+&gt; * 2.5 indexes and searches by uppercase letter
+
+&gt; Plan to fix this:
+
+&gt; 1) new format &apos;SQUAT 2&apos; to replace &apos;SQUAT 1&apos; which is uppercase letters only
+&gt; and otherwise unchanged
+&gt; 2) write all new files in 2.5 with &apos;SQUAT 2&apos;
+&gt; 3) if searching a &apos;SQUAT 1&apos; file with 2.5, search both uppercase AND lowercase
+&gt; versions of each string.
+
+I&apos;m poking around to see how implementable this is and it&apos;s looking awkward?
+
+It looks like squat just indexes arbitrary binary data, and expects its clients (imapd, squatter) to canonicalise indexing operations and queries, and it&apos;s the canonicalisation that has changed (lower =&gt; upper).
+
+The &quot;SQUAT 1\n&quot; header applies to squat&apos;s on-disk format, which I don&apos;t know if it&apos;s changed, but it doesn&apos;t look like it expects it to ever change -- it&apos;s treated like an 8-byte magic number.  It&apos;s written by squat_index_close() and squat_index_destroy(), checked for validity in squat_search_open(), and otherwise ignored.  There&apos;s no API for interacting with it in any way.
+
+I&apos;m not yet entirely sure, but so far it looks like the canonicalisation happens somewhere in imap/index.c, or maybe down in lib/charset.c.
+
+So there doesn&apos;t look to be a clean way to decide how to canonicalise based on the squat version.  And since the canonicalisation doesn&apos;t seem to be squat-specific, I wonder if this problem also occurs when migrating other search backends (but maybe squat is the only one in 2.4/2.5?)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2016-07-04 00:00:12 EDT</bug_when>
+            <thetext>Actually, simpler fix.  Just always check both the upper and lower case and don&apos;t bump the version.  It&apos;s actually really quick and cheap because there won&apos;t be any matches for the case that isn&apos;t in the database.
+
+https://github.com/cyrusimap/cyrus-imapd/commit/fcec0283245c0dd9cad77a426c79894822f59590
+
+That&apos;s the kind of thing I was thinking about - just always doing a lowercase scan as well as the current case.  I haven&apos;t even compile tested it sorry - sitting in a rehearsal and typing in between reading my music.
+
+This should be enough to fix the current issue with no other patch required :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-07-04 00:05:06 EDT</bug_when>
+            <thetext>Oh, that&apos;s where the search code lives.  Great, I&apos;ll get it building (if it doesn&apos;t already) and run it thru existing Cassandane tests too</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-07-04 00:37:58 EDT</bug_when>
+            <thetext>Builds fine for me, and passes our cunit and cassandane tests.
+
+Wolfgang, how&apos;s it look to you?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-07-04 07:11:42 EDT</bug_when>
+            <thetext>To be honest.... meanwhile all my backends are running 2.5.8 and all my squat DBs are updated to 2.5 as well.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-07-21 21:12:07 EDT</bug_when>
+            <thetext>Calling this fixed.  Will be in 2.5.9</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

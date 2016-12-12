@@ -1,0 +1,159 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2434</bug_id>
+          
+          <creation_ts>2004-06-01 10:33 EDT</creation_ts>
+          <short_desc>cyradm won&apos;t delete a mailbox with a name similar to admin&apos;s name</short_desc>
+          <delta_ts>2012-12-07 04:01:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Virtual Domains</component>
+          <version>2.4.17</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alexander Amelkin">cyrus-imapd@amelkin.msk.ru</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>slim@inbox.lv</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alexander Amelkin">cyrus-imapd@amelkin.msk.ru</who>
+            <bug_when>2004-06-01 10:33:13 EDT</bug_when>
+            <thetext>cyradm says &apos;Operation is not permitted on mailbox&apos; when trying to &apos;dm&apos; a 
+mailbox with the name of the cyrus admin (as per admins: directive 
+of /etc/imapd.conf) in the left hand part of the mailbox name. 
+
+For example, I have the following in /etc/imapd.conf:
+---------------
+admins: cyradm
+virtdomains: on
+---------------
+
+When I log onto my IMAP server with &apos;cyradm -u cyradm localhost&apos;, I can see the 
+following conversation:
+
+localhost.localdomain&gt; cm user.cyradm@whatever
+localhost.localdomain&gt; sam user.cyradm@whatever cyradm all
+localhost.localdomain&gt; lam user.cyradm@whatever
+cyradm lrswipcda
+user.cyradm@whatever lrswipcda
+localhost.localdomain&gt; dm user.cyradm@whatever
+deletemailbox: Operation is not supported on mailbox
+
+Then if I re-login onto the IMAP server with another admin name (after changing 
+it in /etc/imapd.conf) I can delete the user.cyradm@whatever mailbox w/o any 
+problems.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-12-06 10:50:03 EDT</bug_when>
+            <thetext>in imapd.conf:
+admins: cyrus
+defaultdomain: mydomain.com
+virtdomains: on
+
+so there is  &quot;superadmin&quot; only
+
+0 create user/cyrus@example.com
+0 OK Completed
+0 setacl user/cyrus@example.com cyrus c
+0 OK Completed
+0 delete user/cyrus@example.com
+0 NO Operation is not supported on mailbox 
+
+Bron, this is annoying !</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-12-06 14:23:31 EDT</bug_when>
+            <thetext>the problem hides in imap/mboxlist.c in mboxlist_deletemailbox() in following code:
+
+    /* Check for request to delete a user:
+       user.&lt;x&gt; with no dots after it */
+    if ((p = mboxname_isusermailbox(name, 1))) {
+        /* Can&apos;t DELETE INBOX (your own inbox) */
+        if (userid) {
+            size_t len = config_virtdomains ? strcspn(userid, &quot;@&quot;) : strlen(userid);
+            if ((len == strlen(p)) &amp;&amp; !strncmp(p, userid, len)) {
+                r = IMAP_MAILBOX_NOTSUPPORTED;
+                goto done;
+            }
+        }
+
+userid is compared with userpart of mailbox without checking domain part. sosuperadmin matches to any virtual domain on userpart match.
+The tricky part is to catch up defaultdomain here IMO
+In other hands why not to allow admin to delete every real account even own ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-12-07 04:01:09 EDT</bug_when>
+            <thetext>Created an attachment (id=1507)
+allows admin to delete any mailbox
+
+I see no reason to restict admins to delete their mailboxes</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1507</attachid>
+            <date>2012-12-07 04:01 EDT</date>
+            <desc>allows admin to delete any mailbox</desc>
+            <filename>admins_delete.patch</filename>
+            <type>text/plain</type>
+            <size>846</size>
+            <attacher>slim@inbox.lv</attacher>
+            
+              <data encoding="base64">ZGlmZiAtYXVyTiBjeXJ1cy1pbWFwZC0yLjQuMTcub3JpZy8vaW1hcC9tYm94bGlzdC5jIGN5cnVz
+LWltYXBkLTIuNC4xNy5uZXcvL2ltYXAvbWJveGxpc3QuYw0KLS0tIGN5cnVzLWltYXBkLTIuNC4x
+Ny5vcmlnLy9pbWFwL21ib3hsaXN0LmMgICAgMjAxMi0xMi0wMSAyMTo1Nzo1NC4wMDAwMDAwMDAg
+KzAyMDANCisrKyBjeXJ1cy1pbWFwZC0yLjQuMTcubmV3Ly9pbWFwL21ib3hsaXN0LmMgICAgIDIw
+MTItMTItMDcgMTA6MTE6MjAuMDAwMDAwMDAwICswMjAwDQpAQCAtODkxLDYgKzg5MSw3IEBADQog
+ICAgICAgIHVzZXIuPHg+IHdpdGggbm8gZG90cyBhZnRlciBpdCAqLw0KICAgICBpZiAoKHAgPSBt
+Ym94bmFtZV9pc3VzZXJtYWlsYm94KG5hbWUsIDEpKSkgew0KICAgICAgICAvKiBDYW4ndCBERUxF
+VEUgSU5CT1ggKHlvdXIgb3duIGluYm94KSAqLw0KKyAgICAgICAvKiBbREddOiBZZWFoLCBhZG1p
+bnMgY2FuIGluZGVlZCAhDQogICAgICAgIGlmICh1c2VyaWQpIHsNCiAgICAgICAgICAgIHNpemVf
+dCBsZW4gPSBjb25maWdfdmlydGRvbWFpbnMgPyBzdHJjc3BuKHVzZXJpZCwgIkAiKSA6IHN0cmxl
+bih1c2VyaWQpOw0KICAgICAgICAgICAgaWYgKChsZW4gPT0gc3RybGVuKHApKSAmJiAhc3RybmNt
+cChwLCB1c2VyaWQsIGxlbikpIHsNCkBAIC04OTgsNiArODk5LDcgQEANCiAgICAgICAgICAgICAg
+ICBnb3RvIGRvbmU7DQogICAgICAgICAgICB9DQogICAgICAgIH0NCisgICAgICAgKi8NCiANCiAg
+ICAgICAgLyogT25seSBhZG1pbnMgbWF5IGRlbGV0ZSB1c2VyICovDQogICAgICAgIGlmICghaXNh
+ZG1pbikgeyByID0gSU1BUF9QRVJNSVNTSU9OX0RFTklFRDsgZ290byBkb25lOyB9
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,200 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3862</bug_id>
+          
+          <creation_ts>2014-09-22 09:47 EDT</creation_ts>
+          <short_desc>if mupdate master can&apos;t commit mailbox entry on rename backend does not rollback rename in local mailboxdb</short_desc>
+          <delta_ts>2016-03-03 19:11:12 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</reporter>
+          <assigned_to name="elliefm">ellie@fastmail.com</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2014-09-22 09:47:45 EDT</bug_when>
+            <thetext>In murder setup with delete_mode: delayed deletion of a mailbox 
+(rename to DELETED.$MAILBOXNAME.$TIMESETAMP) can create a corrupted mailbox,
+inconsisty between mailboxdb and filesystem in some cases
+
+Below is an example backend log:
+
+Rename: user.LoginID.Mail.drafts -&gt; DELETED.user.LoginID.Mail.drafts.5416CD11
+MUPDATE: can&apos;t commit mailbox entry for &apos;DELETED.user.LoginID.Mail.drafts.5416CD11&apos; 
+Deleted mailbox DELETED.user.LoginID.Mail.drafts.5416CD11
+
+This results in an empty directory DELETED/user/LoginID/Mail/drafts.
+DELETED.user.LoginID.Mail.drafts.5416CD11 is still in the mailboxdb.
+
+The mupdate master does not log any error.
+
+Any access to this mailbox will lead to 
+IOERROR: opening index DELETED.user.LoginID.Mail.drafts.5416CD11: System I/O error
+
+
+Additional to the inconsistency the original mailbox was deleted without as indicated by the log. I would suggest not to delete the mailbox and to return 
+an error to the client.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2014-09-23 04:58:11 EDT</bug_when>
+            <thetext>This can also happen in non &quot;delete_mode: delayed&quot; related cases, which will lead to lost mails, and a inconsisty between mailboxdb and filesystem
+
+
+Rename: user.LoginID.Mail.Projekte.XXX-XX-XXXXXXXX -&gt; user.LoginID.M
+ail.Projekte.beendete Projekte.XXX-XX-XXXXXXXX
+/var/log/cyrus.log_140919.gz:Sep 19 10:24:09 mailserv08 be/beimap[52141]: MUPDATE: can&apos;t commit mailbox entry for &apos;user.LoginID.Mail.Projekte.
+beendete Projekte.XXX-XX-XXXXXXXX
+/var/log/cyrus.log_140919.gz:Sep 19 10:24:09 mailserv08 be/beimap[52141]: Deleted mailbox user.LoginID.Mail.Projekte.beendete Projekte.XXX-XX-XXXXXXXX
+
+
+On a FAILED Rename Cyrus MUST NOT DELETE the Original Mailbox !!!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2014-09-23 06:01:49 EDT</bug_when>
+            <thetext>Sorry for the noise. I confused the mailbox which got deleted.
+
+So as far as i can tell, the cyrus backend tries to reserve and to 
+activate the new mailbox. If this failes the new mailbox gets deleted on disk, but the mailbox was already changed in the local mailboxdb of the backend.
+
+Rename user/LoginID/Old -&gt;  user/LoginID/New
+
+Mupdate Master MailboxDB  &quot;user.LoginID.Old       1 backend!default LoginID lrswipkxtecda&quot; 
+Backend Mailboxdb         &quot;user.LoginID.New       0 default LoginID        lrswipkxtecda&quot;      
+Filesystem of Backend     &quot;user/LoginID/Old&quot;
+
+so how do i clean up this inconsisty between mupdate master and backend mailboxdb?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2015-03-18 08:15:50 EDT</bug_when>
+            <thetext>If on a rename the new mailbox is not commit on mupdate master, the backend 
+tries to rollback the rename, but the already changed name in the local 
+mailbox.db is not rolled back.
+
+This leads to the corrupted mailbox.
+Mupdate master and frontend mailboxdb  and filesystem have the old name,
+and the backend mailboxdb has the new name.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2016-02-25 12:07:54 EDT</bug_when>
+            <thetext>Created an attachment (id=1565)
+Implement db rollback
+
+I found 
+
+/* XXX - rollback DB changes if it was an mupdate failure */ 
+
+in the source, so this case was not implemented. 
+I could only test my patch in normal murder setup</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-02-29 21:30:55 EDT</bug_when>
+            <thetext>Thanks for the patch!
+
+This is now on cyrus-imapd-2.4 and cyrus-imapd-2.5 branches in git.
+
+It&apos;s not yet on master because the APIs in imap/mboxlist.c have changed in a way that doesn&apos;t support a 1:1 translation of the 2.4-based implementation.  I&apos;ll need to figure out the right way to do the same basic thing in master.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-03-03 19:11:12 EDT</bug_when>
+            <thetext>This is on master now too.  Though I&apos;m not entirely sure that it doesn&apos;t need further work to handle $RACL correctly.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1565</attachid>
+            <date>2016-02-25 12:07 EDT</date>
+            <desc>Implement db rollback</desc>
+            <filename>cyrus-imapd-2.4.18-mupdate-commit-error-rollback.diff</filename>
+            <type>text/plain</type>
+            <size>2120</size>
+            <attacher>michael.menge@zdv.uni-tuebingen.de</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuNC4xOC9pbWFwL21ib3hsaXN0LmMJMjAxNS0wNy0wNiAwNTozODoy
+OS4wMDAwMDAwMDAgKzAyMDAKKysrIGN5cnVzLWltYXBkLTIuNC4xOC5tdXBkYXRlX2NvbW1pdF9w
+YXRjaGVkL2ltYXAvbWJveGxpc3QuYwkyMDE2LTAyLTI1IDE3OjI5OjMyLjAwMDAwMDAwMCArMDEw
+MApAQCAtOTkyLDYgKzk5Miw3IEBACiAJCQkgICBpbnQgZm9yY2V1c2VyLCBpbnQgaWdub3JlcXVv
+dGEpCiB7CiAgICAgaW50IHI7CisgICAgaW50IG11cGRhdGVjb21taXRlcnJvciA9IDA7CiAgICAg
+bG9uZyBteXJpZ2h0czsKICAgICBpbnQgaXN1c2VybWJveCA9IDA7IC8qIEFyZSB3ZSByZW5hbWlu
+ZyBzb21lb25lJ3MgaW5ib3ggKi8KICAgICBpbnQgcGFydGl0aW9ubW92ZSA9IDA7CkBAIC0xMTcx
+LDYgKzExNzIsNyBAQAogCSAgICBzeXNsb2coTE9HX0VSUiwKIAkJICAgIk1VUERBVEU6IGNhbid0
+IGNvbW1pdCBtYWlsYm94IGVudHJ5IGZvciAnJXMnIiwKIAkJICAgbmV3bmFtZSk7CisgICAgICAg
+ICAgICBtdXBkYXRlY29tbWl0ZXJyb3IgPSByOwogCX0KIAlpZiAobXVwZGF0ZV9oKSBtdXBkYXRl
+X2Rpc2Nvbm5lY3QoJm11cGRhdGVfaCk7CiAgICAgfQpAQCAtMTE4MCw3ICsxMTgyLDM3IEBACiAJ
+ciA9IG1haWxib3hfY29tbWl0KG5ld21haWxib3gpOwogCiAgICAgaWYgKHIpIHsKLQkvKiBYWFgg
+LSByb2xsYmFjayBEQiBjaGFuZ2VzIGlmIGl0IHdhcyBhbiBtdXBkYXRlIGZhaWx1cmUgKi8KKwkv
+KiByb2xsYmFjayBEQiBjaGFuZ2VzIGlmIGl0IHdhcyBhbiBtdXBkYXRlIGZhaWx1cmUgKi8KKyAg
+ICAgICAgaWYgKG11cGRhdGVjb21taXRlcnJvcikgeworICAgICAgICAgICAgciA9IDA7CisgICAg
+CisgICAgICAgICAgICAvKiByZWNyZWF0ZSBhIG9sZCBlbnRyeSAqLworICAgICAgICAgICAgaWYg
+KCFpc3VzZXJtYm94KQorICAgICAgICAgICAgICAgIHIgPSBEQi0+c3RvcmUobWJkYiwgb2xkbmFt
+ZSwgc3RybGVuKG9sZG5hbWUpLAorICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgbWJveGVu
+dCwgc3RybGVuKG1ib3hlbnQpLCAmdGlkKTsKKyAgICAKKyAgICAgICAgICAgIC8qIGRlbGV0ZSB0
+aGUgbmV3IGVudHJ5ICovCisgICAgICAgICAgICBpZiAoIXIpCisgICAgICAgICAgICAgICAgciA9
+IERCLT5kZWxldGUobWJkYiwgbmV3bmFtZSwgc3RybGVuKG5ld25hbWUpLCAmdGlkLCAwKTsKKyAg
+ICAKKyAgICAgICAgICAgIC8qIENvbW1pdCB0cmFuc2FjdGlvbiAqLworICAgICAgICAgICAgaWYg
+KCFyKQorICAgICAgICAgICAgICAgIHIgPSBEQi0+Y29tbWl0KG1iZGIsIHRpZCk7CisKKyAgICAg
+ICAgICAgIHRpZCA9IE5VTEw7CisgICAgICAgICAgICBpZiAocikgeworICAgICAgICAgICAgICAg
+IC8qIFhYWCBIT1dUTyByZXBhaXIgdGhpcyBtZXNzISAqLworICAgICAgICAgICAgICAgIHN5c2xv
+ZyhMT0dfRVJSLCAiREJFUlJPUjogZmFpbGVkIERCIHJvbGxiYWNrIG9uIG1haWxib3hyZW5hbWUg
+JXMgJXM6ICVzIiwKKyAgICAgICAgICAgICAgICAgICAgICAgb2xkbmFtZSwgbmV3bmFtZSwgY3ly
+dXNkYl9zdHJlcnJvcihyKSk7CisgICAgICAgICAgICAgICAgc3lzbG9nKExPR19FUlIsICJEQkVS
+Uk9SOiBtYWlsYm94ZGIgb24gbXVwZGF0ZSBhbmQgYmFja2VuZCBBUkUgTk9UIENPTlNJU1RFTkQi
+KTsKKyAgICAgICAgICAgICAgICBzeXNsb2coTE9HX0VSUiwgIkRCRVJST1I6IG1haWxib3hkYiBv
+biBtdXBkYXRlIGhhcyBlbnRyeSBmb3IgJXMsIG1haWxib3hkYiBvbiBiYWNrZW5kIGhhcyBlbnRy
+eSBmb3IgJXMgYW5kIGZpbGVzIGFyZSBvbiB0aGUgb2xkIHBvc2l0aW9uIiwgb2xkbmFtZSwgbmV3
+bmFtZSk7CisgICAgICAgICAgICAgICAgciA9IElNQVBfSU9FUlJPUjsKKyAgICAgICAgICAgIH0g
+ZWxzZSB7CisgICAgICAgICAgICAgICAgciA9IG11cGRhdGVjb21taXRlcnJvcjsKKyAgICAgICAg
+ICAgIH0KKyAgICAgICAgICAgIAorICAgICAgICB9ICAgICAgICAgICAgCisKIAlpZiAobmV3bWFp
+bGJveCkgbWFpbGJveF9kZWxldGUoJm5ld21haWxib3gpOwogCWlmIChwYXJ0aXRpb25tb3ZlICYm
+IG5ld3BhcnRpdGlvbikKIAkgICAgbWFpbGJveF9kZWxldGVfY2xlYW51cChuZXdwYXJ0aXRpb24s
+IG5ld25hbWUpOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

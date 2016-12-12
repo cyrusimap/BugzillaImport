@@ -1,0 +1,96 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3886</bug_id>
+          
+          <creation_ts>2015-02-19 14:15 EDT</creation_ts>
+          <short_desc>ARM chars are unsigned by default</short_desc>
+          <delta_ts>2016-02-25 23:42:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="hede">kolab983@der-he.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="hede">kolab983@der-he.de</who>
+            <bug_when>2015-02-19 14:15:44 EDT</bug_when>
+            <thetext>I had several issues with current cyrus 2.5 from git on ARM, most of them seemed gone with adding &quot;-fsigned-char&quot; to CFLAGS in the Makefile. 
+
+That&apos;s probably not the best solution (see below), maybe you prefer using uint8_t/int8_t or unsigned char / signed char where appropriate. Most helper documents I&apos;ve found so far are recommending int values in case one wants to compare to EOF et al.
+
+One example is:
+
+In file imap/dlist.c in function dlist_parsemap() there&apos;s a line:
+c = dlist_parse(&amp;dl, parsekey, stream);
+followed by:
+if (c != EOF) 
+
+This check is _always_ false on ARM, because EOF==-1 and c is in range 0-255.
+
+char is unsigned by default on ARM. AFAIK signed char has a performance penalty on ARM, so most compilers use unsigned char by default. Therefore maybe using int on 32/64 bit systems seems better than using char for return values!?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="hede">kolab983@der-he.de</who>
+            <bug_when>2015-03-08 15:45:54 EDT</bug_when>
+            <thetext>always true, not false...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2015-03-08 18:54:44 EDT</bug_when>
+            <thetext>I&apos;ve got an ARM box of my own on the way, which will help debug things like this.
+
+I agree, we should just use the &apos;int&apos; datatype for signed return values.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="hede">kolab983@der-he.de</who>
+            <bug_when>2015-03-09 04:32:34 EDT</bug_when>
+            <thetext>The ARM box will help, make things easier. But you can reproduce things without it. I&apos;ve added some step by step instructions to an other bug (seems fixed now) at the kolab bug tracker using qemu and arm emulation on x86: https://issues.kolab.org/show_bug.cgi?id=3791#c2
+
+(there are many guides on how to use arm emulation on x86, this one misses instructions how to install the needed tools like qemu-img, but it includes downloading and compiling cyrus...)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-02-25 23:42:45 EDT</bug_when>
+            <thetext>git master branch now uses &apos;int&apos; for single characters that might be EOF (a la getc etc), as of commit f507861
+
+Not sure if this is worth back porting to 2.5.  There&apos;s a workaround per hede&apos;s comment, and not many people seem to be running Cyrus on ARM anyway (or at least, they aren&apos;t complaining).  But if someone wants to do the cherry-pick-and-cleanup dance and submit a patch, I&apos;m happy to merge it.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

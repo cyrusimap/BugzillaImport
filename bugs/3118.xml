@@ -1,0 +1,103 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3118</bug_id>
+          
+          <creation_ts>2008-11-04 12:48 EDT</creation_ts>
+          <short_desc>OPT_POP3_NEW_UIDL is always set on replicated mailboxes</short_desc>
+          <delta_ts>2010-10-25 18:46:47 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Paul Fisher">pnfisher@berkeley.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Paul Fisher">pnfisher@berkeley.edu</who>
+            <bug_when>2008-11-04 12:48:35 EDT</bug_when>
+            <thetext>OPT_POP3_NEW_UIDL is always set on mailboxes on the replica, even if OPT_POP3_NEW_UIDL is not set on the master.
+
+The CREATE replication command correctly syncs mailbox options to disk on the replica; however, later replication commands will access the mailbox index before messages have been transferred to the replica.  Since the mailbox on the replica is empty until messages are transferred over, mailbox_read_index_header will set OPT_POP3_NEW_UIDL, and the new header ends up being written back to disk by commands run after the initial CREATE.
+
+Here&apos;s the line in mailbox_read_index_header that causes OPT_POP3_NEW_UIDL to become set:
+
+    if (!mailbox-&gt;exists) mailbox-&gt;options |= OPT_POP3_NEW_UIDL;
+
+The SELECT that follows a CREATE will run the above code.
+
+When promoting a replica to a master, an incorrect OPT_POP3_NEW_UIDL setting results in duplicate downloads of messages for POP-leave-on-server users.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2009-01-28 23:20:37 EDT</bug_when>
+            <thetext>I&apos;ll take this one if you want.  I&apos;ve already written code to replicate other annotations... should be easy to add.
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2009-01-28 23:54:42 EDT</bug_when>
+            <thetext>Ok, I&apos;ve got a fix - but I want to know - HOW ON EARTH do you get a folder with POP3_NEW_UIDL not set?
+
+There doesn&apos;t appear to be any way in code to turn it off, and it gets set at both mailbox creation time and every time an index gets opened with zero messages in it.
+
+Bron ( confused )</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Paul Fisher">pnfisher@berkeley.edu</who>
+            <bug_when>2009-01-29 01:45:18 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; Ok, I&apos;ve got a fix - but I want to know - HOW ON EARTH do you get a folder with
+&gt; POP3_NEW_UIDL not set?
+
+You have a folder that was created before POP3_NEW_UIDL existed, and that user uses pop-leave-on-server so the message count never hits zero.  Since the message count never hits zero, POP3_NEW_UIDL will never be set.  If POP3_NEW_UIDL does get set (ie. a replica gets promoted to a master), then the POP client will download messages that have already been downloaded.
+
+In our case, we migrated to Cyrus from a mail system that happened to use the same POP UIDL format as the old Cyrus format.  To keep all the pop-leave-on-server clients happy, we performed a one time unset of POP3_NEW_UIDL immediately following the migration.  Most users now have POP3_NEW_UIDL set, but the continuous pop-leave-on-server users do not.
+
+This bug would also likely be an issue for very old Cyrus installs with pop-leave-on-server clients that start using replication.
+
+Paul</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2009-03-15 19:38:07 EDT</bug_when>
+            <thetext>Fixed in CVS - will be in 2.3.14.  It replicated ALL annotations now.. (at least, all the ones that are mailbox flags :)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

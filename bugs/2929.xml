@@ -1,0 +1,274 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2929</bug_id>
+          
+          <creation_ts>2007-03-31 23:01 EDT</creation_ts>
+          <short_desc>XFER from unified to standard murder fails except on small mailboxes</short_desc>
+          <delta_ts>2010-10-25 18:46:42 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Gary Mills">mills@cc.umanitoba.ca</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Gary Mills">mills@cc.umanitoba.ca</who>
+            <bug_when>2007-03-31 23:01:05 EDT</bug_when>
+            <thetext>With a test mailbox containing about 200 megabytes of mail spread over 52 mail
+folders, the transfer fails after running for a minute or two like this:
+
+  setup01.cc.umanitoba.ca&gt; xfer user.gmills mbox.testing.umanitoba.ca
+  xfermailbox: Mailbox is currently reserved
+
+`cyradm&apos; is connected to a unified murder node attempting to transfer to a
+standard murder node.  This error appears on the unified server:
+
+  Mar 28 13:18:24 setup01 imap[19206]: [ID 847691 local6.error] Could not delete
+local mailbox during move of user.gmills.ccmailINBOX
+
+The transcript on this node looks like:
+
+  &lt;1175105871&lt;10 XFER user.gmills mbox.testing.umanitoba.ca
+  &gt;1175105904&gt;10 NO Mailbox is currently reserved
+
+The mailbox in question is successfully transferred, but the original copy on
+the unified server is not deleted.  This happens only on moderately large
+mailboxes, probably because the local mailboxes database is modified with data
+coming from the mupdate server.  An attempt to resume the transfer results in
+this error:
+
+  setup01.cc.umanitoba.ca&gt; xfer user.gmills mbox.testing.umanitoba.ca
+  xfermailbox: The remote Server(s) denied the operation
+
+On the origin side, this error is logged:
+
+  Mar 31 11:28:50 setup01 imap[22525]: [ID 530216 local6.error] Could not move
+mailbox: user.gmills.Deleted, LOCALCREATE failed
+
+On the destination side, the transcript is:
+
+  &lt;1175358530&lt;Q01 SETQUOTA {12+}
+  +user.gmills (STORAGE 400000)
+  &gt;1175358530&gt;Q01 OK Completed
+  &lt;1175358530&lt;LC1 LOCALCREATE {19+}
+  user.gmills.Deleted
+  &gt;1175358530&gt;LC1 NO Mailbox already exists
+
+The attached patch fixes both problem.  All 52 mailboxes were successfully
+transferred.  The unified mailboxes database showed all of them residing on
+the standard backend server.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gary Mills">mills@cc.umanitoba.ca</who>
+            <bug_when>2007-03-31 23:03:15 EDT</bug_when>
+            <thetext>Created an attachment (id=535)
+Patch to fix local deletion during xfer from a unified server
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-04-03 09:29:41 EDT</bug_when>
+            <thetext>Patch applied to CVS</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gary Mills">mills@cc.umanitoba.ca</who>
+            <bug_when>2007-04-06 16:47:57 EDT</bug_when>
+            <thetext>Created an attachment (id=562)
+Revised local deletion patch - fixes file descriptor leak
+
+The original patch eventually cause this error:
+
+xfermailbox: Operating System Error
+
+Apr  4 18:45:40 electra imap[11498]: [ID 916150 local6.error] IOERROR: open on
+/imap/p4/L/user/godfrey/db_general/cyrus.header: Too many open files
+Apr  4 18:45:40 electra imap[11498]: [ID 800040 local6.error] Could not move
+mailbox: user.godfrey.db_general, dump_mailbox() failed
+Apr  4 19:15:40 electra imap[11498]: [ID 939562 local6.error] Could not back
+out remote mailbox during move of user.godfrey.db_general (Server(s)
+unavailable to complete operation)
+
+The reason is that imapd repeatedly opens files in /imap/conf/quota but never
+closes them.  Omitting the delete_quota_root flag when calling mailbox_delete()
+
+solved the problem.  This flag isn&apos;t used in any other code.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-04-06 16:55:20 EDT</bug_when>
+            <thetext>Applied fd leak fix.  Can you point out to me where we repeatedly open quota w/o
+closing it?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gary Mills">mills@cc.umanitoba.ca</who>
+            <bug_when>2007-04-06 17:36:44 EDT</bug_when>
+            <thetext>The file descriptor leak is initiated by this bit of code in mailbox_delete():
+
+    rquota = quota_read(&amp;mailbox-&gt;quota, &amp;tid, 1);
+
+    seen_delete_mailbox(mailbox);
+
+    if (delete_quota_root &amp;&amp; !rquota) {
+        quota_delete(&amp;mailbox-&gt;quota, &amp;tid);
+        free(mailbox-&gt;quota.root);
+        mailbox-&gt;quota.root = NULL;
+
+This seems to be an untested code branch.  It may be that I&apos;m using it incorrectly
+or that it&apos;s the caller&apos;s responsibility to close the file.  Here&apos;s part of a
+truss of imapd while doing an XFER on a mailbox with five sub-mailboxes:
+
+# grep quota /var/tmp/xfer.truss
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 18
+open(&quot;/imap/conf/quota/A/user.cox.five&quot;, O_RDWR) Err#2 ENOENT
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 21
+stat(&quot;/imap/conf/quota/A/user.cox&quot;, 0xFFBF973C) = 0
+open(&quot;/imap/conf/quota/A/user.cox.four&quot;, O_RDWR) Err#2 ENOENT
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 22
+stat(&quot;/imap/conf/quota/A/user.cox&quot;, 0xFFBF973C) = 0
+open(&quot;/imap/conf/quota/A/user.cox.one&quot;, O_RDWR) Err#2 ENOENT
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 23
+stat(&quot;/imap/conf/quota/A/user.cox&quot;, 0xFFBF973C) = 0
+open(&quot;/imap/conf/quota/A/user.cox.three&quot;, O_RDWR) Err#2 ENOENT
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 24
+stat(&quot;/imap/conf/quota/A/user.cox&quot;, 0xFFBF973C) = 0
+open(&quot;/imap/conf/quota/A/user.cox.two&quot;, O_RDWR) Err#2 ENOENT
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 25
+stat(&quot;/imap/conf/quota/A/user.cox&quot;, 0xFFBF973C) = 0
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 27
+open(&quot;/imap/conf/quota/A/user.cox&quot;, O_RDWR)     = 26
+stat(&quot;/imap/conf/quota/A/user.cox&quot;, 0xFFBFA184) = 0
+...
+stat64(&quot;/imap/conf/quota/A/user.cox&quot;, 0xFFBFC548) = 0
+unlink(&quot;/imap/conf/quota/A/user.cox&quot;)           = 0
+</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>535</attachid>
+            <date>2007-03-31 23:03 EDT</date>
+            <desc>Patch to fix local deletion during xfer from a unified server</desc>
+            <filename>imapd.c.diff2</filename>
+            <type>text/plain</type>
+            <size>1650</size>
+            <attacher>mills@cc.umanitoba.ca</attacher>
+            
+              <data encoding="base64">LS0tIGltYXBkLmMtbm9kZWwJU3VuIE1hciAxOCAyMDo0MjozOSAyMDA3CisrKyBpbWFwZC5jCVNh
+dCBNYXIgMzEgMTc6NDk6MTIgMjAwNwpAQCAtODMxMCw2ICs4MzEwLDcgQEAKICAgICAvKiA3KSBs
+b2NhbCBkZWxldGUgb2YgbWFpbGJveAogICAgICAqICYgcmVtb3ZlIGxvY2FsICJyZW1vdGUiIG1h
+aWxib3hsaXN0IGVudHJ5ICovCiAgICAgaWYoIXIpIHsKKyAgICAgIGlmIChjb25maWdfbXVwZGF0
+ZV9jb25maWcgIT0gSU1BUF9FTlVNX01VUERBVEVfQ09ORklHX1VOSUZJRUQpIHsKIAkvKiBOb3Rl
+IHRoYXQgd2UgZG8gbm90IGNoZWNrIHRoZSBBQ0wsIGFuZCB3ZSBkb24ndCB1cGRhdGUgTVVQREFU
+RSAqLwogCS8qIG5vdGUgYWxzbyB0aGF0IHdlIG5lZWQgdG8gcmVtZW1iZXIgdG8gbGV0IHByb3h5
+YWRtaW5zIGRvIHRoaXMgKi8KIAlyID0gbWJveGxpc3RfZGVsZXRlbWFpbGJveChtYWlsYm94bmFt
+ZSwKQEAgLTgzMTgsNyArODMxOSwyMyBAQAogCWlmKHIpIHN5c2xvZyhMT0dfRVJSLAogCQkgICAg
+ICJDb3VsZCBub3QgZGVsZXRlIGxvY2FsIG1haWxib3ggZHVyaW5nIG1vdmUgb2YgJXMiLAogCQkg
+ICAgIG1haWxib3huYW1lKTsKKyAgICAgIH0gZWxzZSB7CisJLyogQ2FuJ3QgdHJ1c3QgbG9jYWwg
+bWFpbGJveGVzIGRhdGFiYXNlIHdpdGggdW5pZmllZCBjb25maWd1cmF0aW9uICovCisJc3RydWN0
+IG1haWxib3ggbWFpbGJveDsKIAorCXIgPSBtYWlsYm94X29wZW5fbG9ja2VkKG1haWxib3huYW1l
+LCBwYXRoLCBtcGF0aCwgYWNsLCAwLCAmbWFpbGJveCwgMCk7CisJaWYocikgc3lzbG9nKExPR19F
+UlIsCisJCSAgICAgIkNvdWxkIG5vdCBvcGVuIGxvY2FsIG1haWxib3ggZHVyaW5nIG1vdmUgb2Yg
+JXMiLAorCQkgICAgIG1haWxib3huYW1lKTsKKwlpZighcikgeworCSAgLyogRGVsZXRlIG1haWxi
+b3ggYW5kIHF1b3RhIHJvb3QgKi8KKwkgIHIgPSBtYWlsYm94X2RlbGV0ZSgmbWFpbGJveCwgMSk7
+CisJICBpZihyKSBzeXNsb2coTE9HX0VSUiwKKwkJICAgICAgICJDb3VsZCBub3QgZGVsZXRlIGxv
+Y2FsIG1haWxib3ggZHVyaW5nIG1vdmUgb2YgJXMiLAorCQkgICAgICAgbWFpbGJveG5hbWUpOwor
+CX0KKyAgICAgIH0KKwogCWlmICghcikgewogCSAgICAvKiBEZWxldGUgbWFpbGJveCBhbm5vdGF0
+aW9ucyAqLwogCSAgICBhbm5vdGF0ZW1vcmVfZGVsZXRlKG1haWxib3huYW1lKTsKQEAgLTgzOTIs
+MTIgKzg0MDksMTUgQEAKIAogICAgIGlmICghcikgewogCS8qIE5PVEU6IE5PVCBtbG9va3VwKCkg
+YmVjYXVzZSB3ZSBkb24ndCB3YW50IHRvIGlzc3VlIGEgcmVmZXJyYWwgKi8KLQkvKiB4eHggYnV0
+IHdoYXQgaGFwcGVucyBpZiB0aGV5IGFyZSByZW1vdGUKLQkgKiBtYWlsYm94ZXM/ICovCiAJciA9
+IG1ib3hsaXN0X2RldGFpbChuYW1lLCAmbWJmbGFncywKIAkJCSAgICAmaW5wYXRoLCAmaW5tcGF0
+aCwgJmlucGFydCwgJmluYWNsLCBOVUxMKTsKICAgICB9CiAgICAgCisgICAgaWYgKCFyICYmICht
+YmZsYWdzICYgTUJUWVBFX1JFTU9URSkpIHsKKyAgICAgIC8qIFNraXAgcmVtb3RlIG1haWxib3gg
+Ki8KKyAgICAgIHJldHVybiAwOworICAgIH0KKwogICAgIGlmICghcikgewogCXBhdGggPSB4c3Ry
+ZHVwKGlucGF0aCk7CiAJaWYgKGlubXBhdGgpIG1wYXRoID0geHN0cmR1cChpbm1wYXRoKTsK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>562</attachid>
+            <date>2007-04-06 16:47 EDT</date>
+            <desc>Revised local deletion patch - fixes file descriptor leak</desc>
+            <filename>imapd.c.diff3</filename>
+            <type>text/plain</type>
+            <size>1650</size>
+            <attacher>mills@cc.umanitoba.ca</attacher>
+            
+              <data encoding="base64">LS0tIGltYXBkLmMtbm9kZWwJU3VuIE1hciAxOCAyMDo0MjozOSAyMDA3CisrKyBpbWFwZC5jCUZy
+aSBBcHIgIDYgMDk6NTk6NDkgMjAwNwpAQCAtODMxMCw2ICs4MzEwLDcgQEAKICAgICAvKiA3KSBs
+b2NhbCBkZWxldGUgb2YgbWFpbGJveAogICAgICAqICYgcmVtb3ZlIGxvY2FsICJyZW1vdGUiIG1h
+aWxib3hsaXN0IGVudHJ5ICovCiAgICAgaWYoIXIpIHsKKyAgICAgIGlmIChjb25maWdfbXVwZGF0
+ZV9jb25maWcgIT0gSU1BUF9FTlVNX01VUERBVEVfQ09ORklHX1VOSUZJRUQpIHsKIAkvKiBOb3Rl
+IHRoYXQgd2UgZG8gbm90IGNoZWNrIHRoZSBBQ0wsIGFuZCB3ZSBkb24ndCB1cGRhdGUgTVVQREFU
+RSAqLwogCS8qIG5vdGUgYWxzbyB0aGF0IHdlIG5lZWQgdG8gcmVtZW1iZXIgdG8gbGV0IHByb3h5
+YWRtaW5zIGRvIHRoaXMgKi8KIAlyID0gbWJveGxpc3RfZGVsZXRlbWFpbGJveChtYWlsYm94bmFt
+ZSwKQEAgLTgzMTgsNyArODMxOSwyMyBAQAogCWlmKHIpIHN5c2xvZyhMT0dfRVJSLAogCQkgICAg
+ICJDb3VsZCBub3QgZGVsZXRlIGxvY2FsIG1haWxib3ggZHVyaW5nIG1vdmUgb2YgJXMiLAogCQkg
+ICAgIG1haWxib3huYW1lKTsKKyAgICAgIH0gZWxzZSB7CisJLyogQ2FuJ3QgdHJ1c3QgbG9jYWwg
+bWFpbGJveGVzIGRhdGFiYXNlIHdpdGggdW5pZmllZCBjb25maWd1cmF0aW9uICovCisJc3RydWN0
+IG1haWxib3ggbWFpbGJveDsKIAorCXIgPSBtYWlsYm94X29wZW5fbG9ja2VkKG1haWxib3huYW1l
+LCBwYXRoLCBtcGF0aCwgYWNsLCAwLCAmbWFpbGJveCwgMCk7CisJaWYocikgc3lzbG9nKExPR19F
+UlIsCisJCSAgICAgIkNvdWxkIG5vdCBvcGVuIGxvY2FsIG1haWxib3ggZHVyaW5nIG1vdmUgb2Yg
+JXMiLAorCQkgICAgIG1haWxib3huYW1lKTsKKwlpZighcikgeworCSAgLyogRGVsZXRlIG1haWxi
+b3ggYW5kIHF1b3RhIHJvb3QgKi8KKwkgIHIgPSBtYWlsYm94X2RlbGV0ZSgmbWFpbGJveCwgMCk7
+CisJICBpZihyKSBzeXNsb2coTE9HX0VSUiwKKwkJICAgICAgICJDb3VsZCBub3QgZGVsZXRlIGxv
+Y2FsIG1haWxib3ggZHVyaW5nIG1vdmUgb2YgJXMiLAorCQkgICAgICAgbWFpbGJveG5hbWUpOwor
+CX0KKyAgICAgIH0KKwogCWlmICghcikgewogCSAgICAvKiBEZWxldGUgbWFpbGJveCBhbm5vdGF0
+aW9ucyAqLwogCSAgICBhbm5vdGF0ZW1vcmVfZGVsZXRlKG1haWxib3huYW1lKTsKQEAgLTgzOTIs
+MTIgKzg0MDksMTUgQEAKIAogICAgIGlmICghcikgewogCS8qIE5PVEU6IE5PVCBtbG9va3VwKCkg
+YmVjYXVzZSB3ZSBkb24ndCB3YW50IHRvIGlzc3VlIGEgcmVmZXJyYWwgKi8KLQkvKiB4eHggYnV0
+IHdoYXQgaGFwcGVucyBpZiB0aGV5IGFyZSByZW1vdGUKLQkgKiBtYWlsYm94ZXM/ICovCiAJciA9
+IG1ib3hsaXN0X2RldGFpbChuYW1lLCAmbWJmbGFncywKIAkJCSAgICAmaW5wYXRoLCAmaW5tcGF0
+aCwgJmlucGFydCwgJmluYWNsLCBOVUxMKTsKICAgICB9CiAgICAgCisgICAgaWYgKCFyICYmICht
+YmZsYWdzICYgTUJUWVBFX1JFTU9URSkpIHsKKyAgICAgIC8qIFNraXAgcmVtb3RlIG1haWxib3gg
+Ki8KKyAgICAgIHJldHVybiAwOworICAgIH0KKwogICAgIGlmICghcikgewogCXBhdGggPSB4c3Ry
+ZHVwKGlucGF0aCk7CiAJaWYgKGlubXBhdGgpIG1wYXRoID0geHN0cmR1cChpbm1wYXRoKTsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

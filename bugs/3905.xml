@@ -1,0 +1,438 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3905</bug_id>
+          
+          <creation_ts>2015-10-06 11:44 EDT</creation_ts>
+          <short_desc>building 2.5.x with -DUSE_SETPROCTITLE lets segfault all daemons on connect on el6 and el7</short_desc>
+          <delta_ts>2015-10-15 21:09:53 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="elliefm">ellie@fastmail.com</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-06 11:44:03 EDT</bug_when>
+            <thetext>I used -DUSE_SETPROCTITLE ever since 2.3.x up to 2.4.18 on redhat el5 and el6.
+
+I now built cyrus-imapd 2.5.6 an el6 using it again and all daemons fail in setproctitle() segfaulting on connect.
+
+Looking at the core reveals that...
+
+#0  0x00007f43b7875630 in setproctitle (fmt=&lt;value optimized out&gt;) at imap/setproctitle.c:275
+275			buf[i] = &apos;\0&apos;;
+
+fails, because the preceeding
+i = LastArgv - Argv[0] - 2;
+sets i to
+(gdb) print i
+$2 = -302292573
+
+based on
+(gdb) print Argv[0]
+$3 = 0x5d312e302e302e37 &lt;Address 0x5d312e302e302e37 out of bounds&gt;
+(gdb) print Argv
+$4 = (char **) 0x7f43ba3df030
+
+So, something messes up Argv[0] for the SPT_REUSEARGV codepath.
+
+I did some research, but until now I was not able to detect the cause.
+
+I tried the same with 2.5.5 on el7 and it segfaults as well.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-06 11:46:06 EDT</bug_when>
+            <thetext>Sorry...
+(gdb) print LastArgv
+$5 = 0x7fff1c2b8fdc &quot;&quot;
+
+was missing in the original report.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-07 09:39:44 EDT</bug_when>
+            <thetext>Looking at
+(gdb) print Argv[0]
+$3 = 0x5d312e302e302e37 &lt;Address 0x5d312e302e302e37 out of bounds&gt;
+again... looks like a pointer overwritten by a string (all ASCII).
+
+IMO it is caused by a change in master/service(-thread).c
+
+In 2.4.x
+    char **newargv = (char **) xmalloc(ARGV_GROW * sizeof(char *));
+with
+    newargv[newargc++] = argv[0];
+was used. What makes SPT_REUSEARGV possible, since argv[0] pointer stays unchanged for setproctitle_init().
+
+In 2.5.x
+    strarray_t newargv = STRARRAY_INITIALIZER;
+and
+    strarray_append(&amp;newargv, argv[0]);
+is used, which strdup&apos;s argv[0]. IMO it is not possible to use SPT_REUSEARGV in this situation. 
+
+Since USE_SETPROCTITLE is essential for us and SPT_REUSEARGV seems the only possible way on linux I see no other way then not using strarray_t or another way to transport argv[0] to setproctitle_init() is found.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-07 11:00:08 EDT</bug_when>
+            <thetext>Created an attachment (id=1557)
+PoC patch that passing original argv fixes setproctitle
+
+This patch adds origargv as fourth parameter to service_init() and uses it for setproctitle_init(). I already built my cyrus-imapd with it and it works as expected. No more segfaults and proctitle is correct in &quot;ps&quot; output.
+
+I flagged it as PoC since I think it is an ugly solution. Not sure how to &quot;fix&quot; this properly to meet project standards.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2015-10-12 20:42:12 EDT</bug_when>
+            <thetext>The SPT_REUSEARGV code path is the fall back if configure doesn&apos;t detect any other way to do it, but also doesn&apos;t detect that it&apos;s impossible (=&gt; SPT_NONE).
+
+I haven&apos;t been able to reproduce the crash (master, debian testing), but that seems accidental more than anything.  setproctitle_init assumes argv[0]..envp[n] is a coherent chunk of memory, and saves some pointers so it can find this chunk again.  When we pass it an argv where argv[0] is a strdup&apos;d string we&apos;re going to cause all sorts of havoc.
+
+I guess in my case it doesn&apos;t crash because the allocator is putting the individually strdrup&apos;d argv elements adjacent to each other, so it&apos;s still &quot;safe&quot; to overwrite them (albeit with no useful effect).  But I can see how an allocator that spreads them around is going to lead to setproctitle() writing into memory that it&apos;s not allowed to. *boom* 
+
+So setproctitle_init needs a pointer to the real argv space that it can muck about in.  Going by the 2.4 code, it seems like it&apos;s fine for argv to be wherever, but argv[0] must point to the real thing.
+
+There&apos;s a few approaches we could take here:
+
+1) Like your patch, add an extra argument for passing the real argv memory through to service_init, in addition to the strarray&apos;d version.  Agreed, this is kind of an ugly solution
+
+2) Revert cdf108a9, which converted the newargv code from a realloc loop to use strarray_t
+
+3) Change the newargv code to use strarray_appendm() (which doesn&apos;t strdup its argument) rather than strarray_append() (which does).  This would mean we&apos;d have a strarray_t where each element pointed into the original argv space.  I think this is basically the same as the original realloc loop code, except that the strarray functions are doing the work.
+
+I was going to suggest 2, until I discovered that strarray_appendm() exists, so now I think 3 is the way to go.
+
+
+Also, it looks like Linux has had a way to set the process name without clobbering argv since 2.6.9 (~2004, which is long after setproctitle got any serious love), using something like prctl(PR_SET_NAME, &quot;newname&quot;)
+
+&gt;        PR_SET_NAME (since Linux 2.6.9)
+&gt;               Set the name of the calling thread, using the value in the location pointed  to  by  (char *)
+&gt;               arg2.   The  name  can  be  up to 16 bytes long, and should be null-terminated if it contains
+&gt;               fewer bytes.  This is the same attribute  that  can  be  set  via  pthread_setname_np(3)  and
+&gt;               retrieved   using   pthread_getname_np(3).    The   attribute   is  likewise  accessible  via
+&gt;               /proc/self/task/[tid]/comm, where tid is the name of the calling thread.
+
+I&apos;m not entirely sure whether the &quot;calling thread&quot; vs &quot;calling process&quot; distinction is going to be an issue... there&apos;s some (old) discussion around different invocations of ps showing the prctl()&apos;d name vs the argv name which might or might not still be relevant: http://stackoverflow.com/questions/16165667/change-process-name-without-change-argv0-in-linux
+
+Also, it&apos;s limited to 16 bytes, where we currently assume at least 2048, and we try to put a lot of info in there:
+
+&gt; imap/proc.c
+&gt; 164:    setproctitle(&quot;%s: %s %s %s %s&quot;, servicename, clienthost, userid, mailbox, cmd);
+
+So maybe it&apos;s not actually useful to us :(  But even if we did detect and use this on linux, there&apos;s probably still platforms on which we&apos;re falling back to SPT_REUSEARGV so we do need the setproctitle_init argv to point to the real argv space.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2015-10-12 20:43:03 EDT</bug_when>
+            <thetext>Created an attachment (id=1559)
+pass real argv contents to setproctitle_init
+
+The attached patch implements approach 3.  Does it fix things for you?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-14 06:07:01 EDT</bug_when>
+            <thetext>looks good.
+
+Not crashing on connect and
+ps ax
+shows...
+28064 ?        S      0:00 Bimap: localhost.localdomain [127.0.0.1]      
+
+Well done;-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2015-10-15 21:09:53 EDT</bug_when>
+            <thetext>That patch is now in git on cyrus-imapd-2.5 and master branches.  I&apos;ve also renamed newargv to service_argv and added some commentary explaining what&apos;s going on.
+
+Fix will be included in 2.5.7 (no current ETA though)</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1557</attachid>
+            <date>2015-10-07 11:00 EDT</date>
+            <desc>PoC patch that passing original argv fixes setproctitle</desc>
+            <filename>cyrus-imapd256-setproctitlefix.patch</filename>
+            <type>text/plain</type>
+            <size>9707</size>
+            <attacher>wbreyha@gmx.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXJOIGN5cnVzLWltYXBkLTIuNS42L2ltYXAvZnVkLmMgY3lydXMtaW1hcGQtMi41LjYu
+cHJvY2ZpeC9pbWFwL2Z1ZC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjUuNi9pbWFwL2Z1ZC5jCTIwMTUt
+MDktMTEgMDM6MTg6MzguMDAwMDAwMDAwICswMjAwCisrKyBjeXJ1cy1pbWFwZC0yLjUuNi5wcm9j
+Zml4L2ltYXAvZnVkLmMJMjAxNS0xMC0wNyAxNjo0ODowMi45MjU1MTk5NzggKzAyMDAKQEAgLTE0
+OSwxMSArMTQ5LDExIEBACiAgKiBydW4gb25jZSB3aGVuIHByb2Nlc3MgaXMgZm9ya2VkOwogICog
+TVVTVCBOT1QgZXhpdCBkaXJlY3RseTsgbXVzdCByZXR1cm4gd2l0aCBub24temVybyBlcnJvciBj
+b2RlCiAgKi8KLWludCBzZXJ2aWNlX2luaXQoaW50IGFyZ2MsIGNoYXIgKiphcmd2LCBjaGFyICoq
+ZW52cCkKK2ludCBzZXJ2aWNlX2luaXQoaW50IGFyZ2MsIGNoYXIgKiphcmd2LCBjaGFyICoqZW52
+cCwgY2hhciAqKm9yaWdhcmd2KQogewogICAgIGlmIChnZXRldWlkKCkgPT0gMCkgZmF0YWwoIm11
+c3QgcnVuIGFzIHRoZSBDeXJ1cyB1c2VyIiwgRUNfVVNBR0UpOwogCi0gICAgc2V0cHJvY3RpdGxl
+X2luaXQoYXJnYywgYXJndiwgZW52cCk7CisgICAgc2V0cHJvY3RpdGxlX2luaXQoYXJnYywgb3Jp
+Z2FyZ3YsIGVudnApOwogCiAgICAgc2lnbmFsc19zZXRfc2h1dGRvd24oJnNodXRfZG93bik7CiAK
+ZGlmZiAtdXJOIGN5cnVzLWltYXBkLTIuNS42L2ltYXAvaHR0cGQuYyBjeXJ1cy1pbWFwZC0yLjUu
+Ni5wcm9jZml4L2ltYXAvaHR0cGQuYwotLS0gY3lydXMtaW1hcGQtMi41LjYvaW1hcC9odHRwZC5j
+CTIwMTUtMDktMTEgMDM6NTA6MTUuMDAwMDAwMDAwICswMjAwCisrKyBjeXJ1cy1pbWFwZC0yLjUu
+Ni5wcm9jZml4L2ltYXAvaHR0cGQuYwkyMDE1LTEwLTA3IDE2OjQ4OjAyLjkyNjUyMDAxOCArMDIw
+MApAQCAtMzk1LDcgKzM5NSw3IEBACiAgKi8KIGludCBzZXJ2aWNlX2luaXQoaW50IGFyZ2MgX19h
+dHRyaWJ1dGVfXygodW51c2VkKSksCiAJCSBjaGFyICoqYXJndiBfX2F0dHJpYnV0ZV9fKCh1bnVz
+ZWQpKSwKLQkJIGNoYXIgKiplbnZwIF9fYXR0cmlidXRlX18oKHVudXNlZCkpKQorCQkgY2hhciAq
+KmVudnAgX19hdHRyaWJ1dGVfXygodW51c2VkKSksIGNoYXIgKipvcmlnYXJndikKIHsKICAgICBp
+bnQgciwgb3B0LCBpLCBhbGxvd190cmFjZSA9IGNvbmZpZ19nZXRzd2l0Y2goSU1BUE9QVF9IVFRQ
+QUxMT1dUUkFDRSk7CiAKQEAgLTQwNCw3ICs0MDQsNyBAQAogICAgIGluaXRpYWxpemVfaHR0cF9l
+cnJvcl90YWJsZSgpOwogCiAgICAgaWYgKGdldGV1aWQoKSA9PSAwKSBmYXRhbCgibXVzdCBydW4g
+YXMgdGhlIEN5cnVzIHVzZXIiLCBFQ19VU0FHRSk7Ci0gICAgc2V0cHJvY3RpdGxlX2luaXQoYXJn
+YywgYXJndiwgZW52cCk7CisgICAgc2V0cHJvY3RpdGxlX2luaXQoYXJnYywgb3JpZ2FyZ3YsIGVu
+dnApOwogCiAgICAgLyogc2V0IHNpZ25hbCBoYW5kbGVycyAqLwogICAgIHNpZ25hbHNfc2V0X3No
+dXRkb3duKCZzaHV0X2Rvd24pOwpkaWZmIC11ck4gY3lydXMtaW1hcGQtMi41LjYvaW1hcC9pbWFw
+ZC5jIGN5cnVzLWltYXBkLTIuNS42LnByb2NmaXgvaW1hcC9pbWFwZC5jCi0tLSBjeXJ1cy1pbWFw
+ZC0yLjUuNi9pbWFwL2ltYXBkLmMJMjAxNS0wOS0xMSAwMzo1MDoxNS4wMDAwMDAwMDAgKzAyMDAK
+KysrIGN5cnVzLWltYXBkLTIuNS42LnByb2NmaXgvaW1hcC9pbWFwZC5jCTIwMTUtMTAtMDcgMTY6
+NDg6MDIuOTI4NTIwMDk5ICswMjAwCkBAIC04MTQsMTIgKzgxNCwxMiBAQAogICogcnVuIG9uY2Ug
+d2hlbiBwcm9jZXNzIGlzIGZvcmtlZDsKICAqIE1VU1QgTk9UIGV4aXQgZGlyZWN0bHk7IG11c3Qg
+cmV0dXJuIHdpdGggbm9uLXplcm8gZXJyb3IgY29kZQogICovCi1pbnQgc2VydmljZV9pbml0KGlu
+dCBhcmdjLCBjaGFyICoqYXJndiwgY2hhciAqKmVudnApCitpbnQgc2VydmljZV9pbml0KGludCBh
+cmdjLCBjaGFyICoqYXJndiwgY2hhciAqKmVudnAsIGNoYXIgKipvcmlnYXJndikKIHsKICAgICBp
+bnQgb3B0OwogCiAgICAgaWYgKGdldGV1aWQoKSA9PSAwKSBmYXRhbCgibXVzdCBydW4gYXMgdGhl
+IEN5cnVzIHVzZXIiLCBFQ19VU0FHRSk7Ci0gICAgc2V0cHJvY3RpdGxlX2luaXQoYXJnYywgYXJn
+diwgZW52cCk7CisgICAgc2V0cHJvY3RpdGxlX2luaXQoYXJnYywgb3JpZ2FyZ3YsIGVudnApOwog
+CiAgICAgLyogc2V0IHNpZ25hbCBoYW5kbGVycyAqLwogICAgIHNpZ25hbHNfc2V0X3NodXRkb3du
+KCZzaHV0X2Rvd24pOwpkaWZmIC11ck4gY3lydXMtaW1hcGQtMi41LjYvaW1hcC9sbXRwZC5jIGN5
+cnVzLWltYXBkLTIuNS42LnByb2NmaXgvaW1hcC9sbXRwZC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjUu
+Ni9pbWFwL2xtdHBkLmMJMjAxNS0wOS0xMSAwMzoxODozOC4wMDAwMDAwMDAgKzAyMDAKKysrIGN5
+cnVzLWltYXBkLTIuNS42LnByb2NmaXgvaW1hcC9sbXRwZC5jCTIwMTUtMTAtMDcgMTY6NDg6MDIu
+OTI4NTIwMDk5ICswMjAwCkBAIC0xODUsNyArMTg1LDggQEAKIAogaW50IHNlcnZpY2VfaW5pdChp
+bnQgYXJnYyBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSwKIAkJIGNoYXIgKiphcmd2IF9fYXR0cmli
+dXRlX18oKHVudXNlZCkpLAotCQkgY2hhciAqKmVudnAgX19hdHRyaWJ1dGVfXygodW51c2VkKSkp
+CisJCSBjaGFyICoqZW52cCBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSwKKyAgICAgICAgICAgICAg
+ICAgY2hhciAqKm9yaWdhcmd2IF9fYXR0cmlidXRlX18oKHVudXNlZCkpKQogewogICAgIGludCBy
+OwogCmRpZmYgLXVyTiBjeXJ1cy1pbWFwZC0yLjUuNi9pbWFwL211cGRhdGUuYyBjeXJ1cy1pbWFw
+ZC0yLjUuNi5wcm9jZml4L2ltYXAvbXVwZGF0ZS5jCi0tLSBjeXJ1cy1pbWFwZC0yLjUuNi9pbWFw
+L211cGRhdGUuYwkyMDE1LTA5LTExIDAzOjE4OjM4LjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMt
+aW1hcGQtMi41LjYucHJvY2ZpeC9pbWFwL211cGRhdGUuYwkyMDE1LTEwLTA3IDE2OjQ4OjAyLjky
+OTUyMDEzOSArMDIwMApAQCAtNDc5LDcgKzQ3OSw3IEBACiAgKiBNVVNUIE5PVCBleGl0IGRpcmVj
+dGx5OyBtdXN0IHJldHVybiB3aXRoIG5vbi16ZXJvIGVycm9yIGNvZGUKICAqLwogaW50IHNlcnZp
+Y2VfaW5pdChpbnQgYXJnYywgY2hhciAqKmFyZ3YsCi0JCSBjaGFyICoqZW52cCBfX2F0dHJpYnV0
+ZV9fKCh1bnVzZWQpKSkKKwkJIGNoYXIgKiplbnZwIF9fYXR0cmlidXRlX18oKHVudXNlZCkpLCBj
+aGFyICoqb3JpZ2FyZ3YgX19hdHRyaWJ1dGVfXygodW51c2VkKSkpCiB7CiAgICAgaW50IGksIHIs
+IHdvcmtlcnNfdG9fc3RhcnQ7CiAgICAgaW50IG9wdCwgYXV0b3NlbGVjdCA9IDA7CmRpZmYgLXVy
+TiBjeXJ1cy1pbWFwZC0yLjUuNi9pbWFwL25udHBkLmMgY3lydXMtaW1hcGQtMi41LjYucHJvY2Zp
+eC9pbWFwL25udHBkLmMKLS0tIGN5cnVzLWltYXBkLTIuNS42L2ltYXAvbm50cGQuYwkyMDE1LTA5
+LTExIDAzOjUwOjE1LjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQtMi41LjYucHJvY2Zp
+eC9pbWFwL25udHBkLmMJMjAxNS0xMC0wNyAxNjo0ODowMi45MzA1MjAxNzkgKzAyMDAKQEAgLTQy
+Nyw3ICs0MjcsNyBAQAogICovCiBpbnQgc2VydmljZV9pbml0KGludCBhcmdjIF9fYXR0cmlidXRl
+X18oKHVudXNlZCkpLAogCQkgY2hhciAqKmFyZ3YgX19hdHRyaWJ1dGVfXygodW51c2VkKSksCi0J
+CSBjaGFyICoqZW52cCBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSkKKwkJIGNoYXIgKiplbnZwIF9f
+YXR0cmlidXRlX18oKHVudXNlZCkpLCBjaGFyICoqb3JpZ2FyZ3YpCiB7CiAgICAgaW50IG9wdDsK
+ICAgICBjb25zdCBjaGFyICpwcmVmaXg7CkBAIC00MzUsNyArNDM1LDcgQEAKICAgICBpbml0aWFs
+aXplX25udHBfZXJyb3JfdGFibGUoKTsKIAogICAgIGlmIChnZXRldWlkKCkgPT0gMCkgZmF0YWwo
+Im11c3QgcnVuIGFzIHRoZSBDeXJ1cyB1c2VyIiwgRUNfVVNBR0UpOwotICAgIHNldHByb2N0aXRs
+ZV9pbml0KGFyZ2MsIGFyZ3YsIGVudnApOworICAgIHNldHByb2N0aXRsZV9pbml0KGFyZ2MsIG9y
+aWdhcmd2LCBlbnZwKTsKIAogICAgIC8qIHNldCBzaWduYWwgaGFuZGxlcnMgKi8KICAgICBzaWdu
+YWxzX3NldF9zaHV0ZG93bigmc2h1dF9kb3duKTsKZGlmZiAtdXJOIGN5cnVzLWltYXBkLTIuNS42
+L2ltYXAvcG9wM2QuYyBjeXJ1cy1pbWFwZC0yLjUuNi5wcm9jZml4L2ltYXAvcG9wM2QuYwotLS0g
+Y3lydXMtaW1hcGQtMi41LjYvaW1hcC9wb3AzZC5jCTIwMTUtMDktMTEgMDM6NTA6MTUuMDAwMDAw
+MDAwICswMjAwCisrKyBjeXJ1cy1pbWFwZC0yLjUuNi5wcm9jZml4L2ltYXAvcG9wM2QuYwkyMDE1
+LTEwLTA3IDE2OjQ4OjAyLjkzMDUyMDE3OSArMDIwMApAQCAtNDI2LDEzICs0MjYsMTMgQEAKICAq
+LwogaW50IHNlcnZpY2VfaW5pdChpbnQgYXJnYyBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSwKIAkJ
+IGNoYXIgKiphcmd2IF9fYXR0cmlidXRlX18oKHVudXNlZCkpLAotCQkgY2hhciAqKmVudnAgX19h
+dHRyaWJ1dGVfXygodW51c2VkKSkpCisJCSBjaGFyICoqZW52cCBfX2F0dHJpYnV0ZV9fKCh1bnVz
+ZWQpKSwgY2hhciAqKm9yaWdhcmd2KQogewogICAgIGludCByOwogICAgIGludCBvcHQ7CiAKICAg
+ICBpZiAoZ2V0ZXVpZCgpID09IDApIGZhdGFsKCJtdXN0IHJ1biBhcyB0aGUgQ3lydXMgdXNlciIs
+IEVDX1VTQUdFKTsKLSAgICBzZXRwcm9jdGl0bGVfaW5pdChhcmdjLCBhcmd2LCBlbnZwKTsKKyAg
+ICBzZXRwcm9jdGl0bGVfaW5pdChhcmdjLCBvcmlnYXJndiwgZW52cCk7CiAKICAgICAvKiBzZXQg
+c2lnbmFsIGhhbmRsZXJzICovCiAgICAgc2lnbmFsc19zZXRfc2h1dGRvd24oJnNodXRfZG93bik7
+CmRpZmYgLXVyTiBjeXJ1cy1pbWFwZC0yLjUuNi9pbWFwL3NtbWFwZC5jIGN5cnVzLWltYXBkLTIu
+NS42LnByb2NmaXgvaW1hcC9zbW1hcGQuYwotLS0gY3lydXMtaW1hcGQtMi41LjYvaW1hcC9zbW1h
+cGQuYwkyMDE1LTA5LTExIDAzOjE4OjM4LjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQt
+Mi41LjYucHJvY2ZpeC9pbWFwL3NtbWFwZC5jCTIwMTUtMTAtMDcgMTY6NDg6MDIuOTMxNTIwMjE5
+ICswMjAwCkBAIC0xNzUsMTMgKzE3NSwxMyBAQAogICogcnVuIG9uY2Ugd2hlbiBwcm9jZXNzIGlz
+IGZvcmtlZDsKICAqIE1VU1QgTk9UIGV4aXQgZGlyZWN0bHk7IG11c3QgcmV0dXJuIHdpdGggbm9u
+LXplcm8gZXJyb3IgY29kZQogICovCi1pbnQgc2VydmljZV9pbml0KGludCBhcmdjLCBjaGFyICoq
+YXJndiwgY2hhciAqKmVudnApCitpbnQgc2VydmljZV9pbml0KGludCBhcmdjLCBjaGFyICoqYXJn
+diwgY2hhciAqKmVudnAsIGNoYXIgKipvcmlnYXJndikKIHsKICAgICBpbnQgcjsKIAogICAgIGlm
+IChnZXRldWlkKCkgPT0gMCkgZmF0YWwoIm11c3QgcnVuIGFzIHRoZSBDeXJ1cyB1c2VyIiwgRUNf
+VVNBR0UpOwogCi0gICAgc2V0cHJvY3RpdGxlX2luaXQoYXJnYywgYXJndiwgZW52cCk7CisgICAg
+c2V0cHJvY3RpdGxlX2luaXQoYXJnYywgb3JpZ2FyZ3YsIGVudnApOwogCiAgICAgc2lnbmFsc19z
+ZXRfc2h1dGRvd24oJnNodXRfZG93bik7CiAgICAgc2lnbmFsKFNJR1BJUEUsIFNJR19JR04pOwpk
+aWZmIC11ck4gY3lydXMtaW1hcGQtMi41LjYvaW1hcC9zeW5jX3NlcnZlci5jIGN5cnVzLWltYXBk
+LTIuNS42LnByb2NmaXgvaW1hcC9zeW5jX3NlcnZlci5jCi0tLSBjeXJ1cy1pbWFwZC0yLjUuNi9p
+bWFwL3N5bmNfc2VydmVyLmMJMjAxNS0wOS0xMSAwMzo1MDoxNS4wMDAwMDAwMDAgKzAyMDAKKysr
+IGN5cnVzLWltYXBkLTIuNS42LnByb2NmaXgvaW1hcC9zeW5jX3NlcnZlci5jCTIwMTUtMTAtMDcg
+MTY6NDg6MDIuOTMxNTIwMjE5ICswMjAwCkBAIC0yNDUsMTIgKzI0NSwxMyBAQAogICovCiBpbnQg
+c2VydmljZV9pbml0KGludCBhcmdjIF9fYXR0cmlidXRlX18oKHVudXNlZCkpLAogCQkgY2hhciAq
+KmFyZ3YgX19hdHRyaWJ1dGVfXygodW51c2VkKSksCi0JCSBjaGFyICoqZW52cCBfX2F0dHJpYnV0
+ZV9fKCh1bnVzZWQpKSkKKwkJIGNoYXIgKiplbnZwIF9fYXR0cmlidXRlX18oKHVudXNlZCkpLAor
+ICAgICAgICAgICAgICAgICBjaGFyICoqb3JpZ2FyZ3YpCiB7CiAgICAgaW50IG9wdCwgcjsKIAog
+ICAgIGlmIChnZXRldWlkKCkgPT0gMCkgZmF0YWwoIm11c3QgcnVuIGFzIHRoZSBDeXJ1cyB1c2Vy
+IiwgRUNfVVNBR0UpOwotICAgIHNldHByb2N0aXRsZV9pbml0KGFyZ2MsIGFyZ3YsIGVudnApOwor
+ICAgIHNldHByb2N0aXRsZV9pbml0KGFyZ2MsIG9yaWdhcmd2LCBlbnZwKTsKIAogICAgIC8qIHNl
+dCBzaWduYWwgaGFuZGxlcnMgKi8KICAgICBzaWduYWxzX3NldF9zaHV0ZG93bigmc2h1dF9kb3du
+KTsKZGlmZiAtdXJOIGN5cnVzLWltYXBkLTIuNS42L21hc3Rlci9zZXJ2aWNlLmMgY3lydXMtaW1h
+cGQtMi41LjYucHJvY2ZpeC9tYXN0ZXIvc2VydmljZS5jCi0tLSBjeXJ1cy1pbWFwZC0yLjUuNi9t
+YXN0ZXIvc2VydmljZS5jCTIwMTUtMDktMTEgMDM6MTg6MzguMDAwMDAwMDAwICswMjAwCisrKyBj
+eXJ1cy1pbWFwZC0yLjUuNi5wcm9jZml4L21hc3Rlci9zZXJ2aWNlLmMJMjAxNS0xMC0wNyAxNjo0
+ODowMi45MzI1MjAyNjAgKzAyMDAKQEAgLTQxNSw3ICs0MTUsNyBAQAogCXJldHVybiAxOwogICAg
+IH0KIAotICAgIGlmIChzZXJ2aWNlX2luaXQobmV3YXJndi5jb3VudCwgbmV3YXJndi5kYXRhLCBl
+bnZwKSAhPSAwKSB7CisgICAgaWYgKHNlcnZpY2VfaW5pdChuZXdhcmd2LmNvdW50LCBuZXdhcmd2
+LmRhdGEsIGVudnAsIGFyZ3YpICE9IDApIHsKIAlpZiAoTUVTU0FHRV9NQVNURVJfT05fRVhJVCkg
+CiAJICAgIG5vdGlmeV9tYXN0ZXIoU1RBVFVTX0ZELCBNQVNURVJfU0VSVklDRV9VTkFWQUlMQUJM
+RSk7CiAJcmV0dXJuIDE7CmRpZmYgLXVyTiBjeXJ1cy1pbWFwZC0yLjUuNi9tYXN0ZXIvc2Vydmlj
+ZS5oIGN5cnVzLWltYXBkLTIuNS42LnByb2NmaXgvbWFzdGVyL3NlcnZpY2UuaAotLS0gY3lydXMt
+aW1hcGQtMi41LjYvbWFzdGVyL3NlcnZpY2UuaAkyMDE1LTA3LTA2IDA3OjM2OjM0LjAwMDAwMDAw
+MCArMDIwMAorKysgY3lydXMtaW1hcGQtMi41LjYucHJvY2ZpeC9tYXN0ZXIvc2VydmljZS5oCTIw
+MTUtMTAtMDcgMTY6NDg6MDIuOTMyNTIwMjYwICswMjAwCkBAIC01NCw3ICs1NCw3IEBACiAgICAg
+TUFTVEVSX1NFUlZJQ0VfQ09OTkVDVElPTl9NVUxUSSA9IDB4MDQKIH07CiAKLWV4dGVybiBpbnQg
+c2VydmljZV9pbml0KGludCBhcmdjLCBjaGFyICoqYXJndiwgY2hhciAqKmVudnApOworZXh0ZXJu
+IGludCBzZXJ2aWNlX2luaXQoaW50IGFyZ2MsIGNoYXIgKiphcmd2LCBjaGFyICoqZW52cCwgY2hh
+ciAqKm9yaWdhcmd2KTsKIGV4dGVybiBpbnQgc2VydmljZV9tYWluKGludCBhcmdjLCBjaGFyICoq
+YXJndiwgY2hhciAqKmVudnApOwogZXh0ZXJuIGludCBzZXJ2aWNlX21haW5fZmQoaW50IGZkLCBp
+bnQgYXJnYywgY2hhciAqKmFyZ3YsIGNoYXIgKiplbnZwKTsKIGV4dGVybiB2b2lkIHNlcnZpY2Vf
+YWJvcnQoaW50IGVycm9yKTsKZGlmZiAtdXJOIGN5cnVzLWltYXBkLTIuNS42L21hc3Rlci9zZXJ2
+aWNlLXRocmVhZC5jIGN5cnVzLWltYXBkLTIuNS42LnByb2NmaXgvbWFzdGVyL3NlcnZpY2UtdGhy
+ZWFkLmMKLS0tIGN5cnVzLWltYXBkLTIuNS42L21hc3Rlci9zZXJ2aWNlLXRocmVhZC5jCTIwMTUt
+MDktMTEgMDM6MTg6MzguMDAwMDAwMDAwICswMjAwCisrKyBjeXJ1cy1pbWFwZC0yLjUuNi5wcm9j
+Zml4L21hc3Rlci9zZXJ2aWNlLXRocmVhZC5jCTIwMTUtMTAtMDcgMTY6NDg6MDIuOTMyNTIwMjYw
+ICswMjAwCkBAIC0yNDEsNyArMjQxLDcgQEAKIAlyZXR1cm4gMTsKICAgICB9CiAKLSAgICBpZiAo
+c2VydmljZV9pbml0KG5ld2FyZ3YuY291bnQsIG5ld2FyZ3YuZGF0YSwgZW52cCkgIT0gMCkgewor
+ICAgIGlmIChzZXJ2aWNlX2luaXQobmV3YXJndi5jb3VudCwgbmV3YXJndi5kYXRhLCBlbnZwLCBh
+cmd2KSAhPSAwKSB7CiAJaWYgKE1FU1NBR0VfTUFTVEVSX09OX0VYSVQpIAogCSAgICBub3RpZnlf
+bWFzdGVyKFNUQVRVU19GRCwgTUFTVEVSX1NFUlZJQ0VfVU5BVkFJTEFCTEUpOwogCXJldHVybiAx
+OwpkaWZmIC11ck4gY3lydXMtaW1hcGQtMi41LjYvbm90aWZ5ZC9ub3RpZnlkLmMgY3lydXMtaW1h
+cGQtMi41LjYucHJvY2ZpeC9ub3RpZnlkL25vdGlmeWQuYwotLS0gY3lydXMtaW1hcGQtMi41LjYv
+bm90aWZ5ZC9ub3RpZnlkLmMJMjAxNS0wOS0xMSAwMzoxODozOC4wMDAwMDAwMDAgKzAyMDAKKysr
+IGN5cnVzLWltYXBkLTIuNS42LnByb2NmaXgvbm90aWZ5ZC9ub3RpZnlkLmMJMjAxNS0xMC0wNyAx
+Njo0ODowMi45MzM1MjAzMDAgKzAyMDAKQEAgLTIwOSw3ICsyMDksNyBAQAogICAgIGV4aXQoRUNf
+VVNBR0UpOwogfQogCi1FWFBPUlRFRCBpbnQgc2VydmljZV9pbml0KGludCBhcmdjLCBjaGFyICoq
+YXJndiwgY2hhciAqKmVudnAgX19hdHRyaWJ1dGVfXygodW51c2VkKSkpCitFWFBPUlRFRCBpbnQg
+c2VydmljZV9pbml0KGludCBhcmdjLCBjaGFyICoqYXJndiwgY2hhciAqKmVudnAgX19hdHRyaWJ1
+dGVfXygodW51c2VkKSksIGNoYXIgKipvcmlnYXJndiBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSkK
+IHsKICAgICBpbnQgb3B0OwogICAgIGNoYXIgKm1ldGhvZCA9ICJudWxsIjsKZGlmZiAtdXJOIGN5
+cnVzLWltYXBkLTIuNS42L3B0Y2xpZW50L3B0bG9hZGVyLmMgY3lydXMtaW1hcGQtMi41LjYucHJv
+Y2ZpeC9wdGNsaWVudC9wdGxvYWRlci5jCi0tLSBjeXJ1cy1pbWFwZC0yLjUuNi9wdGNsaWVudC9w
+dGxvYWRlci5jCTIwMTUtMDktMTEgMDM6MTg6MzguMDAwMDAwMDAwICswMjAwCisrKyBjeXJ1cy1p
+bWFwZC0yLjUuNi5wcm9jZml4L3B0Y2xpZW50L3B0bG9hZGVyLmMJMjAxNS0xMC0wNyAxNjo0ODow
+Mi45MzM1MjAzMDAgKzAyMDAKQEAgLTEyNiw3ICsxMjYsNyBAQAogc3RhdGljIGNoYXIgcHRjbGll
+bnRfZGVidWcgPSAwOwogc3RydWN0IGRiICpwdHNkYiA9IE5VTEw7CiAgIAotaW50IHNlcnZpY2Vf
+aW5pdChpbnQgYXJnYywgY2hhciAqYXJndltdLCBjaGFyICoqZW52cCBfX2F0dHJpYnV0ZV9fKCh1
+bnVzZWQpKSkKK2ludCBzZXJ2aWNlX2luaXQoaW50IGFyZ2MsIGNoYXIgKmFyZ3ZbXSwgY2hhciAq
+KmVudnAgX19hdHRyaWJ1dGVfXygodW51c2VkKSksIGNoYXIgKipvcmlnYXJndiBfX2F0dHJpYnV0
+ZV9fKCh1bnVzZWQpKSkKIHsKICAgICBpbnQgcjsKICAgICBpbnQgb3B0OwpkaWZmIC11ck4gY3ly
+dXMtaW1hcGQtMi41LjYvdGltc2lldmVkL3RpbXNpZXZlZC5jIGN5cnVzLWltYXBkLTIuNS42LnBy
+b2NmaXgvdGltc2lldmVkL3RpbXNpZXZlZC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjUuNi90aW1zaWV2
+ZWQvdGltc2lldmVkLmMJMjAxNS0wOS0xMSAwMzo1MDoxNS4wMDAwMDAwMDAgKzAyMDAKKysrIGN5
+cnVzLWltYXBkLTIuNS42LnByb2NmaXgvdGltc2lldmVkL3RpbXNpZXZlZC5jCTIwMTUtMTAtMDcg
+MTY6NDg6NTcuNzYzNzI3ODUwICswMjAwCkBAIC0yMTQsNyArMjE0LDcgQEAKIAogRVhQT1JURUQg
+aW50IHNlcnZpY2VfaW5pdChpbnQgYXJnYyBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSwKICAgICAg
+ICAgICAgICAgICAgY2hhciAqKmFyZ3YgX19hdHRyaWJ1dGVfXygodW51c2VkKSksCi0gICAgICAg
+ICAgICAgICAgIGNoYXIgKiplbnZwIF9fYXR0cmlidXRlX18oKHVudXNlZCkpKQorICAgICAgICAg
+ICAgICAgICBjaGFyICoqZW52cCBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSwgY2hhciAqKm9yaWdh
+cmd2IF9fYXR0cmlidXRlX18oKHVudXNlZCkpKQogewogICAgIGdsb2JhbF9zYXNsX2luaXQoMSwg
+MSwgbXlzYXNsX2NiKTsKIAo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1559</attachid>
+            <date>2015-10-12 20:43 EDT</date>
+            <desc>pass real argv contents to setproctitle_init</desc>
+            <filename>cyrus-imapd-2.5.x-setproctitle.patch</filename>
+            <type>text/plain</type>
+            <size>2403</size>
+            <attacher>ellie@fastmail.com</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL21hc3Rlci9zZXJ2aWNlLXRocmVhZC5jIGIvbWFzdGVyL3NlcnZpY2UtdGhy
+ZWFkLmMKaW5kZXggMGRhYjdjOC4uZWY3ZjQzMiAxMDA2NDQKLS0tIGEvbWFzdGVyL3NlcnZpY2Ut
+dGhyZWFkLmMKKysrIGIvbWFzdGVyL3NlcnZpY2UtdGhyZWFkLmMKQEAgLTE2Miw3ICsxNjIsNyBA
+QCBpbnQgbWFpbihpbnQgYXJnYywgY2hhciAqKmFyZ3YsIGNoYXIgKiplbnZwKQogICAgIG9wdGVy
+ciA9IDA7IC8qIGRpc2FibGUgZXJyb3IgcmVwb3J0aW5nLAogCQkgICBzaW5jZSB3ZSBkb24ndCBr
+bm93IGFib3V0IHNlcnZpY2Utc3BlY2lmaWMgb3B0aW9ucyAqLwogCi0gICAgc3RyYXJyYXlfYXBw
+ZW5kKCZuZXdhcmd2LCBhcmd2WzBdKTsKKyAgICBzdHJhcnJheV9hcHBlbmRtKCZuZXdhcmd2LCBh
+cmd2WzBdKTsKIAogICAgIHdoaWxlICgob3B0ID0gZ2V0b3B0KGFyZ2MsIGFyZ3YsICJDOkQiKSkg
+IT0gRU9GKSB7CiAJc3dpdGNoIChvcHQpIHsKQEAgLTE3MywxOCArMTczLDE4IEBAIGludCBtYWlu
+KGludCBhcmdjLCBjaGFyICoqYXJndiwgY2hhciAqKmVudnApCiAJICAgIGNhbGxfZGVidWdnZXIg
+PSAxOwogCSAgICBicmVhazsKIAlkZWZhdWx0OgotCSAgICBzdHJhcnJheV9hcHBlbmQoJm5ld2Fy
+Z3YsIGFyZ3Zbb3B0aW5kLTFdKTsKKwkgICAgc3RyYXJyYXlfYXBwZW5kbSgmbmV3YXJndiwgYXJn
+dltvcHRpbmQtMV0pOwogCiAJICAgIC8qIG9wdGlvbiBoYXMgYW4gYXJndW1lbnQgKi8KIAkgICAg
+aWYgKG9wdGluZCA8IGFyZ2MgJiYgYXJndltvcHRpbmRdWzBdICE9ICctJykKLQkJc3RyYXJyYXlf
+YXBwZW5kKCZuZXdhcmd2LCBhcmd2W29wdGluZCsrXSk7CisJCXN0cmFycmF5X2FwcGVuZG0oJm5l
+d2FyZ3YsIGFyZ3Zbb3B0aW5kKytdKTsKIAogCSAgICBicmVhazsKIAl9CiAgICAgfQogICAgIC8q
+IGdyYWIgdGhlIHJlbWFpbmluZyBhcmd1bWVudHMgKi8KICAgICBmb3IgKDsgb3B0aW5kIDwgYXJn
+Yzsgb3B0aW5kKyspCi0Jc3RyYXJyYXlfYXBwZW5kKCZuZXdhcmd2LCBhcmd2W29wdGluZF0pOwor
+CXN0cmFycmF5X2FwcGVuZG0oJm5ld2FyZ3YsIGFyZ3Zbb3B0aW5kXSk7CiAKICAgICBvcHRlcnIg
+PSAxOyAvKiBlbmFibGUgZXJyb3IgcmVwb3J0aW5nICovCiAgICAgb3B0aW5kID0gMTsgLyogcmVz
+ZXQgdGhlIG9wdGlvbiBpbmRleCBmb3IgcGFyc2luZyBieSB0aGUgc2VydmljZSAqLwpkaWZmIC0t
+Z2l0IGEvbWFzdGVyL3NlcnZpY2UuYyBiL21hc3Rlci9zZXJ2aWNlLmMKaW5kZXggYWUwNmM0OC4u
+ODYyZDQxMCAxMDA2NDQKLS0tIGEvbWFzdGVyL3NlcnZpY2UuYworKysgYi9tYXN0ZXIvc2Vydmlj
+ZS5jCkBAIC0zMDQsNyArMzA0LDcgQEAgaW50IG1haW4oaW50IGFyZ2MsIGNoYXIgKiphcmd2LCBj
+aGFyICoqZW52cCkKICAgICBvcHRlcnIgPSAwOyAvKiBkaXNhYmxlIGVycm9yIHJlcG9ydGluZywK
+IAkJICAgc2luY2Ugd2UgZG9uJ3Qga25vdyBhYm91dCBzZXJ2aWNlLXNwZWNpZmljIG9wdGlvbnMg
+Ki8KIAotICAgIHN0cmFycmF5X2FwcGVuZCgmbmV3YXJndiwgYXJndlswXSk7CisgICAgc3RyYXJy
+YXlfYXBwZW5kbSgmbmV3YXJndiwgYXJndlswXSk7CiAKICAgICB3aGlsZSAoKG9wdCA9IGdldG9w
+dChhcmdjLCBhcmd2LCAiQzpVOlQ6RCIpKSAhPSBFT0YpIHsKIAlpZiAoYXJndltvcHRpbmQtMV1b
+MF0gPT0gJy0nICYmIHN0cmxlbihhcmd2W29wdGluZC0xXSkgPiAyKSB7CkBAIC0zMzAsMTggKzMz
+MCwxOCBAQCBpbnQgbWFpbihpbnQgYXJnYywgY2hhciAqKmFyZ3YsIGNoYXIgKiplbnZwKQogCSAg
+ICBjYWxsX2RlYnVnZ2VyID0gMTsKIAkgICAgYnJlYWs7CiAJZGVmYXVsdDoKLQkgICAgc3RyYXJy
+YXlfYXBwZW5kKCZuZXdhcmd2LCBhcmd2W29wdGluZC0xXSk7CisJICAgIHN0cmFycmF5X2FwcGVu
+ZG0oJm5ld2FyZ3YsIGFyZ3Zbb3B0aW5kLTFdKTsKIAogCSAgICAvKiBvcHRpb24gaGFzIGFuIGFy
+Z3VtZW50ICovCiAJICAgIGlmIChvcHRpbmQgPCBhcmdjICYmIGFyZ3Zbb3B0aW5kXVswXSAhPSAn
+LScpCi0JCXN0cmFycmF5X2FwcGVuZCgmbmV3YXJndiwgYXJndltvcHRpbmQrK10pOworCQlzdHJh
+cnJheV9hcHBlbmRtKCZuZXdhcmd2LCBhcmd2W29wdGluZCsrXSk7CiAKIAkgICAgYnJlYWs7CiAJ
+fQogICAgIH0KICAgICAvKiBncmFiIHRoZSByZW1haW5pbmcgYXJndW1lbnRzICovCiAgICAgZm9y
+ICg7IG9wdGluZCA8IGFyZ2M7IG9wdGluZCsrKQotCXN0cmFycmF5X2FwcGVuZCgmbmV3YXJndiwg
+YXJndltvcHRpbmRdKTsKKwlzdHJhcnJheV9hcHBlbmRtKCZuZXdhcmd2LCBhcmd2W29wdGluZF0p
+OwogCiAgICAgb3B0ZXJyID0gMTsgLyogZW5hYmxlIGVycm9yIHJlcG9ydGluZyAqLwogICAgIG9w
+dGluZCA9IDE7IC8qIHJlc2V0IHRoZSBvcHRpb24gaW5kZXggZm9yIHBhcnNpbmcgYnkgdGhlIHNl
+cnZpY2UgKi8K
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,625 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3744</bug_id>
+          
+          <creation_ts>2012-10-10 13:23 EDT</creation_ts>
+          <short_desc>Cyrus process hangs causing a lock that spawns lots of other hanging processes.</short_desc>
+          <delta_ts>2016-07-25 12:15:35 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>matt.s@aptalaska.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>andreas@xss.co.at</cc>
+    
+    <cc>carlos.velasco@nimastelecom.com</cc>
+    
+    <cc>oleg.gorokhov@gmail.com</cc>
+    
+    <cc>thomas.jarosch@intra2net.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">matt.s@aptalaska.net</who>
+            <bug_when>2012-10-10 13:23:05 EDT</bug_when>
+            <thetext>Hi!
+
+Since about one week I have a new machine (OpenSUSE 12.2, 64Bit)
+running as IMAP server for about 30 users. The machine is moderately
+loaded, there are about 10-15 users active during working hours.
+
+OpenSUSE 12.2 comes with cyrus-imapd 2.3.18 as RPM
+(cyrus-imapd-2.3.18-26.2.3.x86_64)
+
+The machine was in preparation and test mode for about two months
+(from August to September), is in production use since September
+22nd and worked fine in the first days.
+
+But since September 26th I see the number of imapd processes continuously
+growing. As of today there are more than 2000 of them:
+
+ravel:~ # ps ax | grep imapd | wc -l
+2057
+
+When I look with strace at a hung process, I see the following:
+
+ravel:/var/log # strace -p 15139
+Process 15139 attached
+fcntl(16, F_SETLKW, {type=F_RDLCK, whence=SEEK_SET, start=0, len=0}
+
+
+lsof shows:
+
+ravel:/var/log # lsof -p 15139
+COMMAND   PID  USER   FD   TYPE             DEVICE SIZE/OFF     NODE NAME
+imapd   15139 cyrus  cwd    DIR              253,1     4096        2 /
+imapd   15139 cyrus  rtd    DIR              253,1     4096        2 /
+imapd   15139 cyrus  txt    REG              253,4  1662944   663247 /usr/lib/cyrus/bin/imapd
+imapd   15139 cyrus  mem    REG              253,1    27016     2829 /lib64/libnss_sss.so.2
+imapd   15139 cyrus  mem    REG              253,1    56792     2898 /lib64/libnss_nis-2.15.so
+imapd   15139 cyrus  mem    REG              253,1   108167     2822 /lib64/libnsl-2.15.so
+imapd   15139 cyrus  mem    REG              253,1    38523     2844 /lib64/libnss_compat-2.15.so
+imapd   15139 cyrus  mem    REG              253,1    27377     2835 /lib64/libnss_dns-2.15.so
+imapd   15139 cyrus  mem    REG              253,1    14640     4517 /lib64/libnss_mdns_minimal.so.2
+imapd   15139 cyrus  mem    REG              253,1    62418     2836 /lib64/libnss_files-2.15.so
+imapd   15139 cyrus  mem    REG              253,4    23080   524326 /usr/lib64/sasl2/libcrammd5.so.2.0.25
+imapd   15139 cyrus  mem    REG              253,4    18952   524325 /usr/lib64/sasl2/libplain.so.2.0.25
+imapd   15139 cyrus  mem    REG              253,4    18952   524324 /usr/lib64/sasl2/liblogin.so.2.0.25
+imapd   15139 cyrus  mem    REG              253,4    56360   524316 /usr/lib64/sasl2/libdigestmd5.so.2.0.25
+imapd   15139 cyrus  mem    REG              253,4    18920   524318 /usr/lib64/sasl2/libanonymous.so.2.0.25
+imapd   15139 cyrus  mem    REG              253,4    27032   524314 /usr/lib64/sasl2/libsasldb.so.2.0.25
+imapd   15139 cyrus  mem    REG              253,4   257384   524297 /usr/lib64/libgssapi_krb5.so.2.2
+imapd   15139 cyrus  mem    REG              253,4    31368   524327 /usr/lib64/sasl2/libgssapiv2.so.2.0.25
+imapd   15139 cyrus  mem    REG              147,0 41844736  3670122 /cluster/var/imap/db/__db.005
+imapd   15139 cyrus  mem    REG              147,0  4194304  3670121 /cluster/var/imap/db/__db.004
+imapd   15139 cyrus  mem    REG              147,0  2629632  3670120 /cluster/var/imap/db/__db.003
+imapd   15139 cyrus  mem    REG              147,0  6995968  3670055 /cluster/var/imap/db/__db.002
+imapd   15139 cyrus  mem    REG              253,1   118080     2763 /lib64/libselinux.so.1
+imapd   15139 cyrus  mem    REG              253,1   131219     2896 /lib64/libpthread-2.15.so
+imapd   15139 cyrus  mem    REG              253,1    98059     2892 /lib64/libresolv-2.15.so
+imapd   15139 cyrus  mem    REG              253,1    14608     2758 /lib64/libkeyutils.so.1.4
+imapd   15139 cyrus  mem    REG              253,4    39776   541196 /usr/lib64/libkrb5support.so.0.1
+imapd   15139 cyrus  mem    REG              253,4   162728   524985 /usr/lib64/libk5crypto.so.3.1
+imapd   15139 cyrus  mem    REG              253,1    19067     2849 /lib64/libdl-2.15.so
+imapd   15139 cyrus  mem    REG              253,1  1957616     2838 /lib64/libc-2.15.so
+imapd   15139 cyrus  mem    REG              253,1    40944     2821 /lib64/libwrap.so.0.7.6
+imapd   15139 cyrus  mem    REG              253,1    88304     2832 /lib64/libz.so.1.2.7
+imapd   15139 cyrus  mem    REG              253,4  1556904   527149 /usr/lib64/libdb-4.8.so
+imapd   15139 cyrus  mem    REG              253,1  1897944     2833 /lib64/libcrypto.so.1.0.0
+imapd   15139 cyrus  mem    REG              253,1   423888     2899 /lib64/libssl.so.1.0.0
+imapd   15139 cyrus  mem    REG              253,4    14768   527318 /usr/lib64/libcom_err.so.2.1
+imapd   15139 cyrus  mem    REG              253,4   868264   524975 /usr/lib64/libkrb5.so.3.3
+imapd   15139 cyrus  mem    REG              253,4   118736   524767 /usr/lib64/libsasl2.so.2.0.25
+imapd   15139 cyrus  mem    REG              253,1   163471     2846 /lib64/ld-2.15.so
+imapd   15139 cyrus  DEL    REG              147,0           3802117 /cluster/var/spool/imap/user/office/cyrus.cache
+imapd   15139 cyrus  DEL    REG              147,0           3801204 /cluster/var/spool/imap/user/office/cyrus.index
+imapd   15139 cyrus  mem    REG              147,0      215  3801660 /cluster/var/spool/imap/user/office/cyrus.header
+imapd   15139 cyrus  mem    REG              147,0   101412  3685002 /cluster/var/imap/mailboxes.db
+imapd   15139 cyrus  mem    REG              147,0      144  3684752 /cluster/var/imap/annotations.db
+imapd   15139 cyrus  mem    REG              147,0    49152  3685000 /cluster/var/imap/db/__db.006
+imapd   15139 cyrus  mem    REG              147,0    24576  3670034 /cluster/var/imap/db/__db.001
+imapd   15139 cyrus    0u  IPv4           11013449      0t0      TCP bartok:imap-&gt;ws01:57187 (CLOSE_WAIT)
+imapd   15139 cyrus    1u  IPv4           11013449      0t0      TCP bartok:imap-&gt;ws01:57187 (CLOSE_WAIT)
+imapd   15139 cyrus    2u  IPv4           11013449      0t0      TCP bartok:imap-&gt;ws01:57187 (CLOSE_WAIT)
+imapd   15139 cyrus    3w  FIFO                0,8      0t0   394112 pipe
+imapd   15139 cyrus    4u  IPv4             394110      0t0      TCP *:imap (LISTEN)
+imapd   15139 cyrus    5u  unix 0xffff88020fab0a80      0t0 11013424 socket
+imapd   15139 cyrus    6u   REG              147,0   101412  3685002 /cluster/var/imap/mailboxes.db
+imapd   15139 cyrus    7u  unix 0xffff880049d0ac00      0t0 11013425 socket
+imapd   15139 cyrus    8u   REG              147,0      144  3684752 /cluster/var/imap/annotations.db
+imapd   15139 cyrus    9u   REG              147,0        0  3670172 /cluster/var/imap/socket/imap-0.lock
+imapd   15139 cyrus   10u   REG              147,0       43  3686567 /cluster/var/imap/proc/15139
+imapd   15139 cyrus   11u   REG              147,0  3792896  3670949 /cluster/var/imap/tls_sessions.db
+imapd   15139 cyrus   12u  unix 0xffff8801dfb6f280      0t0 11021883 socket
+imapd   15139 cyrus   13u   REG              147,0      215  3801660 /cluster/var/spool/imap/user/office/cyrus.header
+imapd   15139 cyrus   14u   REG              147,0      976  3801204 /cluster/var/spool/imap/user/office/cyrus.index (deleted)
+imapd   15139 cyrus   15u   REG              147,0    16736  3802117 /cluster/var/spool/imap/user/office/cyrus.cache (deleted)
+imapd   15139 cyrus   16u   REG              147,0    57804  3686853 /cluster/var/imap/user/o/office.seen
+
+So, fileid #16 points to /cluster/var/imap/user/o/office.seen
+
+I checked about 20 processes and all of them hang on the F_SETLKW
+fcntl() call on fileid #16 which always points to the same file
+(/cluster/var/imap/user/o/office.seen)
+
+Using lsof I could identify the process which was holding the
+lock on /cluster/var/imap/user/o/office.seen:
+
+ravel:/var/log # lsof /cluster/var/imap/user/o/office.seen | grep 16uW
+imapd   27522 cyrus   16uW  REG  147,0    57804 3686853 /cluster/var/imap/user/o/office.seen
+
+This process itself was waiting in a futex() call!
+
+A SIGHUP did not help, but a SIGTERM made the process terminate:
+
+ravel:~ # strace -p 27522
+Process 27522 attached
+futex(0x7f5c8b149620, FUTEX_WAIT_PRIVATE, 2, NULL) = ? ERESTARTSYS (To be restarted if SA_RESTART is set)
+--- SIGHUP {si_signo=SIGHUP, si_code=SI_USER, si_pid=20435, si_uid=0} ---
+rt_sigreturn()                          = 202
+futex(0x7f5c8b149620, FUTEX_WAIT_PRIVATE, 2, NULL) = ? ERESTARTSYS (To be restarted if SA_RESTART is set)
+--- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=20435, si_uid=0} ---
++++ killed by SIGTERM +++
+
+I could not find out what the futex call was waiting for (since
+September 26th!), but after the process terminated, all other imapd
+processes waiting for the lock continued and eventually terminated,
+too.
+
+Now the number of imapd processes is back to normal:
+
+ravel:~ # ps ax | grep imapd | wc -l
+38
+
+/cluster is a ext4 filesystem on a DRBD device:
+
+/dev/drbd0 on /cluster type ext4 (rw,relatime,data=ordered)
+
+The DRBD device connects two identical machines running as
+active/standby cluster (using pacemaker/corosync). The IMAP
+server is configured as cluster resource using the LSB resource
+script and was started on September 22nd and is running since then.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">matt.s@aptalaska.net</who>
+            <bug_when>2012-10-10 13:25:57 EDT</bug_when>
+            <thetext>I reported the above comment for Andreas:
+
+http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.info-cyrus&amp;msg=54243
+http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.info-cyrus&amp;msg=54244
+
+I also have the same issue:
+
+http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.info-cyrus&amp;msg=54245
+
+I have exactly the same issue:
+
+I found on my system that this file:
+
+/cyrus/mailboxes/e/user/escalations/cyrus.index
+
+Was being held open by 6423 children processes which all reported:
+
+fcntl(17, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=0, len=0}
+
+The process that was holding the lock reported:
+
+futex(0x7f6d86e0f720, FUTEX_WAIT_PRIVATE, 2, NULL
+
+After I killed it, everything else seems to be closing out, but slowly.
+
+As a data point I&apos;m running a fairly different config as Andreas:
+
+Ext4 file system on native partition (though it&apos;s a vmware disk) so no drdb.
+
+Cyrus 2.4.16 with the following patches:
+
+cyrus-imapd-2.4.4-autocreate-0.10-0.patch
+cyrus-imapd-2.4.12-autosieve-0.6.0.patch
+
+lessLogs.patch:
+
+diff -ruN cyrus-imapd-2.4.16.orig/imap/userdeny_db.c
+cyrus-imapd-2.4.16/imap/userdeny_db.c
+--- cyrus-imapd-2.4.16.orig/imap/userdeny_db.c	2012-04-19
+01:39:51.000000000 -0800
++++ cyrus-imapd-2.4.16/imap/userdeny_db.c	2012-08-24 17:01:40.276482897
+-0800
+@@ -81,7 +81,6 @@
+     if (!deny_dbopen) return 0;
+
+     /* fetch entry for user */
+-    syslog(LOG_DEBUG, &quot;fetching user_deny.db entry for &apos;%s&apos;&quot;, user);
+     do {
+ 	r = DENYDB-&gt;fetch(denydb, user, strlen(user), &amp;data, &amp;datalen, NULL);
+     } while (r == CYRUSDB_AGAIN);
+
+
+Here is my database config:
+duplicate_db: skiplist
+tlscache_db: skiplist
+
+Linux is 3.2.29 (Slackware 14.0)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">matt.s@aptalaska.net</who>
+            <bug_when>2012-10-13 23:06:52 EDT</bug_when>
+            <thetext>This just happened to me again:
+
+
+root@mail:/home/schu# lsof | grep /cyrus/mailboxes/s/user/support/cyrus.index | head
+imapd      2013      cyrus  mem       REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      2013      cyrus   17u      REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      2929      cyrus  mem       REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      2929      cyrus   17u      REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      3180      cyrus  mem       REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      3180      cyrus   17u      REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      3444      cyrus  mem       REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      3444      cyrus   17u      REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      4600      cyrus  mem       REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+imapd      4600      cyrus   17u      REG                8,8     26432    4034886 /cyrus/mailboxes/s/user/support/cyrus.index
+
+
+A total of 282 processes are hung on this file
+
+This process has the lock:
+
+root@mail:/home/schu# strace -p 27029
+Process 27029 attached - interrupt to quit
+futex(0x7f6ff0a7a720, FUTEX_WAIT_PRIVATE, 2, NULL
+
+When I kill it with TERM I get:
+
+) = ? ERESTARTSYS (To be restarted)
+--- SIGTERM (Terminated) @ 0 (0) ---
+Process 27029 detached
+
+Then my process list starts shrinking as the other 281 processes close out.
+
+I should note that the mailboxes this happens on are being monitored by multiple users so there are multiple connections to this mailbox and the others that have had this problem.
+
+I&apos;m going to start digging around and see if I can sort out the problem on Monday.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Oleg Gorokhov">oleg.gorokhov@gmail.com</who>
+            <bug_when>2012-10-15 04:20:35 EDT</bug_when>
+            <thetext>We have also found that 2.4.16 (and, possibly 2.4 branch) has some kind of locking bug, exactly as Matt reported earlier. 
+
+Our cyrus installation is 2.4.16 murder with 6 frontends and 8 backends (upgraded from 2.3.18), one of backend has many (thousands) shared folders with hundreds of users subscribed to many of them. We have also found that &quot;locking issue&quot; appears on shared folders to which many users (hundreds) are subscribed on massively used backend (with thousands shared folders). 
+
+We have to monitor the locks via lsof and checking if some lock exists on corresponding cyrus.index file longer than 3 minutes (just some experimentally detected value) without changes in its properties (offset/size/pid of process). This is a critical sitation and the whole cyrus backend process should be restarted.
+
+One more observation is that many mail imap clients after upgrading from 2.3.18 to 2.4.16 start the shared folder sync (thunderbird by default has this option turned on), this massively started process of syncronization of thousand folders to hundreds of users, we suspect, could somehow leads to this locking issue. In fact the &quot;locking&quot; appears on folders to which many users are subscribed.
+
+Log file of the script that detects the locking issue:
+[90587] 2012.15.10-11:44:02: [IMAP-LOCKING]: checking stamp: 1350287040
+imapd     37220    cyrus txt-W    VREG               0,125        81044192        48870414 /imap-summer/******/*****-abuse/cyrus.index    
+[99039] 2012.15.10-11:45:02: [IMAP-LOCKING]: checking stamp: 1350287100
+imapd     37220    cyrus txt-W    VREG               0,125        81044192        48870414 /imap-summer/******/*****-abuse/cyrus.index    
+[11562] 2012.15.10-11:46:02: [IMAP-LOCKING]: checking stamp: 1350287160
+imapd     37027    cyrus txt-W    VREG               0,125         1817504        48941076 /imap-summer/******/*****/cyrus.index        
+imapd     37220    cyrus txt-W    VREG               0,125        81044192        48870414 /imap-summer/******/*****-abuse/cyrus.index    
+[11562] 2012.15.10-11:46:02: [IMAP-CRITICAL-LOCKING]: report:
+   1 imapd     37027    cyrus txt-W    VREG               0,125         1817504        48941076 /imap-summer/******/*****/cyrus.index        
+   3 imapd     37220    cyrus txt-W    VREG               0,125        81044192        48870414 /imap-summer/******/*****-abuse/cyrus.index    
+[11562] 2012.15.10-11:46:02: [IMAP-CRITICAL-LOCKING]: stopping imapd
+[11562] 2012.15.10-11:46:03: [IMAP-CRITICAL-LOCKING]: sleeping for 3 seconds...
+[11562] 2012.15.10-11:46:06: [IMAP-CRITICAL-LOCKING]: starting imapd
+
+So, we can also confirm that 2.4.16 has &quot;locking issue&quot; of shared folders (massively used by users).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Oleg Gorokhov">oleg.gorokhov@gmail.com</who>
+            <bug_when>2012-10-15 04:22:17 EDT</bug_when>
+            <thetext>It is me again, we use on backends freebsd-9.0 amd64 stable, zfs and ufs (both has the same &quot;locking issue&quot;).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-10-19 16:26:34 EDT</bug_when>
+            <thetext>All waiting on a futex huh?
+
+I&apos;m putting this on the &quot;todo&quot; list for 2.5, since it&apos;s a nasty situation.
+
+Can I ask - are you all using berkeley DB?
+
+Can you give me some configuration options and imapd.conf files?  There&apos;s nothing in regular upstream cyrus which uses futexes itself, but some of the libraries we link against might.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">matt.s@aptalaska.net</who>
+            <bug_when>2012-10-23 14:50:29 EDT</bug_when>
+            <thetext>Ok, more information:
+
+I had imap hang again this morning so I connected gdb and did a backtrace.  This should answer where the locking is happening:
+
+
+root@mail:/home/schu# strace -p 12862
+Process 12862 attached - interrupt to quit
+futex(0x7f19c9b55720, FUTEX_WAIT_PRIVATE, 2, NULL^C &lt;unfinished ...&gt;
+Process 12862 detached
+root@mail:/home/schu# gdb -p 12862
+GNU gdb (GDB) 7.5
+Copyright (C) 2012 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later &lt;http://gnu.org/licenses/gpl.html&gt;
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type &quot;show copying&quot;
+and &quot;show warranty&quot; for details.
+This GDB was configured as &quot;x86_64-slackware-linux&quot;.
+For bug reporting instructions, please see:
+&lt;http://www.gnu.org/software/gdb/bugs/&gt;.
+Attaching to process 12862
+Reading symbols from /usr/cyrus/bin/imapd...done.
+
+warning: Could not load shared library symbols for linux-vdso.so.1.
+Do you need &quot;set solib-search-path&quot; or &quot;set sysroot&quot;?
+Reading symbols from /usr/lib64/libsasl2.so.2...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/libsasl2.so.2
+Reading symbols from /lib64/libdl.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libdl.so.2
+Reading symbols from /lib64/libssl.so.1...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libssl.so.1
+Reading symbols from /lib64/libcrypto.so.1...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libcrypto.so.1
+Reading symbols from /lib64/libdb-4.4.so...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libdb-4.4.so
+Reading symbols from /usr/lib64/libpcre.so.0...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/libpcre.so.0
+Reading symbols from /usr/lib64/libpcreposix.so.0...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/libpcreposix.so.0
+Reading symbols from /lib64/libz.so.1...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libz.so.1
+Reading symbols from /lib64/libcom_err.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libcom_err.so.2
+Reading symbols from /lib64/libnsl.so.1...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libnsl.so.1
+Reading symbols from /lib64/libc.so.6...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libc.so.6
+Reading symbols from /lib64/libresolv.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libresolv.so.2
+Reading symbols from /lib64/ld-linux-x86-64.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/ld-linux-x86-64.so.2
+Reading symbols from /lib64/libpthread.so.0...(no debugging symbols found)...done.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library &quot;/lib64/libthread_db.so.1&quot;.
+Loaded symbols for /lib64/libpthread.so.0
+Reading symbols from /usr/lib64/sasl2/libcrammd5.so.2...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/sasl2/libcrammd5.so.2
+Reading symbols from /usr/lib64/sasl2/libdigestmd5.so.2...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/sasl2/libdigestmd5.so.2
+Reading symbols from /usr/lib64/sasl2/libotp.so.2...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/sasl2/libotp.so.2
+Reading symbols from /usr/lib64/sasl2/libsasldb.so.2...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/sasl2/libsasldb.so.2
+Reading symbols from /usr/lib64/libgdbm.so.3...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/libgdbm.so.3
+Reading symbols from /usr/lib64/sasl2/liblogin.so.2...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/sasl2/liblogin.so.2
+Reading symbols from /lib64/libcrypt.so.1...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libcrypt.so.1
+Reading symbols from /usr/lib64/sasl2/libplain.so.2...(no debugging symbols found)...done.
+Loaded symbols for /usr/lib64/sasl2/libplain.so.2
+Reading symbols from /lib64/libnss_files.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libnss_files.so.2
+Reading symbols from /lib64/libnss_compat.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libnss_compat.so.2
+Reading symbols from /lib64/libnss_nis.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libnss_nis.so.2
+Reading symbols from /lib64/libnss_dns.so.2...(no debugging symbols found)...done.
+Loaded symbols for /lib64/libnss_dns.so.2
+0x00007f19c989ff6b in __lll_lock_wait_private () from /lib64/libc.so.6
+(gdb) bt
+#0  0x00007f19c989ff6b in __lll_lock_wait_private () from /lib64/libc.so.6
+#1  0x00007f19c98203d5 in _L_lock_12561 () from /lib64/libc.so.6
+#2  0x00007f19c981da72 in malloc () from /lib64/libc.so.6
+#3  0x000000000047f308 in xzmalloc ()
+#4  0x000000000045832c in seqset_init ()
+#5  0x0000000000428840 in index_tellchanges ()
+#6  0x000000000042a099 in index_check ()
+#7  0x000000000040cd8b in idle_update ()
+#8  0x000000000045152f in idle_handler ()
+#9  &lt;signal handler called&gt;
+#10 0x00007f19c981aa76 in _int_malloc () from /lib64/libc.so.6
+#11 0x00007f19c981da80 in malloc () from /lib64/libc.so.6
+#12 0x00007f19ca93e210 in CRYPTO_malloc () from /lib64/libcrypto.so.1
+#13 0x00007f19ca9c8241 in EVP_MD_CTX_copy_ex () from /lib64/libcrypto.so.1
+#14 0x00007f19ca94d199 in HMAC_CTX_copy () from /lib64/libcrypto.so.1
+#15 0x00007f19ca94da57 in ?? () from /lib64/libcrypto.so.1
+#16 0x00007f19ca9d525f in EVP_PKEY_CTX_dup () from /lib64/libcrypto.so.1
+#17 0x00007f19ca9c816c in EVP_MD_CTX_copy_ex () from /lib64/libcrypto.so.1
+#18 0x00007f19cace96d2 in tls1_mac () from /lib64/libssl.so.1
+#19 0x00007f19cace0407 in ssl3_read_bytes () from /lib64/libssl.so.1
+#20 0x00007f19cacdd1aa in ssl3_read () from /lib64/libssl.so.1
+#21 0x000000000046fba5 in prot_fill ()
+#22 0x000000000044ffd7 in getword ()
+#23 0x000000000040e9d5 in cmd_idle ()
+#24 0x000000000041f5ef in cmdloop ()
+#25 0x0000000000420f65 in service_main ()
+#26 0x000000000040a232 in main ()
+
+Here are my sanitized configs:
+
+root@mail:/etc# cat imapd.conf
+configdirectory: /cyrus/db
+partition-default: /cyrus/mailboxes
+admins: cyrus
+srvtab: /var/imap/srvtab
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN LOGIN
+allowplaintext: yes
+autocreatequota: -1
+userprefix: Other Users
+sharedprefix: Shared Folders
+deleteright: a
+hashimapspool: yes
+unixhierarchysep: yes
+altnamespace: yes
+createonpost: yes
+lmtp_downcase_rcpt: yes
+username_tolower: yes
+tls_cert_file: /etc/ssl/certs/cyrus.crt
+tls_key_file: /etc/ssl/certs/cyrus.key
+tls_ca_file: /etc/ssl/certs/cyrus.crt
+duplicatesuppression: 1
+lmtp_over_quota_perm_failure: 1
+duplicate_db: skiplist
+tlscache_db: skiplist
+
+root@mail:/etc# cat cyrus.conf
+# standard standalone server implementation
+
+START {
+  # do not delete this entry!
+  recover       cmd=&quot;ctl_cyrusdb -r&quot;
+  idled         cmd=&quot;idled&quot;
+
+}
+
+# UNIX sockets start with a slash and are put into /var/imap/sockets
+SERVICES {
+  # add or remove based on preferences
+  imaps         cmd=&quot;imapd -s&quot; listen=&quot;imaps&quot; prefork=2
+  imap          cmd=&quot;imapd&quot; listen=&quot;imap&quot; prefork=4
+  pop3s         cmd=&quot;pop3d -s&quot; listen=&quot;pop3s&quot; prefork=2
+  pop3          cmd=&quot;pop3d&quot; listen=&quot;pop3&quot; prefork=4
+  sieve         cmd=&quot;timsieved&quot; listen=&quot;sieve&quot; prefork=0
+  smmapd        cmd=&quot;smmapd&quot; listen=&quot;9998&quot; prefork=4
+
+  # at least one LMTP is required for delivery
+  lmtpunix      cmd=&quot;lmtpd&quot; listen=&quot;/var/imap/socket/lmtp&quot; prefork=10
+
+}
+
+EVENTS {
+  # this is required
+  checkpoint    cmd=&quot;ctl_cyrusdb -c&quot; period=30
+
+  # this is only necessary if using duplicate delivery suppression
+  delprune      cmd=&quot;ctl_deliver -E 3&quot; at=0400
+
+  # this is only necessary if caching TLS sessions
+  tlsprune      cmd=&quot;tls_prune&quot; at=0400
+
+  # reindex mailboxes
+  squatter      cmd=&quot;squatter -rs user&quot; at=0000
+}
+
+Bron, do you think we can use a different database backend to deal with this until it&apos;s fixed?
+
+I didn&apos;t think I was using berkeleydb but now that I&apos;m looking closer, looks like I need to audit my config.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-12-08 12:29:48 EDT</bug_when>
+            <thetext>Ok - I can see exactly what&apos;s happening there now!  Bumping this to P1 and targetting for 2.4.
+
+Basically, the SSL layer is in the middle of updating a</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-12-08 12:33:53 EDT</bug_when>
+            <thetext>Dammit... continuing.
+
+Adding gnb as CC because he has done a lot of work on the IDLE stuff for 2.5
+
+The issue is - the SSL layer is in the middle of allocating some memory (futex held) when either the alarm fails or the idled signals an update.  Either way, the idle signal handler is actually doing stuff rather than setting a flag - and the stuff it&apos;s doing calls malloc again.  Game over.
+
+We need to fix it to make the idle handler just set a flag, and if that flag is set, then do the response.
+
+I&apos;ve made it P1 and a targetted for the next 2.4 release.  I think we should get this one out there quickly, because it is affecting multiple sites.  We never saw it at FastMail because we run all the SSL in our Nginx frontends.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-12-09 16:35:04 EDT</bug_when>
+            <thetext>This was messy because it involved some digging around inside signal handling.  I&apos;ve pushed a potential fix here:
+
+https://github.com/brong/cyrus-imapd/tree/bug3744
+
+Hopefully someone else can review it and see that it makes sense!
+
+I lost some SA_RESETHAND from it, because I don&apos;t think it actually should be there, and it certainly made things risky for SIGUSR1 being replayed in high speed updates.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-12-09 17:24:32 EDT</bug_when>
+            <thetext>Bron - I&apos;m not sure why you&apos;d want to waste your time fiddling around the edges of the utterly broken 2.4 IDLE code, when the 2.5 branch contains IDLE code that has been rewritten to behave properly, i.e. not use signals at all.
+
+The commits you want to backport are
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=31ff864270310a8377e693fff211e05dfb7d8b4c
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=e8a3eb85e0045ddcb5968a02318c36047f0922e4
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=c024aa361060ea3e3e18efd0ea056d953eb204c5
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=22e294a5c3af3a7755a258ae0bbf541503e4e9d3
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=407693bf4ec03e83442b5514aefcfabaf774ff02
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=60282ea9432679014ce0daa53473ded474b56a14
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=022ec7ab7a52c7dc848b1f14c3a1e74bf0393bbd
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=b7fcf436008bbdb0bbe6be4cfec144c5aecf6600
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=17eb391b918c394319e4d1fe5985de10128f34d7
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=720f67687be01a801bad94e428b82db9263839bd
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=c60e8e312fdcc2807fa21b14bce7336d1ec264f3
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=9d7645f600227dd895e855d79d9e336a06251618
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=05529ca35e8926dc01a43088ffadc5c5ec963cdc
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=d4c9c8e7d5a0f1447ab26b1f55b72dc773ec1b24
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=713e473e8583b080e29d26c1eceb24410907431c
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=ffc886d81cbb6f1720ca3b23f65415eeb3b3371a
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=dc521383eff022af770e900a0912c62de8d84f82
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=aca0bbb605d389256b8e2da71dd7d79167c56a12
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=ef5ff74853591ae80ca73734619e6ed1cfecd811</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-12-09 17:32:27 EDT</bug_when>
+            <thetext>Greg - because that&apos;s a significant change to how IDLE works.  It&apos;s quite invasive for 2.4.  I&apos;d rather solve the immediate issue in the smallest possible change.
+
+(which is why I didn&apos;t do sigset stuff to notice multiple signals in that same gap)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">carlos.velasco@nimastelecom.com</who>
+            <bug_when>2015-03-01 03:12:36 EDT</bug_when>
+            <thetext>I&apos;m hitting this bug heavily. Exactly as described.
+Any patch/fix in 2.4?
+I can&apos;t believe this isn&apos;t fixed yet. This issue is P1 and has been here for more than 2 years.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2015-03-23 00:33:24 EDT</bug_when>
+            <thetext>I don&apos;t work on this project anymore :(
+
+Carlos: Cyrus 2.5 was released a few days ago, and contains a fix (actually a complete rewrite of the system that is broken here).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Thomas Jarosch">thomas.jarosch@intra2net.com</who>
+            <bug_when>2016-07-25 12:15:35 EDT</bug_when>
+            <thetext>Hi Carlos,
+
+(In reply to comment #12)
+&gt; I&apos;m hitting this bug heavily. Exactly as described.
+&gt; Any patch/fix in 2.4?
+&gt; I can&apos;t believe this isn&apos;t fixed yet. This issue is P1 and has been here for
+&gt; more than 2 years.
+
+if you still run 2.4:
+
+the needed backports are available in the 2.4 git branch.
+We&apos;ve field-tested the changes on many servers, all smooth for a few months so far.
+
+[just stumbled upon this old bugzilla entry]
+
+Cheers,
+Thomas</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

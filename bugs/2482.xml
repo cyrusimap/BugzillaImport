@@ -1,0 +1,179 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2482</bug_id>
+          
+          <creation_ts>2004-08-17 00:23 EDT</creation_ts>
+          <short_desc>auth_shadow.c fails to compile on Debian Woody</short_desc>
+          <delta_ts>2010-10-25 18:46:35 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Quanah Gibson-Mount">quanah@stanford.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@stanford.edu</who>
+            <bug_when>2004-08-17 00:23:55 EDT</bug_when>
+            <thetext>The auth_shadow.c in 2.1.19 release fails to build on Debian Woody:
+
+auth_shadow.c: In function `auth_shadow&apos;:
+auth_shadow.c:134: error: too few arguments to function `getpwnam_r&apos;
+auth_shadow.c:134: warning: assignment makes pointer from integer without a 
+cast
+auth_shadow.c:149: error: too few arguments to function `getspnam_r&apos;
+auth_shadow.c:149: warning: assignment makes pointer from integer without a 
+cast
+make[3]: *** [auth_shadow.o] Error 1
+
+It looks like the Woody dist doesn&apos;t support multiple parameters to 
+getpwnam_r/getspnam_r</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2004-08-17 17:07:12 EDT</bug_when>
+            <thetext>1. Debian sarge has SASL 2.1.19.
+2. There is a backport of sasl 2.1.19 to Debian Woody in http://backports.org, 
+
+I suggest you use that directly, or to rebuild to your own needs.
+
+I hope that helps you.  Why sasl 2.1.19 does not build in woody from upstream
+source, I do not know (and I am short of time to track it down right now).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Quanah Gibson-Mount">quanah@stanford.edu</who>
+            <bug_when>2004-08-17 17:24:24 EDT</bug_when>
+            <thetext>The problem arises because I want the build to be thread safe, which is why I 
+define the -D_REENTRANT flag when building it.
+
+I&apos;ve found a solution to the problem for my case ... I don&apos;t use saslauthd, so 
+I just compile without it, and everything is happy.
+
+--Quanah</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Tim Rice">tim@multitalents.net</who>
+            <bug_when>2006-01-13 01:29:09 EDT</bug_when>
+            <thetext>It looks like auth_shadow.c is written for the older 4 arg version of
+getpwnam_r.
+.....
+     struct passwd *getpwnam_r(const char  *name,  struct  passwd
+     *pwd, char *buffer, int buflen);
+.....
+The current standard is
+.....
+    int getpwnam_r(const char *name, struct passwd *pwd, char *buffer,
+       size_t bufsize, struct passwd **result);
+.....
+
+As it is written now, it is probably only good for solaris.
+
+This bug will affect AIX, NetBsd, UinxWare, OS X as well as Linux.
+I&apos;m changing to OS box to all. (it&apos;s closer than just Linux)
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Tim Rice">tim@multitalents.net</who>
+            <bug_when>2006-01-16 15:46:49 EDT</bug_when>
+            <thetext>Created an attachment (id=412)
+Handle differences in number of args for getpwnam_r()/getspnam_r()
+
+Added a configure test to saslauthd/configure.in to test if 
+getpwnam_r()/getspnam_r() take 4 or 5 args.
+patched saslauthd/auth_shadow.c
+
+Compiles on Solaris 8 (4 args), UnixWare 7.1.4 (5 args), &amp; Xandros Linux (5
+args)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-19 15:52:27 EDT</bug_when>
+            <thetext>Patch committed to CVS.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>412</attachid>
+            <date>2006-01-16 15:46 EDT</date>
+            <desc>Handle differences in number of args for getpwnam_r()/getspnam_r()</desc>
+            <filename>getXXnam_r.patch</filename>
+            <type>text/plain</type>
+            <size>1730</size>
+            <attacher>tim@multitalents.net</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLXNhc2wtMi4xLjIyL3Nhc2xhdXRoZC9jb25maWd1cmUuaW4ub2xkCTIwMDUtMDUt
+MTggMjE6NTU6MTkuMDAwMDAwMDAwIC0wNzAwCisrKyBjeXJ1cy1zYXNsLTIuMS4yMi9zYXNsYXV0
+aGQvY29uZmlndXJlLmluCTIwMDUtMDUtMTggMjE6NTU6MTkuMDAwMDAwMDAwIC0wNzAwCkBAIC0x
+OTEsNiArMTkxLDI4IEBACiBBQ19DSEVDS19GVU5DUyhnZXRzcG5hbSBnZXR1c2VycHcsIGJyZWFr
+KQogQUNfQ0hFQ0tfRlVOQ1Moc3RybGNhdCBzdHJsY3B5KQogCitpZiB0ZXN0ICRhY19jdl9mdW5j
+X2dldHNwbmFtID0geWVzOyB0aGVuCisJQUNfTVNHX0NIRUNLSU5HKGlmIGdldHB3bmFtX3IvZ2V0
+c3BuYW1fciB0YWtlIDUgYXJndW1lbnRzKQorCUFDX1RSWV9DT01QSUxFKAorCQlbCisjaW5jbHVk
+ZSA8c3lzL3R5cGVzLmg+CisjaW5jbHVkZSA8cHdkLmg+CisjaW5jbHVkZSA8c2hhZG93Lmg+CisJ
+CV0sCisJCVsKK3N0cnVjdCBwYXNzd2QgKnB3Oworc3RydWN0IHBhc3N3ZCBwd2J1ZjsKK2NoYXIg
+cHdkYXRhWzUxMl07Cisodm9pZCkgZ2V0cHduYW1fcigiYmluIiwgJnB3YnVmLCBwd2RhdGEsIHNp
+emVvZihwd2RhdGEpLCAmcHcpOworCQldLAorCQlbQUNfTVNHX1JFU1VMVCh5ZXMpCisJCSBBQ19E
+RUZJTkUoR0VUWFhOQU1fUl81QVJHLCAxLAorCQkJW0RlZmluZSBpZiB5b3VyIGdldHB3bmFtX3Io
+KS9nZXRzcG5hbV9yKCkKKwkJCWZ1bmN0aW9ucyB0YWtlIDUgYXJndW1lbnRzXSldLAorCQlbQUNf
+TVNHX1JFU1VMVChubyldCisJKQorZmkKKwogZG5sIENoZWNrIGZvciBnZXRhZGRyaW5mbwogR0VU
+QUREUklORk9PQkpTPSIiCiBzYXNsX2N2X2dldGFkZHJpbmZvPW5vCi0tLSBjeXJ1cy1zYXNsLTIu
+MS4yMi9zYXNsYXV0aGQvYXV0aF9zaGFkb3cuYy5vbGQJMjAwNC0wNC0yNyAwODo1NjoyMy4wMDAw
+MDAwMDAgLTA3MDAKKysrIGN5cnVzLXNhc2wtMi4xLjIyL3Nhc2xhdXRoZC9hdXRoX3NoYWRvdy5j
+CTIwMDYtMDEtMTUgMTI6NTU6MjYuNzE5MTc1MDA4IC0wODAwCkBAIC0xMzEsNyArMTMxLDExIEBA
+CiAjICBkZWZpbmUgU0hBRE9XX1BXX0VQRVJNICAiKk5QKiIJLyogaW5zdWZmaWNpZW50IGRhdGFi
+YXNlIHBlcm1zICovCiAKICMgIGlmZGVmIF9SRUVOVFJBTlQKKyMgICAgaWZkZWYgR0VUWFhOQU1f
+Ul81QVJHCisJKHZvaWQpIGdldHB3bmFtX3IobG9naW4sICZwd2J1ZiwgcHdkYXRhLCBzaXplb2Yo
+cHdkYXRhKSwgJnB3KTsKKyMgICAgZWxzZQogICAgIHB3ID0gZ2V0cHduYW1fcihsb2dpbiwgJnB3
+YnVmLCBwd2RhdGEsIHNpemVvZihwd2RhdGEpKTsKKyMgICAgZW5kaWYgLyogR0VUWFhOQU1fUl81
+QVJHICovCiAjICBlbHNlCiAgICAgcHcgPSBnZXRwd25hbShsb2dpbik7CiAjICBlbmRpZiAvKiBf
+UkVFTlRSQU5UICovCkBAIC0xNDYsNyArMTUwLDExIEBACiAgICAgdG9kYXkgPSAobG9uZyl0aW1l
+KE5VTEwpLygyNEwqNjAqNjApOwogCiAjICBpZmRlZiBfUkVFTlRSQU5UCisjICAgIGlmZGVmIEdF
+VFhYTkFNX1JfNUFSRworCSh2b2lkKSBnZXRzcG5hbV9yKGxvZ2luLCAmc3BidWYsIHNwZGF0YSwg
+c2l6ZW9mKHNwZGF0YSksICZzcCk7CisjICAgIGVsc2UKICAgICBzcCA9IGdldHNwbmFtX3IobG9n
+aW4sICZzcGJ1Ziwgc3BkYXRhLCBzaXplb2Yoc3BkYXRhKSk7CisjICAgIGVuZGlmIC8qIEdFVFhY
+TkFNX1JfNUFSRyAqLwogIyAgZWxzZQogICAgIHNwID0gZ2V0c3BuYW0obG9naW4pOwogIyAgZW5k
+aWYgLyogX1JFRU5UUkFOVCAqLwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

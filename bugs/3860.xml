@@ -1,0 +1,355 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3860</bug_id>
+          
+          <creation_ts>2014-09-05 07:36 EDT</creation_ts>
+          <short_desc>Support Base-DN in ptsmodule_expand_tokens()</short_desc>
+          <delta_ts>2015-02-23 16:57:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Virtual Domains</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Daniel Hoffend">dh@dotlan.net</reporter>
+          <assigned_to name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2014-09-05 07:36:09 EDT</bug_when>
+            <thetext>When using ldap_domain_* domain discovery the ldap_base variable gets replaced by the one found in the ldap result.
+
+But the variables ldap_member_base and ldap_group_base are not getting replaced or adjusted. Those 2 variables are already getting expended using ptsmodule_expand_tokens() but there&apos;s no %variable available that represents the current ldap_base variable.
+
+I would suggest to provide %dc (mostly use for the same purpose in kolab applciations) or %b (for base) as a replacement variable or ptsm-&gt;base
+
+This way users could configure
+ldap_member_base: ou=People,%dc 
+and it would always be correct regardless of the loaded domain/ldap_base.
+
+One more little thing to be consistent:
+Shouldn&apos;t the ldap_domain_base_dn variable be renamed to ldap_domain_base to be in line with ldap_base, ldap_member_base and ldap_group_base</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2014-09-08 15:42:45 EDT</bug_when>
+            <thetext>(In reply to comment #0)
+&gt; One more little thing to be consistent:
+&gt; Shouldn&apos;t the ldap_domain_base_dn variable be renamed to ldap_domain_base to be
+&gt; in line with ldap_base, ldap_member_base and ldap_group_base
+&gt; 
+
+Probably rather the other way around, under the clause &quot;you write once but you read many, many times.&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-02-16 18:36:56 EDT</bug_when>
+            <thetext>1) add additional argument for ptsmodule_expand_tokens() --&gt; base
+
+2) after the initial ldap domain lookup (using domain_base_dn) store the result base in memory 
+
+already done (set standard base)
+http://git.cyrusimap.org/cyrus-imapd/tree/ptclient/ldap.c#n978
+
+
+3) adjust all ptsmodule_expand_tokens() usages 
+
+most important once are
+
+Lookup/generation of Member_base
+http://git.cyrusimap.org/cyrus-imapd/tree/ptclient/ldap.c#n1220
+
+and Group Base
+http://git.cyrusimap.org/cyrus-imapd/tree/ptclient/ldap.c#n1396
+http://git.cyrusimap.org/cyrus-imapd/tree/ptclient/ldap.c#n1404
+[reply] [-] Comment 3</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-02-16 18:38:04 EDT</bug_when>
+            <thetext>Created an attachment (id=1553)
+0001-add-additional-replace-B-for-ldap-base-dn-in-ptsmodu.patch
+
+WARNING: I&apos;ve no clue about C coding. Likely I did something wrong with the maxparamlength calculation, etc. But I hope you catch my drift</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-02-19 18:02:54 EDT</bug_when>
+            <thetext>I&apos;ve a way to reproduce the bug when member_base and group_base are not correctly set to the discovered base when using ldap_domain_filter.
+
+==&gt; Domain Setup &lt;==
+
+example.org (primary)
+kolabtest.org (secondary)
+- kolabtest.com (alias)
+
+==&gt; /etc/imapd.conf/ &lt;==
+ldap_domain_base_dn: cn=kolab,cn=config
+ldap_group_base: dc=example,dc=org
+ldap_member_base: ou=People,dc=example,dc=org
+
+==&gt; Kolab-Webadmin: kolabtest.org &lt;==
+
+Base: dc=kolabtest,dc=org
+
+Create Role:
+* teamabc
+
+Create Shared Mail Folder
+* info
+* info@kolabtest.org
+* shared/info@kolabtest.org
+* ACL: group:teamabc
+
+==&gt; /var/log/mail.log
+Feb 19 23:43:30 debian7 ptloader[27940]: (groups) about to search dc=example,dc=org for (&amp;(cn=teamabc)(objectclass=ldapsubentry)(objectclass=nsroledefinition))
+
+==&gt; /var/log/kolab/pykolab.log &lt;==
+2015-02-19 23:43:30,280 pykolab.imap ERROR Could not set ACL for group:teamabc on folder shared/info@kolabtest.org: CYRUSError(99, &apos;SETACL&apos;, &apos;Invalid identifier&apos;)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-02-19 19:13:41 EDT</bug_when>
+            <thetext>I&apos;ve added a debug log line into the my code. It shows me that at the point when the ldap_(member|group)_base is expended ptsm-&gt;base points to the wrong domain.
+
+1) cyrus-admin changes the acl for a folder
+
+Feb 20 00:32:31 debian7 ptloader[4555]: ptsmodule_expand_tokens pattern: %B username: group:testrole dn: (null) base: dc=example,dc=org
+Feb 20 00:32:31 debian7 ptloader[4555]: (groups) about to search dc=example,dc=org for (&amp;(cn=testrole)(objectclass=ldapsubentry)(objectclass=nsroledefinition))
+
+2) user changes an acl of a folder
+
+Feb 20 00:48:34 debian7 ptloader[4555]: Root DN now dc=kolabtest,dc=org
+Feb 20 00:48:34 debian7 ptloader[4555]: Continuing with ptsm-&gt;group_base: dc=kolabtest,dc=org
+Feb 20 00:48:34 debian7 ptloader[4555]: (groups) about to search dc=kolabtest,dc=org for (&amp;(cn=teamabc@kolabtest.org)(objectclass=ldapsubentry)(objectclass=nsroledefinition))
+Feb 20 00:48:34 debian7 ptloader[4555]: ptsmodule_expand_tokens pattern: dc=kolabtest,dc=org username: teamabc@kolabtest.org dn: (null) base: dc=example,dc=org
+
+------
+
+Okay I&apos;m coming down to some major things on this problem 
+
+1) when the cyrus-admin user is modifiy a folder, the ldap base is totally wrong (it&apos;s the primary domain where cyrus-admin is stored). ==&gt; Cyrus-admin doesn&apos;t work with ldap_domain_* stuff.
+
+2) the way the ptclient works is problematic. When ptclient finds a DN is *overwrites* ldap_base, ldap_member_base or ldap_group_base with whatever is in it. This can cause issues if you want to limit searches to ou=People,%B
+
+3) My Ideas was to use use a replacement variable %B. This way you set ldap_member_base: ou=People,%B (example) and replace %B with dc=kolabtest,dc=org and not just overwrite ldap_member_base: dc=kolabtest,dc=org which might not be what the admin wants.
+
+------
+
+I don&apos;t need to dig deeper. ptclient/ldap is working different as I expected it. It needs serious work otherwise it will not work in ldap_domain_* scenario</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-02-19 19:23:52 EDT</bug_when>
+            <thetext>Oh it&apos;s even worst. For the previous comment I have set
+
+ldap_domain_base_dn: cn=kolab,cn=config
+ldap_base: dc=example,dc=org
+ldap_group_base: %B
+ldap_member_base: ou=People,%B
+
+ptclient was overwriting, ldap_group_base: with the basedn found in ldap_domain
+
+----
+
+Next test:
+
+ldap_domain_base_dn: cn=kolab,cn=config
+ldap_base: %B
+ldap_group_base: %B
+ldap_member_base: ou=People,%B
+
+Feb 20 01:15:49 debian7 ptloader[4803]: (groups) Attempting to get domain for group:teamabc@kolabtest.org from cn=kolab,cn=config
+Feb 20 01:15:49 debian7 ptloader[4803]: Root DN now dc=kolabtest,dc=org
+Feb 20 01:15:49 debian7 ptloader[4803]: Continuing with ptsm-&gt;group_base: dc=kolabtest,dc=org
+Feb 20 01:15:49 debian7 ptloader[4803]: (groups) about to search dc=kolabtest,dc=org for (&amp;(cn=teamabc@kolabtest.org)(objectclass=ldapsubentry)(objectclass=nsroledefinition))
+Feb 20 01:15:49 debian7 ptloader[4803]: ptsmodule_expand_tokens pattern: dc=kolabtest,dc=org username: teamabc@kolabtest.org dn: (null) base: %B
+
+you see that %B isn&apos;t always basedn of the user logged in. And even with a user loggedin the REALM could be wrong (when cyrus-admin is editing someone elses folder.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2015-02-19 20:15:25 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; I&apos;ve a way to reproduce the bug when member_base and group_base are not
+&gt; correctly set to the discovered base when using ldap_domain_filter.
+&gt; 
+&gt; ==&gt; Domain Setup &lt;==
+&gt; 
+&gt; example.org (primary)
+&gt; kolabtest.org (secondary)
+&gt; - kolabtest.com (alias)
+&gt; 
+&gt; ==&gt; /etc/imapd.conf/ &lt;==
+&gt; ldap_domain_base_dn: cn=kolab,cn=config
+&gt; ldap_group_base: dc=example,dc=org
+&gt; ldap_member_base: ou=People,dc=example,dc=org
+&gt; 
+&gt; ==&gt; Kolab-Webadmin: kolabtest.org &lt;==
+&gt; 
+&gt; Base: dc=kolabtest,dc=org
+&gt; 
+&gt; Create Role:
+&gt; * teamabc
+&gt; 
+&gt; Create Shared Mail Folder
+&gt; * info
+&gt; * info@kolabtest.org
+&gt; * shared/info@kolabtest.org
+&gt; * ACL: group:teamabc
+&gt; 
+
+You would want to set the ACL to group:teamabc@kolabtest.org</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Daniel Hoffend">dh@dotlan.net</who>
+            <bug_when>2015-02-23 16:57:04 EDT</bug_when>
+            <thetext>please remove the branch ticket/3860 I don&apos;t think in it&apos;s current state it&apos;s useful and more problematic then anything else.
+
+tbh we need first a design decision if you want
+
+a) &quot;silently&quot; replace the ldap_*base parameters during the runtime or 
+b) have configured ldap_*base values that get configured based on lookup or using a ldap_domain_default_base ...
+
+Additional the current implementation makes it hard to understand, debug and do work in a secondary domain using the generic cyrus-admin user.
+
+He detailled writeup is posted on kolab-devel maillinglist.
+http://lists.kolab.org/pipermail/devel/2015-February/015268.html</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1553</attachid>
+            <date>2015-02-16 18:38 EDT</date>
+            <desc>0001-add-additional-replace-B-for-ldap-base-dn-in-ptsmodu.patch</desc>
+            <filename>0001-add-additional-replace-B-for-ldap-base-dn-in-ptsmodu.patch</filename>
+            <type>text/plain</type>
+            <size>4814</size>
+            <attacher>dh@dotlan.net</attacher>
+            
+              <data encoding="base64">RnJvbSAyY2UzMWYyNjcxMTMwYjk2N2M3MjE5ZGEyNzY0MmJmY2IyN2YxZDYyIE1vbiBTZXAgMTcg
+MDA6MDA6MDAgMjAwMQpGcm9tOiBEYW5pZWwgSG9mZmVuZCA8ZGhAZG90bGFuLm5ldD4KRGF0ZTog
+VHVlLCAxNyBGZWIgMjAxNSAwMDozMjoxNSArMDEwMApTdWJqZWN0OiBbUEFUQ0hdIGFkZCBhZGRp
+dGlvbmFsIHJlcGxhY2UgJUIgZm9yIGxkYXAgYmFzZSBkbiBpbgogcHRzbW9kdWxlX2V4cGFuZF90
+b2tlbnMoKQoKLS0tCiBwdGNsaWVudC9sZGFwLmMgfCAzMCArKysrKysrKysrKysrKysrKysrKysr
+LS0tLS0tLS0KIDEgZmlsZSBjaGFuZ2VkLCAyMiBpbnNlcnRpb25zKCspLCA4IGRlbGV0aW9ucygt
+KQoKZGlmZiAtLWdpdCBhL3B0Y2xpZW50L2xkYXAuYyBiL3B0Y2xpZW50L2xkYXAuYwppbmRleCBk
+NjI1OWEzLi4wN2FmMjdkIDEwMDY0NAotLS0gYS9wdGNsaWVudC9sZGFwLmMKKysrIGIvcHRjbGll
+bnQvbGRhcC5jCkBAIC03NDEsMTIgKzc0MSwxNCBAQCBzdGF0aWMgaW50IHB0c21vZHVsZV90b2tl
+bml6ZV9kb21haW5zKAogICogICAlUiAgID0gcHJlcGVuZCAnQCcgdG8gZG9tYWluCiAgKiAgICUx
+LTkgPSBkb21haW4gdG9rZW5zICglMSA9IHRsZCwgJTIgPSBkb21haW4gd2hlbiAlZCA9IGRvbWFp
+bi50bGQpCiAgKiAgICVEICAgPSB1c2VyIEROCisgKiAgICVCICAgPSBiYXNlIEROCiAgKiBOb3Rl
+OiBjYWxsaW5nIGZ1bmN0aW9uIG11c3QgZnJlZSBtZW1vcnkuCiAgKi8KIHN0YXRpYyBpbnQgcHRz
+bW9kdWxlX2V4cGFuZF90b2tlbnMoCiAgICAgY29uc3QgY2hhciAqcGF0dGVybiwKICAgICBjb25z
+dCBjaGFyICp1c2VybmFtZSwKICAgICBjb25zdCBjaGFyICpkbiwKKyAgICBjb25zdCBjaGFyICpi
+YXNlLAogICAgIGNoYXIgKipyZXN1bHQpCiB7CiAgICAgY2hhciAqYnVmOwpAQCAtNzU3LDcgKzc1
+OSw3IEBAIHN0YXRpYyBpbnQgcHRzbW9kdWxlX2V4cGFuZF90b2tlbnMoCiAKICAgICAvKiB0byBw
+ZXJtaXQgbXVsdGlwbGUgb2NjdXJlbmNlcyBvZiB1c2VybmFtZSBhbmQvb3IgcmVhbG0gaW4gZmls
+dGVyICovCiAgICAgLyogYW5kIGF2b2lkIG1lbW9yeSBvdmVyZmxvdyBpbiBmaWx0ZXIgYnVpbGQg
+W2VnOiAofCh1aWQ9JXUpKHVzZXJpZD0ldSkpIF0gKi8KLSAgICBpbnQgcGVyY2VudHMsIHVzZXJf
+bGVuLCBkbl9sZW4sIG1heHBhcmFtbGVuZ3RoOworICAgIGludCBwZXJjZW50cywgdXNlcl9sZW4s
+IGRuX2xlbiwgYmFzZV9sZW4sIG1heHBhcmFtbGVuZ3RoOwogCiAgICAgaWYgKHBhdHRlcm4gPT0g
+TlVMTCkgewogICAgICAgICBzeXNsb2coTE9HX0VSUiwgImZpbHRlciBwYXR0ZXJuIG5vdCBzZXR1
+cCIpOwpAQCAtNzY5LDggKzc3MSwxMCBAQCBzdGF0aWMgaW50IHB0c21vZHVsZV9leHBhbmRfdG9r
+ZW5zKAogICAgICAgIHRoZW4gdXNlcm5hbWUgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgKi8KICAgICB1c2VyX2xlbj11c2VybmFtZSA/IHN0cmxlbih1c2VybmFtZSkg
+OiAwOwogICAgIGRuX2xlbj1kbiA/IHN0cmxlbihkbikgOiAwOworICAgIGJhc2VfbGVuPWJhc2Ug
+PyBzdHJsZW4oYmFzZSkgOiAwCiAKICAgICBtYXhwYXJhbWxlbmd0aCA9IFBUU01fTUFYKHVzZXJf
+bGVuKzEsIGRuX2xlbik7IC8qICsxIGZvciAlUiB3aGVuICdAJyBpcyBwcmVwZW5kZWQgKi8KKyAg
+ICBtYXhwYXJhbWxlbmd0aCA9IFBUU01fTUFYKG1heHBhcmFtbGVuZ3RoLCBiYXNlX2xlbik7CiAK
+ICAgICAvKiBmaW5kIHRoZSBudW1iZXIgb2Ygb2NjdXJlbmNlcyBvZiBwZXJjZW50IHNpZ24gaW4g
+ZmlsdGVyICovCiAgICAgZm9yKCBwZXJjZW50cz0wLCBidWY9KGNoYXIgKilwYXR0ZXJuOyAqYnVm
+OyBidWYrKyApIHsKQEAgLTg2NCw2ICs4NjgsMTYgQEAgc3RhdGljIGludCBwdHNtb2R1bGVfZXhw
+YW5kX3Rva2VucygKICAgICAgICAgICAgICAgICB9IGVsc2UKICAgICAgICAgICAgICAgICAgICAg
+c3lzbG9nKExPR19ERUJVRywgImRuIG5vdCBhdmFpbGFibGUuIik7CiAgICAgICAgICAgICAgICAg
+YnJlYWs7CisgICAgICAgICAgICBjYXNlICdCJzoKKyAgICAgICAgICAgICAgICBpZiAoSVNTRVQo
+YmFzZSkpIHsKKyAgICAgICAgICAgICAgICAgICAgcmMgPSBwdHNtb2R1bGVfZXNjYXBlKGJhc2Us
+IHN0cmxlbihiYXNlKSwgJmVidWYpOworICAgICAgICAgICAgICAgICAgICBpZiAocmMgPT0gUFRT
+TV9PSykgeworICAgICAgICAgICAgICAgICAgICAgICAgc3RyY2F0KGJ1ZixlYnVmKTsKKyAgICAg
+ICAgICAgICAgICAgICAgICAgIGZyZWUoZWJ1Zik7CisgICAgICAgICAgICAgICAgICAgIH0KKyAg
+ICAgICAgICAgICAgICB9IGVsc2UKKyAgICAgICAgICAgICAgICAgICAgc3lzbG9nKExPR19ERUJV
+RywgImRuIG5vdCBhdmFpbGFibGUuIik7CisgICAgICAgICAgICAgICAgYnJlYWs7CiAgICAgICAg
+ICAgICBkZWZhdWx0OgogICAgICAgICAgICAgICAgIGJyZWFrOwogICAgICAgICB9CkBAIC05NDMs
+NyArOTU3LDcgQEAgc3RhdGljIGludCBwdHNtb2R1bGVfZ2V0X2RuKAogI2VuZGlmCiAKICAgICB7
+Ci0gICAgICAgIHJjID0gcHRzbW9kdWxlX2V4cGFuZF90b2tlbnMocHRzbS0+ZmlsdGVyLCBjYW5v
+bl9pZCwgTlVMTCwgJmZpbHRlcik7CisgICAgICAgIHJjID0gcHRzbW9kdWxlX2V4cGFuZF90b2tl
+bnMocHRzbS0+ZmlsdGVyLCBjYW5vbl9pZCwgTlVMTCwgTlVMTCwgJmZpbHRlcik7CiAgICAgICAg
+IGlmIChyYyAhPSBQVFNNX09LKQogICAgICAgICAgICAgcmV0dXJuIHJjOwogCkBAIC05OTksNyAr
+MTAxMyw3IEBAIHN0YXRpYyBpbnQgcHRzbW9kdWxlX2dldF9kbigKIAkgICAgfQogCiAJfSBlbHNl
+IHsKLSAgICAgICAgICAgIHJjID0gcHRzbW9kdWxlX2V4cGFuZF90b2tlbnMocHRzbS0+YmFzZSwg
+Y2Fub25faWQsIE5VTEwsICZiYXNlKTsKKyAgICAgICAgICAgIHJjID0gcHRzbW9kdWxlX2V4cGFu
+ZF90b2tlbnMocHRzbS0+YmFzZSwgY2Fub25faWQsIE5VTEwsIE5VTEwsICZiYXNlKTsKIAkgICAg
+aWYgKHJjICE9IFBUU01fT0spCiAJICAgICAgICByZXR1cm4gcmM7CiAJfQpAQCAtMTIxMSwxMyAr
+MTIyNSwxMyBAQCBzdGF0aWMgaW50IHB0c21vZHVsZV9tYWtlX2F1dGhzdGF0ZV9maWx0ZXIoCiAg
+ICAgICAgIHJldHVybiByYzsKICAgICB9CiAKLSAgICByYyA9IHB0c21vZHVsZV9leHBhbmRfdG9r
+ZW5zKHB0c20tPm1lbWJlcl9maWx0ZXIsIGNhbm9uX2lkLCBkbiwgJmZpbHRlcik7CisgICAgcmMg
+PSBwdHNtb2R1bGVfZXhwYW5kX3Rva2VucyhwdHNtLT5tZW1iZXJfZmlsdGVyLCBjYW5vbl9pZCwg
+ZG4sIHB0c20tPmJhc2UsICZmaWx0ZXIpOwogICAgIGlmIChyYyAhPSBQVFNNX09LKSB7CiAgICAg
+ICAgICpyZXBseSA9ICJwdHNtb2R1bGVfZXhwYW5kX3Rva2VucygpIGZhaWxlZCBmb3IgbWVtYmVy
+IGZpbHRlciI7CiAgICAgICAgIGdvdG8gZG9uZTsKICAgICB9CiAKLSAgICByYyA9IHB0c21vZHVs
+ZV9leHBhbmRfdG9rZW5zKHB0c20tPm1lbWJlcl9iYXNlLCBjYW5vbl9pZCwgZG4sICZiYXNlKTsK
+KyAgICByYyA9IHB0c21vZHVsZV9leHBhbmRfdG9rZW5zKHB0c20tPm1lbWJlcl9iYXNlLCBjYW5v
+bl9pZCwgZG4sIHB0c20tPmJhc2UsICZiYXNlKTsKICAgICBpZiAocmMgIT0gUFRTTV9PSykgewog
+ICAgICAgICAqcmVwbHkgPSAicHRzbW9kdWxlX2V4cGFuZF90b2tlbnMoKSBmYWlsZWQgZm9yIG1l
+bWJlciBzZWFyY2ggYmFzZSI7CiAgICAgICAgIGdvdG8gZG9uZTsKQEAgLTEzMzAsNyArMTM0NCw3
+IEBAIHN0YXRpYyBpbnQgcHRzbW9kdWxlX21ha2VfYXV0aHN0YXRlX2dyb3VwKAogICAgICAgICBy
+ZXR1cm4gcmM7CiAgICAgfQogCi0gICAgcmMgPSBwdHNtb2R1bGVfZXhwYW5kX3Rva2VucyhwdHNt
+LT5ncm91cF9maWx0ZXIsIGNhbm9uX2lkKzYsIE5VTEwsICZmaWx0ZXIpOworICAgIHJjID0gcHRz
+bW9kdWxlX2V4cGFuZF90b2tlbnMocHRzbS0+Z3JvdXBfZmlsdGVyLCBjYW5vbl9pZCs2LCBOVUxM
+LCBwdHNtLT5iYXNlLCAmZmlsdGVyKTsKICAgICBpZiAocmMgIT0gUFRTTV9PSykgewogICAgICAg
+ICAqcmVwbHkgPSAicHRzbW9kdWxlX2V4cGFuZF90b2tlbnMoKSBmYWlsZWQgZm9yIGdyb3VwIGZp
+bHRlciI7CiAgICAgICAgIGdvdG8gZG9uZTsKQEAgLTEzOTMsNyArMTQwNyw3IEBAIHN0YXRpYyBp
+bnQgcHRzbW9kdWxlX21ha2VfYXV0aHN0YXRlX2dyb3VwKAogCSAgICB9CiAJfQogICAgIH0gZWxz
+ZSB7Ci0JcmMgPSBwdHNtb2R1bGVfZXhwYW5kX3Rva2VucyhwdHNtLT5ncm91cF9iYXNlLCBjYW5v
+bl9pZCwgTlVMTCwgJmJhc2UpOworCXJjID0gcHRzbW9kdWxlX2V4cGFuZF90b2tlbnMocHRzbS0+
+Z3JvdXBfYmFzZSwgY2Fub25faWQsIE5VTEwsIHB0c20tPmJhc2UsICZiYXNlKTsKIAlpZiAocmMg
+IT0gUFRTTV9PSykKIAkgICAgcmV0dXJuIHJjOwogICAgIH0KQEAgLTE0MDEsNyArMTQxNSw3IEBA
+IHN0YXRpYyBpbnQgcHRzbW9kdWxlX21ha2VfYXV0aHN0YXRlX2dyb3VwKAogICAgIHN5c2xvZyhM
+T0dfREVCVUcsICIoZ3JvdXBzKSBhYm91dCB0byBzZWFyY2ggJXMgZm9yICVzIiwgYmFzZSwgZmls
+dGVyKTsKIAogCi0gICAgcmMgPSBwdHNtb2R1bGVfZXhwYW5kX3Rva2VucyhwdHNtLT5ncm91cF9i
+YXNlLCBjYW5vbl9pZCs2LCBOVUxMLCAmYmFzZSk7CisgICAgcmMgPSBwdHNtb2R1bGVfZXhwYW5k
+X3Rva2VucyhwdHNtLT5ncm91cF9iYXNlLCBjYW5vbl9pZCs2LCBOVUxMLCBwdHNtLT5iYXNlLCAm
+YmFzZSk7CiAgICAgaWYgKHJjICE9IFBUU01fT0spIHsKICAgICAgICAgKnJlcGx5ID0gInB0c21v
+ZHVsZV9leHBhbmRfdG9rZW5zKCkgZmFpbGVkIGZvciBncm91cCBzZWFyY2ggYmFzZSI7CiAgICAg
+ICAgIGdvdG8gZG9uZTsKLS0gCjEuOS4xCgo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

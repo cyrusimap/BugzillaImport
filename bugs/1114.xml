@@ -1,0 +1,220 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1114</bug_id>
+          
+          <creation_ts>2002-02-06 12:43 EDT</creation_ts>
+          <short_desc>mupdate slave synchronization speed---recreate versus syncing</short_desc>
+          <delta_ts>2010-10-18 12:41:52 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          <blocked>1117</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-06 12:43:10 EDT</bug_when>
+            <thetext>we can probably go faster by not bothering to fsync the slave&apos;s mailboxes.db
+file and just recreating it on every restart, but we then need to figure out how
+to resist new client connections (proxyd) until that happens.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-06 12:53:07 EDT</bug_when>
+            <thetext>idea:
+
+What if we have mupdate (slave) do it internally.
+
+Maybe have a mupdate_slave_fast_resync option in imapd.conf.
+
+If it&apos;s set, then mupdate (slave) does a setenv() on the appropriate
+enviornment variable, and unlinks the database just before it starts the
+sync process.
+
+Hrm, I suppose we still need a way such that proxyd doesn&apos;t start
+accepting connections until this is done.  (transactions?)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-06 12:56:23 EDT</bug_when>
+            <thetext>i don&apos;t see how transactions are going to stop proxyd&apos;s from accepting new
+connections, which is really the problem
+
+we could probably add some messages to master so you can say &quot;stop accepting new
+connections right now&quot; and &quot;restart accepting new connections&quot; but this will
+have to be done with a lot of care.  (imagine if you say stop accepting new
+connections but then want to do a ptloader-query...)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-07 16:53:18 EDT</bug_when>
+            <thetext>Excerpts from me/larry email about the current &quot;solution&quot;
+
+   Changes to mupdate:
+   -&gt; Has a switch &quot;mupdate_slave_fast_resync&quot; that putenv()&apos;s the
+   right thing for skiplist to be fast (and if there are other ones for
+   the other database types let me know), and unlinks the current
+   mailboxes.db (maybe this isn&apos;t good enough... what if a db backend uses
+   more than one file?)
+
+I really don&apos;t like the idea of using putenv()s for intraprocess
+communication.  Currently there isn&apos;t a good way of communicating
+options to the database backends, and there probably should be, but I
+haven&apos;t figured out an elegant way of doing it.
+
+We could probably add a &quot;removefile&quot; or something to cyrusdb.h.
+
+But we have to talk about the locking here; just removing the file
+leaves a race condition (that may not be important) for another
+process to come along and create the file.
+
+Maybe a &quot;truncatefile&quot; might be a better thing to add, so you start a
+txn, truncate the file, and then add whatever it is you want.
+
+   -&gt;service_init does not return for slaves until mailbox synchronization is
+   complete. (syncing is done in another thread so this was not the case
+   before)
+
+   Changes to master:
+   -&gt;New message from children to master -&gt; MASTER_SERVICE_READY, which is
+   sent directly after service_init completes
+
+   -&gt;waituntil option for the services.  Takes a single number as a
+   parameter.  No process with a &quot;1&quot; will start before all processes with
+   a &quot;0&quot; are done starting.  No process with a &quot;2&quot; will start before
+   all processes with a &quot;1&quot; are done starting (that is, sent
+   MUPDATE_SERVICE_READY).
+
+
+I don&apos;t understand how this works with services that fork constantly
+(like everything but mupdate right now).
+
+Are they just not allowed to have other things depend on them?
+
+   The effect we see is that the clients that try to connect to, say, proxyd
+   while the mupdate server is syncing is that they get a conection but no
+   data happens until after the sync is complete.  This certainly isn&apos;t
+   wrong, and if kmemserv is running it&apos;s probabally better than refusing the
+   connection outright.
+
+Well, my idea is that we&apos;ll replace kmemsrv with snmp querying the
+master.  We could then somehow make the snmp mentioned in cyrus.conf
+with a waituntil ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-23 18:05:07 EDT</bug_when>
+            <thetext>the more that i think about it, the more that i&apos;m convinced that this isn&apos;t
+compelling enough to complicate master, so i think the incremental stuff that
+mupdate -s does is probably better than starting from scratch each time
+
+thoughts?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-23 18:30:59 EDT</bug_when>
+            <thetext>the problem is that our previous testing seemed to indicate that that took 
+longer, though I wouldn&apos;t be surprised if something has changed to fix this.
+
+The real problem is that we can&apos;t have imapd (etc) start accepting connections 
+until after the sync is done.  I suppose we can just leave this in the hands of
+the new loadbalancing (or will transactions lock the file and thus prevent 
+anything useful from happening until the sync is complete?)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-23 18:37:03 EDT</bug_when>
+            <thetext>does synchronization hold a single mailbox lock open the entire time?
+
+why do we have to keep clients off, if we assume that the current list is &quot;close
+enough&quot;?
+
+i guess there is a question of what do we do if the frontend is really far
+behind the master mupdate server (far enough that clients will likely notice).
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-23 18:43:14 EDT</bug_when>
+            <thetext>it would hold the transaction open for the entire syncronization process.
+
+And if the frontend is far enough out of date, breaking the &quot;no new data, then 
+old data&quot; axiom becomes a real possibility.  (I&apos;ve seen it on just our few 
+frontends, atleast before we had the waituntil code).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-23 18:47:34 EDT</bug_when>
+            <thetext>hmm, i hadn&apos;t really thought about new transactions while the frontend is still
+synchronizing.
+
+i think we&apos;re going to need up-to-date times on how long it takes to synchronize.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-02-25 18:47:31 EDT</bug_when>
+            <thetext>(no version milestone for this one, since it&apos;s really a cmu deployment issue
+now, I&apos;m also making it block 1117 instead of 1115)
+
+too bad this requires GoodLoadBalancer (tm)  (did kevin get you the stuff we
+need to do that?)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-02-27 12:07:38 EDT</bug_when>
+            <thetext>yes, see bug 1159
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-06-12 12:49:12 EDT</bug_when>
+            <thetext>removing dependency, closing bug (since this doesn&apos;t actually seem to be a major
+issue in practice anyway, except for when bringing up a new server) </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-07-09 11:53:59 EDT</bug_when>
+            <thetext>repoening - this is actually a problem under load.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

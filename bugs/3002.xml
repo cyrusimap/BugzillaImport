@@ -1,0 +1,226 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3002</bug_id>
+          
+          <creation_ts>2007-11-06 09:20 EDT</creation_ts>
+          <short_desc>Can&apos;t create user mailbox contains quote</short_desc>
+          <delta_ts>2010-10-25 18:46:43 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Benjamin">benjamin.allix@air.defense.gouv.fr</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Benjamin">benjamin.allix@air.defense.gouv.fr</who>
+            <bug_when>2007-11-06 09:20:43 EDT</bug_when>
+            <thetext>Hy,
+
+I&apos;ve installed mailserver Linux (RedHat EL5), with Postfix, Cyrus-Imap and an LDAP auth.
+Everything ok for &quot;standart&quot; user account, but for user containing quotes, it doesn&apos;t work, the system can&apos;t create the mailbox.
+
+In logs
+--------------------------------------
+Oct 31 13:04:08 srv-test imap[501]: login: smtp.toto.fr [192.168.1.1] andre.n&apos;goma plaintext User logged in
+Oct 31 13:04:08 srv-test imap[501]: autocreateinbox: autocreate inbox for user andre.n&apos;goma was called
+Oct 31 13:04:08 srv-test imap[501]: autocreateinbox: User andre.n&apos;goma, INBOX failed. Invalid mailbox name
+
+My main.cf
+----------------------
+queue_directory = /var/spool/postfix
+delay_warning_time = 1
+command_directory = /usr/sbin
+daemon_directory = /usr/libexec/postfix
+mail_owner = postfix
+myhostname = smtp.toto.fr
+mydomain = toto.fr
+masquerade_domains = toto.fr
+myorigin = $masquerade_domains
+inet_interfaces = 192.168.1.1
+proxy_interfaces = 192.168.1.1
+mydestination = $myhostname, localhost.$mydomain, localhost
+unknown_local_recipient_reject_code = 550
+mynetworks_style = class
+relay_domains = toto.fr
+transport_maps = hash:/etc/postfix/transport
+virtual_alias_maps = ldap:/etc/postfix/postfix-ldap.cf
+alias_maps = hash:/etc/aliases
+alias_database = hash:/etc/aliases
+message_size_limit = 8388608
+mail_spool_directory = /var/spool/mail
+cyrus_destination_recipient_limit = 1
+mailbox_command = /some/where/procmail -a &quot;$EXTENSION&quot;
+smtpd_banner = $myhostname ESMTP $mail_name
+debug_peer_level = 2
+debugger_command =
+PATH=/bin:/usr/bin:/usr/local/bin:/usr/X11R6/bin
+xxgdb $daemon_directory/$process_name $process_id &amp; sleep 5
+sendmail_path = /usr/sbin/sendmail.postfix
+newaliases_path = /usr/bin/newaliases.postfix
+mailq_path = /usr/bin/mailq.postfix
+setgid_group = postdrop
+html_directory = no
+manpage_directory = /usr/share/man
+sample_directory = /usr/share/doc/postfix-2.3.3/samples
+readme_directory = /usr/share/doc/postfix-2.3.3/README_FILES
+
+My cyrus.conf
+--------------------------
+# standard standalone server implementation
+
+START {
+# do not delete this entry!
+recover cmd=&quot;ctl_cyrusdb -r&quot;
+
+# this is only necessary if using idled for IMAP IDLE
+idled cmd=&quot;idled&quot;
+}
+
+# UNIX sockets start with a slash and are put into /var/lib/imap/sockets
+SERVICES {
+# add or remove based on preferences
+imap cmd=&quot;imapd&quot; listen=&quot;192.168.1.1:imap&quot; prefork=5
+# imaps cmd=&quot;imapd -s&quot; listen=&quot;imaps&quot; prefork=1
+pop3 cmd=&quot;pop3d&quot; listen=&quot;192.168.1.1:pop3&quot; prefork=3
+# pop3s cmd=&quot;pop3d -s&quot; listen=&quot;pop3s&quot; prefork=1
+# sieve cmd=&quot;timsieved&quot; listen=&quot;sieve&quot; prefork=0
+lmtpunix cmd=&quot;lmtpd&quot; listen=&quot;/var/lib/imap/socket/lmtp&quot; prefork=1
+
+# this is only necessary if using notifications
+# notify cmd=&quot;notifyd&quot; listen=&quot;/var/lib/imap/socket/notify&quot; proto=&quot;udp&quot; prefork=1
+}
+
+EVENTS {
+# this is required
+checkpoint cmd=&quot;ctl_cyrusdb -c&quot; period=30
+
+# this is only necessary if using duplicate delivery suppression,
+# Sieve or NNTP
+delprune cmd=&quot;cyr_expire -E 3&quot; at=0400
+
+# this is only necessary if caching TLS sessions
+tlsprune cmd=&quot;tls_prune&quot; at=0400
+}
+
+My imapd.conf
+---------------------------
+configdirectory: /var/lib/imap
+partition-default: /var/spool/imap
+admins: cyrus
+#sievedir: /var/lib/imap/sieve
+#sendmail: /usr/sbin/sendmail
+hashimapspool: true
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN
+tls_cert_file: /etc/pki/cyrus-imapd/cyrus-imapd.pem
+tls_key_file: /etc/pki/cyrus-imapd/cyrus-imapd.pem
+tls_ca_file: /etc/pki/tls/certs/ca-bundle.crt
+sieveuserhomedir: yes
+autocreate_sieve_script: /etc/default_sieve_script
+unixhierarchysep: 1
+munge8bit: 0
+altnamespace: yes
+autocreatequota: 153600
+
+Ldapsearch of a user who doesn&apos;t work
+---------------------------------------
+# extended LDIF
+#
+# LDAPv3
+# base &lt;&gt; with scope subtree
+# filter: uid=andre.n&apos;goma
+# requesting: ALL
+#
+
+# andre.n&apos;goma, users, toto.fr
+dn: uid=andre.n&apos;goma,dmdName=users,dc=toto,dc=fr
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+objectClass: userSecurityInformation
+objectClass: otherContactInformation
+objectClass: posixAccount
+objectClass: qmailUser
+uid: andre.n&apos;goma
+cn: N&apos;GOMA Andre
+sn: N&apos;GOMA
+givenName: Andre
+displayName: N&apos;GOMA Andre
+userPassword:: cGFzc3dvcmQ=
+ou: TEST
+description: TEST
+uidNumber: 1003
+gidNumber: 513
+homeDirectory: /home/andre.n&apos;goma
+loginShell: /bin/false
+mail: andre.n&apos;goma@toto.fr
+mailMessageStore: /var/spool/vmail/andre.n&apos;goma
+mailQuota: 5242880S, 50C
+accountStatus: active
+
+# search result
+search: 2
+result: 0 Success
+
+# numResponses: 2
+# numEntries: 1
+
+I can&apos;t change my global architecture and I also can&apos;t install an other software...
+
+Configuration: RedHat EL5 64bits
+               Postfix, Cyrus-Imap 2.3.8
+               OpenLDAP 2.3</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2007-11-12 10:11:24 EDT</bug_when>
+            <thetext>The quotes are not in the set of allowed characters, which is defined as
+GOODCHARS in imap/mboxname.c
+
+I don&apos;t know if adding it to GOODCHARS will bring other problems.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-10-02 09:41:42 EDT</bug_when>
+            <thetext>2.3.13 will allow &apos; # $</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

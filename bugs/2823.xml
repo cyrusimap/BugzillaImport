@@ -1,0 +1,225 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2823</bug_id>
+          
+          <creation_ts>2006-04-26 11:06 EDT</creation_ts>
+          <short_desc>proxyd and lmtpproxyd segfault after backend crashes</short_desc>
+          <delta_ts>2010-10-18 12:43:10 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="paul r turgyan">pturgyan@umich.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="paul r turgyan">pturgyan@umich.edu</who>
+            <bug_when>2006-04-26 11:06:37 EDT</bug_when>
+            <thetext>If proxyd or lmtpproxyd have a cached connection to a backend,  and the backend goes down,  then
+when proxyd or lmtpd try to reconnect they can segfault.  I&apos;ve also seen segfaults during
+proxyd and lmtpproxyd shutdown processing after a backend goes down.
+
+If backend_connect (backend.c) encounters a problem during the connection process,
+it frees the passed in backend struct,  whether it allocated the structure or not.   proxyd and 
+lmtpproxyd can have a pointer in backend_cached to the structure that backend_connect has 
+freed, and they will segfault when they try to dereference the pointer or free the structure during 
+shutdown.
+
+Here&apos;s a patch
+
+*** backend.c-  Mon Feb 14 01:39:55 2005
+--- backend.c   Wed Apr 19 11:53:27 2006
+***************
+*** 264,270 ****
+      }
+  }
+  
+! struct backend *backend_connect(struct backend *ret, const char *server,
+                                struct protocol_t *prot, const char *userid,
+                                const char **auth_status)
+  {
+--- 264,270 ----
+      }
+  }
+  
+! struct backend *backend_connect(struct backend *ret_backend, const char *serve
+r,
+                                struct protocol_t *prot, const char *userid,
+                                const char **auth_status)
+  {
+***************
+*** 276,288 ****
+      struct sockaddr_un sunsock;
+      char buf[2048], *mechlist = NULL;
+      struct sigaction action;
+  
+!     if (!ret) {
+        ret = xmalloc(sizeof(struct backend));
+        memset(ret, 0, sizeof(struct backend));
+        strlcpy(ret-&gt;hostname, server, sizeof(ret-&gt;hostname));
+        ret-&gt;timeout = NULL;
+      }
+  
+      if (server[0] == &apos;/&apos;) { /* unix socket */
+        res0 = &amp;hints;
+--- 276,291 ----
+      struct sockaddr_un sunsock;
+      char buf[2048], *mechlist = NULL;
+      struct sigaction action;
++     struct backend *ret;
+  
+!     if (!ret_backend) {
+        ret = xmalloc(sizeof(struct backend));
+        memset(ret, 0, sizeof(struct backend));
+        strlcpy(ret-&gt;hostname, server, sizeof(ret-&gt;hostname));
+        ret-&gt;timeout = NULL;
+      }
++     else
++       ret = ret_backend;
+  
+      if (server[0] == &apos;/&apos;) { /* unix socket */
+        res0 = &amp;hints;
+***************
+*** 312,318 ****
+        if (err) {
+            syslog(LOG_ERR, &quot;getaddrinfo(%s) failed: %s&quot;,
+                   server, gai_strerror(err));
+!           free(ret);
+            return NULL;
+        }
+      }
+--- 315,322 ----
+        if (err) {
+            syslog(LOG_ERR, &quot;getaddrinfo(%s) failed: %s&quot;,
+                   server, gai_strerror(err));
+!           if (!ret_backend)
+!               free(ret);
+            return NULL;
+        }
+      }
+***************
+*** 339,344 ****
+--- 343,349 ----
+        close(sock);
+        sock = -1;
+      }
++           if (!ret_backend)
+  
+      /* Remove timeout code */
+      alarm(0);
+***************
+*** 348,354 ****
+        if (res0 != &amp;hints)
+            freeaddrinfo(res0);
+        syslog(LOG_ERR, &quot;connect(%s) failed: %m&quot;, server);
+!       free(ret);
+        return NULL;
+      }
+      memcpy(&amp;ret-&gt;addr, res-&gt;ai_addr, res-&gt;ai_addrlen);
+--- 353,360 ----
+        if (res0 != &amp;hints)
+            freeaddrinfo(res0);
+        syslog(LOG_ERR, &quot;connect(%s) failed: %m&quot;, server);
+!       if (! ret_backend) 
+!           free(ret);
+        return NULL;
+      }
+      memcpy(&amp;ret-&gt;addr, res-&gt;ai_addr, res-&gt;ai_addrlen);
+***************
+*** 366,372 ****
+            syslog(LOG_ERR,
+                   &quot;backend_connect(): couldn&apos;t read initial greeting: %s&quot;,
+                   ret-&gt;in-&gt;error ? ret-&gt;in-&gt;error : &quot;(null)&quot;);
+!           free(ret);
+            close(sock);
+            return NULL;
+        }
+--- 372,379 ----
+            syslog(LOG_ERR,
+                   &quot;backend_connect(): couldn&apos;t read initial greeting: %s&quot;,
+                   ret-&gt;in-&gt;error ? ret-&gt;in-&gt;error : &quot;(null)&quot;);
+!           if (!ret_backend)
+!               free(ret);
+            close(sock);
+            return NULL;
+        }
+***************
+*** 381,394 ****
+        if ((r = backend_authenticate(ret, prot, &amp;mechlist, userid, auth_status)
+)) {
+            syslog(LOG_ERR, &quot;couldn&apos;t authenticate to backend server: %s&quot;,
+                   sasl_errstring(r, NULL, NULL));
+!           free(ret);
+            close(sock);
+            ret = NULL;
+        }
+      }
+  
+      if (mechlist) free(mechlist);
+!     
+      return ret;
+  }
+  
+--- 388,405 ----
+        if ((r = backend_authenticate(ret, prot, &amp;mechlist, userid, auth_status)
+)) {
+            syslog(LOG_ERR, &quot;couldn&apos;t authenticate to backend server: %s&quot;,
+                   sasl_errstring(r, NULL, NULL));
+!           if (!ret_backend)
+!               free(ret);
+            close(sock);
+            ret = NULL;
+        }
+      }
+  
+      if (mechlist) free(mechlist);
+! 
+!     if (! ret_backend) 
+!       ret_backend = ret;
+!           
+      return ret;
+  }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-05-11 14:05:51 EDT</bug_when>
+            <thetext>Patch applied.  Thanks.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

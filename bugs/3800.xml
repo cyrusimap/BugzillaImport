@@ -1,0 +1,301 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3800</bug_id>
+          
+          <creation_ts>2013-06-13 14:36 EDT</creation_ts>
+          <short_desc>Invalid write in foreach (lib/cyrusdb_flat.c:464)</short_desc>
+          <delta_ts>2013-07-09 16:00:24 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dilyan Palauzov">dilyan.palauzov@aegee.org</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-06-13 14:36:06 EDT</bug_when>
+            <thetext>Created an attachment (id=1521)
+this flat DB cannot be converted
+
+When I execute
+
+ ./cvt_cyrusdb /full-path/petra.sub.flat.fail flat /full-path/petra.sub.skiplist skiplist
+
+(petra.sub.flat.fail is attached), I get the message
+
+Converting from /root/cyrus-debug/petra.sub.flat.fail (flat) to /root/cyrus-debug/petra.sub.skiplist (skiplist)
+*** Error in `./cvt_cyrusdb&apos;: realloc(): invalid next size: 0x0000000001b21b00 ***
+
+however if I cut the first 20 lines from petra.sub.skiplist.fail (see petra.sub.skiplist.ok) and execute the same operation on petra.sub.skiplist.ok, cvt_cyrusdb does not fial.
+
+Output from &quot;valgrind-3.8.1 --tool=memcheck&quot; on the above command:
+
+Converting from /root/cyrus-debug/petra.sub.flat.fail (flat) to /root/cyrus-debug/petra.sub.skiplist (skiplist)
+== Invalid write of size 1
+==    at 0x445C6F: foreach (cyrusdb_flat.c:464)
+==    by 0x441745: cyrusdb_convert (cyrusdb.c:204)
+==    by 0x406D9B: main (cvt_cyrusdb.c:153)
+==  Address 0x82885e8 is 0 bytes after a block of size 40 alloc&apos;d
+==    at 0x4C2BB50: malloc (in /usr/lib64/valgrind/vgpreload_memcheck-amd64-linux.so)
+==    by 0x452966: xrealloc (xmalloc.c:83)
+==    by 0x445C48: foreach (cyrusdb_flat.c:461)
+==    by 0x441745: cyrusdb_convert (cyrusdb.c:204)
+==    by 0x406D9B: main (cvt_cyrusdb.c:153)
+==
+==
+== HEAP SUMMARY:
+==     in use at exit: 2,366 bytes in 28 blocks
+==   total heap usage: 415 allocs, 387 frees, 67,078 bytes allocated
+==
+
+I have 64bit system with libc-2.17.
+
+Any ideas?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-06-13 14:37:43 EDT</bug_when>
+            <thetext>Created an attachment (id=1522)
+cvt_cyrusdb has no problems with this file, it is just 20 lines shorter than the other one</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-06-24 14:48:55 EDT</bug_when>
+            <thetext>The problem appears, when savebuf == keylen == 40 .
+
+Do you think this is the correct patch?
+
+diff --git a/lib/cyrusdb_flat.c b/lib/cyrusdb_flat.c
+index 0608ae8..63a97b0 100644
+--- a/lib/cyrusdb_flat.c
++++ b/lib/cyrusdb_flat.c
+@@ -446,21 +446,21 @@ static int foreach(struct db *db,
+        /* does it still match prefix? */
+        if (keylen &lt; (size_t) prefixlen) break;
+        if (prefixlen &amp;&amp; memcmp(key, prefix, prefixlen)) break;
+
+        if (!goodp || goodp(rock, key, keylen, data, datalen)) {
+            unsigned long ino = db-&gt;ino;
+            unsigned long sz = db-&gt;size;
+
+            if(mytid) {
+                /* transaction present, this means we do the slow way */
+-               if (!savebuf || keylen &gt; savebuflen) {
++               if (!savebuf || keylen &gt;= savebuflen) {
+                    int dblsize = 2 * savebuflen;
+                    int addsize = keylen + 32;
+
+                    savebuflen = (dblsize &gt; addsize) ? dblsize : addsize;
+                    savebuf = xrealloc(savebuf, savebuflen);
+                }
+                memcpy(savebuf, key, keylen);
+                savebuf[keylen] = &apos;\0&apos;;
+                savebufsize = keylen;
+            }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-07-07 12:19:02 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; The problem appears, when savebuf == keylen == 40 .
+&gt; 
+&gt; Do you think this is the correct patch?
+&gt; 
+
+If this works for you, please go ahead and commit / resolve the ticket. Sounds like an off-by-one error ;-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2013-07-09 16:00:24 EDT</bug_when>
+            <thetext>Fixed on cyrus-imapd-2.4 with
+
+commit 206fdea00749e38f62eaeaa75c7e2f487feb8f83
+Author: &amp;#1044;&amp;#1080;&amp;#1083;&amp;#1103;&amp;#1085; &amp;#1055;&amp;#1072;&amp;#1083;&amp;#1072;&amp;#1091;&amp;#1079;&amp;#1086;&amp;#1074; &lt;git-dpa@aegee.org&gt;
+Date:   Tue Jul 9 19:51:56 2013 +0000
+
+    Bug#3800: cyrusdb_flat: fix corner case where keylen==savebuflen
+
+    (==40).  In this case, the size of savebuf is not increased and
+      savebuf[keylen] = &apos;\0&apos;
+    failes.
+
+    The code snipped with the fix (and the problem) does not appear on
+    master:lib/cyrusdb_flat, so probably the error is just for 2.4.x .</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1521</attachid>
+            <date>2013-06-13 14:36 EDT</date>
+            <desc>this flat DB cannot be converted</desc>
+            <filename>petra.sub.flat.fail</filename>
+            <type>text/plain</type>
+            <size>3258</size>
+            <attacher>dilyan.palauzov@aegee.org</attacher>
+            
+              <data encoding="base64">dXNlci5hYWEJCnVzZXIuYWFhLmdnZ2dnCQp1c2VyLmFhYS5tbW1tbW1tbW0JCnVzZXIuYWFhLm1t
+bW1tbW1tbS5BQUFBQQkKdXNlci5hYWEueXl5eXkJCnVzZXIucGV0cmEJCnVzZXIucGV0cmEuQUJD
+REUJCnVzZXIucGV0cmEuQUJDREUuQUFBQUFBQUFBCQp1c2VyLnBldHJhLkFCQ0RFLkNoaGhoaGho
+CQp1c2VyLnBldHJhLkFCQ0RFLkNsbGxsbGwJCnVzZXIucGV0cmEuQUJDREUuRkcJCnVzZXIucGV0
+cmEuQUJDREUuRkcuS29obGUJCnVzZXIucGV0cmEuQUJDREUuRkcuTGlzdHMJCnVzZXIucGV0cmEu
+QUJDREUuRkcuTGlzdHMuQUFBCQp1c2VyLnBldHJhLkFCQ0RFLkZHLkxpc3RzLkJCQkJCCQp1c2Vy
+LnBldHJhLkFCQ0RFLkZHLkxpc3RzLk5OTk5OTgkKdXNlci5wZXRyYS5BQkNERS5GRy5MaXN0cy5Q
+UFBQUFBQCQp1c2VyLnBldHJhLkFCQ0RFLkZHLkxpc3RzLllZWVkgTExMTAkKdXNlci5wZXRyYS5B
+QkNERS5GRy5QUFBQUFBQCQp1c2VyLnBldHJhLkFCQ0RFLkZHLlVVVVVVCQp1c2VyLnBldHJhLkFC
+Q0RFLkZHLldXVwkKdXNlci5wZXRyYS5BQkNERS5GRy5ubm5ubm4JCnVzZXIucGV0cmEuQUJDREUu
+S0tLS0tLS0tLCQp1c2VyLnBldHJhLkFCQ0RFLlJSUlJSLU5OTk5OTi1MCQp1c2VyLnBldHJhLkFC
+Q0RFLlNVMjAwMQkKdXNlci5wZXRyYS5BQkNERS5TVTIwMDIJCnVzZXIucGV0cmEuQUJDREUuV1dX
+V1dXCQp1c2VyLnBldHJhLkFCQ0RFLmFhYWFhLWwJCnVzZXIucGV0cmEuQVZWVgkKdXNlci5wZXRy
+YS5BVlZWLklJSUlJSUkJCnVzZXIucGV0cmEuQVZWVi5OTk4JCnVzZXIucGV0cmEuQVZWVi5SUlJS
+UgkKdXNlci5wZXRyYS5BVlZWLlJSUlJSLlFRUVFRUVFRCQp1c2VyLnBldHJhLkFWVlYuVlZWVlZW
+VlYJCnVzZXIucGV0cmEuQVZWVi5iYmJiYmIJCnVzZXIucGV0cmEuQVJSUlJSUlIJCnVzZXIucGV0
+cmEuQVJSUlJSUlIuMjAxMQkKdXNlci5wZXRyYS5BUlJSUlJSUi4yMDEyCQp1c2VyLnBldHJhLkFS
+UlJSUlJSLjIwMTMJCnVzZXIucGV0cmEuQVRUVFRUCQp1c2VyLnBldHJhLkFUVFRUVC4wIC0gSVNQ
+CQp1c2VyLnBldHJhLkFUVFRUVC4xMy1UVFRUVFRUVCBERERERERERERECQp1c2VyLnBldHJhLkFU
+VFRUVC4xNC0xMTEtZ2dnZ2dnZy1kZQkKdXNlci5wZXRyYS5BVFRUVFQuMTctaGhoaGhoaGhoaGho
+aGgJCnVzZXIucGV0cmEuQVRUVFRULjE4LXBwcHBwcHBwcHBwcHBwCQp1c2VyLnBldHJhLkFUVFRU
+VC4yMS1QUFBQUFBQUFBQUAkKdXNlci5wZXRyYS5BVFRUVFQuMjItTExMTExMTExMTExMTAkKdXNl
+ci5wZXRyYS5BVFRUVFQuMzItU1NTU1MgQUFBJ0VFRUVFRW8JCnVzZXIucGV0cmEuQVRUVFRULjMz
+LVZWVlZWVlZWVgkKdXNlci5wZXRyYS5BVFRUVFQuMzUtQUFBCQp1c2VyLnBldHJhLkFUVFRUVC4z
+Ni1wcHBwcHBwcHBwCQp1c2VyLnBldHJhLkFUVFRUVC4zNy1QJi1HCQp1c2VyLnBldHJhLkFUVFRU
+VC5CQQkKdXNlci5wZXRyYS5BVFRUVFQuRERECQp1c2VyLnBldHJhLkFUVFRUVC5MTExMTExMTExM
+TEwJCnVzZXIucGV0cmEuQ0NDQ0NDQ0MJCnVzZXIucGV0cmEuRGVsZXRlZCBJdGVtcwkKdXNlci5w
+ZXRyYS5EZWxldGVkIE1lc3NhZ2VzCQp1c2VyLnBldHJhLkRyYWZ0cwkKdXNlci5wZXRyYS5FbnR3
+JkFQdy1yZmUJCnVzZXIucGV0cmEuR2VzZW5kZXQJCnVzZXIucGV0cmEuR2VzZW5kZXRlIE9iamVr
+dGUJCnVzZXIucGV0cmEuSUVURgkKdXNlci5wZXRyYS5JRVRGLmltYXA1CQp1c2VyLnBldHJhLklF
+VEYuc2lldmUJCnVzZXIucGV0cmEuSUVURi5zbXRwCQp1c2VyLnBldHJhLklFVEYueG1wcAkKdXNl
+ci5wZXRyYS5JSUlJSQkKdXNlci5wZXRyYS5JbmZlY3RlZCBJdGVtcwkKdXNlci5wZXRyYS5KdW5r
+IEUtbWFpbAkKdXNlci5wZXRyYS5KdW5rLUUtTWFpbAkKdXNlci5wZXRyYS5QYXBpZXJrb3JiCQp1
+c2VyLnBldHJhLlNlbnQJCnVzZXIucGV0cmEuU2VudCBJdGVtcwkKdXNlci5wZXRyYS5TZW50IEl0
+ZW1zLkFCQ0RFCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuQUJDREUuRkcJCnVzZXIucGV0cmEuU2Vu
+dCBJdGVtcy5BQkNERS5TVTIwMDQJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5BQkNERS5TVTIwMDUJ
+CnVzZXIucGV0cmEuU2VudCBJdGVtcy5BVktNCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuQW50b25p
+eWEJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5Bd28gcG9zdGEJCnVzZXIucGV0cmEuU2VudCBJdGVt
+cy5EYWFhYWFhCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuRGFiYmIJCnVzZXIucGV0cmEuU2VudCBJ
+dGVtcy5GRkYJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5GRkYuRVNNCQp1c2VyLnBldHJhLlNlbnQg
+SXRlbXMuRkZGLlNvbnN0aWdlCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuR0dHR0cJCnVzZXIucGV0
+cmEuU2VudCBJdGVtcy5JbGxsCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuSW5mbyAxCQp1c2VyLnBl
+dHJhLlNlbnQgSXRlbXMuSW5mbyAyCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuTWFnZ2cJCnVzZXIu
+cGV0cmEuU2VudCBJdGVtcy5NYXJycnJyCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuU2FhYWFhYQkK
+dXNlci5wZXRyYS5TZW50IEl0ZW1zLlN0ZWVlZWUJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5UZWVl
+ZWVlZQkKdXNlci5wZXRyYS5TZW50IEl0ZW1zLlRzc3Nzc3NzCQp1c2VyLnBldHJhLlNlbnQgSXRl
+bXMuV2VlZWVlZWUJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5kcnVnaQkKdXNlci5wZXRyYS5TZW50
+IE1lc3NhZ2VzCQp1c2VyLnBldHJhLlNwYW0JCnVzZXIucGV0cmEuU3BhbTEwCQp1c2VyLnBldHJh
+LlNwYW0xNQkKdXNlci5wZXRyYS5kcnVnaQkKdXNlci5wZXRyYS5kcnVnaS4mQkNJRU1BUTlCRTgt
+IC0gJkJFRUVNZ1F3QkVJRU1RUXctCQp1c2VyLnBldHJhLmRydWdpLkJpYmxpb3RoZWtlbgkKdXNl
+ci5wZXRyYS5kcnVnaS5JSUlJSUlJSUlJNElJSUkJCnVzZXIucGV0cmEuZHJ1Z2kuTSZBUHctbnN0
+ZXIJCnVzZXIucGV0cmEuZHJ1Z2kuTSZBUHctbnN0ZXIubW1tbW1tCQp1c2VyLnBldHJhLmRydWdp
+Lk5OTk5OTgkKdXNlci5wZXRyYS5kcnVnaS5SUlJSUlIJCnVzZXIucGV0cmEuZHJ1Z2kuV2VlZWVl
+ZQkKdXNlci5wZXRyYS5kcnVnaS5XV1dXV1dXLU51cmVtYmVyZwkKdXNlci5wZXRyYS5kcnVnaS5j
+Y2NjYwkKdXNlci5wZXRyYS5kcnVnaS5jY2NjYy5CQkJCCQp1c2VyLnBldHJhLmRydWdpLmNjY2Nj
+LkpKSkpKSgkKdXNlci5wZXRyYS5zZW50LW1haWwJCnVzZXIubjIJCnVzZXIubjIuUlJSUlJSUlJS
+UgkKdXNlci5wcHBwcHBwcHBwcAkKdXNlci5wcHBwcHBwcHBwcC5sc3YJCnVzZXIucnoJCnVzZXIu
+cnouU2VudAkK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1522</attachid>
+            <date>2013-06-13 14:37 EDT</date>
+            <desc>cvt_cyrusdb has no problems with this file, it is just 20 lines shorter than the other one</desc>
+            <filename>petra.sub.flat.ok</filename>
+            <type>text/plain</type>
+            <size>2733</size>
+            <attacher>dilyan.palauzov@aegee.org</attacher>
+            
+              <data encoding="base64">dXNlci5wZXRyYS5BQkNERS5GRy5ubm5ubm4JCnVzZXIucGV0cmEuQUJDREUuS0tLS0tLS0tLCQp1
+c2VyLnBldHJhLkFCQ0RFLlJSUlJSLU5OTk5OTi1MCQp1c2VyLnBldHJhLkFCQ0RFLlNVMjAwMQkK
+dXNlci5wZXRyYS5BQkNERS5TVTIwMDIJCnVzZXIucGV0cmEuQUJDREUuV1dXV1dXCQp1c2VyLnBl
+dHJhLkFCQ0RFLmFhYWFhLWwJCnVzZXIucGV0cmEuQVZWVgkKdXNlci5wZXRyYS5BVlZWLklJSUlJ
+SUkJCnVzZXIucGV0cmEuQVZWVi5OTk4JCnVzZXIucGV0cmEuQVZWVi5SUlJSUgkKdXNlci5wZXRy
+YS5BVlZWLlJSUlJSLlFRUVFRUVFRCQp1c2VyLnBldHJhLkFWVlYuVlZWVlZWVlYJCnVzZXIucGV0
+cmEuQVZWVi5iYmJiYmIJCnVzZXIucGV0cmEuQVJSUlJSUlIJCnVzZXIucGV0cmEuQVJSUlJSUlIu
+MjAxMQkKdXNlci5wZXRyYS5BUlJSUlJSUi4yMDEyCQp1c2VyLnBldHJhLkFSUlJSUlJSLjIwMTMJ
+CnVzZXIucGV0cmEuQVRUVFRUCQp1c2VyLnBldHJhLkFUVFRUVC4wIC0gSVNQCQp1c2VyLnBldHJh
+LkFUVFRUVC4xMy1UVFRUVFRUVCBERERERERERERECQp1c2VyLnBldHJhLkFUVFRUVC4xNC0xMTEt
+Z2dnZ2dnZy1kZQkKdXNlci5wZXRyYS5BVFRUVFQuMTctaGhoaGhoaGhoaGhoaGgJCnVzZXIucGV0
+cmEuQVRUVFRULjE4LXBwcHBwcHBwcHBwcHBwCQp1c2VyLnBldHJhLkFUVFRUVC4yMS1QUFBQUFBQ
+UFBQUAkKdXNlci5wZXRyYS5BVFRUVFQuMjItTExMTExMTExMTExMTAkKdXNlci5wZXRyYS5BVFRU
+VFQuMzItU1NTU1MgQUFBJ0VFRUVFRW8JCnVzZXIucGV0cmEuQVRUVFRULjMzLVZWVlZWVlZWVgkK
+dXNlci5wZXRyYS5BVFRUVFQuMzUtQUFBCQp1c2VyLnBldHJhLkFUVFRUVC4zNi1wcHBwcHBwcHBw
+CQp1c2VyLnBldHJhLkFUVFRUVC4zNy1QJi1HCQp1c2VyLnBldHJhLkFUVFRUVC5CQQkKdXNlci5w
+ZXRyYS5BVFRUVFQuRERECQp1c2VyLnBldHJhLkFUVFRUVC5MTExMTExMTExMTEwJCnVzZXIucGV0
+cmEuQ0NDQ0NDQ0MJCnVzZXIucGV0cmEuRGVsZXRlZCBJdGVtcwkKdXNlci5wZXRyYS5EZWxldGVk
+IE1lc3NhZ2VzCQp1c2VyLnBldHJhLkRyYWZ0cwkKdXNlci5wZXRyYS5FbnR3JkFQdy1yZmUJCnVz
+ZXIucGV0cmEuR2VzZW5kZXQJCnVzZXIucGV0cmEuR2VzZW5kZXRlIE9iamVrdGUJCnVzZXIucGV0
+cmEuSUVURgkKdXNlci5wZXRyYS5JRVRGLmltYXA1CQp1c2VyLnBldHJhLklFVEYuc2lldmUJCnVz
+ZXIucGV0cmEuSUVURi5zbXRwCQp1c2VyLnBldHJhLklFVEYueG1wcAkKdXNlci5wZXRyYS5JSUlJ
+SQkKdXNlci5wZXRyYS5JbmZlY3RlZCBJdGVtcwkKdXNlci5wZXRyYS5KdW5rIEUtbWFpbAkKdXNl
+ci5wZXRyYS5KdW5rLUUtTWFpbAkKdXNlci5wZXRyYS5QYXBpZXJrb3JiCQp1c2VyLnBldHJhLlNl
+bnQJCnVzZXIucGV0cmEuU2VudCBJdGVtcwkKdXNlci5wZXRyYS5TZW50IEl0ZW1zLkFCQ0RFCQp1
+c2VyLnBldHJhLlNlbnQgSXRlbXMuQUJDREUuRkcJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5BQkNE
+RS5TVTIwMDQJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5BQkNERS5TVTIwMDUJCnVzZXIucGV0cmEu
+U2VudCBJdGVtcy5BVktNCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuQW50b25peWEJCnVzZXIucGV0
+cmEuU2VudCBJdGVtcy5Bd28gcG9zdGEJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5EYWFhYWFhCQp1
+c2VyLnBldHJhLlNlbnQgSXRlbXMuRGFiYmIJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5GRkYJCnVz
+ZXIucGV0cmEuU2VudCBJdGVtcy5GRkYuRVNNCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuRkZGLlNv
+bnN0aWdlCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuR0dHR0cJCnVzZXIucGV0cmEuU2VudCBJdGVt
+cy5JbGxsCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuSW5mbyAxCQp1c2VyLnBldHJhLlNlbnQgSXRl
+bXMuSW5mbyAyCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuTWFnZ2cJCnVzZXIucGV0cmEuU2VudCBJ
+dGVtcy5NYXJycnJyCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuU2FhYWFhYQkKdXNlci5wZXRyYS5T
+ZW50IEl0ZW1zLlN0ZWVlZWUJCnVzZXIucGV0cmEuU2VudCBJdGVtcy5UZWVlZWVlZQkKdXNlci5w
+ZXRyYS5TZW50IEl0ZW1zLlRzc3Nzc3NzCQp1c2VyLnBldHJhLlNlbnQgSXRlbXMuV2VlZWVlZWUJ
+CnVzZXIucGV0cmEuU2VudCBJdGVtcy5kcnVnaQkKdXNlci5wZXRyYS5TZW50IE1lc3NhZ2VzCQp1
+c2VyLnBldHJhLlNwYW0JCnVzZXIucGV0cmEuU3BhbTEwCQp1c2VyLnBldHJhLlNwYW0xNQkKdXNl
+ci5wZXRyYS5kcnVnaQkKdXNlci5wZXRyYS5kcnVnaS4mQkNJRU1BUTlCRTgtIC0gJkJFRUVNZ1F3
+QkVJRU1RUXctCQp1c2VyLnBldHJhLmRydWdpLkJpYmxpb3RoZWtlbgkKdXNlci5wZXRyYS5kcnVn
+aS5JSUlJSUlJSUlJNElJSUkJCnVzZXIucGV0cmEuZHJ1Z2kuTSZBUHctbnN0ZXIJCnVzZXIucGV0
+cmEuZHJ1Z2kuTSZBUHctbnN0ZXIubW1tbW1tCQp1c2VyLnBldHJhLmRydWdpLk5OTk5OTgkKdXNl
+ci5wZXRyYS5kcnVnaS5SUlJSUlIJCnVzZXIucGV0cmEuZHJ1Z2kuV2VlZWVlZQkKdXNlci5wZXRy
+YS5kcnVnaS5XV1dXV1dXLU51cmVtYmVyZwkKdXNlci5wZXRyYS5kcnVnaS5jY2NjYwkKdXNlci5w
+ZXRyYS5kcnVnaS5jY2NjYy5CQkJCCQp1c2VyLnBldHJhLmRydWdpLmNjY2NjLkpKSkpKSgkKdXNl
+ci5wZXRyYS5zZW50LW1haWwJCnVzZXIubjIJCnVzZXIubjIuUlJSUlJSUlJSUgkKdXNlci5wcHBw
+cHBwcHBwcAkKdXNlci5wcHBwcHBwcHBwcC5sc3YJCnVzZXIucnoJCnVzZXIucnouU2VudAkK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

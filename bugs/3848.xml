@@ -1,0 +1,225 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3848</bug_id>
+          
+          <creation_ts>2014-03-25 11:23 EDT</creation_ts>
+          <short_desc>sieve notify break =?UTF8?Q? encoded texts</short_desc>
+          <delta_ts>2014-09-17 17:12:23 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Deniss Gaplevsky">slim@inbox.lv</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dilyan.palauzov@aegee.org</cc>
+    
+    <cc>Leena.Heino@uta.fi</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2014-03-25 11:23:20 EDT</bug_when>
+            <thetext>i try to use external notify in sieve like
+
+notify :method &quot;external&quot; :message &quot;$from$~~~ $env-from$~~~ $subject$~~~ $text[20]$~~~ &quot;;
+
+when i send message with subject encoded in =?UTF8?Q? (quota printable) like
+
+Subject: =?UTF8?Q?asdasd_=C4=81=C5=BE=C5=86=C4=AB=C4=BC=C5=AB?=
+
+$subject$ is not correctly decoded: 
+
+\xef\xbf\xbd~~~
+
+
+while =?UTF8?B? works just fine</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-06 16:09:17 EDT</bug_when>
+            <thetext>Does the problem disappear, if you use =?UTF-8 instead of =?UTF8  ?
+
+As of http://www.iana.org/assignments/character-sets/character-sets.xhtml, the correct spelling is with dash.
+
+I used :method &quot;log&quot; and from 
+
+Subject: A12345 =?UTF-8?Q?asdasd_=C4=81=C5=BE=C5=86=C4=AB=C4=BC=C5=AB?= ABCD
+
+the generated output was
+
+ A12345 asdasd &amp;#257;ž&amp;#326;&amp;#299;&amp;#316;&amp;#363;
+
+which coincides with the RFC2047 decoder provided at http://dogmamix.com/MimeHeadersDecoder/ .</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2014-07-07 08:59:06 EDT</bug_when>
+            <thetext>the messages were received from wild internet</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-15 16:42:00 EDT</bug_when>
+            <thetext>I tested the base64 decoding with notify :method &quot;log&quot;:
+
+Subject: A12345  =?utf-8?b?0JrQstC+IA==?=
+
+is decoded correctly by log, and
+
+Subject: A12345  =?utf8?b?0JrQstC+IA==?=    or
+Subject: A12345  =?UTF8?b?0JrQstC+IA==?=
+
+are not decoded correctly, contrary to your original message.
+
+I tend to close this as not a bug:
+
+I do not see Cyrus imapd&apos;s task to deal with misspelled charsets.
+
+Even messages from wild internet are required to encode their headers with a valid charset.
+
+If the subject is not encoded correctly, then the spam filter shall take care to move the message to the spam folder, and the sieve script shall make no further proceedings on the mail.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-25 15:24:18 EDT</bug_when>
+            <thetext>Fixed on cyrus-imapd-2.4 with commit 63856fcdf08fd9c8d5acf201 .
+
+In fact on the master branch there was already support for charset aliases and I back-ported it to cyrus-imapd-2.4.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2014-08-19 06:58:59 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; Fixed on cyrus-imapd-2.4 with commit 63856fcdf08fd9c8d5acf201 .
+&gt; 
+&gt; In fact on the master branch there was already support for charset aliases and
+&gt; I back-ported it to cyrus-imapd-2.4.
+
+That patch broke the search completely. With this patch installed the search cannot find anything. 
+
+When I remove the patch the search begins to work again. Please revert this patch</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-08-25 16:14:39 EDT</bug_when>
+            <thetext>Created an attachment (id=1541)
+Proposed fix
+
+Does this patch fix the problem for you?
+
+Apparently I have backported too much from the master-branch, I wanted to have just the charset-aliases.  In turn, the generated lib/chartable.c was then very different.  The proposed patch leads to lib/chartable.c that is almost the same as before commit 63856fcdf .</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2014-08-26 04:06:11 EDT</bug_when>
+            <thetext>please fix the git for 2.4 to be stable - rollback the broken patch or apply the fix</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-08-26 05:03:16 EDT</bug_when>
+            <thetext>I applied the fix, commit 8b59aeb4622 .</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2014-09-03 07:39:16 EDT</bug_when>
+            <thetext>looks fine for me now and may be closed</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2014-09-03 08:01:13 EDT</bug_when>
+            <thetext>(In reply to comment #8)
+&gt; I applied the fix, commit 8b59aeb4622 .
+
+The patch seems to work ok.
+
+Could you also add character set &quot;Latin1&quot; as alias to iso-8859-1?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-09-03 12:22:54 EDT</bug_when>
+            <thetext>I added &quot;latin1&quot; as alias of &quot;iso-8859-1&quot; with commit facf3b8a92989fe2a on branch master and with commit 	b4de7a5ad on branch cyrus-imapd-2.4 .</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1541</attachid>
+            <date>2014-08-25 16:14 EDT</date>
+            <desc>Proposed fix</desc>
+            <filename>lib_mkchartable.patch</filename>
+            <type>text/plain</type>
+            <size>1865</size>
+            <attacher>dilyan.palauzov@aegee.org</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL2xpYi9ta2NoYXJ0YWJsZS5wbCBiL2xpYi9ta2NoYXJ0YWJsZS5wbAppbmRl
+eCBhOTViNGY5Li5mNjBhMzllIDEwMDY0NAotLS0gYS9saWIvbWtjaGFydGFibGUucGwKKysrIGIv
+bGliL21rY2hhcnRhYmxlLnBsCkBAIC0xMDQsNyArMTA0LDcgQEAgc3ViIHJlYWRtYXBmaWxlIHsK
+IAogCW15ICgkaGV4Y29kZSwgJG5hbWUsICRjYXRlZ29yeSwgJGNvbWJpbmluZ2NsYXNzLCAkYmlk
+aWNhdCwgCiAJICAgICRkZWNvbXBvc2l0aW9uLCAkZGVjaW1hbCwgJGRpZ2l0LCAkbnVtZXJpYywg
+JG1pcnJvcmVkY2hhciwKLQkgICAgJHVuaTFuYW1lLCAkY29tbWVudCwgJHVwcGVyLCAkbG93ZXIs
+ICR0aXRsZSwgQHJlc3QpID0gc3BsaXQgJzsnLCAkbGluZTsKKwkgICAgJHVuaTFuYW1lLCAkY29t
+bWVudCwgJHVwcGVyLCAkbG93ZXIsIEByZXN0KSA9IHNwbGl0ICc7JywgJGxpbmU7CiAJbXkgJGNv
+ZGUgPSBoZXgoJGhleGNvZGUpOwogCiAJIyBUaGlzIGlzIG5vdCBSRkM1MDUxCkBAIC0xMTMsMTAg
+KzExMyw2IEBAIHN1YiByZWFkbWFwZmlsZSB7CiAJICAgbmV4dDsKIAl9CiAKLQkjIGhhcyBhIG1h
+cHBpbmcgdG8gdGl0bGVjYXNlCi0JJGNvZGVtYXAtPnskY29kZX17dGl0bGV9ID0gaGV4KCR0aXRs
+ZSkKLQkgICAgaWYgJHRpdGxlOwotCiAJIyBDb21wYXRhYmlsaXR5IG1hcHBpbmcsIHNraXAgb3Zl
+ciB0aGUgPHR5cGU+IAogCXdoaWxlICgkZGVjb21wb3NpdGlvbiBuZSAnJykgewogCSAgICAjIFRo
+aXMgaXMgbm90IFJGQzUwNTEKQEAgLTEzMCw3ICsxMjYsMTAgQEAgc3ViIHJlYWRtYXBmaWxlIHsK
+IAkgICAgfQogCX0KIAotCSRjb2RlbWFwLT57JGNvZGV9e2NoYXJzfSB8fD0gWyRjb2RlXTsKKwkj
+TG93ZXIgY2FzZSBlcXVpdmFsZW5jZSBtYXBwaW5nCisJaWYgKCRsb3dlcikgeworCSAgICAkY29k
+ZW1hcC0+eyRjb2RlfXtjaGFyc30gPSBbaGV4KCRsb3dlcildOworCX0KICAgICB9CiB9CiAKQEAg
+LTI5NCwxNSArMjkzLDE0IEBAIEVPRgogICAgIAkgICAgcHJpbnQgT1VUUFVUICIgeyAvKiBNYXBw
+aW5nIGZvciB1bmljb2RlIGNoYXJzIGluIGJsb2NrICRibG9jazE2ICRibG9jazggKi9cbiAiOwog
+CSAgICBmb3JlYWNoIG15ICRpICgwLi4yNTUpIHsKIAkJbXkgJGNvZGVwb2ludCA9ICgkYmxvY2sx
+NiA8PCAxNikgKyAoJGJsb2NrOCA8PCA4KSArICRpOwotCQlteSAkdGl0bGVwb2ludCA9ICRjb2Rl
+bWFwLT57JGNvZGVwb2ludH17dGl0bGV9IHx8ICRjb2RlcG9pbnQ7Ci0JCWlmIChub3QgJGNvZGVt
+YXAtPnskdGl0bGVwb2ludH0gb3Igbm90IGtleXMgJXskY29kZW1hcC0+eyR0aXRsZXBvaW50fX0p
+IHsKLQkJICAgIHByaW50ZiBPVVRQVVQgIiAweCUwNHgsIiwgJHRpdGxlcG9pbnQ7CisJCWlmIChu
+b3QgJGNvZGVtYXAtPnskY29kZXBvaW50fSkgeworCQkgICAgcHJpbnRmIE9VVFBVVCAiIDB4JTA0
+eCwiLCAkY29kZXBvaW50OwogCQl9Ci0JCWVsc2lmICgkY29kZW1hcC0+eyR0aXRsZXBvaW50fXt0
+cmFuc30pIHsKLQkJICAgIHByaW50ZiBPVVRQVVQgIiAtICU0ZCwiLCAkY29kZW1hcC0+eyR0aXRs
+ZXBvaW50fXt0cmFuc307CisJCWVsc2lmICgkY29kZW1hcC0+eyRjb2RlcG9pbnR9e3RyYW5zfSkg
+eworCQkgICAgcHJpbnRmIE9VVFBVVCAiIC0gJTRkLCIsICRjb2RlbWFwLT57JGNvZGVwb2ludH17
+dHJhbnN9OwogCQl9CiAJCWVsc2UgewotCQkgICAgcHJpbnRmIE9VVFBVVCAiIDB4JTA0eCwiLCAk
+Y29kZW1hcC0+eyR0aXRsZXBvaW50fXtjaGFyc31bMF07CisJCSAgICBwcmludGYgT1VUUFVUICIg
+MHglMDR4LCIsICRjb2RlbWFwLT57JGNvZGVwb2ludH17Y2hhcnN9WzBdOwogCQl9CiAgCQlwcmlu
+dCBPVVRQVVQgIlxuICIgaWYgKCRpICUgOCA9PSA3KTsKIAkgICAgfQo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

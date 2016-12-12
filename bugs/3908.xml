@@ -1,0 +1,190 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3908</bug_id>
+          
+          <creation_ts>2015-10-09 11:28 EDT</creation_ts>
+          <short_desc>ctl_mboxlist -m segfault</short_desc>
+          <delta_ts>2015-10-26 02:29:31 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-09 11:28:33 EDT</bug_when>
+            <thetext>Hi!
+
+My 2.5.6 backend was already up&amp;running until I restarted it recently.
+
+My cyrus.conf contains 
+START {
+  # do not delete this entry!
+  recover	cmd=&quot;ctl_cyrusdb -r&quot;
+  mupdatepush	cmd=&quot;ctl_mboxlist -m&quot;
+....
+
+Now 
+ctl_mboxlist -m
+constantly crashes. The backtrace shows:
+#0  0x00007fb79ea1b426 in __strcmp_sse42 () from /lib64/libc.so.6
+#1  0x00007fb7a21fa9a4 in dump_cb (rockp=0x7ffd771e5a20, key=&lt;value optimized out&gt;, keylen=&lt;value optimized out&gt;, 
+    data=&lt;value optimized out&gt;, datalen=&lt;value optimized out&gt;) at imap/ctl_mboxlist.c:231
+#2  0x00007fb7a09336c8 in myforeach (db=0x7fb7a3b82510, prefix=0x7fb7a21fc0a9 &quot;&quot;, prefixlen=0, goodp=0, 
+    cb=0x7fb7a21fa830 &lt;dump_cb&gt;, rock=0x7ffd771e5a20, tidptr=&lt;value optimized out&gt;) at lib/cyrusdb_twoskip.c:1567
+#3  0x00007fb7a0c93a9a in mboxlist_allmbox (prefix=0x7fb7a21fc0a9 &quot;&quot;, proc=0x7fb7a21fa830 &lt;dump_cb&gt;, 
+    rock=0x7ffd771e5a20, incdel=1) at imap/mboxlist.c:2289
+#4  0x00007fb7a21fa540 in do_dump (op=&lt;value optimized out&gt;, part=&lt;value optimized out&gt;, purge=&lt;value optimized out&gt;)
+    at imap/ctl_mboxlist.c:457
+#5  0x00007fb7a21fbbc6 in main (argc=&lt;value optimized out&gt;, argv=0x7ffd771e7bb8) at imap/ctl_mboxlist.c:1028
+
+With:
+gdb) frame 1
+#1  0x00007fb7a21fa9a4 in dump_cb (rockp=0x7ffd771e5a20, key=&lt;value optimized out&gt;, keylen=&lt;value optimized out&gt;, 
+    data=&lt;value optimized out&gt;, datalen=&lt;value optimized out&gt;) at imap/ctl_mboxlist.c:231
+231				!strcmp(realpart, act_head-&gt;location) &amp;&amp;
+
+caused by
+(gdb) print *mbentry
+$28 = {name = 0x7fb7a3b89700 &quot;DELETED.user.test.56163FD5&quot;, ext_name = 0x0, mtime = 1444298709, 
+  uidvalidity = 1444298709, mbtype = 0, partition = 0x7fb7a3b89240 &quot;part01&quot;, server = 0x0, 
+  acl = 0x7fb7a3b89760 &quot;test\tlrswipkxtecdan\tcyrus\tlrswipkxtecdan\t&quot;, 
+  uniqueid = 0x7fb7a3b89730 &quot;494f8052-6a6c-4700-9bd0-5be671a3073f&quot;, legacy_specialuse = 0x0}
+
+an empty mbentry-&gt;server used to build:
+        char *realpart = strconcat(mbentry-&gt;server, &quot;!&quot;, mbentry-&gt;partition, (const char *)NULL);
+
+null in mbentry-&gt;server means null in realpart means crash in 
+            } else if (act_head-&gt;acl) {
+                if (
+                        !strcmp(realpart, act_head-&gt;location) &amp;&amp;
+                        !strcmp(mbentry-&gt;acl, act_head-&gt;acl)
+                    ) {
+
+Cyrus 2.4.x used 
+  config_servername
+in ctl_mboxlist.c
+
+I&apos;m wondering if this can work at any backend since mboxlist.db usually doesn&apos;t hold servername.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-12 07:53:19 EDT</bug_when>
+            <thetext>my current simple patch which seems to do the right thing:
+---------------
+--- cyrus-imapd-2.5.6.orig/imap/ctl_mboxlist.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.wb/imap/ctl_mboxlist.c	2015-10-09 19:21:30.221855866 +0200
+@@ -192,7 +192,7 @@
+ 	    return 0;
+ 
+ 	/* realpart is &apos;hostname!partition&apos; */
+-	char *realpart = strconcat(mbentry-&gt;server, &quot;!&quot;, mbentry-&gt;partition, (const char *)NULL);
++	char *realpart = strconcat(config_servername, &quot;!&quot;, mbentry-&gt;partition, (const char *)NULL);
+ 	int skip_flag = 0;
+ 
+ 	/* If it is marked MBTYPE_MOVING, and it DOES match the entry,
+----------------</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2015-10-12 17:58:36 EDT</bug_when>
+            <thetext>&gt; (gdb) print *mbentry
+&gt; $28 = {name = 0x7fb7a3b89700 &quot;DELETED.user.test.56163FD5&quot;, ext_name = 0x0,
+mtime = 1444298709, 
+&gt;   uidvalidity = 1444298709, mbtype = 0, partition = 0x7fb7a3b89240 &quot;part01&quot;,
+server = 0x0, 
+&gt;   acl = 0x7fb7a3b89760 &quot;test\tlrswipkxtecdan\tcyrus\tlrswipkxtecdan\t&quot;, 
+&gt;   uniqueid = 0x7fb7a3b89730 &quot;494f8052-6a6c-4700-9bd0-5be671a3073f&quot;,
+legacy_specialuse = 0x0}
+
+Hmm: this is a &quot;DELETED.*&quot; folder.
+
+dump_cb() contains the following check, just before it tries to assemble realpart:
+
+&gt;     if (mbentry-&gt;mbtype &amp; MBTYPE_DELETED)
+&gt;         return 0;
+
+I notice in the gdb output that this mbentry has mbtype=0 though (so it gets past this check).  I wonder how that came to be?  Do you know anything about the history of this mailbox?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2015-10-14 05:52:02 EDT</bug_when>
+            <thetext>DELETED.user.test.56163FD5
+or
+DELETED.* comes from 
+delete_mode: delayed
+deletedprefix: DELETED
+and it (still) is a valid, living mailbox.
+
+It is correct that it is not of the type MBTYPE_DELETED.
+
+In #3910 I reported another problem with ctl_mboxlist. There you see the corresponding:
+user.test    16 (null) 
+deleted mailbox with correct MBTYPE_DELETED.
+
+Here a current dump for both:
+$ ctl_mboxlist -d
+DELETED.user.test.56163FD5	0 part01 test	lrswipkxtecdan	cyrus	lrswipkxtecdan	
+....
+user.test	16 (null) 
+
+
+On the other hand AFAIK there is not one mailbox in a local mailboxes.db on a backend which has a server name in the form &quot;&lt;hostname&gt;!&lt;partname&gt;&quot;. It only contains the partition name. But mboxlist.c:mboxlist_parse_entry() tries to detect it and if detected it returns it in mbentry-&gt;servername. It does not set a sane default if it is not detected (eg. local hostname).
+
+ctl_mboxlist.c:dump_cb() assumes it always returns one. =&gt; segfault in almost all cases.
+
+IMO 
+mbentry-&gt;server
+currently is always NULL for valid mailboxes on a backend.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2015-10-26 02:29:31 EDT</bug_when>
+            <thetext>Looks like your simple patch is the right approach, cause the same thing was already fixed on master in the same way by:
+https://cyrus.foundation/cyrus-imapd/commit/?id=18d90988
+
+Aaaand I just went to cherry-pick that onto 2.5, and it failed because it&apos;s already been done:
+https://cyrus.foundation/cyrus-imapd/commit/?id=a2f3b11
+
+So, this is already fixed and will be in 2.5.7 :)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

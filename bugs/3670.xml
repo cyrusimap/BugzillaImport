@@ -1,0 +1,324 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3670</bug_id>
+          
+          <creation_ts>2012-04-15 06:26 EDT</creation_ts>
+          <short_desc>Build failure: ./..//usr/bin/compile_et: No such file or directory.</short_desc>
+          <delta_ts>2012-04-17 09:16:36 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Distribution</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          <blocked>3669</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</reporter>
+          <assigned_to name="Dilyan Palauzov">dilyan.palauzov@aegee.org</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 06:26:21 EDT</bug_when>
+            <thetext>With 9eab086e4e8858f509280045fc00d9b468e5f37b on the dpa/automake branch;
+
+$ aclocal -I cmulocal
+$ automake --add-missing
+$ autoreconf -v
+$ ./configure --enable-unit-tests
+$ make
+
+Output:
+
+[kanarip@albert cyrus-imapd.git (dpa/automake % u=)]$ make
+./tools/config2header CC=&quot;gcc&quot; ./lib/imapopts.c ./lib/imapopts.h &lt; ./lib/imapoptions
+cd imap &amp;&amp; ./..//usr/bin/compile_et .././imap/imap_err.et
+/bin/sh: ./..//usr/bin/compile_et: No such file or directory
+make: *** [imap/imap_err.c] Error 127
+[kanarip@albert cyrus-imapd.git (dpa/automake % u=)]$</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 06:34:09 EDT</bug_when>
+            <thetext>Note that $(COMPILE_ET) is set to /usr/bin/compile_et;
+
+[kanarip@albert cyrus-imapd.git (dpa/automake % u=)]$ rpm -qf $(which compile_et)
+libcom_err-devel-1.41.14-2.fc15.x86_64
+
+and therefore the clauses stating &quot;$(top_builddir)/../$(COMPILE_ET)&quot; are failing.
+
+I propose we set $(COMPILE_ET) once, either to whatever compile_et can be found on the system, or to whatever compile_et by full path (i.e. ${top_srcdir}/com_err/compile_et)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 06:40:46 EDT</bug_when>
+            <thetext>Created an attachment (id=1464)
+Proposed patch setting COMPILE_ET to the full path</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-04-15 07:04:16 EDT</bug_when>
+            <thetext>Indeed, please patch configure.ac so:
+
+diff --git a/configure.ac b/configure.ac
+--- a/configure.ac
++++ b/configure.ac
+@@ -1035,8 +1035,8 @@ fi
+ case &quot;$with_com_err&quot; in
+   # built-in et
+   yes) # use the com_err we&apos;re gonna build
+-         COM_ERR_LIBS=&quot;com_err/et/libcom_err.a&quot;
+-         COMPILE_ET=&quot;com_err/et/compile_et&quot;
++         COM_ERR_LIBS=&quot;\$(top_builddir)/com_err/et/libcom_err.a&quot;
++         COMPILE_ET=&quot;../\$(top_builddir)/com_err/et/compile_et&quot;
+          COM_ERR_CPPFLAGS=&quot;-I\${top_srcdir}/com_err/et&quot;
+          ;;
+   &quot;&quot;)   # no problem, we already have it in the paths
+
+
+top_builddir ensures, that the file is built in the builddirectory, and the $ sign needs to be escaped, otherwise configure sais &quot;top_builddir: command not found&quot;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 10:49:26 EDT</bug_when>
+            <thetext>Resolved in 1c059508ffcd44ae9363b34a9b1b66d3d9d4ca7b on origin/dev/automake</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-04-15 12:20:22 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; Resolved in 1c059508ffcd44ae9363b34a9b1b66d3d9d4ca7b on origin/dev/automake
+
+It is not resolved.  Please use top_builddir instead of top_srcdir, and put \ before $ in configure.ac and use .. in order to switch from the directory, where the _err.et file is to the root of the build, to which the compiled compile_et is relative (as described in my comment).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-15 17:30:18 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+&gt; (In reply to comment #4)
+&gt; &gt; Resolved in 1c059508ffcd44ae9363b34a9b1b66d3d9d4ca7b on origin/dev/automake
+&gt; 
+&gt; It is not resolved.  Please use top_builddir instead of top_srcdir, and put \
+&gt; before $ in configure.ac and use .. in order to switch from the directory,
+&gt; where the _err.et file is to the root of the build, to which the compiled
+&gt; compile_et is relative (as described in my comment).
+
+Sorry mate, I had not seen your earlier comment yet. There&apos;s a couple of things that concern me that did not appear on my radar yet as I&apos;m using system comerr, and not the vendored version.
+
+(In reply to comment #3)
+&gt; Indeed, please patch configure.ac so:
+&gt; 
+&gt; diff --git a/configure.ac b/configure.ac
+&gt; --- a/configure.ac
+&gt; +++ b/configure.ac
+&gt; @@ -1035,8 +1035,8 @@ fi
+&gt;  case &quot;$with_com_err&quot; in
+&gt;    # built-in et
+&gt;    yes) # use the com_err we&apos;re gonna build
+&gt; -         COM_ERR_LIBS=&quot;com_err/et/libcom_err.a&quot;
+&gt; -         COMPILE_ET=&quot;com_err/et/compile_et&quot;
+&gt; +         COM_ERR_LIBS=&quot;\$(top_builddir)/com_err/et/libcom_err.a&quot;
+&gt; +         COMPILE_ET=&quot;../\$(top_builddir)/com_err/et/compile_et&quot;
+&gt;           COM_ERR_CPPFLAGS=&quot;-I\${top_srcdir}/com_err/et&quot;
+&gt;           ;;
+&gt;    &quot;&quot;)   # no problem, we already have it in the paths
+&gt; 
+&gt; 
+&gt; top_builddir ensures, that the file is built in the builddirectory, and the $
+&gt; sign needs to be escaped, otherwise configure sais &quot;top_builddir: command not
+&gt; found&quot;.
+
+I suppose that&apos;s why we should use ${VARIABLE}, not $(VARIABLE).
+
+Also, it&apos;s currently pointing to ${top_srcdir}, and not, like your patch snippet suggests, to &quot;&quot;:
+
+  # built-in et
+  yes) # use the com_err we&apos;re gonna build
+      COM_ERR_LIBS=&quot;${top_srcdir}/com_err/et/libcom_err.a&quot;
+      COMPILE_ET=&quot;${top_srcdir}/com_err/et/compile_et&quot;
+      COM_ERR_CPPFLAGS=&quot;-I\${top_srcdir}/com_err/et&quot;
+      ;;
+
+(See also: http://git.cyrusimap.org/cyrus-imapd/tree/configure.ac?h=dev/automake#n1040).
+
+I&apos;m also confused about the -I\${top_srcdir} in COMM_ERR_CPPFLAGS - it seems to me no backslash is needed to escape the variable.
+
+I&apos;ve changed the use of ${top_srcdir} to become ${top_builddir}, I think that should resolve the issue.
+
+[dev/automake 943b8b8] Correct the use of top_srcdir to top_builddir (#3670)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-04-16 04:46:29 EDT</bug_when>
+            <thetext>I changed my mind.  Please leave at the end:
+
+         COM_ERR_LIBS=&quot;com_err/et/libcom_err.a&quot;
+         COMPILE_ET=&quot;../com_err/et/compile_et&quot;
+         COM_ERR_CPPFLAGS=&quot;-I\${top_builddir}/com_err/et&quot;
+
+As the build is anyway in (top_builddir), it is not necessary to state it explicitly.
+
+The _err.et files are all proceeded with the template:
+
+X/Y_err.h X/Y_err.c: X/Y_err.et
+        cd X &amp;&amp; $(COMPILE_ET) ../$(top_srcdir)/X/Y_err.et
+
+and when $(COMPILE_ET) is a local compile_et, it is supposed to go one level up, then it is in $(top_builddir) and from there find the place of compile_et.
+
+If $ is not escaped in
+  COM_ERR_CPPFLAGS=&quot;-I${top_builddir}/com_err/et&quot;
+then running ./configure --with-com_err produces in config.status:
+  S[&quot;COM_ERR_CPPFLAGS&quot;]=&quot;-I/com_err/et&quot;
+
+which means, that the unescaped $(top_builddir) has completely disappeared.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-16 06:21:26 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; I changed my mind.
+
+Hi Dilyan,
+
+please send me your SSH public key, so we can collaborate on this using origin/dev/automake?
+
+&gt; Please leave at the end:
+&gt; 
+&gt;          COM_ERR_LIBS=&quot;com_err/et/libcom_err.a&quot;
+&gt;          COMPILE_ET=&quot;../com_err/et/compile_et&quot;
+&gt;          COM_ERR_CPPFLAGS=&quot;-I\${top_builddir}/com_err/et&quot;
+&gt; 
+
+I suppose COMM_ERR_CPPFLAGS could look as follows (as ${top_builddir} is supposed to always end in a trailing slash):
+
+COM_ERR_CPPFLAGS=&quot;-I${top_builddir}com_err/et&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-04-16 18:57:20 EDT</bug_when>
+            <thetext>(In reply to comment #8)
+
+&gt; I suppose COMM_ERR_CPPFLAGS could look as follows (as ${top_builddir} is
+&gt; supposed to always end in a trailing slash):
+&gt; 
+&gt; COM_ERR_CPPFLAGS=&quot;-I${top_builddir}com_err/et&quot;
+
+Where is it written, that $top_builddir} is supposed to always end in a trailing slash?
+
+The Automake manual (node Program variables) says:
+...  `-Isome/subdir -I$(srcdir)/some/subdir&apos; or
+     `-I$(top_builddir)/some/subdir -I$(top_srcdir)/some/subdir&apos;
+
+The Autoconf manual says (node Preset Output variables):
+
+ -- Variable: builddir
+     Rigorously equal to `.&apos;.  Added for symmetry only.
+
+ -- Variable: top_builddir
+     The relative name of the top level of the current build tree.  In
+     the top-level directory, this is the same as `builddir&apos;.
+
+All examples by Automake and Autoconf are with slash after top_builddir.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-04-17 09:16:36 EDT</bug_when>
+            <thetext>Fixed in commit 	fd077999eada43fb80346873bcc4f821a2a55ff1 :
+
+-         COM_ERR_LIBS=&quot;${top_builddir}/com_err/et/libcom_err.a&quot;
+-         COMPILE_ET=&quot;${top_builddir}/com_err/et/compile_et&quot;
+-         COM_ERR_CPPFLAGS=&quot;-I${top_builddir}/com_err/et&quot;
++         COM_ERR_LIBS=&quot;com_err/et/libcom_err.a&quot;
++         COMPILE_ET=&quot;../com_err/et/compile_et&quot;
++         COM_ERR_CPPFLAGS=&quot;-I\${top_builddir}/com_err/et&quot;</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1464</attachid>
+            <date>2012-04-15 06:40 EDT</date>
+            <desc>Proposed patch setting COMPILE_ET to the full path</desc>
+            <filename>0001-Set-COMPILE_ET-to-the-full-path-and-use-it-3670.patch</filename>
+            <type>text/plain</type>
+            <size>2304</size>
+            <attacher>vanmeeuwen@kolabsys.com</attacher>
+            
+              <data encoding="base64">RnJvbSAxYzA1OTUwOGZmY2Q0NGFlOTM2M2IzNGE5YjFiNjZkM2Q5ZDRjYTdiIE1vbiBTZXAgMTcg
+MDA6MDA6MDAgMjAwMQpGcm9tOiAiSmVyb2VuIHZhbiBNZWV1d2VuIChLb2xhYiBTeXN0ZW1zKSIg
+PHZhbm1lZXV3ZW5Aa29sYWJzeXMuY29tPgpEYXRlOiBTdW4sIDE1IEFwciAyMDEyIDExOjM5OjEx
+ICswMTAwClN1YmplY3Q6IFtQQVRDSF0gU2V0IENPTVBJTEVfRVQgdG8gdGhlIGZ1bGwgcGF0aCwg
+YW5kIHVzZSBpdCAoIzM2NzApCgotLS0KIE1ha2VmaWxlLmFtICB8ICAgIDggKysrKy0tLS0KIGNv
+bmZpZ3VyZS5hYyB8ICAgIDQgKystLQogMiBmaWxlcyBjaGFuZ2VkLCA2IGluc2VydGlvbnMoKyks
+IDYgZGVsZXRpb25zKC0pCgpkaWZmIC0tZ2l0IGEvTWFrZWZpbGUuYW0gYi9NYWtlZmlsZS5hbQpp
+bmRleCA3NzRhMGU3Li5jYjVhMGJhIDEwMDY0NAotLS0gYS9NYWtlZmlsZS5hbQorKysgYi9NYWtl
+ZmlsZS5hbQpAQCAtMzY2LDEzICszNjYsMTMgQEAgaW1hcF91bmV4cHVuZ2VfU09VUkNFUyA9IGlt
+YXAvY2xpX2ZhdGFsLmMgaW1hcC9tdXRleF9mYWtlLmMgaW1hcC91bmV4cHVuZ2UuYwogaW1hcF91
+bmV4cHVuZ2VfTERBREQgPSAkKHB0Y2xpZW50X3B0ZHVtcF9MREFERCkKIAogaW1hcC9pbWFwX2Vy
+ci5oIGltYXAvaW1hcF9lcnIuYzogaW1hcC9pbWFwX2Vyci5ldAotCWNkIGltYXAgJiYgJCh0b3Bf
+YnVpbGRkaXIpLy4uLyQoQ09NUElMRV9FVCkgLi4vJCh0b3Bfc3JjZGlyKS9pbWFwL2ltYXBfZXJy
+LmV0CisJY2QgaW1hcCAmJiAkKENPTVBJTEVfRVQpIC4uLyQodG9wX3NyY2RpcikvaW1hcC9pbWFw
+X2Vyci5ldAogCiBpbWFwL211cGRhdGVfZXJyLmggaW1hcC9tdXBkYXRlX2Vyci5jOiBpbWFwL211
+cGRhdGVfZXJyLmV0Ci0JY2QgaW1hcCAmJiAkKHRvcF9idWlsZGRpcikvLi4vJChDT01QSUxFX0VU
+KSAuLi8kKHRvcF9zcmNkaXIpL2ltYXAvbXVwZGF0ZV9lcnIuZXQKKwljZCBpbWFwICYmICQoQ09N
+UElMRV9FVCkgLi4vJCh0b3Bfc3JjZGlyKS9pbWFwL211cGRhdGVfZXJyLmV0CiAKIGltYXAvbm50
+cF9lcnIuaCBpbWFwL25udHBfZXJyLmM6IGltYXAvbm50cF9lcnIuZXQKLQljZCBpbWFwICYmICQo
+dG9wX2J1aWxkZGlyKS8uLi8kKENPTVBJTEVfRVQpIC4uLyQodG9wX3NyY2RpcikvaW1hcC9ubnRw
+X2Vyci5ldAorCWNkIGltYXAgJiYgJChDT01QSUxFX0VUKSAuLi8kKHRvcF9zcmNkaXIpL2ltYXAv
+bm50cF9lcnIuZXQKIAogaW1hcC9yZmM4MjJfaGVhZGVyLmM6IGltYXAvcmZjODIyX2hlYWRlci5z
+dAogCSR7dG9wX3NyY2Rpcn0vdG9vbHMvY29tcGlsZV9zdC5wbCAtYyAkPCA+ICRACkBAIC01NTUs
+NyArNTU1LDcgQEAgc2lldmVfc2lldmVjX0xEQUREID0gc2lldmUvbGlic2lldmUuYSBsaWIvbGli
+Y3lydXMuYSBsaWIvbGliY3lydXNfbWluLmEgJHtDT01fRVIKIHNpZXZlX3NpZXZlZF9MREFERCA9
+ICR7c2lldmVfc2lldmVjX0xEQUREfQogCiBzaWV2ZS9zaWV2ZV9lcnIuaCBzaWV2ZS9zaWV2ZV9l
+cnIuYzogc2lldmUvc2lldmVfZXJyLmV0Ci0JY2Qgc2lldmUgJiYgJCh0b3BfYnVpbGRkaXIpLy4u
+LyQoQ09NUElMRV9FVCkgLi4vJCh0b3Bfc3JjZGlyKS9zaWV2ZS9zaWV2ZV9lcnIuZXQKKwljZCBz
+aWV2ZSAmJiAkKENPTVBJTEVfRVQpIC4uLyQodG9wX3NyY2Rpcikvc2lldmUvc2lldmVfZXJyLmV0
+CiAKIHNpZXZlX3Rlc3RfU09VUkNFUyA9IHNpZXZlL3Rlc3QuYyBpbWFwL211dGV4X2Zha2UuYwog
+c2lldmVfdGVzdF9MREFERCA9IGltYXAvbGliaW1hcC5hICR7c2lldmVfc2lldmVjX0xEQUREfQpk
+aWZmIC0tZ2l0IGEvY29uZmlndXJlLmFjIGIvY29uZmlndXJlLmFjCmluZGV4IGViNGIxZGQuLjk3
+Mjg0MmQgMTAwNjQ0Ci0tLSBhL2NvbmZpZ3VyZS5hYworKysgYi9jb25maWd1cmUuYWMKQEAgLTEw
+MzUsOCArMTAzNSw4IEBAIGZpCiBjYXNlICIkd2l0aF9jb21fZXJyIiBpbgogICAjIGJ1aWx0LWlu
+IGV0CiAgIHllcykgIyB1c2UgdGhlIGNvbV9lcnIgd2UncmUgZ29ubmEgYnVpbGQKLQkgIENPTV9F
+UlJfTElCUz0iY29tX2Vyci9ldC9saWJjb21fZXJyLmEiCi0JICBDT01QSUxFX0VUPSJjb21fZXJy
+L2V0L2NvbXBpbGVfZXQiCisJICBDT01fRVJSX0xJQlM9IiR7dG9wX3NyY2Rpcn0vY29tX2Vyci9l
+dC9saWJjb21fZXJyLmEiCisJICBDT01QSUxFX0VUPSIke3RvcF9zcmNkaXJ9L2NvbV9lcnIvZXQv
+Y29tcGlsZV9ldCIKIAkgIENPTV9FUlJfQ1BQRkxBR1M9Ii1JXCR7dG9wX3NyY2Rpcn0vY29tX2Vy
+ci9ldCIKIAkgIDs7CiAgICIiKSAgICMgbm8gcHJvYmxlbSwgd2UgYWxyZWFkeSBoYXZlIGl0IGlu
+IHRoZSBwYXRocwotLSAKMS43LjcuNgoK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

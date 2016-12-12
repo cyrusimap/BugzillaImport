@@ -1,0 +1,109 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2032</bug_id>
+          
+          <creation_ts>2003-04-25 14:35 EDT</creation_ts>
+          <short_desc>cyradm perl warning</short_desc>
+          <delta_ts>2010-10-18 12:43:01 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>perl</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>ro@TechFak.Uni-Bielefeld.DE</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-04-25 14:35:24 EDT</bug_when>
+            <thetext>I&apos;ve created a perl 5.8.0 script using the Cyrus::IMAP::Admin module to
+bulk-create user mailboxes.  The server used (Cyrus IMAPD 2.1.12) supports
+the GSSAPI mechanism.
+
+If the script is invoked with perl -w, which contains
+
+$client-&gt;authenticate (-user =&gt; &quot;$adminuser&quot;);
+
+I get a warning in IMAP.pm:
+
+Use of uninitialized value in subroutine entry at
+/vol/adm/lib/site_perl/5.8.0/sparc-sun-solaris2.8/Cyrus/IMAP.pm line 206.
+
+This happens because in this code fragment
+
+  if (defined($opts{-mechanism}) &amp;&amp; lc($opts{-mechanism}) ne &apos;login&apos;) {
+    $rc = $self-&gt;_authenticate($opts{-mechanism}, $opts{-service},
+                               $opts{-authz}, $opts{-user}, $opts{-password},
+                               $opts{-minssf}, $opts{-maxssf});
+  }
+
+$opts{-password} is uninitialized.  I&apos;ve found no good way of disabling the
+warning (e.g. by initializing
+
+$opts{-password} = undef if (!defined($opts{-password})))
+
+or similar constructs.  I get the same warning if an explicit undef is
+passed to _authenticate instead of $opts{-password}.  I cannot use some
+other value (like the empty string) to initialize the variable: this would
+disable the password prompting in the next code section if the call to
+_authenticate failed.
+
+A local perl expert suggested the fix below instead.
+
+Index: perl/imap/IMAP.pm
+===================================================================
+RCS file: /cvs/src/cyrus/perl/imap/IMAP.pm,v
+retrieving revision 1.17
+diff -u -p -r1.17 IMAP.pm
+--- perl/imap/IMAP.pm   19 Sep 2002 17:21:04 -0000      1.17
++++ perl/imap/IMAP.pm   25 Apr 2003 16:45:24 -0000
+@@ -203,6 +203,11 @@ sub authenticate {
+   $opts{-authz} = &quot;&quot; if (!defined($opts{-authz}));
+   $rc = 0;
+   if (defined($opts{-mechanism}) &amp;&amp; lc($opts{-mechanism}) ne &apos;login&apos;) {
++    # This seems to be the only way to avoid a
++    # `Use of uninitialized value in subroutine entry&apos; warning with perl -w
++    # when $opts{-password} is uninitialized (which may well be ok for e.g.
++    # the GSSAPI mechanism).
++    no warnings &apos;uninitialized&apos;;
+     $rc = $self-&gt;_authenticate($opts{-mechanism}, $opts{-service},
+                               $opts{-authz}, $opts{-user}, $opts{-password},
+                               $opts{-minssf}, $opts{-maxssf});</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

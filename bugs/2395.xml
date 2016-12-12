@@ -1,0 +1,102 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2395</bug_id>
+          
+          <creation_ts>2004-03-09 10:23 EDT</creation_ts>
+          <short_desc>recunstruct segmentation fault in mupdate-client.c</short_desc>
+          <delta_ts>2010-10-18 12:43:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tomas Lindroos">skitta@abo.fi</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Tomas Lindroos">skitta@abo.fi</who>
+            <bug_when>2004-03-09 10:23:38 EDT</bug_when>
+            <thetext>Hello!
+
+I am evaluating an upgrade from our cyrus 2.0.15 (patched) server to a cyrus
+2.2.x  murder setup. I am now trying to test moving mailboxes from the old
+system to the new by creating &apos;user.skitta&apos; and then dropping the old mailbox on
+top of the new. Then I try &apos;reconstruct -r -f user.skitta&apos; to add the mailboxes
+to the database.
+
+Now, I might have a configuration problem which however triggers a bug which
+crashes reconstruct (segmentation fault). The problem is in mupdate-client.c in
+the function mupdate_connect(). Cyrus version is 2.2.3 in a murder setup,
+running on RedHat Linux 7.3. SASL 2.1.17, berkeley db-4.2.52-2.
+
+- if any problems arise, the function bails out via a &apos;goto noconn;&apos;
+- at &apos;noconn:&apos; an entry is made to the log, at line 257, containing the value in
+h-&gt;pin. However, the jump can be made before h-&gt;pin is allocated (line 204).
+- thus, the syslog() call causes an segfault.
+
+In my setup, it seems that sasl_client_new() (line 199) fails (most probably my
+fault), and the above happens. The same could happen if any of the &quot;set the
+ip-addresses&quot; or sasl-initialisation functions fail. 
+
+I propose this fix: line 257
+
+- syslog(LOG_ERR, &quot;mupdate-client: connection to server closed: %s&quot;,
+-          prot_error(h-&gt;pin));
++   if ( (h != NULL) &amp;&amp; (h-&gt;pin != NULL) ) {
++     syslog(LOG_ERR, &quot;mupdate-client: connection to server closed: %s&quot;,
++               prot_error(h-&gt;pin));     
++   }
++   else {
++     syslog(LOG_ERR, &quot;mupdate-client: connection to server closed:&quot;);
++   }
+
+A call to fatal() could of course be another course of action.
+
+regards,
+
+/skitta
+UNIX systems administrator, Åbo Akademi University, Finland
+skitta@abo.fi</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-03-09 10:25:35 EDT</bug_when>
+            <thetext>already fixed in cvs (revision 1.41 of mupdate-client.c)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,138 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2800</bug_id>
+          
+          <creation_ts>2006-02-18 13:03 EDT</creation_ts>
+          <short_desc>master processes only one message per service per service loop</short_desc>
+          <delta_ts>2010-10-18 11:58:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>2647</dup_id>
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.1.x</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="cmu.edu">carsten-schaub@arcor.de</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>hmh@debian.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="cmu.edu">carsten-schaub@arcor.de</who>
+            <bug_when>2006-02-18 13:03:00 EDT</bug_when>
+            <thetext>Hi *   
+   
+this is a timing issue when a child (an imapd or lmtpd process) reports his   
+state to the master and the child exits. It applies to version 2.2.8 and 
+2.2.12. I haven&apos;t tested 2.3.x but the code seems to have no change in that 
+area. 
+   
+I run master with CYRUS_VERBOSE=5 so i see all messages. The following is   
+the output in the logs.   
+   
+Feb 11 19:05:39 mx2 master[1167]: set maximum file descriptors to 1024/1024  
+Feb 11 19:05:44 mx2 master[1167]: about to exec /usr/lib/cyrus/bin/imapd  
+Feb 11 19:05:49 mx2 imap[1167]: executed  
+Feb 11 19:05:56 mx2 imap[1167]: telling master 2  
+Feb 11 19:06:01 mx2 imap[1167]: accepted connection  
+Feb 11 19:06:06 mx2 imap[1167]: telling master 3  
+Feb 11 19:06:13 mx2 imap[1167]: telling master 1  
+Feb 11 19:07:06 mx2 master[30135]: service imap pid 1167 in READY state: now  
+unavailable and in BUSY state  
+Feb 11 19:07:29 mx2 master[30135]: process 1167 exited, status 0  
+Feb 11 19:08:21 mx2 master[30135]: service imap pid 1167: while trying to  
+process message 0x3: not registered yet  
+Feb 11 19:08:23 mx2 master[30135]: service imap pid 1167 in UNKNOWN state:  
+processing message 0x3  
+Feb 11 19:08:25 mx2 master[30135]: service imap pid 1167 in UNKNOWN state: now  
+in BUSY state and serving connection  
+Feb 11 19:09:17 mx2 master[30135]: service imap pid 1167 in BUSY state: now  
+available and in READY state  
+  
+I know it is very unusual to have pipe reads this much time after the write.  
+But I have no idea how this is caused.  
+  
+It is a Linux system with kernel 2.6.15.2. The prior kernel was a 2.6.9 and the  
+behavior was the same. This system has run for one year on the 2.6.9 kernel  
+without any problems.  
+  
+I have reduced (but not solved) that problem setting -T 120 -U 200  
+  
+I think the huge delay between the messages from the childs cause the problem.  
+Master knows that that child died and set it to UNKNOWN state. As there are  
+coming the further messages it let the master believe that this child is  
+still present which isn&apos;t true (since the child has exited). As a result  
+the master won&apos;t fork any childs.  
+  
+If you want some straces, let me know  
+  
+Carsten (aka rcsu on irc.freenode.net #cyrus) 
+Please CC me, I&apos;m not on any mailing list</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2006-02-19 20:57:02 EDT</bug_when>
+            <thetext>The problem here is that master is reaping the dead child table too fast to
+account for such a big delay as you see in your system (which, I should add,
+must be somehow broken).
+
+In the original versions of the child tracking patch (which are still in
+Debian&apos;s 2.1 tree, and which became the roots of what is now running in 2.2),
+there was a switch to set the &quot;janitor mourning time&quot;.  Increase it, and your
+problem will be gone.
+
+Here&apos;s the original manpage&apos;s text for that switch:
+       -J janitor mourining time interval
+              Sets the amount of time, in seconds, to remember a child process
+              after it exits.  You only need to increase this from the default
+              of 2 seconds, if you see messages in syslog complaining of  mes-
+              sages from unknown or unregistered children.
+
+I don&apos;t know if that time can be made adaptative, or auto-detected. But it can&apos;t
+be too long by default, as that would cause performance issues and other
+problems in very busy servers.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2006-02-19 21:25:24 EDT</bug_when>
+            <thetext>This is bug #2647.  It is a nasty one, I will look at the patches in #2647, if
+they are not current I will update them (at least for 2.2).
+
+Ken, I really think a fix for this one needs to go into 2.2 (and 2.2.13 be
+released with it) asap.
+
+*** This bug has been marked as a duplicate of 2647 ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

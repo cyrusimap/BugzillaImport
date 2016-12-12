@@ -1,0 +1,111 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3751</bug_id>
+          
+          <creation_ts>2012-10-31 09:07 EDT</creation_ts>
+          <short_desc>Skip parsing headers of base64 encoded message/rfc822 parts</short_desc>
+          <delta_ts>2014-10-21 11:05:15 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Gildas Desnos">gildas.desnos@atosorigin.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>murch@andrew.cmu.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Gildas Desnos">gildas.desnos@atosorigin.com</who>
+            <bug_when>2012-10-31 09:07:07 EDT</bug_when>
+            <thetext>Although the RFC 2045 forbids message/rfc822 parts that are base64 encoded, some emails containing such parts can still be found, and it seems that they are not filtered by all MDAs.
+
+The problem is that under some circumstances, Cyrus fully parses those parts a huge amount of time, resulting in what looks like a runaway process when the part is big enough.
+
+In our mail platform, the problem was caused by an user trying to fetch some particular headers in such a base64 encoded part. 
+(Using  command like : FETCH x (body[y.header.fields (date from)]))
+Cyrus then uses the index_pruneheader function to retrieve the headers. When the part is base64 encoded, it executes a strchr to find a non-existing colon in the whole base64, then skip a line and search again a colon in the whole remaining base64, until IMAPOPT_MAXHEADERLINES is reached. This means we have parsed the whole base64 part IMAPOPT_MAXHEADERLINES times, which is very costly for huge parts.
+
+Even if this is not a bug (the mail is the problem, not Cyrus) it may cause the process to use huge amounts of CPU until it has parsed sucessfully the whole part.
+
+The solution we found is to stop trying to find the colon after the part is fully parse once and it was not found (Meaning that no valid header is existing beyond this point)
+
+You can find attached to this report a patch for the current HEAD.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gildas Desnos">gildas.desnos@atosorigin.com</who>
+            <bug_when>2012-10-31 09:09:26 EDT</bug_when>
+            <thetext>Created an attachment (id=1504)
+Patch to skip searching for a colon after 1 fail.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-11-30 07:40:30 EDT</bug_when>
+            <thetext>Going to look at this after the next stable release, but it&apos;s definitely a candidate for 2.5 if not 2.4.  Just want to make sure it doesn&apos;t break in the case where there&apos;s a multiline header that&apos;s bigger than a single buffer read first.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-10-21 11:05:15 EDT</bug_when>
+            <thetext>Applied patch to master</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1504</attachid>
+            <date>2012-10-31 09:09 EDT</date>
+            <desc>Patch to skip searching for a colon after 1 fail.</desc>
+            <filename>patch.p</filename>
+            <type>text/plain</type>
+            <size>514</size>
+            <attacher>gildas.desnos@atosorigin.com</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL2ltYXAvaW5kZXguYyBiL2ltYXAvaW5kZXguYwppbmRleCAwZDUxYjIwLi45
+MTg0YzY0IDEwMDY0NAotLS0gYS9pbWFwL2luZGV4LmMKKysrIGIvaW1hcC9pbmRleC5jCkBAIC0y
+MjI2LDYgKzIyMjYsMTEgQEAgc3RhdGljIHZvaWQgaW5kZXhfcHJ1bmVoZWFkZXIoY2hhciAqYnVm
+LCBjb25zdCBzdHJhcnJheV90ICpoZWFkZXJzLAogICAgIHAgPSBidWY7CiAgICAgd2hpbGUgKCpw
+ICYmICpwICE9ICdccicpIHsKIAljb2xvbiA9IHN0cmNocihwLCAnOicpOworCS8qCisJICogSWYg
+dGhlcmUgaXMgbm8gY29sb24gaW4gcmVtYWluaW5nIGJ1ZmZlciwKKwkgKiB0aGVyZSBpcyBubyB2
+YWxpZCBoZWFkZXIsIGxlYXZlIGxvb3AKKwkgKi8KKwlpZiAoIWNvbG9uKSBicmVhazsKIAlpZiAo
+Y29sb24gJiYgaGVhZGVyc19ub3QgJiYgaGVhZGVyc19ub3QtPmNvdW50KSB7CiAJICAgIGdvb2Ro
+ZWFkZXIgPSAxOwogCSAgICBmb3IgKGwgPSBoZWFkZXJzX25vdC0+ZGF0YSA7ICpsIDsgbCsrKSB7
+Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

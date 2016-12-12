@@ -1,0 +1,114 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2968</bug_id>
+          
+          <creation_ts>2007-06-17 08:32 EDT</creation_ts>
+          <short_desc>Corrupt quota files cause data loss</short_desc>
+          <delta_ts>2010-10-18 12:43:11 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <bug_file_loc>http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=411240</bug_file_loc>
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Peter Eisentraut">peter_e@gmx.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Peter Eisentraut">peter_e@gmx.net</who>
+            <bug_when>2007-06-17 08:32:17 EDT</bug_when>
+            <thetext>A Debian user reported the following:
+
+&quot;&quot;&quot;
+Today I discovered that lmtpd segfaulted on any local mail.  After a
+little inveestigating, I found that the problem was caused by the
+following lines in imap/quota_db.c:
+
+---8&lt;------
+int quota_read(struct quota *quota, struct txn **tid, int wrlock)
+{
+    int r;
+    int qrlen;
+    const char *data;
+    int datalen;
+
+    if (!quota-&gt;root || !(qrlen = strlen(quota-&gt;root)))
+        return IMAP_QUOTAROOT_NONEXISTENT;
+
+    if (wrlock)
+        r = QDB-&gt;fetchlock(qdb, quota-&gt;root, qrlen, &amp;data, &amp;datalen, tid);
+    else
+        r = QDB-&gt;fetch(qdb, quota-&gt;root, qrlen, &amp;data, &amp;datalen, tid);
+
+    switch (r) {
+    case CYRUSDB_OK:
+        sscanf(data, &quot;%lu %d&quot;, &amp;quota-&gt;used, &amp;quota-&gt;limit);
+        break;
+---8&lt;------
+
+An ltrace showed that data pointed to 0 when sscanf was called.  I found
+two files:
+  /var/lib/cyrus/domain/u/ulrich-p-klein.de/quota/k/user.klein
+  /var/lib/cyrus/domain/u/ulrich-p-klein.de/quota/k/user.klein.NEW
+The first file was empty, the second (sorry, I didn&apos;t keep it) was 5
+bytes long.  Calling cyrqouta or cyrquota -f didn&apos;t help.
+
+After removal of those files, everything worked fine.
+&quot;&quot;&quot;
+
+A fix was proposed:
+
+&quot;&quot;&quot;
+The attached patch changes the quota_read function from imap/quota_db.c 
+to check for a null data pointer (caused by zero length files) before 
+trying to work with it. Thanks to Ulrich P. Klein for the detailed BR.
+&quot;&quot;&quot;
+
+See patch attached here and the URL to the Debian bug tracking system.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-06-17 10:47:45 EDT</bug_when>
+            <thetext>Applied my own version of the patch to CVS (2.3)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-05 11:31:06 EDT</bug_when>
+            <thetext>Fixed in 2.3.9</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

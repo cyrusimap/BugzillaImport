@@ -1,0 +1,326 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2694</bug_id>
+          
+          <creation_ts>2005-07-21 12:51 EDT</creation_ts>
+          <short_desc>XFER fails if user has quota set</short_desc>
+          <delta_ts>2010-10-25 18:46:36 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>HP</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Patrick Radtke">phr2101@columbia.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>tmerritt@email.arizona.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Patrick Radtke">phr2101@columbia.edu</who>
+            <bug_when>2005-07-21 12:51:53 EDT</bug_when>
+            <thetext>When trying to move a user from one backend to another, the operation fails if the user has a quota.
+
+The host that the user is on says:
+ Jul 21 12:36:48 currywurst2 imap[30214]: Could not move mailbox: user.testaccount2, failed setting 
+initial quota root
+
+Murder master reports nothing of intrest
+
+The host I&apos;m trying to move the user to has this in the log
+Jul 21 12:36:48 spam imap[10797]: login: currywurst2.cc.columbia.edu [128.59.33.140] murder PLAIN
++TLS User logged in
+
+We built with the following:
+--enable-murder  --enable-gssapi=/usr --without-snmp --with-com
+_err=yes --with-ldap=/usr
+
+I also tested with building it with replication. There was no difference.
+
+
+If I remove the user&apos;s quota file ( quota/user.username), then I can transfer the person.
+
+Using a build from CVS from July 11th, 2005
+
+thanks,
+
+Patrick</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-11-01 10:19:35 EDT</bug_when>
+            <thetext>Does this still not work?  Its worked for quite a while on 2.2.  Just trying to
+figure out if this is a 2.3 problem or if you had a bad mailbox.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Patrick Radtke">phr2101@columbia.edu</who>
+            <bug_when>2005-11-01 14:07:18 EDT</bug_when>
+            <thetext>I still see the problem. I&apos;ve tested multiple accounts on several backends.
+
+Were quotas changed to be 64 bit for the 2.3 release? maybe that&apos;s what made it
+break.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-11-01 14:09:13 EDT</bug_when>
+            <thetext>Yes, the usage was changes to be up to 64-bit.  Does this only happen on large
+mailboxes?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Patrick Radtke">phr2101@columbia.edu</who>
+            <bug_when>2005-11-01 14:18:14 EDT</bug_when>
+            <thetext>I&apos;ve tested on mailboxes between 3KB and 800MB and all got the same error.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Patrick Radtke">phr2101@columbia.edu</who>
+            <bug_when>2006-01-27 11:17:37 EDT</bug_when>
+            <thetext>I did some protocol logging. The problem looks like the machine you are trying
+to move the user too is attempting a setquota prior to the creation of the mailbox.
+
+So I attempted:
+gelbwurst.cc.columbia.edu&gt; xfer user.ct2210e teewurst
+xfermailbox: The remote Server(s) denied the operation  
+
+Teewurt&apos;s protocol log says:
+&lt;1138378083&lt;Q01 SETQUOTA {13+}
++user.ct2210e (STORAGE 353280)
+&gt;1138378083&gt;Q01 NO Mailbox does not exist
+&lt;1138378083&lt;Q01 LOGOUT
+&gt;1138378083&gt;* BYE LOGOUT received
+Q01 OK Completed 
+
+
+Murder master has:
+
+&lt;1138378083&lt;X0 DEACTIVATE {12+}
+user.ct2210e {33+}
+gelbwurst.cc.columbia.edu!default
+&gt;1138378083&gt;X0 OK &quot;done&quot;
+&lt;1138378083&lt;X1 ACTIVATE {12+}
+user.ct2210e {33+}
+gelbwurst.cc.columbia.edu!default {36+}
+ct2210e lrswipcda       phr2101 lrswipcda
+&gt;1138378083&gt;X1 OK &quot;done&quot;    
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Todd Merritt">tmerritt@email.arizona.edu</who>
+            <bug_when>2006-03-29 11:42:17 EDT</bug_when>
+            <thetext>Created an attachment (id=432)
+fixes quota failure during xfer
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-10 13:24:35 EDT</bug_when>
+            <thetext>Created an attachment (id=434)
+XFER SETQUOTA fix
+
+I think patch #432 masks the actual problem.  The reason that we get
+IMAP_MAILBOX_NONEXISTENT is that we aren&apos;t parsing the &apos;+&apos; prefix on the
+quotaroot early enough.  The new patch should fix this.  Please test in your
+environment and let me know if it fixes your problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Todd Merritt">tmerritt@email.arizona.edu</who>
+            <bug_when>2006-04-10 14:07:53 EDT</bug_when>
+            <thetext>That patch does not work.  With that patch applied I get a referral in response
+to the setquota command and a &quot;remote server denied operation&quot; in response to my
+rename command
+
+&lt;1144693089&lt;Q01 SETQUOTA {12+}
++user/foobar (STORAGE 102400)
+&gt;1144693089&gt;Q01 NO [REFERRAL imap://;AUTH=*@serverb.example.com/user/foobar]
+Remote mailbox.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-10 14:45:07 EDT</bug_when>
+            <thetext>Created an attachment (id=435)
+XFER SETQUOTA fix
+
+New patch which ignores MBTYPE_REMOTE if we&apos;re forcing SETQUOTA.  Pleass test
+and report back.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Todd Merritt">tmerritt@email.arizona.edu</who>
+            <bug_when>2006-04-10 16:57:22 EDT</bug_when>
+            <thetext>With the new patch I get &quot;The remote Server(s) denied the operation&quot; and the
+remote server shows:
+
+&lt;1144703294&lt;Q01 SETQUOTA {12+}
++user/foobar (STORAGE 102400)
+&gt;1144703294&gt;Q01 NO Operation is not supported on mailbox
+&lt;1144703294&lt;Q01 LOGOUT
+&gt;1144703294&gt;* BYE LOGOUT received
+Q01 OK Completed
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-10 17:00:51 EDT</bug_when>
+            <thetext>I guess I&apos;m going to have to fire up my test Murder.  What kind of config do you
+have?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Todd Merritt">tmerritt@email.arizona.edu</who>
+            <bug_when>2006-04-10 17:10:03 EDT</bug_when>
+            <thetext>A unified setup with two servers plus the mupdate server.  I&apos;m just trying to
+move a mailbox from one backend to the other. (cyradm&gt; rename user/foobar
+user/foobar server2!p0) from server1.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Todd Merritt">tmerritt@email.arizona.edu</who>
+            <bug_when>2006-04-10 17:34:58 EDT</bug_when>
+            <thetext>FWIW, and I could be wrong because I have bad short term memory :), but I think
+I went through the folder exists check and the + is stripped off.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-12 16:51:53 EDT</bug_when>
+            <thetext>Does you original patch actually work?  Does the quota get set on the
+destination server?
+
+Thinking back, XFER in a unified environment is horribly broken.  I&apos;m getting
+back into the code now and finding all of the potholes.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-04-13 14:29:39 EDT</bug_when>
+            <thetext>Fixed in CVS (for standard config only)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Todd Merritt">tmerritt@email.arizona.edu</who>
+            <bug_when>2006-04-17 09:20:12 EDT</bug_when>
+            <thetext>Yes, the original patch fixed the problem in my config, the quota was set on the
+remote end.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>432</attachid>
+            <date>2006-03-29 11:42 EDT</date>
+            <desc>fixes quota failure during xfer</desc>
+            <filename>quota.patch</filename>
+            <type>text/plain</type>
+            <size>354</size>
+            <attacher>tmerritt@email.arizona.edu</attacher>
+            
+              <data encoding="base64">LS0tIGltYXAvaW1hcGQuYy5vcmlnCTIwMDYtMDMtMTQgMDY6MTA6NTEuMDAwMDAwMDAwIC0wNzAw
+CisrKyBpbWFwL2ltYXBkLmMJMjAwNi0wMy0yOSAwOTo0ODowNy41NzkxNTkwMzIgLTA3MDAKQEAg
+LTYyNTIsNyArNjI1Miw3IEBACiAgICAgfQogCiAgICAgLyogbG9jYWwgbWFpbGJveCAqLwotICAg
+IGlmICghcikgeworICAgIGlmICgoIXIpIHx8IChyID09IElNQVBfTUFJTEJPWF9OT05FWElTVEVO
+VCkpIHsKIAkvKiBhcmUgd2UgZm9yY2luZyB0aGUgY3JlYXRpb24gb2YgYSBxdW90YXJvb3QgYnkg
+aGF2aW5nIGEgbGVhZGluZyArPyAqLwogCWlmIChxdW90YXJvb3RbMF0gPT0gJysnKSB7CiAJICAg
+IGZvcmNlID0gMTsK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>434</attachid>
+            <date>2006-04-10 13:24 EDT</date>
+            <desc>XFER SETQUOTA fix</desc>
+            <filename>setquota.diff</filename>
+            <type>text/plain</type>
+            <size>910</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXBkLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2
+cy9zcmMvY3lydXMvaW1hcC9pbWFwZC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjQ0My4yLjc4
+CmRpZmYgLXUgLXIxLjQ0My4yLjc4IGltYXBkLmMKLS0tIGltYXBkLmMJNyBBcHIgMjAwNiAxOTo1
+OTozNiAtMDAwMAkxLjQ0My4yLjc4CisrKyBpbWFwZC5jCTEwIEFwciAyMDA2IDE3OjIwOjU1IC0w
+MDAwCkBAIC02NDI5LDYgKzY0MjksMTIgQEAKIAkgKiByb290cyAqLwogCXIgPSBJTUFQX1BFUk1J
+U1NJT05fREVOSUVEOwogICAgIH0gZWxzZSB7CisJLyogYXJlIHdlIGZvcmNpbmcgdGhlIGNyZWF0
+aW9uIG9mIGEgcXVvdGFyb290IGJ5IGhhdmluZyBhIGxlYWRpbmcgKz8gKi8KKwlpZiAocXVvdGFy
+b290WzBdID09ICcrJykgeworCSAgICBmb3JjZSA9IDE7CisJICAgIHF1b3Rhcm9vdCsrOworCX0K
+KwkKIAlyID0gKCppbWFwZF9uYW1lc3BhY2UubWJveG5hbWVfdG9pbnRlcm5hbCkoJmltYXBkX25h
+bWVzcGFjZSwgcXVvdGFyb290LAogCQkJCQkJICAgaW1hcGRfdXNlcmlkLCBtYWlsYm94bmFtZSk7
+CiAgICAgfQpAQCAtNjQ2NSwxMiArNjQ3MSw2IEBACiAKICAgICAvKiBsb2NhbCBtYWlsYm94ICov
+CiAgICAgaWYgKCFyKSB7Ci0JLyogYXJlIHdlIGZvcmNpbmcgdGhlIGNyZWF0aW9uIG9mIGEgcXVv
+dGFyb290IGJ5IGhhdmluZyBhIGxlYWRpbmcgKz8gKi8KLQlpZiAocXVvdGFyb290WzBdID09ICcr
+JykgewotCSAgICBmb3JjZSA9IDE7Ci0JICAgIHF1b3Rhcm9vdCsrOwotCX0KLQkKIAlyID0gbWJv
+eGxpc3Rfc2V0cXVvdGEobWFpbGJveG5hbWUsIG5ld3F1b3RhLCBmb3JjZSk7CiAgICAgfQogCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>435</attachid>
+            <date>2006-04-10 14:45 EDT</date>
+            <desc>XFER SETQUOTA fix</desc>
+            <filename>setquota.diff</filename>
+            <type>text/plain</type>
+            <size>1189</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXBkLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2
+cy9zcmMvY3lydXMvaW1hcC9pbWFwZC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjQ0My4yLjc4
+CmRpZmYgLXUgLXIxLjQ0My4yLjc4IGltYXBkLmMKLS0tIGltYXBkLmMJNyBBcHIgMjAwNiAxOTo1
+OTozNiAtMDAwMAkxLjQ0My4yLjc4CisrKyBpbWFwZC5jCTEwIEFwciAyMDA2IDE4OjQyOjQ1IC0w
+MDAwCkBAIC02NDI5LDYgKzY0MjksMTIgQEAKIAkgKiByb290cyAqLwogCXIgPSBJTUFQX1BFUk1J
+U1NJT05fREVOSUVEOwogICAgIH0gZWxzZSB7CisJLyogYXJlIHdlIGZvcmNpbmcgdGhlIGNyZWF0
+aW9uIG9mIGEgcXVvdGFyb290IGJ5IGhhdmluZyBhIGxlYWRpbmcgKz8gKi8KKwlpZiAocXVvdGFy
+b290WzBdID09ICcrJykgeworCSAgICBmb3JjZSA9IDE7CisJICAgIHF1b3Rhcm9vdCsrOworCX0K
+KwkKIAlyID0gKCppbWFwZF9uYW1lc3BhY2UubWJveG5hbWVfdG9pbnRlcm5hbCkoJmltYXBkX25h
+bWVzcGFjZSwgcXVvdGFyb290LAogCQkJCQkJICAgaW1hcGRfdXNlcmlkLCBtYWlsYm94bmFtZSk7
+CiAgICAgfQpAQCAtNjQzOCw3ICs2NDQ0LDcgQEAKIAkJICAgICZzZXJ2ZXJfcm9ja190bXAsIE5V
+TEwsIE5VTEwpOwogICAgIH0KIAotICAgIGlmICghciAmJiAobWJ0eXBlICYgTUJUWVBFX1JFTU9U
+RSkpIHsKKyAgICBpZiAoIXIgJiYgIWZvcmNlICYmIChtYnR5cGUgJiBNQlRZUEVfUkVNT1RFKSkg
+ewogCS8qIHJlbW90ZSBtYWlsYm94ICovCiAJY2hhciBxdW90YXJvb3RidWZbTUFYX01BSUxCT1hf
+TkFNRSArIDNdOwogCWNoYXIgKnNlcnZlcl9yb2NrID0geHN0cmR1cChzZXJ2ZXJfcm9ja190bXAp
+OwpAQCAtNjQ2NSwxMiArNjQ3MSw2IEBACiAKICAgICAvKiBsb2NhbCBtYWlsYm94ICovCiAgICAg
+aWYgKCFyKSB7Ci0JLyogYXJlIHdlIGZvcmNpbmcgdGhlIGNyZWF0aW9uIG9mIGEgcXVvdGFyb290
+IGJ5IGhhdmluZyBhIGxlYWRpbmcgKz8gKi8KLQlpZiAocXVvdGFyb290WzBdID09ICcrJykgewot
+CSAgICBmb3JjZSA9IDE7Ci0JICAgIHF1b3Rhcm9vdCsrOwotCX0KLQkKIAlyID0gbWJveGxpc3Rf
+c2V0cXVvdGEobWFpbGJveG5hbWUsIG5ld3F1b3RhLCBmb3JjZSk7CiAgICAgfQogCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,141 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2728</bug_id>
+          
+          <creation_ts>2005-10-14 15:02 EDT</creation_ts>
+          <short_desc>Slow user delete with quotalegacy</short_desc>
+          <delta_ts>2011-07-05 17:23:00 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.10</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Patrick Boutilier">boutilpj@ednet.ns.ca</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Patrick Boutilier">boutilpj@ednet.ns.ca</who>
+            <bug_when>2005-10-14 15:02:19 EDT</bug_when>
+            <thetext>Having a problem where deleting a cyrus user takes approximately 45 seconds.
+Using strace I can see that the lag occurs when cyrus goes through each quota
+file in /var/imap/quota to try and figure out which quota file to delete.
+
+Searching Google I found this thread:
+
+http://asg.web.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;msg=837
+
+
+One of the messages in the thread
+(http://asg.web.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;msg=840)
+mentions that only the quota tool is affected by the foreach() call but that is
+not correct. It also affects deleting a user.
+
+From what I can see when performing a TRANSFER, DELETE, or RENAME imapd.c calls
+the function user_deletedata to &quot;take care of deleting ACLs, subscriptions, seen
+state and quotas&quot;.
+
+user_deletedata is a function in user.c which calls user_deletequotaroots to
+delete the quotas. The problematic foreach() is in this function also.
+
+
+int user_deletequotaroots(const char *user)
+{
+    struct namespace namespace;
+    char buf[MAX_MAILBOX_NAME+1], *inboxname = buf;
+    struct txn *tid = NULL;
+    int r;
+
+    /* set namespace */
+    r = mboxname_init_namespace(&amp;namespace, 0);
+
+    /* get user&apos;s toplevel quotaroot (INBOX) */
+    if (!r)
+        r = (*namespace.mboxname_tointernal)(&amp;namespace, &quot;INBOX&quot;,
+                                                 user, inboxname);
+
+    if (!r) {
+        struct find_rock frock = { NULL, NULL };
+        frock.inboxname = inboxname;
+        frock.tid = &amp;tid;
+        r = config_quota_db-&gt;foreach(qdb, inboxname, strlen(inboxname),
+                                     &amp;find_p, &amp;find_cb, &amp;frock, &amp;tid);
+    }
+
+    if (!r) quota_commit(&amp;tid);
+
+    return r;
+}
+
+
+
+I checked out the latest cyrus-imapd from CVS and the changes to the quota tool
+work as expected. Much faster and strace shows that /var/imap/quota is no longer
+being parsed file by file.
+
+
+Would it be possible to port this new quota code into user.c as well so user
+deletions work just as well? Thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-23 04:37:47 EDT</bug_when>
+            <thetext>Bringing this random old bug back to life - it looks like user_deletequotaroots still has the same code.
+
+I also wonder if this is related to #3432.
+
+I suspect the correct place to fix the performance issues is in the quotalegacy database layer itself - which could use the inbox prefix to limit the scan to just a few potential files...
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-18 09:49:41 EDT</bug_when>
+            <thetext>Taking over all quota-related tickets</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-01 03:23:09 EDT</bug_when>
+            <thetext>I&apos;m going to fix this by fixing foreach in quotalegacy - it&apos;s the right thing to do.  Also need to fix it to use mboxlist_sort or to avoid a separate crasher bug, so that will happen together.  Not for 2.4.9 though, pushing back.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-28 05:15:43 EDT</bug_when>
+            <thetext>Fixed by making &apos;foreach&apos; more efficient.  It&apos;s not perfect - if you have heaps of users it still needs to scan one whole directory, but it&apos;s better.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

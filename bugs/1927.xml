@@ -1,0 +1,159 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1927</bug_id>
+          
+          <creation_ts>2003-03-08 16:18 EDT</creation_ts>
+          <short_desc>mkimap perl script bug and fix</short_desc>
+          <delta_ts>2010-10-18 12:43:00 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>perl</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Paul Bossi">paulbossi@hotmail.com</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Paul Bossi">paulbossi@hotmail.com</who>
+            <bug_when>2003-03-08 16:18:45 EDT</bug_when>
+            <thetext>My report from the info-cyrus mailing list:
+
+Here&apos;s the problem, any attempt to SETQUOTA on a mailbox
+in a domain with first character of a digit, e.g.
+&quot;4demo.com&quot;, fails:
+
+    Mar  8 00:41:14 linux imap[20406]: IOERROR: creating quota
+    file /var/imap/domain/q/4demo.com/quota/s/user.someuser.NEW:
+    No such file or directory
+
+dir_hash_c (lib/util.c) is the cyrus imapd function that computes 
+the &quot;q&quot; location in that path named above:
+
+    /var/imap/domain/q/4demo.com/quota/s/user.someuser.NEW
+
+This path *always* FAILS when using mkimap tools to
+create the directories as is recommended:
+
+    mkimap -d 4demo.com
+
+The mkimap utility in tools directory does a simple
+&quot;substr($domain, 0, 1) instead of this hash algorithm
+involving special treatment of q.
+
+One of these is clearly wrong.
+
+Here&apos;s the perl function from the mkimap utility that
+decides (incorrectly I believe) to use &quot;4&quot; instead of 
+&quot;q&quot; in this situation:
+
+   sub mkdomain {
+       my $domain = shift;
+       my $hash = shift;
+
+       mkdir &quot;domain&quot;, 0755;
+       chdir &quot;domain&quot;;
+       if ($hash) {
+       mkdir substr($domain, 0, 1), 0755;
+       chdir substr($domain, 0, 1);
+       }
+       mkdir &quot;$domain&quot;, 0755;
+       chdir $domain;
+   }
+
+The tools/rehash perl script already has a perl equivalent
+dir_hash_c, whose relevant portion here is:
+
+    # plb: i added next two lines, this needs to be fleshed
+    # out more in mkimap, i don&apos;t know what functionality
+    # the basic/full is referring to, but it seems to be in
+    # the C version as well (via ifdefs), so should be here
+    # too, I&apos;d guess.
+    $tofull = 0;      # HACK
+    $tobasic = 1;     # HACK, force use of rehash&apos;s tobasic code.
+    sub dir_hash_c {
+        my $name = shift;
+        my ($h, $n);
+
+        if ($tofull) {
+        $n = 0;
+        foreach my $b (split(/ */, $name)) {
+            $n = (($n &lt;&lt; 3) ^ ($n &gt;&gt; 5)) ^ ord($b);
+        }
+        $h = chr(ord(&apos;A&apos;) + ($n % 23));
+        return $h;
+        }
+        elsif ($tobasic) {
+        $h = lc(substr($name, 0, 1));
+        if (!($h =~ /[a-z]/)) { $h = &apos;q&apos;; }
+        return $h;
+        }
+    }
+
+So the mkdomain function could be changed as follows to
+fix the problem, simply using the above function instead
+of the first char via substr:
+
+   sub mkdomain {
+       my $domain = shift;
+       my $hash = shift;
+
+       mkdir &quot;domain&quot;, 0755;
+       chdir &quot;domain&quot;;
+       if ($hash) {
+       mkdir dir_hash_c($domain), 0755;
+       chdir dir_hash_c($domain);
+       }
+       mkdir &quot;$domain&quot;, 0755;
+       chdir $domain;
+   }
+
+I&apos;ve actually done this on my system and it has seemed to
+fix everything for me with setquota not working.
+
+But as I said above, the only thing missing in this fix is
+handling of the basic/full stuff.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-03-08 17:34:27 EDT</bug_when>
+            <thetext>mkimap -d is no longer the way that virtual domails are created (its automatic now).
+
+So, this isn&apos;t really bug in current CVS.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

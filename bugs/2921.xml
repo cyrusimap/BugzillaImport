@@ -1,0 +1,119 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2921</bug_id>
+          
+          <creation_ts>2007-03-15 21:36 EDT</creation_ts>
+          <short_desc>lmtpproxyd crashes in non-unified mode</short_desc>
+          <delta_ts>2010-10-25 18:46:41 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Florian Pflug">fgp@phlo.org</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Florian Pflug">fgp@phlo.org</who>
+            <bug_when>2007-03-15 21:36:55 EDT</bug_when>
+            <thetext>lmtpproxyd crashes if used in non-unified mode on a frontend in cyrus 2.3
+The problem is that mlookup tries to access mailboxdata-&gt;server even if
+mailboxdata is NULL, and that it neglects to set aclp even if it returned
+0. The following patch fixes the problem for me:
+
+--- cyrus-imapd-2.3.7/imap/lmtpd.c	2006-05-23 15:09:36.000000000 +0200
++++ cyrus-imapd-2.3.7.ok/imap/lmtpd.c	2007-03-15 16:28:50.390913880 +0100
+@@ -419,9 +419,11 @@
+ 	       that we may have to restart this transaction from scratch */
+ 	    fatal(&quot;error communicating with MUPDATE server&quot;, EC_TEMPFAIL);
+ 	}
+-
+-	type |= MBTYPE_REMOTE;
+-	if (server) *server = (char *) mailboxdata-&gt;server;
++	else {
++	  type |= MBTYPE_REMOTE;
++	  if (server) *server = (char *) mailboxdata-&gt;server;
++	  if (aclp) *aclp = (char *) mailboxdata-&gt;acl;
++        }
+     }
+     else {
+ 	/* do a local lookup and kick the slave if necessary */</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Florian Pflug">fgp@phlo.org</who>
+            <bug_when>2007-03-15 21:38:20 EDT</bug_when>
+            <thetext>Created an attachment (id=528)
+Fixes a segfault in lmtpproxyd
+
+Patch is included in the bugreport too, but added here for
+your convenience.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-03-23 14:42:07 EDT</bug_when>
+            <thetext>This was already fixed in 2.3.8.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>528</attachid>
+            <date>2007-03-15 21:38 EDT</date>
+            <desc>Fixes a segfault in lmtpproxyd</desc>
+            <filename>cyrus-imapd-lmtpacl.patch</filename>
+            <type>text/plain</type>
+            <size>619</size>
+            <attacher>fgp@phlo.org</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMy43L2ltYXAvbG10cGQuYwkyMDA2LTA1LTIzIDE1OjA5OjM2LjAw
+MDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQtMi4zLjcub2svaW1hcC9sbXRwZC5jCTIwMDct
+MDMtMTUgMTY6Mjg6NTAuMzkwOTEzODgwICswMTAwCkBAIC00MTksOSArNDE5LDExIEBACiAJICAg
+ICAgIHRoYXQgd2UgbWF5IGhhdmUgdG8gcmVzdGFydCB0aGlzIHRyYW5zYWN0aW9uIGZyb20gc2Ny
+YXRjaCAqLwogCSAgICBmYXRhbCgiZXJyb3IgY29tbXVuaWNhdGluZyB3aXRoIE1VUERBVEUgc2Vy
+dmVyIiwgRUNfVEVNUEZBSUwpOwogCX0KLQotCXR5cGUgfD0gTUJUWVBFX1JFTU9URTsKLQlpZiAo
+c2VydmVyKSAqc2VydmVyID0gKGNoYXIgKikgbWFpbGJveGRhdGEtPnNlcnZlcjsKKwllbHNlIHsK
+KwkgIHR5cGUgfD0gTUJUWVBFX1JFTU9URTsKKwkgIGlmIChzZXJ2ZXIpICpzZXJ2ZXIgPSAoY2hh
+ciAqKSBtYWlsYm94ZGF0YS0+c2VydmVyOworCSAgaWYgKGFjbHApICphY2xwID0gKGNoYXIgKikg
+bWFpbGJveGRhdGEtPmFjbDsKKyAgICAgICAgfQogICAgIH0KICAgICBlbHNlIHsKIAkvKiBkbyBh
+IGxvY2FsIGxvb2t1cCBhbmQga2ljayB0aGUgc2xhdmUgaWYgbmVjZXNzYXJ5ICovCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,136 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2712</bug_id>
+          
+          <creation_ts>2005-09-26 03:37 EDT</creation_ts>
+          <short_desc>Parsing of IMAP literals is too limited</short_desc>
+          <delta_ts>2014-10-20 15:37:05 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Torsten Hilbrich">torsten.hilbrich@secunet.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-09-26 03:37:48 EDT</bug_when>
+            <thetext>I found the following problem with version 2.2.10 of the cyrus IMAP server but
+also checked that the problem is still there in the current CVS version.
+
+While trying to issue a rename/xfer operation within a murder cluster I noticed
+that some of the transfers were aborted (requiring cleaning up the destination
+server using setacl, localdelete, and mupdatepush commands) with the error
+message: &quot;literal too big&quot;.
+
+Tracing the problem to imap/imapparse.c it soon became obvious, that the range
+of an imap literal is very limited, the maximum value being INT_MAX / 20
+(107374182 on my systems).  These are about 102 MiB, not very much if your users
+have mails with more than 110 MB in their folders.
+
+I noticed that the parsing algorithm is quite limited.  It first multiplies and
+then checks the value.  The algorithm can IMO easily be improved by first
+checking for a coming overflow and then doing the operation.  This also prevents
+a turn-around into the negative range of an integer.
+
+Here is the patch I applied to my IMAP software.  It increases the maximum value
+to ((INT_MAX - 9) / 10) * 10) which is 2147483630 on my system.  The patch first
+increases the value of MAXLITERAL to INT_MAX and then add an additional checking
+before the operation implementing the range mentioned earlier.  I will attach
+the patch to this report.
+
+It would be nice if this patch or a similiar solution to the problem could be
+applied to the IMAP software.
+
+Thanks,
+
+Torsten</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Hilbrich">torsten.hilbrich@secunet.com</who>
+            <bug_when>2005-09-26 03:39:17 EDT</bug_when>
+            <thetext>Created an attachment (id=380)
+A patch that increase the numerical range of literals from 102MiB to about 2
+GiB
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-11-18 09:21:41 EDT</bug_when>
+            <thetext>The correct fix for this IMO is to not use the getxstring() functions for
+receiving the files when doing an XFER.  We should handle them by spooling the
+files directly to disk like we do for APPEND.  I will most likely make this
+change for 2.3.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-20 15:37:05 EDT</bug_when>
+            <thetext>XFER has been ported to sync protocol, which doesn&apos;t have these issues.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>380</attachid>
+            <date>2005-09-26 03:39 EDT</date>
+            <desc>A patch that increase the numerical range of literals from 102MiB to about 2 GiB</desc>
+            <filename>maxliteral.patch</filename>
+            <type>text/plain</type>
+            <size>734</size>
+            <attacher>torsten.hilbrich@secunet.com</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMi4xMC5vcmlnL2ltYXAvaW1hcHBhcnNlLmMgICAgMjAwNC0wMS0w
+NiAxNzozMjoxNy4wMDAwMDAwMDAgKzAxMDAKKysrIGN5cnVzLWltYXBkLTIuMi4xMC9pbWFwL2lt
+YXBwYXJzZS5jIDIwMDUtMDktMjMgMTU6Mjc6NDAuMDAwMDAwMDAwICswMjAwCkBAIC01NCw3ICs1
+NCw3IEBACiBlbnVtIHsKICAgICBNQVhRVU9URUQgPSAxNjM4NCwKICAgICBNQVhXT1JEID0gMTYz
+ODQsCi0gICAgTUFYTElURVJBTCA9IElOVF9NQVggLyAyMAorICAgIE1BWExJVEVSQUwgPSBJTlRf
+TUFYCiB9OwogCiB2b2lkIGZyZWVidWYoc3RydWN0IGJ1ZiAqYnVmKQpAQCAtMTc5LDYgKzE3OSwx
+MCBAQAogICAgICAgIGJ1Zi0+c1swXSA9ICdcMCc7CiAgICAgICAgd2hpbGUgKChjID0gcHJvdF9n
+ZXRjKHBpbikpICE9IEVPRiAmJiBpc2RpZ2l0KGMpKSB7CiAgICAgICAgICAgIHNhd2RpZ2l0ID0g
+MTsKKyAgICAgICAgICAgaWYobGVuID4gKE1BWExJVEVSQUwgLSA5KSAvIDEwKSB7CisgICAgICAg
+ICAgICAgICAgLyogd2UgbWlnaHQgb3ZlcmZsb3cgKi8KKyAgICAgICAgICAgICAgICBmYXRhbCgi
+bGl0ZXJhbCB0b28gYmlnIiwgRUNfSU9FUlIpOworICAgICAgICAgICB9CiAgICAgICAgICAgIGxl
+biA9IGxlbioxMCArIGMgLSAnMCc7CiAgICAgICAgICAgICBpZiAobGVuID4gTUFYTElURVJBTCB8
+fCBsZW4gPCAwKSB7CiAgICAgICAgICAgICAgICAgLyogd2Ugb3ZlcmZsb3dlZCAqLwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

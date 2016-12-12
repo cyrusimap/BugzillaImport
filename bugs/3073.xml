@@ -1,0 +1,154 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3073</bug_id>
+          
+          <creation_ts>2008-07-22 12:11 EDT</creation_ts>
+          <short_desc>pipe_lsub/pipe_to_end_of_response mangles untagged status updates</short_desc>
+          <delta_ts>2010-10-25 18:46:46 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2008-07-22 12:11:41 EDT</bug_when>
+            <thetext>Hi!
+
+We have a murder setup with 2 frontends, 3 backends and 1 mupdate master all running 2.3.12p2 built on RHEL5.2 (gcc version 4.1.2 20071124 (Red Hat 4.1.2-42)).
+
+Today i recognized by accident that issuing list|lsub|rlist|rlsub (or probably any command using pipe_lsub to parse the backend response) leeds to mangled output if the connection is in selected state and the selected mailbox announces updates.
+
+The proxy/frontend get&apos;s the following answer from the backend:
+---------
+=&gt; 
+. Lsub {0+}
+ {1+}
+*
+&lt;=
+* LSUB (\HasChildren) &quot;.&quot; &quot;INBOX&quot;
+* LSUB (\HasChildren) &quot;.&quot; &quot;INBOX.Archiv&quot;
+....
+* 2672 FETCH (FLAGS (\Recent \Deleted))
+. OK Completed (0.000 secs 28 calls)
+--------
+response written to the client:
+--------
+* LSUB (\HasChildren) &quot;.&quot; &quot;INBOX&quot;
+* LSUB (\HasChildren) &quot;.&quot; &quot;INBOX.Archiv&quot;
+....
+* 2672 * 2672 FETCH (FLAGS (\Recent \Deleted \Seen))
+. OK Completed (0.010 secs 0 calls)
+--------
+
+Ok, not that bad, but there&apos;re really bad results mangling the &quot;Ok&quot;, too...
+
+Same thing as above, but other &quot;status update&quot; from backend...
+--------
+...
+* 2674 EXISTS
+* 6 RECENT
+. OK Completed (0.000 secs 28 calls)
+--------
+... results in ....
+--------
+* 2674 * 6 . OK Completed (0.000 secs 0 calls)
+--------
+
+As far as I tracked things down it is caused by
+pipe_lsub()
+546ff:   if(strncasecmp(&quot;LSUB&quot;, cmd.s, 4) &amp;&amp; strncasecmp(&quot;LIST&quot;, cmd.s, 4)) {
+            prot_printf(imapd_out, &quot;%s %s &quot;, tagb.s, cmd.s);
+            r = pipe_to_end_of_response(s, force_notfatal);
+
+==&gt;&gt;&gt;
+static int pipe_to_end_of_response(struct backend *s, int force_notfatal)
+{
+    return pipe_response(s, NULL, 0, force_notfatal);
+}
+
+==&gt;&gt;&gt;
+static int pipe_response(struct backend *s, const char *tag, int include_tag,
+                         int force_notfatal)
+...
+198:    int cont = 0, last = !tag, r = PROXY_OK;
+...
+258:    if (!last || include_tag) prot_write(imapd_out, buf, sl);
+
+tag == NULL =&gt; (last = !tag) == 1 || include_tag == 0 ==&gt;&gt; rest of line is not written out.
+
+Regards, Wolfgang Breyha</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-09-24 10:16:57 EDT</bug_when>
+            <thetext>Do you have a quick way to test the following patch?  It seems to fix it for me.  I&apos;d like to include a fix in the upcoming 2.3.13.
+
+
+--- imap_proxy.c	22 May 2008 11:50:28 -0400	1.9
++++ imap_proxy.c	24 Sep 2008 10:01:33 -0400	
+@@ -332,7 +332,7 @@
+ 
+ static int pipe_to_end_of_response(struct backend *s, int force_notfatal)
+ {
+-    return pipe_response(s, NULL, 0, force_notfatal);
++    return pipe_response(s, NULL, 1, force_notfatal);
+ }
+ 
+ /* copy our current input to &apos;s&apos; until we hit a true EOL.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2008-09-24 10:31:52 EDT</bug_when>
+            <thetext>Not that easy. I&apos;ve a smaller cyrus installation where I can easily test things, but that&apos;s not a murder environment. Sorry.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-09-24 10:33:47 EDT</bug_when>
+            <thetext>Since you&apos;ve at least looked through the code, would you mind checking the logic of my small fix?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-09-25 07:44:33 EDT</bug_when>
+            <thetext>Committed fix to CVS.  Reopen the bug if problem persists.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

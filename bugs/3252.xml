@@ -1,0 +1,115 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3252</bug_id>
+          
+          <creation_ts>2010-08-31 11:40 EDT</creation_ts>
+          <short_desc>Resource leak in tls.c with broken tls setup</short_desc>
+          <delta_ts>2014-01-27 18:32:49 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ralf Haferkamp">rhafer@suse.de</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>aj@ajaissle.de</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ralf Haferkamp">rhafer@suse.de</who>
+            <bug_when>2010-08-31 11:40:08 EDT</bug_when>
+            <thetext>Created an attachment (id=1298)
+suggested fix
+
+When imapd cannot load its servercert/-key (for what ever reason, e.g. permission issues) it does not close the tls_session.db correctly. The log shows:
+
+Apr 26 12:02:02 schooladmin imaps[15744]: unable to get private key from
+&apos;/etc/ssl/servercerts/serverkey.pem&apos;
+Apr 26 12:02:02 schooladmin imaps[15744]: TLS server engine: cannot load
+cert/key data
+Apr 26 12:02:02 schooladmin imaps[15744]: error initializing TLS
+Apr 26 12:02:02 schooladmin imaps[15744]: Fatal error: tls_init() failed
+Apr 26 12:02:02 schooladmin imaps[15744]: DBERROR db4: Database handles still
+open at environment close
+Apr 26 12:02:02 schooladmin imaps[15744]: DBERROR db4: Open database handle:
+/var/lib/imap/tls_sessions.db
+
+If that happens long enough the DB enviroment&apos;s log region will run out of space resulting in all kinds of other failures. (E.g. lmtpd will stop delivering mails because it can&apos;t open deliver.db anymore)
+
+Find a patch against 2.3.16 attached, that should resolve the problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-27 18:32:49 EDT</bug_when>
+            <thetext>Thanks for the report.  I fixed it in Cyrus 2.4 and the upcoming 2.5 with this patch:
+
+http://git.cyrusimap.org/cyrus-imapd/patch/?id=2e106f14d21d19241830a881f888732d7d417ca9</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1298</attachid>
+            <date>2010-08-31 11:40 EDT</date>
+            <desc>suggested fix</desc>
+            <filename>cyrus-imapd_tls-session-leak.dif</filename>
+            <type>text/plain</type>
+            <size>950</size>
+            <attacher>rhafer@suse.de</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGN5cnVzLWltYXBkLTIuMy4xNi9pbWFwL3Rscy5jCj09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KLS0tIGN5cnVz
+LWltYXBkLTIuMy4xNi5vcmlnL2ltYXAvdGxzLmMKKysrIGN5cnVzLWltYXBkLTIuMy4xNi9pbWFw
+L3Rscy5jCkBAIC03MTQsNiArNzE0LDEwIEBAIGludCAgICAgdGxzX2luaXRfc2VydmVyZW5naW5l
+KGNvbnN0IGNoYXIKICAgICBpZiAoIVNTTF9DVFhfc2V0X2NpcGhlcl9saXN0KHNfY3R4LCBjaXBo
+ZXJfbGlzdCkpIHsKIAlzeXNsb2coTE9HX0VSUiwiVExTIHNlcnZlciBlbmdpbmU6IGNhbm5vdCBs
+b2FkIGNpcGhlciBsaXN0ICclcyciLAogCSAgICAgICBjaXBoZXJfbGlzdCk7CisJaWYgKCBzZXNz
+X2Rib3BlbiAmJiAoREItPmNsb3NlKShzZXNzZGIpICkgeworCSAgICBzeXNsb2coTE9HX0VSUiwg
+IkRCRVJST1I6IGVycm9yIGNsb3NpbmcgdGxzZGI6ICVzIiwKKwkJICAgY3lydXNkYl9zdHJlcnJv
+cihyKSk7CisJfQogCXJldHVybiAoLTEpOwogICAgIH0KIApAQCAtNzMxLDYgKzczNSwxMCBAQCBp
+bnQgICAgIHRsc19pbml0X3NlcnZlcmVuZ2luZShjb25zdCBjaGFyCiAKICAgICBpZiAoIXNldF9j
+ZXJ0X3N0dWZmKHNfY3R4LCBzX2NlcnRfZmlsZSwgc19rZXlfZmlsZSkpIHsKIAlzeXNsb2coTE9H
+X0VSUiwiVExTIHNlcnZlciBlbmdpbmU6IGNhbm5vdCBsb2FkIGNlcnQva2V5IGRhdGEiKTsKKwlp
+ZiAoIHNlc3NfZGJvcGVuICYmIChEQi0+Y2xvc2UpKHNlc3NkYikgKSB7CisJICAgIHN5c2xvZyhM
+T0dfRVJSLCAiREJFUlJPUjogZXJyb3IgY2xvc2luZyB0bHNkYjogJXMiLAorCQkgICBjeXJ1c2Ri
+X3N0cmVycm9yKHIpKTsKKwl9CiAJcmV0dXJuICgtMSk7CiAgICAgfQogICAgIFNTTF9DVFhfc2V0
+X3RtcF9yc2FfY2FsbGJhY2soc19jdHgsIHRtcF9yc2FfY2IpOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

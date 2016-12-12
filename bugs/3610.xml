@@ -1,0 +1,144 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3610</bug_id>
+          
+          <creation_ts>2011-12-12 11:06 EDT</creation_ts>
+          <short_desc>Moving a mailbox to a different partition on the same server breaks replication</short_desc>
+          <delta_ts>2011-12-23 08:37:42 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.4.12</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>3591</dup_id>
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dave McMurtrie">dave64@andrew.cmu.edu</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Dave McMurtrie">dave64@andrew.cmu.edu</who>
+            <bug_when>2011-12-12 11:06:37 EDT</bug_when>
+            <thetext>I set up a test mailbox on a server running the caldav-2.4 branch.  I confirmed that the mailbox was successfully replicated.
+
+I then moved the mailbox:
+
+$ cyradm cyrusbe-d04.andrew.cmu.edu.
+cyrusbe-d04.andrew.cmu.edu&gt; info user.acyrus
+{user.acyrus}:
+  duplicatedeliver: false
+  lastpop:  
+  lastupdate: 11-Dec-2011 17:58:07 -0500
+  partition: u2
+  pop3newuidl: true
+  sharedseen: false
+  size: 149310
+cyrusbe-d04.andrew.cmu.edu&gt; rename user.acyrus user.acyrus u1
+cyrusbe-d04.andrew.cmu.edu&gt; info user.acyrus
+{user.acyrus}:
+  duplicatedeliver: false
+  lastpop:  
+  lastupdate: 12-Dec-2011 09:53:09 -0500
+  partition: u1
+  pop3newuidl: true
+  sharedseen: false
+  size: 149310
+
+This caused a sync log to be written which contained:
+
+MAILBOX user.acyrus
+MAILBOX user.acyrus
+MAILBOX user.acyrus.Trash
+MAILBOX user.acyrus.Trash
+MAILBOX user.acyrus.Trash
+MAILBOX user.acyrus.Trash
+MAILBOX user.acyrus.testfolder
+MAILBOX user.acyrus.testfolder
+MAILBOX user.acyrus.testfolder
+MAILBOX user.acyrus.testfolder
+MAILBOX user.acyrus
+MAILBOX user.acyrus
+
+I then manually attempted to run sync_client and got:
+
+# /usr/cyrus/bin/sync_client -v -l -r -f /imap/conf/sync/log 
+MAILBOXES user.acyrus user.acyrus.Trash user.acyrus.testfolder
+  Promoting: MAILBOX user.acyrus -&gt; USER acyrus
+  Promoting: MAILBOX user.acyrus.Trash -&gt; USER acyrus
+  Promoting: MAILBOX user.acyrus.testfolder -&gt; USER acyrus
+USER acyrus
+Error in do_sync(): bailing out! Retry operation
+
+
+The csync protocol exchange looks like:
+
+* OK cyrusbe-d04.andrew.cmu.edu Cyrus sync server git2.4.12+210
+
+GET MAILBOXES (user.acyrus user.acyrus.Trash user.acyrus.testfolder)
+
+* MAILBOX %(UNIQUEID 1919bf954baa231b MBOXNAME user.acyrus LAST_UID 41 HIGHESTMODSEQ 33 RECENTUID 19 RECENTTIME 0 LAST_APPENDDATE 1299428689 POP3_LAST_LOGIN 0 UIDVALIDITY 1269441307 PARTITION u2 ACL \&quot;acyrus\tlrswipkxtecda\tmcyrus\tlrs\t\&quot; OPTIONS P SYNC_CRC 968260045 QUOTAROOT user.acyrus)
+* MAILBOX %(UNIQUEID 5a5977804c2246cd MBOXNAME user.acyrus.Trash LAST_UID 0 HIGHESTMODSEQ 11 RECENTUID 0 RECENTTIME 1287160102 LAST_APPENDDATE 0 POP3_LAST_LOGIN 0 UIDVALIDITY 1277314765 PARTITION u2 ACL \&quot;acyrus\tlrswipkxtecda\tmcyrus\tlrs\t\&quot; OPTIONS P SYNC_CRC 0 QUOTAROOT user.acyrus)
+* MAILBOX %(UNIQUEID 2d74ba4a4cd86336 MBOXNAME user.acyrus.testfolder LAST_UID 22 HIGHESTMODSEQ 12 RECENTUID 0 RECENTTIME 0 LAST_APPENDDATE 0 POP3_LAST_LOGIN 0 UIDVALIDITY 1289249590 PARTITION u2 ACL \&quot;acyrus\tlrswipkxtecda\tmcyrus\tlrs\t\&quot; OPTIONS P SYNC_CRC 3420103782 QUOTAROOT user.acyrus)
+OK success
+
+GET USER acyrus
+
+* MAILBOX %(UNIQUEID 1919bf954baa231b MBOXNAME user.acyrus LAST_UID 41 HIGHESTMODSEQ 33 RECENTUID 19 RECENTTIME 0 LAST_APPENDDATE 1299428689 POP3_LAST_LOGIN 0 UIDVALIDITY 1269441307 PARTITION u2 ACL \&quot;acyrus\tlrswipkxtecda\tmcyrus\tlrs\t\&quot; OPTIONS P SYNC_CRC 968260045 QUOTAROOT user.acyrus)
+* MAILBOX %(UNIQUEID 5a5977804c2246cd MBOXNAME user.acyrus.Trash LAST_UID 0 HIGHESTMODSEQ 11 RECENTUID 0 RECENTTIME 1287160102 LAST_APPENDDATE 0 POP3_LAST_LOGIN 0 UIDVALIDITY 1277314765 PARTITION u2 ACL \&quot;acyrus\tlrswipkxtecda\tmcyrus\tlrs\t\&quot; OPTIONS P SYNC_CRC 0 QUOTAROOT user.acyrus)
+* MAILBOX %(UNIQUEID 2d74ba4a4cd86336 MBOXNAME user.acyrus.testfolder LAST_UID 22 HIGHESTMODSEQ 12 RECENTUID 0 RECENTTIME 0 LAST_APPENDDATE 0 POP3_LAST_LOGIN 0 UIDVALIDITY 1289249590 PARTITION u2 ACL \&quot;acyrus\tlrswipkxtecda\tmcyrus\tlrs\t\&quot; OPTIONS P SYNC_CRC 3420103782 QUOTAROOT user.acyrus)
+* QUOTA %(ROOT user.acyrus LIMIT 5000000)
+OK success
+
+EXIT
+
+OK Finished
+
+
+syncserver logs at LOG_DEBUG level are:
+
+Dec 12 11:04:49 cyrusbe-d04 syncserver[24715]: accepted connection
+Dec 12 11:04:49 cyrusbe-d04 syncserver[24715]: cmdloop(): startup
+Dec 12 11:04:49 cyrusbe-d04 syncserver[24887]: SQL backend defaulting to engine &apos;mysql&apos;
+Dec 12 11:04:49 cyrusbe-d04 syncserver[24887]: executed</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-12-23 08:37:42 EDT</bug_when>
+            <thetext>
+
+*** This bug has been marked as a duplicate of bug 3591 ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

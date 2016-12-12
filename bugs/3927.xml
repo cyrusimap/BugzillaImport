@@ -1,0 +1,154 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3927</bug_id>
+          
+          <creation_ts>2016-04-06 09:22 EDT</creation_ts>
+          <short_desc>XFER from 2.4.18 to 2.5.7 destroys cyrus.index if annotation exists</short_desc>
+          <delta_ts>2016-04-11 04:36:23 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-04-06 09:22:30 EDT</bug_when>
+            <thetext>I transfer a mailbox from 2.4.18 to 2.5.7 within my murder cluster.
+
+My 2.4.18 is bugfixed for #2922 to prevent index version downgrade and dumps version 12 index in binary format. That works perfectly as long as the mailbox has no annotations (like squat, expire, ...).
+
+If it has annotations cyrus 2.5.7 mangles the cyrus.index to death by overwriting the UNDUMPed version 12 cyrus.index with an empty version 13 cyrus.index. It seems it roles back to the state it had after the mailbox was created on the new backend by failing to reread the transferred index file.
+
+To make it even worse the cyrus.header and cyrus.cache is kept from the UNDUMP leaving the mailbox in a state which trigger SEGV in reconstruct. I have to call reconstruct at least twice to fix such a mailbox. State information of the mailbox is lost.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-04-08 05:18:07 EDT</bug_when>
+            <thetext>Meanwhile I was able to get a strace of the undump call. It clearly shows that if an annotation is transferred the first mailbox_close() in mbdump.c:1238 does not close the old filehandles of cyrus.index and cyrus.cache as &quot;usual&quot;/without annotation. 
+
+After the quota gets updated the second mailbox_close() in mbdump.c:1302 fsync&apos;s the empty cyrus.index from LOCALCREATE back and overwrites the newly UNDUMPed version.
+
+As already mentioned the mailbox ends up in a state which lets reconstruct crash.
+
+I did not find the cause yet and ask for the urgent help of the cyrus maintainers. Please fix #2922 for 2.4 and this bug. A working upgrade path and interoperability between supported cyrus-imapd version is essential in a murder cluster.
+
+IMO this can happen on 2.5 =&gt; 2.5 backend transfers as well.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-04-08 05:27:56 EDT</bug_when>
+            <thetext>All the references to #2922 are wrong. I meant #3922 &quot;index version downgrade&quot;. Sorry</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-04-08 20:15:40 EDT</bug_when>
+            <thetext>Created an attachment (id=1569)
+reopen mailbox if first annotation is detected
+
+Since dump/undump has a fixed order transferring cyrus.*, message files, annotations, ...
+
+If the first annotation is detected the mailbox is closed and opened again to reread header and index. The annotate_state_set_mailbox call is moved after the reopen.
+
+First tests look promising. cyrus.index survives and annotation is transferred correctly for my testcases.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-04-10 22:19:23 EDT</bug_when>
+            <thetext>Thanks for the patch, it&apos;s now on cyrus-imapd-2.5 and master branches.
+
+I&apos;m not sure if the patch is the correct fix for the problem, or a workaround for a deeper underlying issue?  Leaving this open for further investigation.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-04-11 04:36:23 EDT</bug_when>
+            <thetext>I traced it down as follows:
+
+mbdump.c:undump()-&gt;annotate.c:annotate_state_write()-&gt;write_entry()-&gt;mailbox.c:mailbox_annot_changed().
+
+There
+mailbox_index_dirty()
+is called unconditionally what causes the overwriting of the freshly undumped cyrus.index if a annotation was transferred
+
+But IMO the only right thing to do is to reread the undumped cyrus.header|index as soon as needed to work on the correct copies regardless what happens next. That&apos;s why I chose to add the close_mailbox to the first annotation read and move annotate_state_set_mailbox to this moment as well.
+
+A more &quot;correct&quot; fix could be to add some synchronization point to dump/undump marking the point at which all binary cyrus data was transferred to give the recipient a chance to reread/reopen all the binary stuff before starting with other things like quota, annotations, ....
+
+I recognized that eg. the ACLs are not reread as well yet. They are set bei a distinct GETACL/SETACL IMAP command from the transferring host. But the ACLs are not reread from cyrus.header after UNDUMPed. I recognized it because I always set all folders to &quot;rd&quot; before XFERing them. But the GETACL returns &quot;all&quot; of a freshly created mailbox getting SET(ACL) afterwards to &quot;rd&quot;.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1569</attachid>
+            <date>2016-04-08 20:15 EDT</date>
+            <desc>reopen mailbox if first annotation is detected</desc>
+            <filename>cyrus257-mbdump_annotation_reopen_index.patch</filename>
+            <type>text/plain</type>
+            <size>1163</size>
+            <attacher>wbreyha@gmx.net</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuNS43L2ltYXAvbWJkdW1wLmMub3JpZwkyMDE2LTAxLTE4IDIxOjEw
+OjUwLjY3ODMyNDc1MCArMDEwMAorKysgY3lydXMtaW1hcGQtMi41LjcvaW1hcC9tYmR1bXAuYwky
+MDE2LTA0LTA5IDAxOjQ2OjA5LjczMTg4MzAyNyArMDIwMApAQCAtODI1LDYgKzgyNSw3IEBACiAg
+ICAgY29uc3QgY2hhciAqc2lldmVfcGF0aCA9IE5VTEw7CiAgICAgaW50IHNpZXZlX3VzZWhvbWVk
+aXIgPSBjb25maWdfZ2V0c3dpdGNoKElNQVBPUFRfU0lFVkVVU0VIT01FRElSKTsKICAgICBjb25z
+dCBjaGFyICp1c2VyaWQgPSBOVUxMOworICAgIGludCBmaXJzdF9hbm5vdGF0aW9uID0gMTsKICAg
+ICBjaGFyICphbm5vdGF0aW9uID0gTlVMTDsKICAgICBzdHJ1Y3QgYnVmIGNvbnRlbnQgPSBCVUZf
+SU5JVElBTElaRVI7CiAgICAgY2hhciAqc2Vlbl9maWxlID0gTlVMTDsKQEAgLTg5Nyw4ICs4OTgs
+NiBAQAogICAgIG1haWxib3hfZ2V0X3VzYWdlKG1haWxib3gsIG9sZF9xdW90YV91c2FnZSk7CiAK
+ICAgICBhc3RhdGUgPSBhbm5vdGF0ZV9zdGF0ZV9uZXcoKTsKLSAgICByID0gYW5ub3RhdGVfc3Rh
+dGVfc2V0X21haWxib3goYXN0YXRlLCBtYWlsYm94KTsKLSAgICBpZiAocikgZ290byBkb25lOwog
+CiAgICAgd2hpbGUoMSkgewogCWNoYXIgZm5hbWVidWZbTUFYX01BSUxCT1hfUEFUSCArIDEwMjRd
+OwpAQCAtOTIyLDYgKzkyMSwxNiBAQAogCSAgICBpbnQgaTsKIAkgICAgY2hhciAqdG1wdXNlcmlk
+OwogCisJICAgIC8qIGlzIHRoaXMgdGhlIGZpc3QgYW5ub3RhdGlvbj8gcmUtcmVhZCBjeXJ1cy5o
+ZWFkZXIvaW5kZXggKi8KKwkgICAgaWYgKGZpcnN0X2Fubm90YXRpb24pIHsKKwkJZmlyc3RfYW5u
+b3RhdGlvbiA9IDA7CisJCW1haWxib3hfY2xvc2UoJm1haWxib3gpOworICAgICAgICAgICAgICAg
+IHIgPSBtYWlsYm94X29wZW5fZXhjbHVzaXZlKG1ibmFtZSwgJm1haWxib3gpOworCQlpZiAocikg
+Z290byBkb25lOworICAgICAgICAgICAgICAgIHIgPSBhbm5vdGF0ZV9zdGF0ZV9zZXRfbWFpbGJv
+eChhc3RhdGUsIG1haWxib3gpOworICAgICAgICAgICAgICAgIGlmIChyKSBnb3RvIGRvbmU7CisJ
+ICAgIH0KKwogCSAgICBmb3IoaT0yOyBmaWxlLnNbaV07IGkrKykgewogCQlpZihmaWxlLnNbaV0g
+PT0gJy8nKSBicmVhazsKIAkgICAgfQo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,215 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3784</bug_id>
+          
+          <creation_ts>2013-03-12 11:46 EDT</creation_ts>
+          <short_desc>UID THREAD REFERENCES SIGSEGV</short_desc>
+          <delta_ts>2013-06-05 09:37:13 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <flag name="releng-backport"
+                id="13"
+                status="+"
+                setter="vanmeeuwen@kolabsys.com"
+          />
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2013-03-12 11:46:19 EDT</bug_when>
+            <thetext>Our cyrus-imapd 2.4.14 crashes reproducible on one of our mailboxes. I searched/debugged a lot and finally found the message causing the crash.
+
+It contains a &quot;self-reference&quot; of the form:
+Message-Id: &lt;478B52E10200003300019E06@gwia1.boku.ac.at&gt;
+References: &lt;477CB3AF0200001E00003B58@gwia1.boku.ac.at&gt;
+...
+ &lt;478B52E10200003300019E06@gwia1.boku.ac.at&gt;
+In-Reply-To: &lt;478B52E10200003300019E06@gwia1.boku.ac.at&gt;
+
+Happily provided by:
+X-Mailer: Novell GroupWise Internet Agent 7.0.2 HP
+
+I&apos;m reporting it for 2.4.14 since I compared imap/index.c and lib/lsort.c which are responsible for the threading to 2.4.17 and there are no relevant changes.
+
+imapd coredumps with a bt of:
+#0  0x00007ffaefd70914 in index_thread_compare (t1=&lt;value optimized out&gt;, t2=0x7ffaf208ab40, 
+    call_data=0x7fff0ca49700) at index.c:4126
+which is
+    md2 = t2-&gt;msgdata ? t2-&gt;msgdata : t2-&gt;child-&gt;msgdata;
+where
+(gdb) p *(t2)
+$2 = {msgdata = 0x0, parent = 0x0, child = 0x0, next = 0x0}
+
+it seems that either ref_link_messages or ref_prune_tree fails to detect and handle the selfreference.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2013-03-20 06:41:25 EDT</bug_when>
+            <thetext>I did some more debugging and tried to narrow it down even further. I ended up with the following conclusions so far:
+
+*) It needs at least two messages to trigger the bug
+*) It needs those specific two combinations of Message-ID|References|In-Reply-To Headers. I was not able to produce some &quot;artificial&quot; test headers yet.
+
+The headers are:
+Message 1:
+Message-Id: &lt;477CBE0D020000330001972A@gwia1.boku.ac.at&gt;
+References: &lt;477CB3AF0200001E00003B58@gwia1.boku.ac.at&gt;
+ &lt;477CBA030200003300019722@gwia1.boku.ac.at&gt;
+ &lt;477CBD530200003300019726@gwia1.boku.ac.at&gt;
+ &lt;477CBE0D020000330001972A@gwia1.boku.ac.at&gt;
+In-Reply-To: &lt;477CBE0D020000330001972A@gwia1.boku.ac.at&gt;
+
+Message 2:
+Message-Id: &lt;478B52E10200003300019E06@gwia1.boku.ac.at&gt;
+References: &lt;477CB3AF0200001E00003B58@gwia1.boku.ac.at&gt;
+ &lt;478B2D7F0200003300019DA2@gwia1.boku.ac.at&gt;
+ &lt;478B2E9F0200003300019DA5@gwia1.boku.ac.at&gt;
+ &lt;478B2F0E0200003300019DA8@gwia1.boku.ac.at&gt;
+ &lt;478B32C40200003300019DB1@gwia1.boku.ac.at&gt;
+ &lt;478B38C40200003300019DBD@gwia1.boku.ac.at&gt;
+ &lt;478B52E10200003300019E06@gwia1.boku.ac.at&gt;
+In-Reply-To: &lt;478B52E10200003300019E06@gwia1.boku.ac.at&gt;
+
+The Message-IDs and References of these two messages are not related/referencing to each other, they only loop back to themselfs so far.
+
+Use them as replacement for existing headers of any 2 messages. Put those two messages into an IMAP-Folder, do a reconstruct -R, access the mailbox, select the folder and do the
+. UID Thread REFERENCES UTF-8 ALL
+... boooom, SEGFAULT.
+
+Even on 2.4.17. -&gt; updated version in bugreport.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2013-03-20 12:18:30 EDT</bug_when>
+            <thetext>I played it through in gdb and came to the conclusion that this patch should fix it...
+
+----------
+--- imap/index.c.orig	2013-03-20 17:08:57.000000000 +0100
++++ imap/index.c	2013-03-20 17:15:51.000000000 +0100
+@@ -4600,7 +4600,14 @@
+ 
+ 	/* if we have a message with children, prune it&apos;s children */
+ 	else if (cur-&gt;child)
++	{  
+ 	    ref_prune_tree(cur);
++	    /* did we end up with a completly empty node here (see #3784) ? remove it, too */
++	    if (!cur-&gt;msgdata &amp;&amp; !cur-&gt;child &amp;&amp; !cur-&gt;next)
++	    {
++		prev-&gt;next = NULL;
++	    }
++	}
+     }
+ }
+ 
+-------
+
+At least it fixes the given example.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2013-03-20 12:39:30 EDT</bug_when>
+            <thetext>I think
+------
+--- imap/index.c.orig	2013-03-20 17:08:57.000000000 +0100
++++ imap/index.c	2013-03-20 17:37:26.000000000 +0100
+@@ -4600,7 +4600,14 @@
+ 
+ 	/* if we have a message with children, prune it&apos;s children */
+ 	else if (cur-&gt;child)
++	{  
+ 	    ref_prune_tree(cur);
++	    /* did we end up with a completly empty node here (see #3784) ? remove it, too */
++	    if (!cur-&gt;msgdata &amp;&amp; !cur-&gt;child &amp;&amp; !cur-&gt;next &amp;&amp; prev)
++	    {
++		prev-&gt;next = NULL;
++	    }
++	}
+     }
+ }
+ 
+------
+is even better. At least I can&apos;t guarantee that prev is always set at this point.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2013-03-22 01:19:43 EDT</bug_when>
+            <thetext>Going to get Greg to have a look at this one</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-03-25 04:20:36 EDT</bug_when>
+            <thetext>Fixed for the 2.5 branch in commit
+
+fa39083 Bug 3784: Fix crash in THREAD REFERENCES
+
+and tested in Cassandane commits
+
+093293f Add some tests for THREAD
+a80cebf Add a test for SIEVE header ascii-casemap syntax
+ecd3e26 Temporarily disable test for Bug 3617
+cdc487d Use assert_matches() rather than assert(grep)
+
+Wolfgang - I didn&apos;t use your patch as provided but did something
+slightly different.  Thanks for the excellent bug report, test
+case, and debugging.
+
+Jeroen - should we backport this to 2.4?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-05-29 09:12:09 EDT</bug_when>
+            <thetext>Fixed in 2.5-next, selecting to be backported to 2.4-next as well</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-05-29 09:13:30 EDT</bug_when>
+            <thetext>Backported to:
+
+[cyrus-imapd-2.4 2d677dd] Bug 3784: Fix crash in THREAD REFERENCES</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2013-06-05 09:37:13 EDT</bug_when>
+            <thetext>we had another mailbox today on an other backend. I used the backported patch there. Works like a charm;-)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

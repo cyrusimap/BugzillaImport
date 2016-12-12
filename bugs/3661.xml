@@ -1,0 +1,148 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3661</bug_id>
+          
+          <creation_ts>2012-04-02 23:43 EDT</creation_ts>
+          <short_desc>Memory leaks in sync_server, nntpd, popd</short_desc>
+          <delta_ts>2012-04-18 07:26:24 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>NNTP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.15</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-04-02 23:43:57 EDT</bug_when>
+            <thetext>Cassandane now fails a test when there are Valgrind errors. So some tests
+are failing because of memory leaks in the sync_server, nntpd and popd programs.
+
+In sync_server:
+==7936== 772 (256 direct, 516 indirect) bytes in 4 blocks are definitely lost in loss record 76 of 92
+==7936== at 0x4C2815C: malloc (vg_replace_malloc.c:236)
+==7936== by 0x4781D0: xzmalloc (xmalloc.c:68)
+==7936== by 0x422EA1: mboxlist_entry_create (mboxlist.c:106)
+==7936== by 0x423247: mboxlist_parse_entry (mboxlist.c:228)
+==7936== by 0x42359E: mboxlist_mylookup (mboxlist.c:297)
+==7936== by 0x4235DE: mboxlist_lookup (mboxlist.c:313)
+==7936== by 0x40A186: do_reserve (sync_server.c:1148)
+==7936== by 0x40D513: cmd_apply (sync_server.c:2337)
+==7936== by 0x408DED: cmdloop (sync_server.c:619)
+==7936== by 0x408705: service_main (sync_server.c:423)
+==7936== by 0x416A61: main (service.c:571)
+==7936==
+
+In nntpd:
+
+==11515== 104 bytes in 1 blocks are definitely lost in loss record 68 of 102
+==11515== at 0x4C2815C: malloc (vg_replace_malloc.c:236)
+==11515== by 0x48ED99: xmalloc (xmalloc.c:57)
+==11515== by 0x47BD0E: mynewstate (auth_unix.c:223)
+==11515== by 0x47BA0C: auth_newstate (auth.c:106)
+==11515== by 0x44ED9B: mysasl_proxy_policy (global.c:606)
+==11515== by 0x4E3D2C1: do_authorization (server.c:1185)
+==11515== by 0x4E3DE5C: sasl_checkpass (server.c:1746)
+==11515== by 0x40DB27: cmd_authinfo_pass (nntpd.c:2035)
+==11515== by 0x409F83: cmdloop (nntpd.c:893)
+==11515== by 0x40936C: service_main (nntpd.c:606)
+==11515== by 0x429029: main (service.c:571)
+
+==11515== 300 (60 direct, 240 indirect) bytes in 1 blocks are definitely lost in loss record 84 of 102
+==11515== at 0x4C2815C: malloc (vg_replace_malloc.c:236)
+==11515== by 0x6B17B1A: nss_parse_service_list (nsswitch.c:622)
+==11515== by 0x6B1843D: __nss_database_lookup (nsswitch.c:164)
+==11515== by 0xB6C13FF: ???
+==11515== by 0xB6C217C: ???
+==11515== by 0x6AC4B3C: getgrgid_r@@GLIBC_2.2.5 (getXXbyYY_r.c:253)
+==11515== by 0x6AC421E: getgrgid (getXXbyYY.c:117)
+==11515== by 0x47BE05: mynewstate (auth_unix.c:255)
+==11515== by 0x47BA0C: auth_newstate (auth.c:106)
+==11515== by 0x408E8C: service_init (nntpd.c:514)
+==11515== by 0x428994: main (service.c:382)
+
+and in popd:
+
+==11613== 104 bytes in 1 blocks are definitely lost in loss record 54 of 78
+==11613== at 0x4C2815C: malloc (vg_replace_malloc.c:236)
+==11613== by 0x472F51: xmalloc (xmalloc.c:57)
+==11613== by 0x45FEC6: mynewstate (auth_unix.c:223)
+==11613== by 0x45FBC4: auth_newstate (auth.c:106)
+==11613== by 0x436737: mysasl_proxy_policy (global.c:606)
+==11613== by 0x408876: popd_proxy_policy (pop3d.c:315)
+==11613== by 0x4E3D2C1: do_authorization (server.c:1185)
+==11613== by 0x4E3DE5C: sasl_checkpass (server.c:1746)
+==11613== by 0x40B4B4: cmd_pass (pop3d.c:1447)
+==11613== by 0x409F03: cmdloop (pop3d.c:994)
+==11613== by 0x409248: service_main (pop3d.c:579)
+==11613== by 0x413B75: main (service.c:571)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-04-02 23:50:16 EDT</bug_when>
+            <thetext>Fixed in:
+
+The following changes since commit 6d07c758b3f0f312607eaa2d31c98d944f7beb7d:
+
+  Bug 3613 - fix index_urlfetch() (2012-03-30 13:23:20 +1100)
+
+are available in the git repository at:
+  ssh://git.cyrusimap.org/git/cyrus-imapd master
+
+Greg Banks (2):
+      Bug 3661 - Fix memory leaks in pop3d, nntpd
+      Bug 3661 - Fix memleak in do_reserve()
+
+ imap/nntpd.c       |    5 +++++
+ imap/pop3d.c       |    5 +++++
+ imap/sync_server.c |    8 ++++++--
+ 3 files changed, 16 insertions(+), 2 deletions(-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-05 08:37:43 EDT</bug_when>
+            <thetext>Cherry-picked to cyrus-imapd-2.4, will be in 2.4.15</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-18 07:26:24 EDT</bug_when>
+            <thetext>Closing ticket in preparation of the 2.4.15 release.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

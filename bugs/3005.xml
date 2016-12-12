@@ -1,0 +1,255 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3005</bug_id>
+          
+          <creation_ts>2007-11-08 10:46 EDT</creation_ts>
+          <short_desc>imapd.conf: continuation character and unilimites line length</short_desc>
+          <delta_ts>2010-10-25 18:46:43 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alain Spineux">alain.spineux@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>alain.spineux@gmail.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-11-08 10:46:11 EDT</bug_when>
+            <thetext>This patch allow imapd.conf to have unlimited line length and
+permit the use of the backslash as continuation character.
+
+Here is the comment I added in the manual page.
+
+Despite that their is no limitation on the size of a line, you can
+enter a backslash ``\\&apos;&apos; at the end of the line to force the line to
+continue on the next one. The ``\\&apos;&apos; must be the last character of
+the line. No spaces are inserted between both line.
+
+How the patch works :
+
+I use a dynamic buffer &quot;buf&quot; instead of a static 4096 bytes one, that 
+I realloc when required. I replaced all &quot;sizeof(buf)&quot; by its dynamic size 
+&quot;sizeofbuf&quot;
+I try check the presence of &apos;\\&apos; or the absence of &apos;\n&apos; to know if we need
+to make multiple fgets. 
+
+Before to leave the function, I free the buffer.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-11-08 10:47:12 EDT</bug_when>
+            <thetext>Created an attachment (id=962)
+cyrus-imapd-2.3.9_multiline_conf-asx.patch
+
+works also on 2.3.10</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2007-11-08 12:04:19 EDT</bug_when>
+            <thetext>Ops forgot to tell why I wrote this patch.
+
+This is because admin and loginrealms options can become a problem
+when hosting hundreds of domains. The previous limit was 4096 char.
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-01-07 13:41:56 EDT</bug_when>
+            <thetext>Doesn&apos;t the following actually increaed the size of the buffer by 2*bufchunk?
+I assume that the xrealloc() should just use sizeofbuf.
+
+
++                        if (len==sizeofbuf-2) {
++                            sizeofbuf+=bufchunk;
++                            buf=xrealloc(buf, sizeofbuf+bufchunk);
++                        }
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2008-01-08 06:23:52 EDT</bug_when>
+            <thetext>Well-judged.
+
+It should be
+
++                        if (len==sizeofbuf-2) {
++                            sizeofbuf+=bufchunk;
++                            buf=xrealloc(buf, sizeofbuf);
++                        }
+
+or, shorter
+
++                        if (len==sizeofbuf-2) {
++                            buf=xrealloc(buf, sizeofbuf+=bufchunk);
++                        }
+
+Regards</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-01-09 14:15:15 EDT</bug_when>
+            <thetext>I rewrote the code as follows and committed it to CVS.
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/lib/libconfig.c.diff?r1=1.14;r2=1.15
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/lib/imapoptions.diff?r1=1.46;r2=1.47</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2008-01-10 12:22:31 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+&gt; I rewrote the code as follows and committed it to CVS.
+&gt; 
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/lib/libconfig.c.diff?r1=1.14;r2=1.15
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/lib/imapoptions.diff?r1=1.46;r2=1.47
+&gt; 
+
+I cut@pasted your code in my test case, using GROWSIZE=2
+And got success.
+
+I&apos;m impress by how you shrank it down.
+
+Regards</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>962</attachid>
+            <date>2007-11-08 10:47 EDT</date>
+            <desc>cyrus-imapd-2.3.9_multiline_conf-asx.patch</desc>
+            <filename>cyrus-imapd-2.3.9_multiline_conf-asx.patch</filename>
+            <type>text/plain</type>
+            <size>5013</size>
+            <attacher>alain.spineux@gmail.com</attacher>
+            
+              <data encoding="base64">Y29uZmlndXJhdGlvbiBmaWxlIHdpbGwgYWNjZXB0IGxpbmUgb2YgdW5saW1pdGVkIHNpemUgYW5k
+CiBtYW5hZ2UgdGhlICJcIiBjb250aW51YXRpb24gY2hhciBhdCB0aGUgZW5kIG9mIGxpbmUuCkZv
+ciBleGFtcGxlOgoKYWRtaW46IGN5cnVzXAogICAgICAgYWRtaW5AZXhhbXBsZS5jb21cCiAgICAg
+ICBhZG1pbkBleGFtcGxlLm5ldAoKZGlmZiAtck51IGN5cnVzLWltYXBkLTIuMy45Lm9yaWcvbGli
+L2xpYmNvbmZpZy5jIGN5cnVzLWltYXBkLTIuMy45L2xpYi9saWJjb25maWcuYwotLS0gY3lydXMt
+aW1hcGQtMi4zLjkub3JpZy9saWIvbGliY29uZmlnLmMJMjAwNy0wNy0xOCAyMDo1NjoxMS4wMDAw
+MDAwMDAgKzAyMDAKKysrIGN5cnVzLWltYXBkLTIuMy45L2xpYi9saWJjb25maWcuYwkyMDA3LTEx
+LTA2IDIwOjQzOjUxLjAwMDAwMDAwMCArMDEwMApAQCAtMjk5LDQxICsyOTksNzkgQEAKICAgICBG
+SUxFICppbmZpbGU7CiAgICAgZW51bSBpbWFwb3B0IG9wdCA9IElNQVBPUFRfWkVSTzsKICAgICBp
+bnQgbGluZW5vID0gMDsKLSAgICBjaGFyIGJ1Zls0MDk2XSwgZXJyYnVmWzEwMjRdOworICAgIC8q
+IGJ1ZiBpcyBkeW5hbWljIGFuZCBncm93IHRvIHN1cHBvcnQgdGhlIGxvbmdlc3QgbGluZSwgb3Ig
+dG8gc3VwcG9ydCBtdWx0aWxpbmUgKi8KKyAgICBjaGFyICpidWY7CisgICAgaW50IHNpemVvZmJ1
+Zj00MDk2OworICAgIGludCBidWZjaHVuaz00MDk2OworICAgIGludCBlb2wsIGxlbjsKKyAgICBj
+aGFyIGVycmJ1ZlsxMDI0XTsKICAgICBjaGFyICpwLCAqcSwgKmtleSwgKmZ1bGxrZXksICpzcnZr
+ZXksICp2YWwsICpuZXd2YWw7CiAgICAgaW50IHNlcnZpY2Vfc3BlY2lmaWM7CiAgICAgaW50IGlk
+bGVuID0gKGNvbmZpZ19pZGVudCA/IHN0cmxlbihjb25maWdfaWRlbnQpIDogMCk7CiAKKyAgICBi
+dWY9eG1hbGxvYyhzaXplb2ZidWYpOwogICAgIC8qIHJlYWQgaW4gY29uZmlnIGZpbGUgKi8KICAg
+ICBpbmZpbGUgPSBmb3BlbihmaWxlbmFtZSwgInIiKTsKICAgICBpZiAoIWluZmlsZSkgewotCXN0
+cmxjcHkoYnVmLCBDWVJVU19QQVRILCBzaXplb2YoYnVmKSk7Ci0Jc3RybGNhdChidWYsIGZpbGVu
+YW1lLCBzaXplb2YoYnVmKSk7CisJc3RybGNweShidWYsIENZUlVTX1BBVEgsIHNpemVvZmJ1Zik7
+CisJc3RybGNhdChidWYsIGZpbGVuYW1lLCBzaXplb2ZidWYpOwogCWluZmlsZSA9IGZvcGVuKGJ1
+ZiwgInIiKTsKICAgICB9CiAgICAgaWYgKCFpbmZpbGUpIHsKLQlzbnByaW50ZihidWYsIHNpemVv
+ZihidWYpLCAiY2FuJ3Qgb3BlbiBjb25maWd1cmF0aW9uIGZpbGUgJXM6ICVzIiwKKwlzbnByaW50
+ZihidWYsIHNpemVvZmJ1ZiwgImNhbid0IG9wZW4gY29uZmlndXJhdGlvbiBmaWxlICVzOiAlcyIs
+CiAJCSBmaWxlbmFtZSwgZXJyb3JfbWVzc2FnZShlcnJubykpOwogCWZhdGFsKGJ1ZiwgRUNfQ09O
+RklHKTsKICAgICB9CiAKICAgICAvKiBjaGVjayB0byBzZWUgaWYgd2UndmUgYWxyZWFkeSByZWFk
+IHRoaXMgZmlsZSAqLwogICAgIGlmIChoYXNoX2xvb2t1cChmaWxlbmFtZSwgJmluY2x1ZGVoYXNo
+KSkgewotCXNucHJpbnRmKGJ1Ziwgc2l6ZW9mKGJ1ZiksICJjb25maWd1cmF0aW9uIGZpbGUgJXMg
+aW5jbHVkZWQgdHdpY2UiLAorCXNucHJpbnRmKGJ1Ziwgc2l6ZW9mYnVmLCAiY29uZmlndXJhdGlv
+biBmaWxlICVzIGluY2x1ZGVkIHR3aWNlIiwKIAkJIGZpbGVuYW1lKTsKIAlmYXRhbChidWYsIEVD
+X0NPTkZJRyk7CisgICAgICAgIGZyZWUoYnVmKTsKIAlyZXR1cm47CiAgICAgfQogICAgIGVsc2Ug
+ewogCWhhc2hfaW5zZXJ0KGZpbGVuYW1lLCAodm9pZCopIDB4REVBREJFRUYsICZpbmNsdWRlaGFz
+aCk7CiAgICAgfQogICAgIAotICAgIHdoaWxlIChmZ2V0cyhidWYsIHNpemVvZihidWYpLCBpbmZp
+bGUpKSB7CisgICAgd2hpbGUgKGZnZXRzKGJ1Ziwgc2l6ZW9mYnVmLCBpbmZpbGUpKSB7CiAJbGlu
+ZW5vKys7CiAKIAlzZXJ2aWNlX3NwZWNpZmljID0gMDsKLQkKLQlpZiAoYnVmWzBdICYmIGJ1Zltz
+dHJsZW4oYnVmKS0xXSA9PSAnXG4nKSBidWZbc3RybGVuKGJ1ZiktMV0gPSAnXDAnOworCisgICAg
+ICAgIC8qIHJlYWQgb25lIGxpbmUgKi8KKyAgICAgICAgZW9sPTA7CisgICAgICAgIHdoaWxlICgh
+ZW9sKSB7CisgICAgICAgICAgICBpZiAoYnVmWzBdKSB7CisgICAgICAgICAgICAgICAgbGVuPXN0
+cmxlbihidWYpOworICAgICAgICAgICAgICAgIGlmIChidWZbbGVuLTFdID09ICdcbicpIHsKKyAg
+ICAgICAgICAgICAgICAgICAgYnVmWy0tbGVuXT0nXDAnOworICAgICAgICAgICAgICAgICAgICBp
+ZiAoYnVmW2xlbi0xXSA9PSAnXFwnKSB7CisgICAgICAgICAgICAgICAgICAgICAgICAvKiBsaW5l
+IGNvbnRpbnVhdGlvbiBjaGFyICovCisgICAgICAgICAgICAgICAgICAgICAgICBsZW4tLTsKKyAg
+ICAgICAgICAgICAgICAgICAgICAgIGlmIChsZW49PXNpemVvZmJ1Zi0yKSB7CisgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgc2l6ZW9mYnVmKz1idWZjaHVuazsKKyAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICBidWY9eHJlYWxsb2MoYnVmLCBzaXplb2ZidWYrYnVmY2h1bmspOworICAgICAg
+ICAgICAgICAgICAgICAgICAgfQorICAgICAgICAgICAgICAgICAgICAgICAgICAgZmdldHMoYnVm
+K2xlbiwgc2l6ZW9mYnVmLWxlbiwgaW5maWxlKTsKKyAgICAgICAgICAgICAgICAgICAgICAgICAg
+IGxpbmVubysrOworICAgICAgICAgICAgICAgICAgICB9CisgICAgICAgICAgICAgICAgICAgIGVs
+c2UgeworICAgICAgICAgICAgICAgICAgICAgICAgZW9sPTE7CisgICAgICAgICAgICAgICAgICAg
+IH0KKyAgICAgICAgICAgICAgICB9CisgICAgICAgICAgICAgICAgZWxzZSB7CisgICAgICAgICAg
+ICAgICAgICAgIC8qIGNoZWNrIGlmIHRoZSBsaW5lIGlzIGxvbmdlciB0aGFuIHRoZSBidWZmZXIg
+Ki8KKyAgICAgICAgICAgICAgICAgICAgaWYgKHVuZ2V0YyhnZXRjKGluZmlsZSksIGluZmlsZSkh
+PUVPRikgeworICAgICAgICAgICAgICAgICAgICAgICAgc2l6ZW9mYnVmKz1idWZjaHVuazsKKyAg
+ICAgICAgICAgICAgICAgICAgICAgIGJ1Zj14cmVhbGxvYyhidWYsIHNpemVvZmJ1Zik7CisgICAg
+ICAgICAgICAgICAgICAgICAgICBmZ2V0cyhidWYrbGVuLCBzaXplb2ZidWYtbGVuLCBpbmZpbGUp
+OworICAgICAgICAgICAgICAgICAgICB9CisgICAgICAgICAgICAgICAgfQorICAgICAgICAgICAg
+fQorICAgICAgICB9CisKIAlmb3IgKHAgPSBidWY7ICpwICYmIGlzc3BhY2UoKGludCkgKnApOyBw
+KyspOwogCWlmICghKnAgfHwgKnAgPT0gJyMnKSBjb250aW51ZTsKIApAQCAtNTczLDQgKzYxMSw1
+IEBACiAJfQogICAgIH0KICAgICBmY2xvc2UoaW5maWxlKTsKKyAgICBmcmVlKGJ1Zik7CiB9CmRp
+ZmYgLXJOdSBjeXJ1cy1pbWFwZC0yLjMuOS5vcmlnL2RvYy9tYW4vaW1hcGQuY29uZi41Lmh0bWwg
+Y3lydXMtaW1hcGQtMi4zLjkvZG9jL21hbi9pbWFwZC5jb25mLjUuaHRtbAotLS0gY3lydXMtaW1h
+cGQtMi4zLjkub3JpZy9kb2MvbWFuL2ltYXBkLmNvbmYuNS5odG1sICAgIDIwMDctMDgtMTUgMTk6
+MjM6MTcuMDAwMDAwMDAwICswMjAwCisrKyBjeXJ1cy1pbWFwZC0yLjMuOS9kb2MvbWFuL2ltYXBk
+LmNvbmYuNS5odG1sIDIwMDctMTEtMDggMTU6NDU6NDQuMDAwMDAwMDAwICswMTAwCkBAIC02MSw3
+ICs2MSwxMiBAQAogY29uZmlndXJhdGlvbiBvcHRpb24gaXMgYmVpbmcgc2V0IHRvLjwvcD4KIDwh
+LS0gSU5ERU5UQVRJT04gLS0+CiA8cD5CbGFuayBsaW5lcyBhbmQgbGluZXMgYmVnaW5uaW5nIHdp
+dGgKLSZsc3F1bzsmbHNxdW87IyZyc3F1bzsmcnNxdW87IGFyZSBpZ25vcmVkLjwvcD4KKyZsc3F1
+bzsmbHNxdW87IyZyc3F1bzsmcnNxdW87IGFyZSBpZ25vcmVkLgorRGVzcGl0ZSB0aGF0IHRoZWly
+IGlzIG5vIGxpbWl0YXRpb24gb24gdGhlIHNpemUgb2YgYSBsaW5lLCB5b3UgY2FuCitlbnRlciBh
+IGJhY2tzbGFzaCAmbHNxdW87JmxzcXVvO1wmcnNxdW87JnJzcXVvOyBhdCB0aGUgZW5kIG9mIHRo
+ZQorbGluZSB0byBmb3JjZSB0aGUgbGluZSB0byBjb250aW51ZSBvbiB0aGUgbmV4dCBvbmUuIFRo
+ZQorJmxzcXVvOyZsc3F1bztcJnJzcXVvOyZyc3F1bzsgbXVzdCBiZSB0aGUgbGFzdCBjaGFyYWN0
+ZXIgb2YKK3RoZSBsaW5lLiBObyBzcGFjZXMgYXJlIGluc2VydGVkIGJldHdlZW4gYm90aCBsaW5l
+LjwvcD4KIDwhLS0gSU5ERU5UQVRJT04gLS0+CiA8cD5Gb3IgYm9vbGVhbiBhbmQgZW51bWVyYXRl
+ZCBvcHRpb25zLCB0aGUgdmFsdWVzCiAmbHNxdW87JmxzcXVvO3llcyZyc3F1bzsmcnNxdW87LApk
+aWZmIC1yTnUgY3lydXMtaW1hcGQtMi4zLjkub3JpZy9tYW4vaW1hcGQuY29uZi41IGN5cnVzLWlt
+YXBkLTIuMy45L21hbi9pbWFwZC5jb25mLjUKLS0tIGN5cnVzLWltYXBkLTIuMy45Lm9yaWcvbWFu
+L2ltYXBkLmNvbmYuNSAgICAgMjAwNy0xMS0wOCAxNToxOTozNy4wMDAwMDAwMDAgKzAxMDAKKysr
+IGN5cnVzLWltYXBkLTIuMy45L21hbi9pbWFwZC5jb25mLjUgIDIwMDctMTEtMDggMTU6NDU6MDQu
+MDAwMDAwMDAwICswMTAwCkBAIC01OCw2ICs1OCwxMCBAQAogc2V0IHRvLgogLlBQCiBCbGFuayBs
+aW5lcyBhbmQgbGluZXMgYmVnaW5uaW5nIHdpdGggYGAjJycgYXJlIGlnbm9yZWQuCitEZXNwaXRl
+IHRoYXQgdGhlaXIgaXMgbm8gbGltaXRhdGlvbiBvbiB0aGUgc2l6ZSBvZiBhIGxpbmUsIHlvdSBj
+YW4KK2VudGVyIGEgYmFja3NsYXNoIGBgXFwnJyBhdCB0aGUgZW5kIG9mIHRoZSBsaW5lIHRvIGZv
+cmNlIHRoZSBsaW5lIHRvCitjb250aW51ZSBvbiB0aGUgbmV4dCBvbmUuIFRoZSBgYFxcJycgbXVz
+dCBiZSB0aGUgbGFzdCBjaGFyYWN0ZXIgb2YKK3RoZSBsaW5lLiBObyBzcGFjZXMgYXJlIGluc2Vy
+dGVkIGJldHdlZW4gYm90aCBsaW5lLgogLlBQCiBGb3IgYm9vbGVhbiBhbmQgZW51bWVyYXRlZCBv
+cHRpb25zLCB0aGUgdmFsdWVzIGBgeWVzJycsIGBgb24nJywgYGB0JycsCiBgYHRydWUnJyBhbmQg
+YGAxJycgdHVybiB0aGUgb3B0aW9uIG9uLCB0aGUgdmFsdWVzIGBgbm8nJywgYGBvZmYnJywK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

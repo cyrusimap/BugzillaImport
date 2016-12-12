@@ -1,0 +1,170 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3849</bug_id>
+          
+          <creation_ts>2014-03-29 04:08 EDT</creation_ts>
+          <short_desc>arbitron.c:152: possible read of uninitialised memory ?</short_desc>
+          <delta_ts>2014-07-30 18:27:47 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="David Binderman">dcb314@hotmail.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dilyan.palauzov@aegee.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="David Binderman">dcb314@hotmail.com</who>
+            <bug_when>2014-03-29 04:08:31 EDT</bug_when>
+            <thetext>I just compiled cyrus-imap with clang and it said
+
+arbitron.c:152:10: warning: variable &apos;month&apos; is used uninitialized whenever &apos;||&apos; condition is true [-Wsometimes-uninitialized]
+arbitron.c:152:10: warning: variable &apos;day&apos; is used uninitialized whenever &apos;||&apos; condition is true [-Wsometimes-uninitialized]
+arbitron.c:152:10: warning: variable &apos;year&apos; is used uninitialized whenever &apos;||&apos; condition is true [-Wsometimes-uninitialized]
+
+Suggest initialise local variables month, day and year at their declaration.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-06 10:14:37 EDT</bug_when>
+            <thetext>Which version of clang do you use?
+
+With clang-3.4 I get:
+
+cyrus-imapd/imap master=# clang -Wsometimes-uninitialized  --analyze -Wall -Wextra -O3 arbitron.c -I. -I../lib  -I..
+arbitron.c:377:38: warning: Value stored to &apos;data&apos; is never read
+    lastread = strtol(data, &amp;p, 10); data = p;
+                                     ^      ~
+1 warning generated.
+
+As of line 152:
+
+  if (sscanf(optarg+9, &quot;%02u%02u%04u&quot;, &amp;month, &amp;day, &amp;year) &lt; 3) 
+
+sscanf() puts data in month, day and year, and according to my understanding is not supposed to read data from there.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Binderman">dcb314@hotmail.com</who>
+            <bug_when>2014-07-06 15:50:59 EDT</bug_when>
+            <thetext>&gt;Which version of clang do you use?
+
+Development trunk. My most recent compile of
+cyrus-imap shows
+
+arbitron.c:152:10: warning: variable &apos;month&apos; is used uninitialized whenever &apos;||&apos; condition is true [-Wsometimes-uninitialized]
+arbitron.c:157:20: note: uninitialized use occurs here
+arbitron.c:152:10: note: remove the &apos;||&apos; if its condition is always false
+arbitron.c:149:21: note: initialize the variable &apos;month&apos; to silence this warning
+arbitron.c:152:10: warning: variable &apos;day&apos; is used uninitialized whenever &apos;||&apos; condition is true [-Wsometimes-uninitialized]
+arbitron.c:158:21: note: uninitialized use occurs here
+arbitron.c:152:10: note: remove the &apos;||&apos; if its condition is always false
+arbitron.c:149:26: note: initialize the variable &apos;day&apos; to silence this warning
+arbitron.c:152:10: warning: variable &apos;year&apos; is used uninitialized whenever &apos;||&apos; condition is true [-Wsometimes-uninitialized]
+arbitron.c:159:21: note: uninitialized use occurs here
+arbitron.c:152:10: note: remove the &apos;||&apos; if its condition is always false
+arbitron.c:149:32: note: initialize the variable &apos;year&apos; to silence this warning
+arbitron.c: In function &apos;process_user_p&apos;:
+arbitron.c:378:10: warning: variable &apos;version&apos; set but not used [-Wunused-but-set-variable]
+
+The code I see is
+
+        if (strlen(optarg) &lt; 8 ||
+        sscanf(optarg, &quot;%02u%02u%04u&quot;, &amp;month, &amp;day, &amp;year) &lt; 3) {
+        usage();
+        }
+        memset(&amp;date, 0, sizeof(struct tm));
+        date.tm_mon = month - 1;
+        date.tm_mday = day;
+        date.tm_year = year - 1900;
+
+It looks to me like clang doesn&apos;t know that function usage
+never returns, but of course initing local variables at their
+declaration is general good practice.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-06 16:29:10 EDT</bug_when>
+            <thetext>Does this patch fix the warning:
+
+diff --git a/imap/arbitron.c b/imap/arbitron.c
+index 7ef4520..c56f641 100644
+--- a/imap/arbitron.c
++++ b/imap/arbitron.c
+@@ -109,7 +109,7 @@ int long_report = 0;
+ static struct namespace arb_namespace;
+
+ /* forward declarations */
+-void usage(void);
++_Noreturn void usage(void);
+ void run_users(void);
+ void make_report(char *key, void *data, void *rock);
+ void process_seen(const char *path, const char *user);
+
+
+
+Essentially, the leading _Noreturn tells clang, that usage() returns.  This hack is standardized by C11, and superseeds GCC&apos;s __attribute__((noreturn)).  As of http://clang.llvm.org/docs/AttributeReference.html#noreturn, the C11 form is also supported by clang.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="David Binderman">dcb314@hotmail.com</who>
+            <bug_when>2014-07-07 04:45:33 EDT</bug_when>
+            <thetext>&gt;Does this patch fix the warning:
+
+Yes.
+
+[dcb@zippy4 imap]$ ~/llvm/results/bin/clang -c -I.. -I./../lib  -I./../sieve -I/usr/include/libdb  -I/usr/include/et -I/usr/include/kerberosIV -fno-strict-aliasing -I/usr/include  -DHAVE_CONFIG_H  -O3 -march=native -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong --param=ssp-buffer-size=4 -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fno-strict-aliasing arbitron.c
+clang: warning: argument unused during compilation: &apos;-specs=/usr/lib/rpm/redhat/redhat-hardened-cc1&apos;
+[dcb@zippy4 imap]$</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-15 17:38:46 EDT</bug_when>
+            <thetext>Moving the body of usage() before the body of main() does not surpress the warning, the only correct way to avoid the warning is to use _Noreturn.
+
+llvm/clang js not going to change its behaviour (http://llvm.org/bugs/show_bug.cgi?id=20301).
+
+For the purposes of portability I consider integrating gnulib in tbe build process as the right direction, with module stdnoreturn.  Integrating gnulib can also integrate the functions mentioned by AC_REPLACE_FUNCSS in configure.ac: memmove strcasecmp ftruncate strerror posix_fadvise strsep memmem getdtablesize to be managed by gnulib.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-30 18:27:47 EDT</bug_when>
+            <thetext>Fixed on master with commit 28467b7450846e436861d20d0b1876166cd35300 and on cyrus-imapd-2.4 with commit d4b08b582bb3dee8acf929086e8bac5e564a4460 .
+
+At the end, as __attribute__((noreturn)) is already used in the cyrus imapd code, and is therefore considered portable, I annotated the usage() function with __attribute__((noreturn)) instead of the standardized, but possibly not portable _Noreturn .</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

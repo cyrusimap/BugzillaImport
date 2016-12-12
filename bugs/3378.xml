@@ -1,0 +1,333 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3378</bug_id>
+          
+          <creation_ts>2010-12-28 22:52 EDT</creation_ts>
+          <short_desc>sync_client requires plain login after upgrade to 2.4.6</short_desc>
+          <delta_ts>2011-01-01 18:03:27 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.6</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DEFERRED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephen Carr">support@civeng.adelaide.edu.au</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>dwhite@olp.net</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Stephen Carr">support@civeng.adelaide.edu.au</who>
+            <bug_when>2010-12-28 22:52:12 EDT</bug_when>
+            <thetext>Created an attachment (id=1340)
+Text of synctest and log entries on replica.
+
+Dear All
+
+A bug appeared with the master logging in to the replica after the upgrade from 2.5.5 to 2.4.6. It seems not to be able to handle MD5 based logins eg cram-md5 or digest-md5. Had to force PLAIN.
+
+With 2.4.5 and the earlier 2.3.16 the login was DIGEST-MD5
+
+Please see attached file.
+
+Thanks
+Stephen Carr</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2010-12-28 23:26:03 EDT</bug_when>
+            <thetext>Steven,
+
+what pwcheck_method do you have configured?
+
+Can you provide a (sanitized) copy of your sasl_ entries on the replica master? Did you upgrade SASL at the same time or make any configuration changes?
+
+Can you try authenticating via DIGEST-MD5 with another service running on the replica master (IMAP?)
+
+- Dan</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephen Carr">support@civeng.adelaide.edu.au</who>
+            <bug_when>2010-12-29 19:07:53 EDT</bug_when>
+            <thetext>Created an attachment (id=1341)
+imapd configs and imtest  cram-md5 digest-md5
+
+Dear Cyrus Imap
+
+See attached imtest.txt for imapd.conf files on master and replica and imtest to replica with log entries off the replica.
+
+The version of SASL was the same as used for 2.3.16, 2.4.5 and 2.4.6
+
+Regards
+Stephen Carr</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2010-12-29 21:33:40 EDT</bug_when>
+            <thetext>Steven,
+
+On your replica, with the following configuration:
+
+sasl_pwcheck_method: saslauthd
+syncserver_sasl_mech_list: digest-md5 plain
+sasl_auto_transition: false
+
+The &apos;plain text&apos; mechanisms:
+
+plain
+login
+
+will be authenticated via saslauthd, and your shared secret mechanisms:
+
+cram-md5
+digest-md5
+
+will be authenticated using your auxprop plugins (sasldb?).
+
+On your main system, since pwcheck_method is configured with &apos;auxprop&apos;, plain text and shared secret mechanisms are both authenticated via auxprop.
+
+On your replica, the message:
+
+Dec 29 16:46:41 proxy imap[10207]: badlogin: brooks.civeng.adelaide.edu.au [129.127.16.1] DIGEST-MD5 [SASL(-13): user not found: no secret in database]
+
+indicates that the user &apos;support&apos; was probably not found in /etc/sasldb2.
+
+Try running &apos;sasldblistusers2&apos; on your replica to verify that &apos;support&apos; exists.
+
+- Dan</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephen Carr">support@civeng.adelaide.edu.au</who>
+            <bug_when>2010-12-30 23:06:47 EDT</bug_when>
+            <thetext>Dear Dan
+
+You are correct - the problem is on the replica.
+
+sasldblistsers2 does show the user support.
+
+I need to spend some time to track down the problem - I suspect a problem with the sasl libraries.
+
+Something must have happened when installing 2.4.6
+
+Thanks
+Stephen Carr</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Stephen Carr">support@civeng.adelaide.edu.au</who>
+            <bug_when>2011-01-01 17:45:34 EDT</bug_when>
+            <thetext>Dear Dan 
+
+I fixed the problem on the replica - it was due to cyrus-imapd 2.4.6 linking to an old (corrupt sasl2 libraries) - removed the dud libraries - rebuilt 2.4.6 - all OK
+
+Thanks
+Stephen Carr</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1340</attachid>
+            <date>2010-12-28 22:52 EDT</date>
+            <desc>Text of synctest and log entries on replica.</desc>
+            <filename>Sync_client_md5.txt</filename>
+            <type>text/plain</type>
+            <size>2055</size>
+            <attacher>support@civeng.adelaide.edu.au</attacher>
+            
+              <data encoding="base64">T24gbWFzdGVyCi0tLS0tLS0tLQoKCnN5bmN0ZXN0IC1tIHBsYWluIHByb3h5ClM6ICogU0FTTCBQ
+TEFJTiBESUdFU1QtTUQ1ClM6ICogU1RBUlRUTFMKUzogKiBDT01QUkVTUyBERUZMQVRFClM6ICog
+T0sgcHJveHkuY2l2ZW5nLmFkZWxhaWRlLmVkdS5hdSBDeXJ1cyBzeW5jIHNlcnZlciB2Mi40LjYK
+UGxlYXNlIGVudGVyIHlvdXIgcGFzc3dvcmQ6IApDOiBBVVRIRU5USUNBVEUgUExBSU4gQUdONWNu
+VnpBRFV3WTNseWRYTTFNUT09ClM6IE9LIFN1Y2Nlc3MgKG5vIHByb3RlY3Rpb24pCkF1dGhlbnRp
+Y2F0ZWQuClNlY3VyaXR5IHN0cmVuZ3RoIGZhY3RvcjogMApleGl0Ck9LIEZpbmlzaGVkCkNvbm5l
+Y3Rpb24gY2xvc2VkLgpjeXJ1c0Bicm9va3M6fiQgc3luY3Rlc3QgLW0gZGlnZXN0LW1kNSBwcm94
+eQpTOiAqIFNBU0wgUExBSU4gRElHRVNULU1ENQpTOiAqIFNUQVJUVExTClM6ICogQ09NUFJFU1Mg
+REVGTEFURQpTOiAqIE9LIHByb3h5LmNpdmVuZy5hZGVsYWlkZS5lZHUuYXUgQ3lydXMgc3luYyBz
+ZXJ2ZXIgdjIuNC42CkM6IEFVVEhFTlRJQ0FURSBESUdFU1QtTUQ1ClM6ICsgYm05dVkyVTlJa05C
+UjBGaEx6Tk5abFZpTm05cWRsQTViM3BCVkRSalF6bGFjV3RtUjBweGNVTXpTbnBQVWxsWksyODlJ
+aXh5WldGc2JUMGljSEp2ZUhrdVkybDJaVzVuTG1Ga1pXeGhhV1JsTG1Wa2RTNWhkU0lzY1c5d1BT
+SmhkWFJvTEdGMWRHZ3RhVzUwTEdGMWRHZ3RZMjl1WmlJc1kybHdhR1Z5UFNKeVl6UXROREFzY21N
+MExUVTJMSEpqTkN4a1pYTXNNMlJsY3lJc2JXRjRZblZtUFRRd09UWXNZMmhoY25ObGREMTFkR1l0
+T0N4aGJHZHZjbWwwYUcwOWJXUTFMWE5sYzNNPQpQbGVhc2UgZW50ZXIgeW91ciBwYXNzd29yZDog
+CkM6IGRYTmxjbTVoYldVOUltTjVjblZ6SWl4eVpXRnNiVDBpY0hKdmVIa3VZMmwyWlc1bkxtRmta
+V3hoYVdSbExtVmtkUzVoZFNJc2JtOXVZMlU5SWtOQlIwRmhMek5OWmxWaU5tOXFkbEE1YjNwQlZE
+UmpRemxhY1d0bVIwcHhjVU16U25wUFVsbFpLMjg5SWl4amJtOXVZMlU5SWtOTGVUVlNRV0pEZHpO
+bVowVkNVMGs0TnpnNFJFOUpkVUZwV1VwVVppdFpjRGM0WkdwRGFHUkRZbk05SWl4dVl6MHdNREF3
+TURBd01TeHhiM0E5WVhWMGFDMWpiMjVtTEdOcGNHaGxjajF5WXpRc2JXRjRZblZtUFRFd01qUXNa
+R2xuWlhOMExYVnlhVDBpWTNONWJtTXZjSEp2ZUhraUxISmxjM0J2Ym5ObFBUQTNaRGczTnpreE1E
+VXdaak13TURBeVpqZGxNV1F5WVRCa05UTmhNemxqClM6IE5PIGF1dGhlbnRpY2F0aW9uIGZhaWx1
+cmUKQXV0aGVudGljYXRpb24gZmFpbGVkLiBnZW5lcmljIGZhaWx1cmUKU2VjdXJpdHkgc3RyZW5n
+dGggZmFjdG9yOiAxMjgKZXhpdApPSyBGaW5pc2hlZApDb25uZWN0aW9uIGNsb3NlZC4KCgpPbiBy
+ZXBsaWNhCi0tLS0tLS0tLS0KCkRlYyAyOSAxNDowMDowNCBwcm94eSBzeW5jc2VydmVyWzk3NTZd
+OiBsb2dpbjogYnJvb2tzLmNpdmVuZy5hZGVsYWlkZS5lZHUuYXUgWzEyOS4xMjcuMTYuMV0gY3ly
+dXMgUExBSU4gVXNlciBsb2dnZWQgaW4KRGVjIDI5IDE0OjAwOjI4IHByb3h5IHN5bmNzZXJ2ZXJb
+OTc1Nl06IGJhZGxvZ2luOiBicm9va3MuY2l2ZW5nLmFkZWxhaWRlLmVkdS5hdSBbMTI5LjEyNy4x
+Ni4xXSBESUdFU1QtTUQ1IFtTQVNMKC0xMyk6IGF1dGhlbnRpY2F0aW9uIGZhaWx1cmU6IGNsaWVu
+dCByZXNwb25zZSBkb2Vzbid0IG1hdGNoIHdoYXQgd2UgZ2VuZXJhdGVkXQoKCkF0IHRpbWUgb2Yg
+c3dpdGNoIGZyb20gMi40LjUgdG8gMi40LjYKCkRlYyAyMyAwODowNjoyNiBwcm94eSBzeW5jc2Vy
+dmVyWzQzODBdOiBsb2dpbjogYnJvb2tzLmNpdmVuZy5hZGVsYWlkZS5lZHUuYXUgWzEyOS4xMjcu
+MTYuMV0gY3lydXMgRElHRVNULU1ENSBVc2VyIGxvZ2dlZCBpbgpEZWMgMjMgMDg6MTA6MDEgcHJv
+eHkgc3luY3NlcnZlcls3MjA1XTogYmFkbG9naW46IGJyb29rcy5jaXZlbmcuYWRlbGFpZGUuZWR1
+LmF1IFsxMjkuMTI3LjE2LjFdIERJR0VTVC1NRDUgW1NBU0woLTEzKTogYXV0aGVudGljYXRpb24g
+ZmFpbHVyZTogY2xpZW50IHJlc3BvbnNlIGRvZXNuJ3QgbWF0Y2ggd2hhdCB3ZSBnZW5lcmF0ZWRd
+CgoK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1341</attachid>
+            <date>2010-12-29 19:07 EDT</date>
+            <desc>imapd configs and imtest  cram-md5 digest-md5</desc>
+            <filename>imtest.txt</filename>
+            <type>text/plain</type>
+            <size>5898</size>
+            <attacher>support@civeng.adelaide.edu.au</attacher>
+            
+              <data encoding="base64">bWFzdGVyCi0tLS0tLS0KcGFydCBvZiBpbWFwZC5jb2YKCgpzYXNsX3B3Y2hlY2tfbWV0aG9kOiBh
+dXhwcm9wCnNhc2xfbWVjaF9saXN0OiBjcmFtLW1kNSBkaWdlc3QtbWQ1IGxvZ2luIHBsYWluCmF1
+eHByb3BfcGx1Z2luOiBzYXNsZGIKCmZvcmNlX3Nhc2xfY2xpZW50X21lY2g6IHBsYWluCgpyZXBs
+aWNhCi0tLS0tLS0tCnBhcnQgb2YgaW1hcGQuY29uZgoKc2FzbF9wd2NoZWNrX21ldGhvZDogc2Fz
+bGF1dGhkCnN5bmNzZXJ2ZXJfc2FzbF9tZWNoX2xpc3Q6IGRpZ2VzdC1tZDUgcGxhaW4Kc2FzbF9h
+dXRvX3RyYW5zaXRpb246IGZhbHNlCgpsb2dpbiB0ZXN0cyB0byByZXBsaWNhCi0tLS0tLS0tLS0t
+LS0tLS0tLS0tLS0KCmltdGVzdCAtbSBwbGFpbiAtcCBpbWFwIC1hIHN1cHBvcnQgcHJveHkKUzog
+KiBPSyBbQ0FQQUJJTElUWSBJTUFQNHJldjEgTElURVJBTCsgSUQgRU5BQkxFIFNUQVJUVExTIEFV
+VEg9Q1JBTS1NRDUgQVVUSD1PVFAgQVVUSD1MT0dJTiBBVVRIPVBMQUlOIEFVVEg9RElHRVNULU1E
+NSBTQVNMLUlSXSBwcm94eS5jaXZlbmcuYWRlbGFpZGUuZWR1LmF1IEN5cnVzIElNQVAgdjIuNC42
+IHNlcnZlciByZWFkeQpQbGVhc2UgZW50ZXIgeW91ciBwYXNzd29yZDogCkM6IEEwMSBBVVRIRU5U
+SUNBVEUgUExBSU4gQUhOMWNIQnZjblFBTXpCemRYQTFNUT09ClM6IEEwMSBPSyBbQ0FQQUJJTElU
+WSBJTUFQNHJldjEgTElURVJBTCsgSUQgRU5BQkxFIEFDTCBSSUdIVFM9a3h0ZSBRVU9UQSBNQUlM
+Qk9YLVJFRkVSUkFMUyBOQU1FU1BBQ0UgVUlEUExVUyBOT19BVE9NSUNfUkVOQU1FIFVOU0VMRUNU
+IENISUxEUkVOIE1VTFRJQVBQRU5EIEJJTkFSWSBDQVRFTkFURSBDT05EU1RPUkUgRVNFQVJDSCBT
+T1JUIFNPUlQ9TU9EU0VRIFRIUkVBRD1PUkRFUkVEU1VCSkVDVCBUSFJFQUQ9UkVGRVJFTkNFUyBB
+Tk5PVEFURU1PUkUgTElTVC1FWFRFTkRFRCBXSVRISU4gUVJFU1lOQyBTQ0FOIFhMSVNUIFVSTEFV
+VEggVVJMQVVUSD1CSU5BUlkgTE9HSU5ESVNBQkxFRCBDT01QUkVTUz1ERUZMQVRFIElETEVdIFN1
+Y2Nlc3MgKG5vIHByb3RlY3Rpb24pCkF1dGhlbnRpY2F0ZWQuClNlY3VyaXR5IHN0cmVuZ3RoIGZh
+Y3RvcjogMApeQ0M6IFEwMSBMT0dPVVQKQ29ubmVjdGlvbiBjbG9zZWQuCgpEZWMgMjkgMTY6NDU6
+NTEgcHJveHkgaW1hcFsxMDIxNl06IGxvZ2luOiBicm9va3MuY2l2ZW5nLmFkZWxhaWRlLmVkdS5h
+dSBbMTI5LjEyNy4xNi4xXSBzdXBwb3J0IFBMQUlOIFVzZXIgbG9nZ2VkIGluCkRlYyAyOSAxNjo0
+NjowMCBwcm94eSBpbWFwWzEwMjE2XTogVVNBR0Ugc3VwcG9ydCB1c2VyOiAwLjAwMDAwMCBzeXM6
+IDAuMDAwMDAwCgoKaW10ZXN0IC1tIGxvZ2luIC1wIGltYXAgLWEgc3VwcG9ydCBwcm94eQpTOiAq
+IE9LIFtDQVBBQklMSVRZIElNQVA0cmV2MSBMSVRFUkFMKyBJRCBFTkFCTEUgU1RBUlRUTFMgQVVU
+SD1DUkFNLU1ENSBBVVRIPU9UUCBBVVRIPUxPR0lOIEFVVEg9UExBSU4gQVVUSD1ESUdFU1QtTUQ1
+IFNBU0wtSVJdIHByb3h5LmNpdmVuZy5hZGVsYWlkZS5lZHUuYXUgQ3lydXMgSU1BUCB2Mi40LjYg
+c2VydmVyIHJlYWR5ClBsZWFzZSBlbnRlciB5b3VyIHBhc3N3b3JkOiAKQzogTDAxIExPR0lOIHN1
+cHBvcnQgezd9ClM6ICsgZ28gYWhlYWQKQzogPG9taXR0ZWQ+ClM6IEwwMSBPSyBbQ0FQQUJJTElU
+WSBJTUFQNHJldjEgTElURVJBTCsgSUQgRU5BQkxFIEFDTCBSSUdIVFM9a3h0ZSBRVU9UQSBNQUlM
+Qk9YLVJFRkVSUkFMUyBOQU1FU1BBQ0UgVUlEUExVUyBOT19BVE9NSUNfUkVOQU1FIFVOU0VMRUNU
+IENISUxEUkVOIE1VTFRJQVBQRU5EIEJJTkFSWSBDQVRFTkFURSBDT05EU1RPUkUgRVNFQVJDSCBT
+T1JUIFNPUlQ9TU9EU0VRIFRIUkVBRD1PUkRFUkVEU1VCSkVDVCBUSFJFQUQ9UkVGRVJFTkNFUyBB
+Tk5PVEFURU1PUkUgTElTVC1FWFRFTkRFRCBXSVRISU4gUVJFU1lOQyBTQ0FOIFhMSVNUIFVSTEFV
+VEggVVJMQVVUSD1CSU5BUlkgTE9HSU5ESVNBQkxFRCBDT01QUkVTUz1ERUZMQVRFIElETEVdIFVz
+ZXIgbG9nZ2VkIGluIFNFU1NJT05JRD08cHJveHkuY2l2ZW5nLmFkZWxhaWRlLmVkdS5hdS0xMDIx
+NC0xMjkzNjAzMzcxLTE+CkF1dGhlbnRpY2F0ZWQuClNlY3VyaXR5IHN0cmVuZ3RoIGZhY3Rvcjog
+MApeQ0M6IFEwMSBMT0dPVVQKQ29ubmVjdGlvbiBjbG9zZWQuCgpEZWMgMjkgMTY6NDY6MTYgcHJv
+eHkgaW1hcFsxMDIxNF06IGxvZ2luOiBicm9va3MuY2l2ZW5nLmFkZWxhaWRlLmVkdS5hdSBbMTI5
+LjEyNy4xNi4xXSBzdXBwb3J0IHBsYWludGV4dCBVc2VyIGxvZ2dlZCBpbiBTRVNTSU9OSUQ9PHBy
+b3h5LmNpdmVuZy5hZGVsYWlkZS5lZHUuYXUtMTAyMTQtMTI5MzYwMzM3MS0xPgpEZWMgMjkgMTY6
+NDY6MjEgcHJveHkgaW1hcFsxMDIxNF06IFVTQUdFIHN1cHBvcnQgdXNlcjogMC4wMTAwMDAgc3lz
+OiAwLjAwMDAwMAoKCmltdGVzdCAtbSBkaWdlc3QtbWQ1IC1wIGltYXAgLWEgc3VwcG9ydCBwcm94
+eQpTOiAqIE9LIFtDQVBBQklMSVRZIElNQVA0cmV2MSBMSVRFUkFMKyBJRCBFTkFCTEUgU1RBUlRU
+TFMgQVVUSD1DUkFNLU1ENSBBVVRIPU9UUCBBVVRIPUxPR0lOIEFVVEg9UExBSU4gQVVUSD1ESUdF
+U1QtTUQ1IFNBU0wtSVJdIHByb3h5LmNpdmVuZy5hZGVsYWlkZS5lZHUuYXUgQ3lydXMgSU1BUCB2
+Mi40LjYgc2VydmVyIHJlYWR5CkM6IEEwMSBBVVRIRU5USUNBVEUgRElHRVNULU1ENQpTOiArIGJt
+OXVZMlU5SW1vdlVtZFZSbUo1V1hJdlJIbDFVWEZsTUVSTVRIRTFkbTlqVTJRdllUbG1MMnhpU1hK
+UmNqTllSREE5SWl4eVpXRnNiVDBpY0hKdmVIa3VZMmwyWlc1bkxtRmtaV3hoYVdSbExtVmtkUzVo
+ZFNJc2NXOXdQU0poZFhSb0xHRjFkR2d0YVc1MExHRjFkR2d0WTI5dVppSXNZMmx3YUdWeVBTSnlZ
+elF0TkRBc2NtTTBMVFUyTEhKak5DeGtaWE1zTTJSbGN5SXNiV0Y0WW5WbVBUUXdPVFlzWTJoaGNu
+TmxkRDExZEdZdE9DeGhiR2R2Y21sMGFHMDliV1ExTFhObGMzTT0KUGxlYXNlIGVudGVyIHlvdXIg
+cGFzc3dvcmQ6IApDOiBkWE5sY201aGJXVTlJbk4xY0hCdmNuUWlMSEpsWVd4dFBTSndjbTk0ZVM1
+amFYWmxibWN1WVdSbGJHRnBaR1V1WldSMUxtRjFJaXh1YjI1alpUMGlhaTlTWjFWR1lubFpjaTlF
+ZVhWUmNXVXdSRXhNY1RWMmIyTlRaQzloT1dZdmJHSkpjbEZ5TTFoRU1EMGlMR051YjI1alpUMGlk
+SE5HVUU1SWVsSjZkR1Z1WW5FMVJIUmllRE4zVUZscFMzVTBWMUJDZVd0SWNYSldZbEU0U1hKb1NU
+MGlMRzVqUFRBd01EQXdNREF4TEhGdmNEMWhkWFJvTFdOdmJtWXNZMmx3YUdWeVBYSmpOQ3h0WVho
+aWRXWTlNVEF5TkN4a2FXZGxjM1F0ZFhKcFBTSnBiV0Z3TDNCeWIzaDVJaXh5WlhOd2IyNXpaVDB3
+WlRKbE0yRmhPV1V6TURjd05EUm1aVFEwT1dRNE9HSTVZemsyTVRCak5nPT0KUzogQTAxIE5PIGF1
+dGhlbnRpY2F0aW9uIGZhaWx1cmUKQXV0aGVudGljYXRpb24gZmFpbGVkLiBnZW5lcmljIGZhaWx1
+cmUKU2VjdXJpdHkgc3RyZW5ndGggZmFjdG9yOiAxMjgKQzogQzAxIENBUEFCSUxJVFkKUzogKiBD
+QVBBQklMSVRZIElNQVA0cmV2MSBMSVRFUkFMKyBJRCBFTkFCTEUgQUNMIFJJR0hUUz1reHRlIFFV
+T1RBIE1BSUxCT1gtUkVGRVJSQUxTIE5BTUVTUEFDRSBVSURQTFVTIE5PX0FUT01JQ19SRU5BTUUg
+VU5TRUxFQ1QgQ0hJTERSRU4gTVVMVElBUFBFTkQgQklOQVJZIENBVEVOQVRFIENPTkRTVE9SRSBF
+U0VBUkNIIFNPUlQgU09SVD1NT0RTRVEgVEhSRUFEPU9SREVSRURTVUJKRUNUIFRIUkVBRD1SRUZF
+UkVOQ0VTIEFOTk9UQVRFTU9SRSBMSVNULUVYVEVOREVEIFdJVEhJTiBRUkVTWU5DIFNDQU4gWExJ
+U1QgVVJMQVVUSCBVUkxBVVRIPUJJTkFSWSBTVEFSVFRMUyBBVVRIPUNSQU0tTUQ1IEFVVEg9T1RQ
+IEFVVEg9TE9HSU4gQVVUSD1QTEFJTiBBVVRIPURJR0VTVC1NRDUgU0FTTC1JUiBDT01QUkVTUz1E
+RUZMQVRFIElETEUKUzogQzAxIE9LIENvbXBsZXRlZApeQ0M6IFEwMSBMT0dPVVQKQ29ubmVjdGlv
+biBjbG9zZWQuCgpEZWMgMjkgMTY6NDY6NDEgcHJveHkgaW1hcFsxMDIwN106IGJhZGxvZ2luOiBi
+cm9va3MuY2l2ZW5nLmFkZWxhaWRlLmVkdS5hdSBbMTI5LjEyNy4xNi4xXSBESUdFU1QtTUQ1IFtT
+QVNMKC0xMyk6IHVzZXIgbm90IGZvdW5kOiBubyBzZWNyZXQgaW4gZGF0YWJhc2VdCkRlYyAyOSAx
+Njo0NzowOCBwcm94eSBwb3Azc1sxMDIxNV06IGltYXBkOkxvYWRpbmcgaGFyZC1jb2RlZCBESCBw
+YXJhbWV0ZXJzCgoKaW10ZXN0IC1tIGNyYW0tbWQ1IC1wIGltYXAgLWEgc3VwcG9ydCBwcm94eQpT
+OiAqIE9LIFtDQVBBQklMSVRZIElNQVA0cmV2MSBMSVRFUkFMKyBJRCBFTkFCTEUgU1RBUlRUTFMg
+QVVUSD1DUkFNLU1ENSBBVVRIPU9UUCBBVVRIPUxPR0lOIEFVVEg9UExBSU4gQVVUSD1ESUdFU1Qt
+TUQ1IFNBU0wtSVJdIHByb3h5LmNpdmVuZy5hZGVsYWlkZS5lZHUuYXUgQ3lydXMgSU1BUCB2Mi40
+LjYgc2VydmVyIHJlYWR5CkM6IEEwMSBBVVRIRU5USUNBVEUgQ1JBTS1NRDUKUzogKyBQREV3TVRB
+eE1ESXlNRGN1TVRjMU56azBORUJ3Y205NGVTNWphWFpsYm1jdVlXUmxiR0ZwWkdVdVpXUjFMbUYx
+UGc9PQpQbGVhc2UgZW50ZXIgeW91ciBwYXNzd29yZDogCkM6IGMzVndjRzl5ZENBMlpqWTBaRFl3
+WmpJek9ERTFNV00zTkdSa04yWTBNMkV5WXpRME5EQXhaZz09ClM6IEEwMSBOTyBhdXRoZW50aWNh
+dGlvbiBmYWlsdXJlCkF1dGhlbnRpY2F0aW9uIGZhaWxlZC4gZ2VuZXJpYyBmYWlsdXJlClNlY3Vy
+aXR5IHN0cmVuZ3RoIGZhY3RvcjogMApeQ0M6IFEwMSBMT0dPVVQKQ29ubmVjdGlvbiBjbG9zZWQK
+CkRlYyAyOSAxNjo0Njo0MSBwcm94eSBpbWFwWzEwMjA3XTogYmFkbG9naW46IGJyb29rcy5jaXZl
+bmcuYWRlbGFpZGUuZWR1LmF1IFsxMjkuMTI3LjE2LjFdIERJR0VTVC1NRDUgW1NBU0woLTEzKTog
+dXNlciBub3QgZm91bmQ6IG5vIHNlY3JldCBpbiBkYXRhYmFzZV0KRGVjIDI5IDE2OjQ3OjA4IHBy
+b3h5IHBvcDNzWzEwMjE1XTogaW1hcGQ6TG9hZGluZyBoYXJkLWNvZGVkIERIIHBhcmFtZXRlcnMK
+Cgp0ZXN0IHRvIG1hc3RlciAobG9jYWxob3N0KQoKaW10ZXN0IC1tIGNyYW0tbWQ1IC1wIGltYXAg
+LWEgc3VwcG9ydCBicm9va3MKUzogKiBPSyBbQ0FQQUJJTElUWSBJTUFQNHJldjEgTElURVJBTCsg
+SUQgRU5BQkxFIFNUQVJUVExTIEFVVEg9TE9HSU4gQVVUSD1QTEFJTiBBVVRIPURJR0VTVC1NRDUg
+QVVUSD1DUkFNLU1ENSBTQVNMLUlSXSBicm9va3MuY2l2ZW5nLmFkZWxhaWRlLmVkdS5hdSBDeXJ1
+cyBJTUFQIHYyLjQuNiBzZXJ2ZXIgcmVhZHkKQzogQTAxIEFVVEhFTlRJQ0FURSBDUkFNLU1ENQpT
+OiArIFBETXlOelUzTXprMk16SXVNVGMxT0RZeE4wQmljbTl2YTNNdVkybDJaVzVuTG1Ga1pXeGhh
+V1JsTG1Wa2RTNWhkVDQ9ClBsZWFzZSBlbnRlciB5b3VyIHBhc3N3b3JkOiAKQzogYzNWd2NHOXlk
+Q0F4TURRd1pHWTRaR0ZpWVRsak1EQXpOVFU1TVRJd05qQTFNREJtTURobE5nPT0KUzogQTAxIE9L
+IFtDQVBBQklMSVRZIElNQVA0cmV2MSBMSVRFUkFMKyBJRCBFTkFCTEUgQUNMIFJJR0hUUz1reHRl
+IFFVT1RBIE1BSUxCT1gtUkVGRVJSQUxTIE5BTUVTUEFDRSBVSURQTFVTIE5PX0FUT01JQ19SRU5B
+TUUgVU5TRUxFQ1QgQ0hJTERSRU4gTVVMVElBUFBFTkQgQklOQVJZIENBVEVOQVRFIENPTkRTVE9S
+RSBFU0VBUkNIIFNPUlQgU09SVD1NT0RTRVEgVEhSRUFEPU9SREVSRURTVUJKRUNUIFRIUkVBRD1S
+RUZFUkVOQ0VTIEFOTk9UQVRFTU9SRSBMSVNULUVYVEVOREVEIFdJVEhJTiBRUkVTWU5DIFNDQU4g
+WExJU1QgVVJMQVVUSCBVUkxBVVRIPUJJTkFSWSBMT0dJTkRJU0FCTEVEIENPTVBSRVNTPURFRkxB
+VEUgSURMRV0gU3VjY2VzcyAobm8gcHJvdGVjdGlvbikKQXV0aGVudGljYXRlZC4KU2VjdXJpdHkg
+c3RyZW5ndGggZmFjdG9yOiAwCi4gbG9nb3V0CiogQllFIExPR09VVCByZWNlaXZlZAouIE9LIENv
+bXBsZXRlZApDb25uZWN0aW9uIGNsb3NlZC4K
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,106 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3806</bug_id>
+          
+          <creation_ts>2013-08-19 10:00 EDT</creation_ts>
+          <short_desc>saslauthd -a shadow crashes with SEGV on system accounts.</short_desc>
+          <delta_ts>2013-10-04 12:24:46 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>3803</dup_id>
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Arno Bakker">arno@cs.vu.nl</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>mancha1@hush.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Arno Bakker">arno@cs.vu.nl</who>
+            <bug_when>2013-08-19 10:00:17 EDT</bug_when>
+            <thetext>Hi 
+
+https://bugs.launchpad.net/ubuntu/+source/cyrus-sasl2/+bug/1187001
+
+lists a problem with saslauthd crashing when used with postfix. I can 
+reproduce the problem when I run saslauthd with authmech shadow:
+
+    saslauthd -a shadow
+
+and then try to authenticate users that have a crippled /etc/shadow entry. By crippled I mean ! or * as password entry, as for root, mail, nobody.
+
+When I run the 2.1.25 stock source with debugging symbols in gdb with &quot;-a shadow -n 1 -d -m /var/run/saslauthd/mux&quot; as param, I get:
+
+Program received signal SIGSEGV, Segmentation fault.
+0xb7e6e6f1 in ?? () from /lib/i386-linux-gnu/libc.so.6
+(gdb) where
+#0 0xb7e6e6f1 in ?? () from /lib/i386-linux-gnu/libc.so.6
+#1 0xb7e6e326 in strdup () from /lib/i386-linux-gnu/libc.so.6
+#2 0x0804b910 in auth_shadow (login=0xbffff098 &quot;root&quot;,
+    password=0xbffff199 &quot;dfsdf&quot;, service=0xbffff29a &quot;ldap&quot;,
+    realm=0xbffff39b &quot;&quot;) at auth_shadow.c:188
+#3 0x0804ed3f in do_auth (_login=_login@entry=0xbffff098 &quot;root&quot;,
+    password=password@entry=0xbffff199 &quot;dfsdf&quot;,
+    service=service@entry=0xbffff29a &quot;ldap&quot;, realm=realm@entry=0xbffff39b &quot;&quot;)
+    at saslauthd-main.c:410
+#4 0x0804dd17 in do_request (conn_fd=conn_fd@entry=9) at ipc_unix.c:426
+#5 0x0804e547 in ipc_loop () at ipc_unix.c:277
+#6 0x080499c1 in main (argc=8, argv=0xbffff5e4) at saslauthd-main.c:369
+
+Offending line is:
+
+      cpw = strdup((const char *)crypt(password, sp-&gt;sp_pwdp));
+
+where crypt() returns NULL for the crippled shadow entries. Proposed patch:
+
+    char *encpwd = crypt(password, sp-&gt;sp_pwdp);
+    if (encpwd == NULL) {
+        if (flags &amp; VERBOSE) {
+            syslog(LOG_DEBUG, &quot;DEBUG: auth_shadow: crypt returned NULL&quot;);
+        }
+        RETURN(&quot;NO&quot;);
+    }
+    cpw = strdup((const char *)encpwd);</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="mancha">mancha1@hush.com</who>
+            <bug_when>2013-10-04 12:24:46 EDT</bug_when>
+            <thetext>
+
+*** This bug has been marked as a duplicate of bug 3803 ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,115 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3846</bug_id>
+          
+          <creation_ts>2014-03-12 17:00 EDT</creation_ts>
+          <short_desc>Managesieve response code parsing defect in 2.4.11 and later, Error: &quot;Bad protocol from MANAGESIEVE server: expected RPARAN&quot; when attempting to &quot;get&quot; an nonexistent script.</short_desc>
+          <delta_ts>2014-07-06 09:45:55 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>perl</component>
+          <version>2.4.17</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="John Wade">jwade@oakton.edu</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dilyan.palauzov@aegee.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="John Wade">jwade@oakton.edu</who>
+            <bug_when>2014-03-12 17:00:30 EDT</bug_when>
+            <thetext>Bug in Cyrus::SIEVE::managesieve package in the cyrus 2.4.11 and later code.   The &quot;better response codes for timsieved&quot; change in timsieved led to problems in the perl package if you try to &quot;get&quot; an nonexistent script.  Managesieve and perl exits with the error: &quot;Bad protocol from MANAGESIEVE server: expected RPARAN&quot;
+
+I wrote a fix for the managesieve parser.   Diff included below.   I can regenerate this with better relative directories if you prefer. Can someone review and include in the next version of Cyrus?     
+
+Note that my fix (and managesieve)  is not really RFC compliant, since RFC 5804 states &quot;Client implementations MUST tolerate (ignore) response codes that they do not recognize.&quot; and managesieve is designed to die when it receives a response code it does not understand.   My fix will work with the current version of timsieved, since I grabbed all of the relevant response codes for the &quot;NO&quot; response from the source, but it should really be rewritten to be more RFC compliant.    Given that managesieve does nothing with the response code anyway except validate that it is known, I wonder if a better approach might be to just ignore the response code, but I was afraid to do this without a full understanding.
+
+Also, in keeping with the cyrus source, I included no comments :-)   All this fix does is add the known timsieved response codes for the &quot;NO&quot; response to the token_lookup function in lex.c  (and the enumerated list in lex.h)
+
+Thoughts anyone?
+
+Enjoy,
+John Wade
+Oakton Community College
+
+
+=======================================================================
+diff -Naur orig/cyrus-imapd-2.4.17/perl/sieve/lib/lex.c 
+fixed/cyrus-imapd-2.4.17/perl/sieve/lib/lex.c
+--- orig/cyrus-imapd-2.4.17/perl/sieve/lib/lex.c        2012-12-01 
+13:57:54.000000000 -0600
++++ fixed/cyrus-imapd-2.4.17/perl/sieve/lib/lex.c       2014-03-10 
+10:17:41.000000000 -0500
+@@ -82,6 +82,9 @@
+    if (strcmp(str,&quot;active&quot;)==0) return TOKEN_ACTIVE;
+    if (strcmp(str,&quot;referral&quot;)==0) return TOKEN_REFERRAL;
+    if (strcmp(str,&quot;sasl&quot;)==0) return TOKEN_SASL;
++  if (strcmp(str,&quot;nonexistent&quot;)==0) return TOKEN_NONEXISTENT;
++  if (strcmp(str,&quot;quota/maxsize&quot;)==0) return TOKEN_QUOTAMAXSIZE;
++  if (strcmp(str,&quot;quota/maxscripts&quot;)==0) return TOKEN_QUOTAMAXSCRIPTS;
+
+    return -1;
+  }
+diff -Naur orig/cyrus-imapd-2.4.17/perl/sieve/lib/lex.h 
+fixed/cyrus-imapd-2.4.17/perl/sieve/lib/lex.h
+--- orig/cyrus-imapd-2.4.17/perl/sieve/lib/lex.h        2012-12-01 
+13:57:54.000000000 -0600
++++ fixed/cyrus-imapd-2.4.17/perl/sieve/lib/lex.h       2014-03-10 
+10:17:34.000000000 -0500
+@@ -69,6 +69,9 @@
+      TOKEN_BYE = 282,
+
+      TOKEN_ACTIVE = 291,
++    TOKEN_NONEXISTENT = 292,
++    TOKEN_QUOTAMAXSIZE = 293,
++    TOKEN_QUOTAMAXSCRIPTS = 294,
+
+      TOKEN_REFERRAL = 301,
+      TOKEN_SASL = 302</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2014-07-06 09:45:55 EDT</bug_when>
+            <thetext>This was fixed to a big extend in with Bug 3790 on 30th June 2013, however I misspelled &quot;NONEXISTENT&quot;, therefore this particular response code was still wrong.
+
+Since the fix #3790, no release was made.
+
+I updated the spelling on
+on master with f0ee1adfd9a0c1ebe0c1626a25dc4be2588a6c49 and
+on cyrus-imapd-2.4 with 6a5355d7bcea01ddc276d5b2c89a5d23330ea989 .</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,1137 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3605</bug_id>
+          
+          <creation_ts>2011-11-29 11:28 EDT</creation_ts>
+          <short_desc>Message store events notification</short_desc>
+          <delta_ts>2013-02-09 11:52:17 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          <blocked>3674</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sébastien Michel">sebastien.michel@atos.net</reporter>
+          <assigned_to name="Sébastien Michel">sebastien.michel@atos.net</assigned_to>
+          <cc>awilliam@whitemice.org</cc>
+    
+    <cc>brong@fastmail.fm</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2011-11-29 11:28:03 EDT</bug_when>
+            <thetext>We developed some time ago an out-band notification mechanism on mailbox
+events (Cyrus 2.3). This piece of software is based on the RFC 5423 - Internet
+Message Store Events - that defines a number of event types and event
+parameters.
+We modified Cyrus&apos;s processes (imapd, pop3d, lmtpd) and CLI source code to send events to notifyd daemon (subset of event types from RFC 5423)
+
+find here : https://github.com/worldline-messaging/cyrus-imapd/compare/msgevent an update of our work that fully support event types defined in RFC 5423, ready for future 2.5.
+
+You can follow discussions about this features on this threads : 
+http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;searchterm=msgevent&amp;msg=3006
+http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;searchterm=msgevent&amp;msg=3073
+
+http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;searchterm=msgevent&amp;msg=3188</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-19 09:56:45 EDT</bug_when>
+            <thetext>Re-assigning to Andreas.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Osowski (Kolab Systems)">osowski@kolabsys.com</who>
+            <bug_when>2012-05-27 11:51:20 EDT</bug_when>
+            <thetext>I have just finished the rebase against worldline-messaging/msgevent.
+
+https://github.com/aosowski/cyrus-imapd/tree/ticket/3605</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-06-06 04:33:37 EDT</bug_when>
+            <thetext>First tranche of review comments.  More later.
+
+commit &quot;Allow time_to_iso8601 to print fraction of second&quot;
+
+- The new 2nd argument to time_to_iso8601 is called fracsec in one place
+  and secfrac in another, which is needlessly inconsistent.
+
+- It seems to be in milliseconds but the only way I can tell is by reading
+  the code, neither the variable name nor the comment above the function
+  explains this.
+
+- You&apos;re using the new argument for two purposes: as a boolean to indicate
+  that sub-second precision should be used, and at the same time as the
+  actual number of milliseconds to print.  If the calling code were to
+  get a real timestamp whose milliseconds part just happens to be zero,
+  the wrong thing will happen.
+
+- Your buffer length checking is broken; you&apos;re using sprintf() not snprintf().
+
+- Passing milliseconds around is rather unnatural with in a POSIX program.
+  Perhaps a better way to do this would have been to add a new function
+
+  int timeval_to_iso8601(const struct timeval *, char *buf, size_t len);
+
+  and then you can just pass in what you already have in the one place
+  that you need to, in imap/mboxevent.c.
+
+- You&apos;ve updated the unit test code so that it builds, but you&apos;ve not added
+  a unit test for the new feature.
+
+- There are two commits with the same name, which is fine for the version
+  control system but makes it hard for us discussing them.
+
+commit &quot;allow dot &apos;.&apos; in enum setting&quot;
+
+Looks good
+
+commit &quot;Added support for event notifications on message store based on RFC 5423&quot;
+
+This commit could be broken up into smaller chunks; big multi-purpose
+commits like this are really hard to review :(  One good practice is to
+add a new API in the first commit (i.e. mboxevent.[ch] and Makefile
+changes) with no callers, and then gradually add new callsites for the
+API one by one each in their own commit.
+
+- When you implement an RFC you should add it to the list in doc/specs.html.
+
+file lib/imapoptions
+
+- You add new options &quot;event_notifspam&quot; and &quot;eventnotifier&quot; which don&apos;t
+  use underscores, and several other new options which do.  Please be
+  consistent!  Personally I prefer underscores.
+
+- I&apos;m curious about why the option &quot;event_timestamp_format&quot; is needed.
+  The RFC only talks about RFC3339 format (i.e. ISO8601) format.  The
+  RFC is a bit vaguely worded and I can&apos;t quite figure out whether using
+  any other format is actually allowed.
+  Later: oh I see, it&apos;s for the Javascript native time format.  I can see
+  why you&apos;d want that, but perhaps it might be better to include it as
+  a separate vendor parameter?
+  Also, the RFC says that timestamps are expressed in local time (by
+  which I assume they mean the notifying server&apos;s local time), but this
+  code is generating timestamps in UTC.
+
+file imap/mboxevent.h
+
+ (I read the final version of this file rather than try to track
+  all the re-workings in it)
+
+- It seems that there&apos;s a lot of re-work of the mboxevent.h code as we
+  go through the commits :(
+
+- You&apos;ve used the identifiers from the RFC directly as enum entries, which
+  is certainly easy but doesn&apos;t result in code that matches the Cyrus
+  coding style.  I see you went back later and fixed up enum event_param_type,
+  which is wonderful, but the enum with the message types still has no
+  enum tag, no prefix on entries and CamelCase.
+
+- Why call your main structure event_state rather than event or even
+  mboxevent?  I notice too that some functions are called event_foo()
+  and some mboxevent_foo() with no obvious reason why.
+
+- Why does event_newstate() both return an event_state* and take an
+  event_state** ?  This seems redundant.
+  Later: oh, I see why.  Maybe it would be a better idea to separate
+  these two functions into something like event_new() and event_enqueue().
+  Or at the very least give the event_state** parameter a name which
+  makes it obvious that it&apos;s a pointer to the head of a LIST and not
+  a pointer to a single object.  In the context of Cyrus code this is
+  very confusing - see mailbox_close() for example.
+
+- mboxevent_add_sysflags() and mboxevent_add_usrflags() - these concepts
+  are generally known as system_flags and user_flags in the code, i.e.
+  spelled out.
+
+- If mboxevent_extract_record() does what the comment says, the mailbox*
+  and index_record* arguments should probably be const.
+
+- Does the value returned from mboxevent_toURL() need to be freed by
+  the caller?
+
+file imap/mboxevent.c
+
+ (I read the final version of this file rather than try to track
+  all the re-workings in it)
+
+- I&apos;m confused about enum event_param - why is it in alphabetical
+  rather than numeric order, with explicit numbers?  This is a
+  maintenance headache.  Also, the entries are camelCase which
+  makes it hard to read in the code.  For example, I later saw
+
+        for (i = 0; i &lt;= messageContent; i++) {
+
+  and was wondering where the variable messageContent was from.
+
+- In mboxevent_init(), you really should look at strarray_split(), as
+  you&apos;ve open-coded a near equivalent of it, twice.
+
+- I hope that the &quot;event_exclude_folders&quot; option is not the only way
+  to exclude folders.  It seems a bit clunky and hard to scale.  How
+  about an annotation on folders?  Both sieve and expire use that
+  technique.
+
+- If event_parameter.name is being used to point to static unallocated
+  strings it might be best to make it a const char*.  In fact, given
+  that each event has a fixed maximum set of parameters, it might be
+  easier to separate that out into a const array of const char*s.
+
+- event_newstate() takes a parameter &quot;int type&quot;, which should really
+  use the enum.
+
+- mboxevent_free() frees an entire list of events.  This is not a 
+  good idea - there are likely to be places in the code where you
+  need to free just the one.
+
+- In mboxevent_free() you&apos;re reaching into a struct imapurl to free
+  it&apos;s parts.  This is not a good idea - all the code that deals
+  with struct iumapurl internals should be in imapurl.c.  If you
+  need to allocate and free imapurl objects, you should add functions
+  to imapurl.c to do that (and add unit tests too please).
+
+- In mboxevent_notify(), again it would be nice to use the variable
+  name to make clear that the argument is a list and not a single
+  object.
+
+- In mboxevent_notify() there is some special case code which may
+  swap around the first two events in the list.  The list manipulation
+  logic assumes without checking that there were no third or subsequent
+  elements, and leaks them if there were.
+
+- The way in which event.uidset is stored as a string seems silly when
+  we have a perfectly good struct seqset for that.
+
+- In mboxevent_add_sysflags(), mboxevent_add_usrflags(), and
+  mboxevent_add_flag(), you need to look at strarray_add_case().
+  Also, in mboxevent_add_sysflags() you check case-sensitively for
+  \\deleted but \\Deleted, which is a bug.
+
+- Given what mboxevent_extract_access() does, perhaps
+  mboxevent_set_access() might be a better name.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-06-06 08:33:22 EDT</bug_when>
+            <thetext>
+&gt; First tranche of review comments.  More later.
+Thanks for your review, nice to have a critical look, the initial code is old (cyrus 2.1/2.3) and I tried to update it relative to 2.5, but I&apos;m not yet totally familiar with this one.  
+
+&gt; commit &quot;Allow time_to_iso8601 to print fraction of second&quot;
+&gt; 
+&gt; - The new 2nd argument to time_to_iso8601 is called fracsec in one place
+&gt;   and secfrac in another, which is needlessly inconsistent.
+&gt; 
+&gt; - It seems to be in milliseconds but the only way I can tell is by reading
+&gt;   the code, neither the variable name nor the comment above the function
+&gt;   explains this.
+&gt; 
+&gt; - You&apos;re using the new argument for two purposes: as a boolean to indicate
+&gt;   that sub-second precision should be used, and at the same time as the
+&gt;   actual number of milliseconds to print.  If the calling code were to
+&gt;   get a real timestamp whose milliseconds part just happens to be zero,
+&gt;   the wrong thing will happen.
+&gt; 
+&gt; - Your buffer length checking is broken; you&apos;re using sprintf() not snprintf().
+&gt; 
+&gt; - Passing milliseconds around is rather unnatural with in a POSIX program.
+&gt;   Perhaps a better way to do this would have been to add a new function
+&gt; 
+&gt;   int timeval_to_iso8601(const struct timeval *, char *buf, size_t len);
+&gt; 
+&gt;   and then you can just pass in what you already have in the one place
+&gt;   that you need to, in imap/mboxevent.c.
+&gt; 
+&gt; - You&apos;ve updated the unit test code so that it builds, but you&apos;ve not added
+&gt;   a unit test for the new feature.
+&gt; 
+&gt; - There are two commits with the same name, which is fine for the version
+&gt;   control system but makes it hard for us discussing them.
+OK
+ 
+&gt; commit &quot;allow dot &apos;.&apos; in enum setting&quot;
+&gt; 
+&gt; Looks good
+I need to replace this patch with commit 6735484f76470b02c439cc553149b0beb0e34e81 from branch dev/sieve/vacation-seconds that is more general
+ 
+&gt; commit &quot;Added support for event notifications on message store based on RFC
+&gt; 5423&quot;
+&gt; 
+&gt; This commit could be broken up into smaller chunks; big multi-purpose
+&gt; commits like this are really hard to review :(  One good practice is to
+&gt; add a new API in the first commit (i.e. mboxevent.[ch] and Makefile
+&gt; changes) with no callers, and then gradually add new callsites for the
+&gt; API one by one each in their own commit.
+
+It&apos;s still possible thanks to git. I see what can I do
+
+&gt; - When you implement an RFC you should add it to the list in doc/specs.html.
+You&apos;re rigtht... but what a strange RFC that doesn&apos;t define any protocol nor message format ! 
+
+&gt; file lib/imapoptions
+&gt; 
+&gt; - You add new options &quot;event_notifspam&quot; and &quot;eventnotifier&quot; which don&apos;t
+&gt;   use underscores, and several other new options which do.  Please be
+&gt;   consistent!  Personally I prefer underscores.
+&gt; 
+&gt; - I&apos;m curious about why the option &quot;event_timestamp_format&quot; is needed.
+&gt;   The RFC only talks about RFC3339 format (i.e. ISO8601) format.  The
+&gt;   RFC is a bit vaguely worded and I can&apos;t quite figure out whether using
+&gt;   any other format is actually allowed.
+&gt;   Later: oh I see, it&apos;s for the Javascript native time format.  I can see
+&gt;   why you&apos;d want that, but perhaps it might be better to include it as
+&gt;   a separate vendor parameter?
+
+It is backward compatible to our old implementation. I should remove these and keep some patch in our internal git.
+
+&gt;   Also, the RFC says that timestamps are expressed in local time (by
+&gt;   which I assume they mean the notifying server&apos;s local time), but this
+&gt;   code is generating timestamps in UTC.
+&gt; 
+&gt; file imap/mboxevent.h
+[...]
+&gt; - Why does event_newstate() both return an event_state* and take an
+&gt;   event_state** ?  This seems redundant.
+&gt;   Later: oh, I see why.  Maybe it would be a better idea to separate
+&gt;   these two functions into something like event_new() and event_enqueue().
+&gt;   Or at the very least give the event_state** parameter a name which
+&gt;   makes it obvious that it&apos;s a pointer to the head of a LIST and not
+&gt;   a pointer to a single object.  In the context of Cyrus code this is
+&gt;   very confusing - see mailbox_close() for example.
+Good ideas.
+
+&gt; - mboxevent_add_sysflags() and mboxevent_add_usrflags() - these concepts
+&gt;   are generally known as system_flags and user_flags in the code, i.e.
+&gt;   spelled out.
+&gt; 
+&gt; - If mboxevent_extract_record() does what the comment says, the mailbox*
+&gt;   and index_record* arguments should probably be const.
+&gt; 
+&gt; - Does the value returned from mboxevent_toURL() need to be freed by
+&gt;   the caller?
+&gt; 
+&gt; file imap/mboxevent.c
+&gt; 
+&gt;  (I read the final version of this file rather than try to track
+&gt;   all the re-workings in it)
+&gt; 
+&gt; - I&apos;m confused about enum event_param - why is it in alphabetical
+&gt;   rather than numeric order, with explicit numbers?  This is a
+&gt;   maintenance headache.  [...]
+
+I wanted to keep the alphabetical order as defined in RFC, but ensure the order of parameters when formatting. Also to optimize the parsing by having the most relevant firsts. I can decorrelate to clarify but at the cost of burdening the formatting. 
+&gt;         for (i = 0; i &lt;= messageContent; i++) {
+&gt; 
+&gt;   and was wondering where the variable messageContent was from.
+&gt; 
+&gt; - In mboxevent_init(), you really should look at strarray_split(), as
+&gt;   you&apos;ve open-coded a near equivalent of it, twice.
+
+It doesn&apos;t seem to exist at the time of writing, nice to see it.
+
+&gt; - I hope that the &quot;event_exclude_folders&quot; option is not the only way
+&gt;   to exclude folders.  It seems a bit clunky and hard to scale.  How
+&gt;   about an annotation on folders?  Both sieve and expire use that
+&gt;   technique.
+
+It was also discussed to use SPECIAL-USE. Finally Bron preferred to not restrict inside Cyrus : http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;msg=3190
+
+I should remove this setting for a better way later
+
+
+&gt; ... 
+&gt; - In mboxevent_free() you&apos;re reaching into a struct imapurl to free
+&gt;   it&apos;s parts.  This is not a good idea - all the code that deals
+&gt;   with struct iumapurl internals should be in imapurl.c.  If you
+&gt;   need to allocate and free imapurl objects, you should add functions
+&gt;   to imapurl.c to do that (and add unit tests too please).
+
+Our initial intention was to avoid to spread our patchs into cyrus source code in order to merge easily to new releases. It doesn&apos;t really make sense now.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-06-06 16:13:00 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; &gt; First tranche of review comments.  More later.
+&gt; Thanks for your review, nice to have a critical look, the initial code is old
+&gt; (cyrus 2.1/2.3) and I tried to update it relative to 2.5, but I&apos;m not yet
+&gt; totally familiar with this one.  
+
+No worries, that&apos;s an expected part of the merge process.
+
+
+&gt; &gt; - When you implement an RFC you should add it to the list in doc/specs.html.
+&gt; You&apos;re rigtht... but what a strange RFC that doesn&apos;t define any protocol nor
+&gt; message format ! 
+
+Indeed :(
+
+
+&gt; &gt; - In mboxevent_init(), you really should look at strarray_split(), as
+&gt; &gt;   you&apos;ve open-coded a near equivalent of it, twice.
+&gt; 
+&gt; It doesn&apos;t seem to exist at the time of writing, nice to see it.
+
+Yeah, we try to make those utility functions as useful as possible.
+
+&gt; &gt; - I hope that the &quot;event_exclude_folders&quot; option is not the only way
+&gt; &gt;   to exclude folders.  It seems a bit clunky and hard to scale.  How
+&gt; &gt;   about an annotation on folders?  Both sieve and expire use that
+&gt; &gt;   technique.
+&gt; 
+&gt; It was also discussed to use SPECIAL-USE. Finally Bron preferred to not
+&gt; restrict inside Cyrus :
+&gt; http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;msg=3190
+&gt; 
+&gt; I should remove this setting for a better way later
+
+Ok, so Bron said
+
+&gt; Assuming that the data is available in the notification, and the cost of 
+&gt; sending events isn&apos;t too high, isn&apos;t it better just to run an external 
+&gt; filter that filters out the events you&apos;re not interested in?
+
+but the RFC says
+
+&gt;   For scalability reasons, some degree of filtering at event generation
+&gt;   is necessary.  At the very least, the ability to turn on and off
+&gt;   groups of related events and to suppress inclusion of large
+&gt;   parameters (such as messageContent) is needed. 
+
+which implies that the RFC authors at least thought that it was best to do filtering
+at the event source, and having read the RFC I tend to agree.
+
+But I still think specifying folder names in the config file is clunky, and would much
+prefer it if you could specify special-use items in the config file.  Default value should
+be something like \Spam and \Trash.  Although I&apos;m not sure what the correct thing
+to do would be if the user COPYd a message between folders where one has events
+suppressed and the other doesn&apos;t.
+
+
+&gt; 
+&gt; 
+&gt; &gt; ... 
+&gt; &gt; - In mboxevent_free() you&apos;re reaching into a struct imapurl to free
+&gt; &gt;   it&apos;s parts.  This is not a good idea - all the code that deals
+&gt; &gt;   with struct iumapurl internals should be in imapurl.c.  If you
+&gt; &gt;   need to allocate and free imapurl objects, you should add functions
+&gt; &gt;   to imapurl.c to do that (and add unit tests too please).
+&gt; 
+&gt; Our initial intention was to avoid to spread our patchs into cyrus source code
+&gt; in order to merge easily to new releases. It doesn&apos;t really make sense now.
+
+Sure.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-06-06 17:28:50 EDT</bug_when>
+            <thetext>Second tranche of reviews, more later.
+
+file imap/mboxevent.c continued
+
+- In mboxevent_extract_record(), the return value of
+  mailbox_cache_get_msgid() is a new string which needs to
+  be free()d.  You&apos;re leaking it.
+
+- In mboxevent_extract_record(), message-ids might be more
+  conveniently stored as a strarray() and then built into a 
+  string on demand using strarray_join() in mboxevent_notify()
+
+- In mboxevent_extract_record(), don&apos;t use strndup(), use
+  xstrndup().  Likewise in mboxevent_extract_content().
+
+- So the issue of messageContent is interesting.  This sounds to
+  me like it was easy to specify but not all that useful in this
+  day of MIME messages, if the purpose of messageContent is to 
+  provide a human with a brief idea of what the message is about.
+  At Fastmail we use a separate process which pulls apart MIME
+  structures, does MIME decoding, strips HTML, and generates a
+  short UTF-8 string intended as a user-visible preview of the
+  message.  This preview is stored in a per-message annotation.
+  It would great if we could include that annotation in the
+  mboxevent.
+
+- In mboxevent_extract_quota(), you use a magical 1024 to
+  report the diskUsed parameter.  There&apos;s an array
+  const int quota_units[QUOTA_NUMRESOURCES] designed for this.
+
+- In mboxevent_extract_mailbox(), there&apos;s broken leading whitespace
+  in the multi-line comment at the end of the function.
+
+- mboxevent_toURL() should probably go into imap/mailbox.c
+  but without capital letters in the function name.
+
+- In json_escape_str(), hex_chars[] doesn&apos;t seem at all
+  sensible.  This
+
+	sprintf(seq, &quot;\\u00%c%c&quot;, hex_chars[c &gt;&gt; 4], hex_chars[c &amp; 0xf]);
+
+  could be more sensibly implemented as
+
+	sprintf(seq, &quot;\\u04x&quot;, (unsigned int)c);
+
+- Also in json_escape_str(), there&apos;s a buf_printf() that would be
+  useful than a sprint()/buf_append_cstr() pair.  Also, there&apos;s
+  really not a lot of point saving up ranges of unescaped characters
+  and calling buf_appendmap() when you could just do a buf_putc()
+  on every unescaped character as you encounter it.  I think in a
+  function like this, simplicity and obvious correctness is more
+  important than a few CPU cycles.
+
+- In json_escape_str(), why escape &apos;/&apos; ? RFC4627 says
+
+&gt;   All Unicode characters may be placed within the
+&gt;   quotation marks except for the characters that must be escaped:
+&gt;   quotation mark, reverse solidus, and the control characters (U+0000
+&gt;   through U+001F).
+
+- Actually, come to that, why are you writing your own JSON generator
+  when there&apos;s a bunch of perfectly good ones in C listed at json.org?
+  Surely one of them will have a compatible licence and be well designed
+  and tested.
+
+commit &quot;add strarray_size function to return the number of elements in an array&quot;
+
+Looks good.  A unit test would be nice.
+
+file imap/append.c
+
+- In append_fromstage() I&apos;m really not impressed by the trick you use
+  of constructing a quota_t using an handcrafted initialiser.  This is
+  too sensitive	to the internals of struct quota, which are being changed
+  in other work that&apos;s going on.  It would be far better if you could
+  grab this same information as a side effect of the code in mailbox.c
+  that already calculates it properly, and decorate an existing event_state
+  chain with it.  Also, you&apos;re setting the QUOTA_STORAGE resource but
+  not QUOTA_MESSAGES.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-06-07 00:19:31 EDT</bug_when>
+            <thetext>Final trance of comments.
+
+So, on further thought, there&apos;s some room for simplification
+in enum event_param_type.  Having separate types for _STRING
+and _DYNSTRING is probably worth the complexity, given the
+number of strdups you&apos;re saving.  But I think all the integral
+types could be collapsed into a single type which is a uint64_t.
+The only _INT parameters are diskQuota and maxMessages, and in
+both cases they have no valid value &lt; 0 (they can be -1, but that
+means &quot;no limit is enforced&quot;, and should be represented by
+omitting the parameter rather than emitting -1).  The _QUOTAT
+parameters only report absolute quota values not deltas, so
+they don&apos;t need to be signed either.  The _MODSEQT ones need to
+be unsigned.
+
+In a similar vein, I don&apos;t think there&apos;s any need to go saving
+a copy of an broken-out struct imapurl anywhere.  The only reason
+for doing that would be if you needed to update the URL conditionally
+or gradually as more information is discovered.  You do currently
+do that, in mboxevent_notify() you add a UID to event-&gt;mailboxID.
+However, note that the RFC describes that parameter thus
+
+&gt;   mailboxID
+&gt;      Included in events that affect mailboxes.  A URI describing the
+&gt;      mailbox.  In the case of MailboxRename, this refers to the new
+&gt;      name.
+
+anb RFC2192 section 7 says that an imap: URL with UID= in it
+describes a *message*, not a *mailbox*.  So in this case
+you&apos;re actually emitting the wrong form of URL.  So if you only
+emit the correct form or URL, you don&apos;t need to keep a struct
+imapurl around.  So you could just take the mailbox* when it&apos;s
+passed down in the API, use a temporary struct imapurl to build
+the string form of the URL, throw the imapurl away, and save
+the string as event-&gt;mailboxID.
+
+- The logic in append_apply_flags() is wrong, it will report in the
+  event the flags that the client attempted to set, rather than the
+  flags that the client successfully set after ACL checking.
+
+- At the end of append_copy() you do this
+
+   event_state-&gt;oldmailboxid = mboxevent_toURL(mailbox);
+
+  which could be moved into mboxevent_extract_copied_record().
+
+- In mailbox_expunge(), if mailbox_rewrite_index_record() returns
+  failure, the event_state object will be leaked.
+
+- In mboxevent_extract_mailbox(), you call the new function
+  mailbox_count_unseen(), which scans the entire mailbox to count
+  the unseen messages.  About half of the callers have a struct
+  index_state lying around which already contains that information.
+
+- In cmd_rename(), the code starting with the comment
+  /* send a MailboxRename event notification if enabled */ can be
+  entirely skipped by the &apos;goto submboxes&apos; in the previous line
+  under some circumstances, which will leak the event_state object.
+
+- In index_expunge(), there does not seem to be any good reason to
+  use a field in struct index_state to store the event_state* pointer,
+  as it&apos;s entire lifecycle is in that function.
+
+- Also in index_expunge(), it&apos;s probably a good idea to call
+  mboxevent_notify() *after* index_unlock(), to avoid doing
+  networking while holding the index lock.
+
+- In index_fetch(), there does not seem to be any good reason to
+  use a field in struct index_state to store the event_state* pointer,
+  you could just pass it down to _fetch_setseen().
+
+- Also in index_fetch(), it&apos;s probably a good idea to call
+  mboxevent_notify() *after* index_unlock(), to avoid doing
+  networking while holding the index lock.
+
+- You&apos;re generating the MessageRead event when in index_fetch() when
+  the \Seen flag is set as a side effect of FETCHing a message body,
+  which is good.  However you&apos;re not generating an event in
+  index_storeflag() when the \Seen flag is set explicitly using STORE.
+  The RFC says
+
+&gt;   MessageRead
+&gt;      One or more messages in the mailbox were marked as read or seen by
+&gt;      a user.
+
+  which definitely sounds like it includes a STORE command.
+
+- Hmm, the way events are updated in index_storeflag() is quite clunky.
+  It might be cleaner to make index_storeflag() keep a running summary
+  of the union of all system and user flags set, and then create one
+  or two events up in index_store().
+
+- I&apos;m not convinced that the set of events generated as a side effect
+  of STORE is correct in all cases.  In particular, consider this
+  initial state
+
+  uid 1, flags \Deleted
+  uid 2, flags 
+
+  and then the command
+
+  1 STORE 1:2 +FLAGS \Deleted
+
+  will generate a MessageTrash event for uids 1 and 2, even though only
+  uid 2 was actually changed by the command.
+
+- In mboxlist_setquotas(), the variable quotachange_state is used both
+  as the head of a list of event_states and also as a pointer to a
+  particular distinguished event_state, which is very confusing.
+
+- In mboxlist_setquotas(), the logic beginning at the comment
+  /* ... if now under quota */ knows too much about the internals
+  of a struct quota and should be in a function in quota_db.c.
+
+- In mboxlist_changesub(), shouldn&apos;t you be calling
+  mboxevent_extract_mailbox() instead of manually filling out the
+  event-&gt;mailboxid field?
+
+- In mboxname_notify() the new string returned from json_formatter()
+  is leaked.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-06-08 06:10:52 EDT</bug_when>
+            <thetext>(In reply to comment #6)
+&gt; Second tranche of reviews, more later.
+
+&gt; ...
+&gt; - So the issue of messageContent is interesting.  This sounds to
+&gt;   me like it was easy to specify but not all that useful in this
+&gt;   day of MIME messages, if the purpose of messageContent is to 
+&gt;   provide a human with a brief idea of what the message is about.
+&gt;   At Fastmail we use a separate process which pulls apart MIME
+&gt;   structures, does MIME decoding, strips HTML, and generates a
+&gt;   short UTF-8 string intended as a user-visible preview of the
+&gt;   message.  This preview is stored in a per-message annotation.
+&gt;   It would great if we could include that annotation in the
+&gt;   mboxevent.
+
+yeah! per-message annotation is very useful for lots of thing. I thought to store image thumbnails to speed up preview
+We can plan such development later
+
+&gt; - In mboxevent_extract_quota(), you use a magical 1024 to
+&gt;   report the diskUsed parameter.  There&apos;s an array
+&gt;   const int quota_units[QUOTA_NUMRESOURCES] designed for this.
+Agreed. Both RFC 2087 and RFC 5423 display quota usage in units of 1024
+
+&gt; - In json_escape_str(), hex_chars[] doesn&apos;t seem at all
+&gt;   sensible.  This
+&gt; 
+&gt;     sprintf(seq, &quot;\\u00%c%c&quot;, hex_chars[c &gt;&gt; 4], hex_chars[c &amp; 0xf]);
+&gt; 
+&gt;   could be more sensibly implemented as
+&gt; 
+&gt;     sprintf(seq, &quot;\\u04x&quot;, (unsigned int)c);
+&gt; 
+&gt; - Also in json_escape_str(), there&apos;s a buf_printf() that would be
+&gt;   useful than a sprint()/buf_append_cstr() pair.  Also, there&apos;s
+&gt;   really not a lot of point saving up ranges of unescaped characters
+&gt;   and calling buf_appendmap() when you could just do a buf_putc()
+&gt;   on every unescaped character as you encounter it.  I think in a
+&gt;   function like this, simplicity and obvious correctness is more
+&gt;   important than a few CPU cycles.
+&gt; 
+&gt; - In json_escape_str(), why escape &apos;/&apos; ? RFC4627 says
+&gt; 
+&gt; &gt;   All Unicode characters may be placed within the
+&gt; &gt;   quotation marks except for the characters that must be escaped:
+&gt; &gt;   quotation mark, reverse solidus, and the control characters (U+0000
+&gt; &gt;   through U+001F).
+
+Indeed. But little below the grammar indicates to escape &apos;/&apos; :
+&gt;string = quotation-mark *char quotation-mark
+&gt;
+&gt;         char = unescaped /
+&gt;                escape (
+&gt;                    %x22 /          ; &quot;    quotation mark  U+0022
+&gt;                    %x5C /          ; \    reverse solidus U+005C
+&gt;                    %x2F /          ; /    solidus         U+002F
+&gt;                    %x62 /          ; b    backspace       U+0008
+&gt;                    %x66 /          ; f    form feed       U+000C
+&gt;                    %x6E /          ; n    line feed       U+000A
+&gt;                    %x72 /          ; r    carriage return U+000D
+&gt;                    %x74 /          ; t    tab             U+0009
+&gt;                    %x75 4HEXDIG )  ; uXXXX                U+XXXX
+However online validators don&apos;t expect to escape solidus...
+
+&gt; - Actually, come to that, why are you writing your own JSON generator
+&gt;   when there&apos;s a bunch of perfectly good ones in C listed at json.org?
+&gt;   Surely one of them will have a compatible licence and be well designed
+&gt;   and tested.
+It was my first intention. But I noticed that using external libraries seems to be avoided in Cyrus : don&apos;t using glib for data structure, lib ICU for charset handling, library for base64 conversion and others. Is there any guideline regarding this point ?
+json-c seems popular and is included in fedora and have MIT licence
+
+
+&gt; - In append_fromstage() I&apos;m really not impressed by the trick you use
+&gt;   of constructing a quota_t using an handcrafted initialiser.  This is
+&gt;   too sensitive    to the internals of struct quota, which are being changed
+&gt;   in other work that&apos;s going on.  It would be far better if you could
+&gt;   grab this same information as a side effect of the code in mailbox.c
+&gt;   that already calculates it properly, and decorate an existing event_state
+&gt;   chain with it.  Also, you&apos;re setting the QUOTA_STORAGE resource but
+&gt;   not QUOTA_MESSAGES.
+I Agree. I also thought to rewrite this piece of code.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-06-08 08:41:32 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; Final trance of comments.
+&gt; 
+&gt; So, on further thought, there&apos;s some room for simplification
+&gt; in enum event_param_type.  Having separate types for _STRING
+&gt; and _DYNSTRING is probably worth the complexity, given the
+&gt; number of strdups you&apos;re saving.  But I think all the integral
+&gt; types could be collapsed into a single type which is a uint64_t.
+&gt; The only _INT parameters are diskQuota and maxMessages, and in
+&gt; both cases they have no valid value &lt; 0 (they can be -1, but that
+&gt; means &quot;no limit is enforced&quot;, and should be represented by
+&gt; omitting the parameter rather than emitting -1).  The _QUOTAT
+&gt; parameters only report absolute quota values not deltas, so
+&gt; they don&apos;t need to be signed either.  The _MODSEQT ones need to
+&gt; be unsigned.
+&gt;
+Good idea.
+ 
+&gt; In a similar vein, I don&apos;t think there&apos;s any need to go saving
+&gt; a copy of an broken-out struct imapurl anywhere.  The only reason
+&gt; for doing that would be if you needed to update the URL conditionally
+&gt; or gradually as more information is discovered.  You do currently
+&gt; do that, in mboxevent_notify() you add a UID to event-&gt;mailboxID.
+&gt; However, note that the RFC describes that parameter thus
+&gt; 
+&gt; &gt;   mailboxID
+&gt; &gt;      Included in events that affect mailboxes.  A URI describing the
+&gt; &gt;      mailbox.  In the case of MailboxRename, this refers to the new
+&gt; &gt;      name.
+&gt; 
+&gt; anb RFC2192 section 7 says that an imap: URL with UID= in it
+&gt; describes a *message*, not a *mailbox*.  So in this case
+&gt; you&apos;re actually emitting the wrong form of URL.  
+
+You&apos;re right and it&apos;s more clear now, it&apos;s a mistake. 
+
+&gt; So if you only
+&gt; emit the correct form or URL, you don&apos;t need to keep a struct
+&gt; imapurl around.  So you could just take the mailbox* when it&apos;s
+&gt; passed down in the API, use a temporary struct imapurl to build
+&gt; the string form of the URL, throw the imapurl away, and save
+&gt; the string as event-&gt;mailboxID.
+
+But I should add conditionally the UID as described in the RFC :
+&gt; Events referring to a specific message can use an
+&gt; IMAP URL [RFC5092] to do so.  Events referring to a set of messages
+&gt; can use an IMAP URL to the mailbox plus an IMAP UID (Unique
+&gt; Identifier) set.
+
+I understand that we should use the &apos;uri&apos; parameter for MessageNew and MessageXXXX for single message (and eventually MailboxID that seems redundant). Using mailboxID and uidsed for MessageXXXX in case of several messages (and optionnaly uri parameter that seems redundant)
+
+I should also translate the mailbox identifier which is in the internal form. But translate to external is not everywhere possible since I don&apos;t have access to struct namespace. If you have a suggestion I&apos;ll be happy !
+ 
+&gt; - The logic in append_apply_flags() is wrong, it will report in the
+&gt;   event the flags that the client attempted to set, rather than the
+&gt;   flags that the client successfully set after ACL checking.
+Oh yes
+ 
+&gt;
+&gt; - In mboxevent_extract_mailbox(), you call the new function
+&gt;   mailbox_count_unseen(), which scans the entire mailbox to count
+&gt;   the unseen messages.  About half of the callers have a struct
+&gt;   index_state lying around which already contains that information.
+I missed that information
+ 
+
+
+&gt; 
+&gt; - You&apos;re generating the MessageRead event when in index_fetch() when
+&gt;   the \Seen flag is set as a side effect of FETCHing a message body,
+&gt;   which is good.  However you&apos;re not generating an event in
+&gt;   index_storeflag() when the \Seen flag is set explicitly using STORE.
+&gt;   The RFC says
+&gt; 
+&gt; &gt;   MessageRead
+&gt; &gt;      One or more messages in the mailbox were marked as read or seen by
+&gt; &gt;      a user.
+&gt; 
+&gt;   which definitely sounds like it includes a STORE command.
+Yes I do :
+
+&gt; if (state-&gt;internalseen) {
+&gt; /* set the seen flag */
+&gt; if (im-&gt;isseen)
+&gt;     im-&gt;record.system_flags |= FLAG_SEEN;
+&gt; else
+&gt;     im-&gt;record.system_flags &amp;= ~FLAG_SEEN;
+&gt; }
+&gt; [...]
+&gt; if (mboxevent_add_sysflags(flagsset_state, ~old &amp; im-&gt;record.system_flags)|
+&gt;     mboxevent_add_usrflags(flagsset_state, state-&gt;mailbox, newusr))
+&gt;     mboxevent_extract_record(flagsset_state, state-&gt;mailbox, &amp;im-&gt;record);
+
+It works only for internalseen and not for shared seen that is assumed
+ 
+&gt; 
+&gt; - I&apos;m not convinced that the set of events generated as a side effect
+&gt;   of STORE is correct in all cases.  In particular, consider this
+&gt;   initial state
+&gt; 
+&gt;   uid 1, flags \Deleted
+&gt;   uid 2, flags 
+&gt; 
+&gt;   and then the command
+&gt; 
+&gt;   1 STORE 1:2 +FLAGS \Deleted
+&gt; 
+&gt;   will generate a MessageTrash event for uids 1 and 2, even though only
+&gt;   uid 2 was actually changed by the command.
+No it&apos;s OK, I already test this case in my test suite
+ 
+&gt; 
+&gt; - In mboxlist_changesub(), shouldn&apos;t you be calling
+&gt;   mboxevent_extract_mailbox() instead of manually filling out the
+&gt;   event-&gt;mailboxid field?
+I don&apos;t have a struct mailbox at this point</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-06-11 20:43:09 EDT</bug_when>
+            <thetext>(In reply to comment #8)
+&gt; (In reply to comment #6)
+
+
+&gt; 
+&gt; &gt; - Actually, come to that, why are you writing your own JSON generator
+&gt; &gt;   when there&apos;s a bunch of perfectly good ones in C listed at json.org?
+&gt; &gt;   Surely one of them will have a compatible licence and be well designed
+&gt; &gt;   and tested.
+&gt; It was my first intention. But I noticed that using external libraries seems to
+&gt; be avoided in Cyrus 
+
+AFAICS this is more due to historical accident and poor coding practices
+than any kind of actual policy, but then I&apos;ve only been around for a couple
+of years.  I think this it is a major flaw of Cyrus that it re-implements,
+poorly, a lot of code for which good and widely available libraries exist.
+
+&gt; : don&apos;t using glib for data structure, lib ICU for charset
+&gt; handling, library for base64 conversion and others. Is there any guideline
+&gt; regarding this point ?
+
+My personal rule has been: if a well-designed library can be found with
+a suitable licence and a minimal dependency tree and available in both
+RH and Ubuntu, then use it.  I find it ridiculous that we&apos;re maintaining
+our own code to do all those things you mentioned.  The only reason we
+still are is a) I have finite time and b) I want to make sure I&apos;m not
+breaking anything.
+
+My own personal TODO list includes replacing all the open-code list
+manipulation code with http://ccodearchive.net/info/list.html
+
+&gt; json-c seems popular and is included in fedora and have MIT licence
+
+and it&apos;s available on Ubuntu...smells like a winner.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-06-11 21:14:18 EDT</bug_when>
+            <thetext>(In reply to comment #9)
+&gt; (In reply to comment #7)
+
+&gt; 
+&gt; &gt; So if you only
+&gt; &gt; emit the correct form or URL, you don&apos;t need to keep a struct
+&gt; &gt; imapurl around.  So you could just take the mailbox* when it&apos;s
+&gt; &gt; passed down in the API, use a temporary struct imapurl to build
+&gt; &gt; the string form of the URL, throw the imapurl away, and save
+&gt; &gt; the string as event-&gt;mailboxID.
+&gt; 
+&gt; But I should add conditionally the UID as described in the RFC :
+&gt; &gt; Events referring to a specific message can use an
+&gt; &gt; IMAP URL [RFC5092] to do so.  Events referring to a set of messages
+&gt; &gt; can use an IMAP URL to the mailbox plus an IMAP UID (Unique
+&gt; &gt; Identifier) set.
+&gt;
+&gt; I understand that we should use the &apos;uri&apos; parameter for MessageNew and
+&gt; MessageXXXX for single message (and eventually MailboxID that seems redundant).
+&gt; Using mailboxID and uidsed for MessageXXXX in case of several messages (and
+&gt; optionnaly uri parameter that seems redundant)
+
+I think the RFC says that for any of the events MessageExpires,
+MessageExpunges, MessageRead, MessageTrash, FlagsSet, or FlagsClear
+you should include the fields
+
+mailboxID: imap URL of the mailbox
+
+uri: also the imap URL of the mailbox
+
+uidset: list of uids affected
+
+and for any other events which mention a message, you should include
+
+mailboxID: imap URL of the mailbox
+
+uri: imap URL of the message
+
+In other words, the form of the &apos;uri&apos; parameter should depend only on the
+event type and not on the number of messages referenced.  Also, the &apos;uri&apos;
+parameter should always be present.
+
+&gt; I should also translate the mailbox identifier which is in the internal form.
+
+Yes.
+
+&gt; But translate to external is not everywhere possible since I don&apos;t have access
+&gt; to struct namespace. If you have a suggestion I&apos;ll be happy !
+
+The whole namespace thing is very annoying.  It&apos;s effectively a global,
+but it&apos;s been isolated into imapd.c and a pointer needs to be passed
+around nearly *everywhere*.  In the long term the best thing is probably
+to actually have a global pointer, but in the short term you&apos;ll need to
+do something uglier.
+
+One thing you could do is make the list of pending event structures a
+global, and flush it out at the *end* of each imap command, e.g. with
+a single call from cmdloop().  That call could then take a namespace*
+to convert the stored internal mailbox name to an external name before
+building URLs.  This would be less invasive to various structs that
+you&apos;ve modified, but the downside might be that the &quot;abort the
+notification&quot; semantics would be a lot hairier.
+
+Alternatively, you could pass the namespace* to the mboxevent code
+during service initialisation, possibly as an argument to mboxevent_init(),
+and store the pointer in a static variable in mboxevent.c
+
+
+&gt; &gt; - I&apos;m not convinced that the set of events generated as a side effect
+&gt; &gt;   of STORE is correct in all cases.  [...]
+&gt; No it&apos;s OK, I already test this case in my test suite
+
+Ah, tell me more about this test suite - can we integrate it into
+Cassandane?
+
+&gt; &gt; - In mboxlist_changesub(), shouldn&apos;t you be calling
+&gt; &gt;   mboxevent_extract_mailbox() instead of manually filling out the
+&gt; &gt;   event-&gt;mailboxid field?
+&gt; I don&apos;t have a struct mailbox at this point
+
+Sure, but you should really be calling an API function rather than
+reaching into the internals of the event structure.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-07-02 11:20:02 EDT</bug_when>
+            <thetext>
+&gt; &gt; I understand that we should use the &apos;uri&apos; parameter for MessageNew and
+&gt; &gt; MessageXXXX for single message (and eventually MailboxID that seems redundant).
+&gt; &gt; Using mailboxID and uidsed for MessageXXXX in case of several messages (and
+&gt; &gt; optionnaly uri parameter that seems redundant)
+&gt; 
+&gt; I think the RFC says that for any of the events MessageExpires,
+&gt; MessageExpunges, MessageRead, MessageTrash, FlagsSet, or FlagsClear
+&gt; you should include the fields
+&gt; 
+&gt; mailboxID: imap URL of the mailbox
+&gt; 
+&gt; uri: also the imap URL of the mailbox
+&gt; 
+&gt; uidset: list of uids affected
+&gt; 
+&gt; and for any other events which mention a message, you should include
+&gt; 
+&gt; mailboxID: imap URL of the mailbox
+&gt; 
+&gt; uri: imap URL of the message
+&gt; 
+&gt; In other words, the form of the &apos;uri&apos; parameter should depend only on the
+&gt; event type and not on the number of messages referenced.  Also, the &apos;uri&apos;
+&gt; parameter should always be present.
+ 
+I just have a doubt about mailboxID :
+&gt; Included in events that affect mailboxes. 
+
+I understand only to mailbox related events : MailboxCreate, MailboxDelete, MailboxRename, MailboxSubscribe and MailboxUnsubscribe
+
+
+I&apos;ve nearly finish the rewrite in accordance with the first and second tranche of reviews. I&apos;m working on the third.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-08-14 12:13:16 EDT</bug_when>
+            <thetext>I&apos;ve rewritten the code in accordance with all review comments of Greg. I&apos;ve also broken up the commits into more readable smaller chunks and pushed in the branch ticket/3605.
+Full history of the rewrite is also available in our github repo : https://github.com/worldline-messaging/cyrus-imapd/commits/temp/ticket/3605/
+
+
+I made some implementation choices that can be discussed, however :
+
+- I removed &quot;event_timestamp_format&quot; option
+- option &quot;event_exclude_folders&quot; is renamed to &quot;event_exclude_specialuse&quot;. It uses SPECIAL-USE to exclude folders instead of using folder names
+- I choose libjson that seems to be the &quot;default&quot; in some Linux distro. However this library will only support 64bit integer in the next 0.10 release. I&apos;ve added a requirement on this next release. 
+- I choose to write a basic json formatter in xjson.[ch] as fallback. But I can change to another format if libjson library is not found (ie. properties format with key/value pairs)
+
+I&apos;m still discussing with Dilyan about where we should define xjson in Makefile.am</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-08-16 11:42:42 EDT</bug_when>
+            <thetext>Changed the use of json-c by jansson to format JSON object, because current version of json-c doesn&apos;t support 64bit integer
+
+JSON library is the only external dependency used by the event notification piece of code.
+
+Regarding this dependency I have two possibilities in configure.ac :
+ - keep the internal xjson.[ch] as fallback when jansson is not available or in an older version. And print a warning to highlight this fallback.
+ - add an option to the configure script such as --enable-event-notification or --enable-mboxevent and raise an error if requirement on jansson failed (no more need to have internal xjson as fallback)
+
+any opinion ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-08-17 04:55:57 EDT</bug_when>
+            <thetext>(In reply to comment #14)
+&gt;  - add an option to the configure script such as --enable-event-notification or
+&gt; --enable-mboxevent and raise an error if requirement on jansson failed (no more
+&gt; need to have internal xjson as fallback)
+&gt; 
+
+This option has my vote.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-09-05 10:46:13 EDT</bug_when>
+            <thetext>(In reply to comment #15)
+&gt; (In reply to comment #14)
+&gt; &gt;  - add an option to the configure script such as --enable-event-notification or
+&gt; &gt; --enable-mboxevent and raise an error if requirement on jansson failed (no more
+&gt; &gt; need to have internal xjson as fallback)
+&gt; &gt; 
+&gt; 
+&gt; This option has my vote.
+
+I&apos;ve added the option --disable-event-notification. So mailbox event
+notification is enabled by default and requires that jansson library is
+installed with its pkg-config file. I&apos;ve also removed files xjson.[ch] that
+were used when jansson was missing.
+I did a rebase and pushed to the git repo (branch ticket/3605)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-12-21 14:23:14 EDT</bug_when>
+            <thetext>Is there anything blocking merging this?  I&apos;d like to get it in soon so we can start nailing down 2.5.0.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-12-22 07:18:50 EDT</bug_when>
+            <thetext>(In reply to comment #17)
+&gt; Is there anything blocking merging this?  I&apos;d like to get it in soon so we can
+&gt; start nailing down 2.5.0.
+
+As I recall, Sebastien Michel wanted to review and clean up some commits.
+
+Sebastien can make the merge himself, actually - he&apos;s got the git account.sebastien.michel@atos.net.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2012-12-31 06:41:52 EDT</bug_when>
+            <thetext>&gt; As I recall, Sebastien Michel wanted to review and clean up some commits.
+&gt; 
+&gt; Sebastien can make the merge himself, actually - he&apos;s got the git
+&gt; account.sebastien.michel@atos.net.
+
+All the work is done for a long time. I just made a last rebase of the branch ticket/3605 onto master and fixed some conflicts
+
+I am ready to do the final merge in master if OK for you.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-12-31 06:51:44 EDT</bug_when>
+            <thetext>(In reply to comment #19)
+&gt; All the work is done for a long time. I just made a last rebase of the branch
+&gt; ticket/3605 onto master and fixed some conflicts
+&gt; 
+&gt; I am ready to do the final merge in master if OK for you.
+
+OK, +1.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2013-02-09 11:52:17 EDT</bug_when>
+            <thetext>pushed to master</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

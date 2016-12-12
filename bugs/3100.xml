@@ -1,0 +1,150 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3100</bug_id>
+          
+          <creation_ts>2008-10-08 14:11 EDT</creation_ts>
+          <short_desc>signal handling</short_desc>
+          <delta_ts>2012-03-27 00:47:42 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          <blocked>3648</blocked>
+    
+    <blocked>3656</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wes Craig">wes@umich.edu</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+    
+    <cc>mhlavink@redhat.com</cc>
+    
+    <cc>vilius@lnk.lt</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2008-10-08 14:11:13 EDT</bug_when>
+            <thetext>Setting a flag is the only portable change that can be made in a signal handler.
+makedepend/main.c, imap/make_{md5,sha1}.c, and imap/{idle,imapd}.c all do more than that.  make_{md5/sha1}.c are easily fixed -- the child waiting code should be moved to the bottom of main.  The idle_init / idle_update problem is a serious design issue.  Comments?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Vilius Ðumskas">vilius@lnk.lt</who>
+            <bug_when>2011-10-24 11:34:43 EDT</bug_when>
+            <thetext>This issue should be Priority 1 or 2. But definetely not P5. It is a very serious design flaw. We are using Cyrus IMAPD on Redhat Enterprise 6.0 and it deadlocks constantly because of this (RHEL 5 did not had this issue, because it had older Cyrus version). I guess more and more people will see this problem as they upgrade their Redhat installations. Given that this issue doesn&apos;t really have a viable workaround, it should be addressed as soon as possible. Or else people will start moving to Dovecot. I would hate doing so because I like Cyrus IMAPD very much! :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-02-27 20:03:48 EDT</bug_when>
+            <thetext>Hi Ken and Wes,
+
+it looks like I&apos;m going to be addressing this anyway, just to be able
+to stabilise the autobuild on ci.cyrusimap.org, which has been randomly
+failing for some days due to signal handling races in the master process.
+
+Wes, in reply to your initial comments
+
+makedepend/main.c
+    This is utterly broken but is used only during build, and will
+    soon not be used at all (when we move to autotools).  So I&apos;m
+    inclined to ignore this.
+
+imap/make_{md5,sha1}.c
+    Also broken, although waitpid() is safer to call in a signal
+    handler than syslog() or sigaction().  However this code seems
+    to have been deleted since the 2.3 branch.  If I understand the
+    policy correctly, we only do security fixes for 2.3, so this
+    fix doesn&apos;t qualify.
+
+imap/idled.c
+    has some problems, I have a fix.
+
+imap/idle.c
+    this is scary, but I believe it&apos;s been causing irritating problems
+    in production for some time now, so I will look at it.
+
+imap/imapd.c
+    this seems ok now - it doesn&apos;t do anything interesting in signal
+    handlers, and the last few fixes should deal with some other
+    lingering issues, see Bug 3648.
+
+The worst culprit by far is the master process, and I have fixes for
+that which will go into Bug 3648.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-02-27 20:11:22 EDT</bug_when>
+            <thetext>See
+
+The following changes since commit bd9c86792dec4c208cf1abc08215ce3d69b96c0b:
+
+  autobuild: clean up leftover Cassandane processes (2012-02-23 13:01:31 +1100)
+
+are available in the git repository at:
+  ssh://git.cyrusimap.org/git/cyrus-imapd master
+
+Greg Banks (9):
+      Bug 3648 - lib/signals.c handles multiple signals
+      Bug 3648 - master handles SIGQUIT synchronously
+      master: don&apos;t busyloop after SIGQUIT
+      Remove unused dead definitions of printstring()
+      autobuild.sh: show any leaked processes
+      cyr_expire: better signal handling
+      idled: better signal handling
+      lib/signals.c: better signal handling
+      Bug 3100 master: handle SIGTERM synchronously
+
+ autobuild.sh          |    1 +
+ imap/cli_fatal.c      |    8 ---
+ imap/cyr_expire.c     |   14 ++++--
+ imap/fud.c            |    6 ---
+ imap/idled.c          |   20 +++-----
+ imap/smmapd.c         |    6 ---
+ imap/sync_server.c    |    7 ---
+ lib/signals.c         |   40 ++++++++++------
+ master/master.c       |  121 ++++++++++++++++++++++++++++---------------------
+ notifyd/notifyd.c     |    7 ---
+ ptclient/ptloader.c   |    6 ---
+ timsieved/timsieved.c |    7 ---
+ 12 files changed, 113 insertions(+), 130 deletions(-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-27 00:32:18 EDT</bug_when>
+            <thetext>I&apos;m going to open a separate Bug for the idle.c/idled.c fixes,
+which have become a signficant rewrite of that code.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

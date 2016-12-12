@@ -1,0 +1,163 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3265</bug_id>
+          
+          <creation_ts>2010-10-12 04:16 EDT</creation_ts>
+          <short_desc>Cyrus 2.4 does not conform to RFC5256</short_desc>
+          <delta_ts>2012-01-19 07:51:34 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.0</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          <bug_file_loc>http://lists.andrew.cmu.edu/pipermail/cyrus-devel/2010-September/001584.html</bug_file_loc>
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          <blocked>3273</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Olivier ROLAND">cyrus-dev@edla.org</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2010-10-12 04:16:23 EDT</bug_when>
+            <thetext>Cyrus 2.4 implement only draft-ietf-imapext-sort-19</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-15 05:02:07 EDT</bug_when>
+            <thetext>Update target milestone</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-28 06:43:28 EDT</bug_when>
+            <thetext>I can&apos;t see anything that suggests we don&apos;t actually support the full thing.  The only potential issue is uppercasing of subject for sort purposes, which I&apos;ve patched in to Master, and can backport to stable easily enough.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-06-30 10:08:08 EDT</bug_when>
+            <thetext>Sorry but you missed the point.
+Please read again http://lists.andrew.cmu.edu/pipermail/cyrus-devel/2010-September/001584.html
+
+Unfortunately Cyrus is not actually RFC5256 compliant and end users will immediately notice it with RFC5957 SORT=DISPLAY
+
+I understand that a patch is not that easy to really implement RFC5256 in Cyrus (because of needed change in cache structure) but let me know if I can help somehow.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-07-02 18:39:45 EDT</bug_when>
+            <thetext>(In reply to comment #3)
+&gt; Sorry but you missed the point.
+&gt; Please read again
+&gt; http://lists.andrew.cmu.edu/pipermail/cyrus-devel/2010-September/001584.html
+&gt; 
+&gt; Unfortunately Cyrus is not actually RFC5256 compliant and end users will
+&gt; immediately notice it with RFC5957 SORT=DISPLAY
+&gt; 
+&gt; I understand that a patch is not that easy to really implement RFC5256 in Cyrus
+&gt; (because of needed change in cache structure) but let me know if I can help
+&gt; somehow.
+
+
+Sorry - I tried to reply via email the other, but that&apos;s not set up yet.
+
+I&apos;m still not convinced - I read the charset translation code, and it keeps non-ASCII stuff as utf-8 just fine.  The only issue is that it lowercases rather
+than uppercases that I can see.
+
+There are also a few special case translations:
+
+lib/charset/unifix.txt
+
+I could be convinced that these are wrong:
+
+# Map s-zet to &quot;ss&quot;
+00DF;LATIN SMALL LETTER SHARP S;Ll;0;L;0073 0073;;;;N;;German;;;
+
+# Map ae to &quot;ae&quot;
+00E6;LATIN SMALL LETTER AE;Ll;0;L;0061 0065;;;;N;LATIN SMALL LETTER A E;;00C6;;00C6
+
+# Map Eth and Thorn to &quot;th&quot;
+00F0;LATIN SMALL LETTER ETH;Ll;0;L;0074 0068;;;;N;;Icelandic;00D0;;00D0
+00FE;LATIN SMALL LETTER THORN;Ll;0;L;0074 0068;;;;N;;Icelandic;00DE;;00DE
+
+# Map oe ligature to &quot;oe&quot;
+0153;LATIN SMALL LIGATURE OE;Ll;0;L;006F 0065;;;;N;LATIN SMALL LETTER O E;;0152;;0152
+
+
+(and a few others)
+
+
+Other than that, have you actually tested with 2.4, or are you assuming it&apos;s the same?  Can you give me some real test cases that I can build a test suite with?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-07-04 18:19:26 EDT</bug_when>
+            <thetext>Thanks for your concern.
+Yes tested with 2.4
+A very simple use case is for example : To: =?iso-8859-1?Q?z=E9lec?= &lt;bidon@squeeze-cyrus&gt;
+This is stored in Cyrus cache like this : zelec &lt;bidon@squeeze-cyrus&gt;
+And of course the sort with zelec is false because we lost the acute on the second letter.
+This is not compliant with  RFC5256 &quot;the SORT and THREAD extensions MUST collate strings according to the i;unicode-casemap collation&quot;
+
+What is actually implemented in Cyrus with  lib/charset/unifix.txt seem to be RFC4790.
+What is needed by RFC5256 is RFC5051
+As you can see in RFC5051 there is much more special case. See: http://www.unicode.org/Public/UNIDATA/UnicodeData.txt
+
+All this seem a bit scary but implementation of RFC5957 make all this more clear with very simple use case.
+(RFC5957 need RFC5255 wich need 5051)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-09-21 14:52:22 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+&gt; All this seem a bit scary but implementation of RFC5957 make all this more
+&gt; clear with very simple use case.
+&gt; (RFC5957 need RFC5255 wich need 5051)
+
+I have a working 5051.
+
+My reading of 5255 means we can now advertise I18NLEVEL=1.  Actually, no - we can&apos;t.  Dammit.  I need to make the sort work correctly with two separate groups of sorting - which means a flag value.  Oh well.
+
+It looks to me like we will be able to declare full RFC5957 support without actually doing I18NLEVEL=2, but we would be advised to make sure our comparison routines can be extended later.
+
+But - this is definitely the right choice going forwards.  We will store strings in pure UTF-8 in the cyrus.cache file.  It will require a new cache file format number, which will specify that they&apos;re in the new format.  It will also require handling search and sort differently, but that&apos;s the future for you.
+
+I haven&apos;t pushed this code to master yet, and I won&apos;t be creating another stable URI for it, so I won&apos;t put any URI in this bug.  I&apos;ll push it once I have the rest of the picture (cache version, comparator) finished.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-01-19 07:51:34 EDT</bug_when>
+            <thetext>Too complex/dangerous to backport to 2.4 I think - targetting for 2.5-next</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

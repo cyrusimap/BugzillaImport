@@ -1,0 +1,141 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2650</bug_id>
+          
+          <creation_ts>2005-04-19 05:57 EDT</creation_ts>
+          <short_desc>Name resolving not working in lmtpd if one DNS server is down</short_desc>
+          <delta_ts>2010-10-18 12:43:08 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P4</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tero Matinlassi">tero.matinlassi@edu.vantaa.fi</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Tero Matinlassi">tero.matinlassi@edu.vantaa.fi</who>
+            <bug_when>2005-04-19 05:57:03 EDT</bug_when>
+            <thetext>We have two name servers defined in /etc/resolv.conf on our (IMAP) mail server.
+We happened to have a situation, where the first of these servers went down and
+stopped responding to DNS queries. The other DNS server still worked, so I could
+resolve names and addresses on mail server with host or nslookup commands.
+However, LMTP TCP service stopped working at this situation. Telnet from another
+machine (mail exchanger) to mail server LMTP port didn&apos;t print anything, the
+connection just hanged for a while and was ultimately dropped after about an
+half a minute. After adding mail exchanger IP address and name to /etc/hosts on
+the mail server everthing started working properly again.
+
+Strangely, only LMTP service was affected by the problem. IMAP service still
+worked (with notable slowdown, which was expected). Does lmtpd handle reverse
+DNS queries somehow different than other components?
+
+Here&apos;s an excerpt from the mail server log file (edited):
+Apr 17 04:02:53 puuhapete lmtp[13995]: accepted connection
+Apr 17 04:02:56 puuhapete lmtp[13984]: accepted connection
+Apr 17 04:02:58 puuhapete lmtp[13995]: connection from laalaa.xxx.xxxxxx.xx
+[192.168.x.xxx] preauth&apos;d as postman
+Apr 17 04:03:00 puuhapete lmtp[13990]: accepted connection
+Apr 17 04:03:01 puuhapete lmtp[13984]: connection from laalaa.xxx.xxxxxx.xx
+[192.168.x.xxx] preauth&apos;d as postman
+Apr 17 04:03:05 puuhapete lmtp[13990]: connection from laalaa.xxx.xxxxxx.xx
+[192.168.x.xxx] preauth&apos;d as postman
+
+There is an about 5 second delay between &quot;accepted connection&quot; and &quot;connection
+from [..]&quot; messages. In normal situation, there is virtually no delay. Log print
+suggests that the reverse DNS query was successful, but still the connection
+hanged (not even the LMTP banner was shown).
+
+Cyrus IMAPd is version 2.2.12 (from Simon Matter&apos;s RPM)
+Server is Fedora Core 1</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-19 11:40:16 EDT</bug_when>
+            <thetext>lmtpd uses:
+    /* determine who we&apos;re talking to */
+    salen = sizeof(remoteaddr);
+    r = getpeername(fd, (struct sockaddr *)&amp;remoteaddr, &amp;salen);
+    if (!r &amp;&amp;
+        (remoteaddr.ss_family == AF_INET ||
+         remoteaddr.ss_family == AF_INET6)) {
+        /* connected to an internet socket */
+        if (getnameinfo((struct sockaddr *)&amp;remoteaddr, salen,
+                        hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD) == 0) {
+            strncpy(cd.clienthost, hbuf, sizeof(hbuf));
+            strlcat(cd.clienthost, &quot; &quot;, sizeof(cd.clienthost));
+            cd.clienthost[sizeof(cd.clienthost)-30] = &apos;\0&apos;;
+
+imapd uses:
+    /* Find out name of client host */
+    salen = sizeof(imapd_remoteaddr);
+    if (getpeername(0, (struct sockaddr *)&amp;imapd_remoteaddr, &amp;salen) == 0 &amp;&amp;
+        (imapd_remoteaddr.ss_family == AF_INET ||
+         imapd_remoteaddr.ss_family == AF_INET6)) {
+        if (getnameinfo((struct sockaddr *)&amp;imapd_remoteaddr, salen,
+                        hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD) == 0) {
+            strncpy(imapd_clienthost, hbuf, sizeof(hbuf));
+            strlcat(imapd_clienthost, &quot; &quot;, sizeof(imapd_clienthost));
+            imapd_clienthost[sizeof(imapd_clienthost)-30] = &apos;\0&apos;;
+
+Having some more information would be ideal (a backtrace or syscall trace output), otherwise I will 
+attempt to simulate this some time later.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Tero Matinlassi">tero.matinlassi@edu.vantaa.fi</who>
+            <bug_when>2005-04-19 12:58:37 EDT</bug_when>
+            <thetext>Hmm. I tried to reproduce the problem, but couldn&apos;t. I changed the first name
+server on /etc/resolv.conf to a bogus one (wrong IP address). As expected, DNS
+queries slowed down, but this time it didn&apos;t affect lmtpd any other way. LMTP
+banner prints out in about 10 secs.
+
+The code snippets show no difference between lmtpd and imapd, as far as I can
+see. I wish I&apos;d saved strace output when the problem was at hand...
+
+One possible explanation I can imagine is that maybe LMTP service didn&apos;t reach
+any name servers at all. At least, testing this situation gives a similar
+non-functionality (no LMTP banner and connection drops after a while). This is
+quite strange (because other services on the same server could reach the other
+name server while the other was down), but I guess this might not be lmtpd issue
+after all.
+
+Since I can&apos;t reproduce this anymore I&apos;ll consider the case to be closed for
+now. Sorry to bother you.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

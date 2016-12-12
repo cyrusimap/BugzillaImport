@@ -1,0 +1,200 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2214</bug_id>
+          
+          <creation_ts>2003-10-01 09:14 EDT</creation_ts>
+          <short_desc>Wrong version of SleepyCat library is picked up by configure</short_desc>
+          <delta_ts>2011-05-26 09:49:23 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>sasldb</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alexey Melnikov">Alexey.Melnikov@isode.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>ondrej@sury.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2003-10-01 09:14:21 EDT</bug_when>
+            <thetext>This bug was seen on RedHat Linux where SleepyCat is preinstalled.
+
+Configure script was told to look for SleepyCat library in
+/pkg/db/4.1.25/lib. The library was built with the default SleepyCat
+name db.a
+
+The problem we hit on Linux is that db4-0 (or whatever is the name) is
+in default place and get picked up by the linker when
+it is called with
+-L/pkg/db/4.1.25/lib -ldb4-0.
+db4-0 is not in /pkg/db/4.1.25/lib, but the linking succeed. As the result
+SASL compiles with includes from /pkg/db/4.1.25/include, but links
+against an older version of SleepyCat. Of course the API has changed and
+this causes a weird &quot;error to close database&quot; when you run saslpasswd, etc.
+
+The fix is to test for existence of the library file (.a or .so) after
+linking succeeds. .so extension should be changed to some variable for the
+platform, but I wasn&apos;t sure what variable to use.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2003-10-01 09:18:50 EDT</bug_when>
+            <thetext>Created an attachment (id=229)
+Quick patch to check for library location
+
+Rob wanted to make this fix work with other types of libraries as well (i.e.
+OpenSSL).
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-10-01 09:54:29 EDT</bug_when>
+            <thetext>Not quite, I personally don&apos;t feel the patch is checking anything meaningful,
+since it doesn&apos;t tell us anything about which library the compiler actually
+picked to link.
+
+It also isn&apos;t something that should be done only for Berkeley DB -- it should be
+done for all the libraries we need to link against, or none, really...
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2003-10-20 12:12:03 EDT</bug_when>
+            <thetext>Created an attachment (id=235)
+Updated patch
+
+New patch prevents passing: &quot;-ldb-4 -ldb-3 -ldb&quot; which causes link problem on
+Linux. A produced shared library/executable will depend on all shared
+libraries, even if they are not required to link.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-11 02:39:47 EDT</bug_when>
+            <thetext>We should switch to AX_PATH_BDB (see ax_path_bdb.m4 in the cmulocal collection). But, it will need 
+testing before we can. Just noting it here for future.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-02-06 12:23:41 EDT</bug_when>
+            <thetext>Is this still a problem?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ondrej Sury">ondrej@sury.org</who>
+            <bug_when>2011-05-26 09:49:23 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+&gt; Is this still a problem?
+
+Yes, it is.  Generally I think you either:
+
+a) link only again -ldb
+
+b) link to -ldb-VERSION_MAJOR.VERSION_MINOR
+
+c) link to --with-bdb-lib-name
+
+The try list which contains random version list of Berkeley DB available at &apos;make dist&apos; time is generally wrong (not only for cyrus-sasl2).
+
+Or try it in c) b) a) order.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>229</attachid>
+            <date>2003-10-01 09:18 EDT</date>
+            <desc>Quick patch to check for library location</desc>
+            <filename>sasl_config.diff.txt</filename>
+            <type>text/plain</type>
+            <size>634</size>
+            <attacher>Alexey.Melnikov@isode.com</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGNtdWxvY2FsL2JlcmtkYi5tNA0KPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQ0KUkNTIGZpbGU6IC9jdnMvc3Jj
+L2NtdWxvY2FsL2JlcmtkYi5tNCx2DQpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMTENCmRpZmYgLXIx
+LjExIGJlcmtkYi5tNA0KMjE3YzIxNywyMjcNCjwgICAgICAgICAgICAgICBkYmxpYj0iYmVya2Vs
+ZXkiOyBicmVhaywgZGJsaWI9Im5vIikNCi0tLQ0KPiAgICAgICAgICAgICAgIGRibGliPSJiZXJr
+ZWxleSI7DQo+IAkJZWNobyAiQ2hlY2tpbmcgZm9yICR3aXRoX2JkYl9saWIvbGliJGRibmFtZS5h
+IHByZXNlbmNlIjsNCj4gCQlpZiAhKHRlc3QgLWYgIiR3aXRoX2JkYl9saWIvbGliJGRibmFtZS5h
+IikgJiYgISh0ZXN0IC1mICIkd2l0aF9iZGJfbGliL2xpYiRkYm5hbWUuc28iKTsgdGhlbg0KPiAJ
+CSAgICBkYmxpYj0ibm8iOw0KPiAJCSAgICBlY2hvICJOb3QgZm91bmQhISEiDQo+IAkJZWxzZQ0K
+PiAJCSAgICBCREJfTElCQUREPSIkQkRCX0xJQkFERCAtbCRkYm5hbWUiOw0KPiAJCSAgICBkYmxp
+Yj0iYmVya2VsZXkiOw0KPiAJCSAgICBicmVhaw0KPiAJCWZpDQo+IAkgICAgICAsIGRibGliPSJu
+byIpDQoNCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>235</attachid>
+            <date>2003-10-20 12:12 EDT</date>
+            <desc>Updated patch</desc>
+            <filename>sasl_db_fix.diff.txt</filename>
+            <type>text/plain</type>
+            <size>1148</size>
+            <attacher>Alexey.Melnikov@isode.com</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGNtdWxvY2FsL2JlcmtkYi5tNA0KPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQ0KUkNTIGZpbGU6IC9jdnMvc3Jj
+L2NtdWxvY2FsL2JlcmtkYi5tNCx2DQpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMTINCmRpZmYgLXUg
+LXIxLjEyIGJlcmtkYi5tNA0KLS0tIGNtdWxvY2FsL2JlcmtkYi5tNAk4IE9jdCAyMDAzIDIwOjM1
+OjI0IC0wMDAwCTEuMTINCisrKyBjbXVsb2NhbC9iZXJrZGIubTQJMjAgT2N0IDIwMDMgMTM6NDU6
+MjYgLTAwMDANCkBAIC0yMTMsOCArMjEzLDE4IEBADQogDQogICAgICAgICBmb3IgZGJuYW1lIGlu
+IGRiLTQuMSBkYjQuMSBkYjQxIGRiLTQuMCBkYjQuMCBkYi00IGRiNDAgZGI0IGRiLTMuMyBkYjMu
+MyBkYjMzIGRiLTMuMiBkYjMuMiBkYjMyIGRiLTMuMSBkYjMuMSBkYjMxIGRiLTMgZGIzMCBkYjMg
+ZGINCiAgICAgICAgICAgZG8NCi0gICAgICAgICAgICBBQ19DSEVDS19MSUIoJGRibmFtZSwgZGJf
+Y3JlYXRlLCBCREJfTElCQUREPSIkQkRCX0xJQkFERCAtbCRkYm5hbWUiOw0KLSAgICAgICAgICAg
+ICAgZGJsaWI9ImJlcmtlbGV5IjsgYnJlYWssIGRibGliPSJubyIpDQorICAgICAgICAgICAgQUNf
+Q0hFQ0tfTElCKCRkYm5hbWUsIGRiX2NyZWF0ZSwgDQorICAgICAgICAgICAgICBkYmxpYj0iYmVy
+a2VsZXkiOw0KKwkJZWNobyAiQ2hlY2tpbmcgZm9yICR3aXRoX2JkYl9saWIvbGliJGRibmFtZS5h
+IHByZXNlbmNlIjsNCisJCWlmICEodGVzdCAtZiAiJHdpdGhfYmRiX2xpYi9saWIkZGJuYW1lLmEi
+KSAmJiAhKHRlc3QgLWYgIiR3aXRoX2JkYl9saWIvbGliJGRibmFtZS5zbyIpOyB0aGVuDQorCQkg
+ICAgZGJsaWI9Im5vIjsNCisJCSAgICBlY2hvICJOb3QgZm91bmQhISEiDQorCQllbHNlDQorCQkg
+ICAgQkRCX0xJQkFERD0iJEJEQl9MSUJBREQgLWwkZGJuYW1lIjsNCisJCSAgICBkYmxpYj0iYmVy
+a2VsZXkiOw0KKwkJICAgIGJyZWFrDQorCQlmaQ0KKwkgICAgICAsIGRibGliPSJubyIpDQogICAg
+ICAgICAgIGRvbmUNCiAgICAgICAgIGlmIHRlc3QgIiRkYmxpYiIgPSAibm8iOyB0aGVuDQogICAg
+ICAgICAgIEFDX0NIRUNLX0xJQihkYiwgZGJfb3BlbiwgQkRCX0xJQkFERD0iJEJEQl9MSUJBREQg
+LWxkYiI7DQo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

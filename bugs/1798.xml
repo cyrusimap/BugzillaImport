@@ -1,0 +1,135 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1798</bug_id>
+          
+          <creation_ts>2003-02-04 07:18 EDT</creation_ts>
+          <short_desc>Compilation of perl modules fails due to OpenSSL_LIBPATH and OPENSSL_LIB confusion.</short_desc>
+          <delta_ts>2010-10-18 12:08:41 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>2.1.x</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Leena Heino">Leena.Heino@uta.fi</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>simon.brady@otago.ac.nz</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-04 07:18:25 EDT</bug_when>
+            <thetext>Compilation of perl modules fails due to OpenSSL_LIBPATH and OPENSSL_LIB
+confusion. This confusion is because configure.in uses OPENSSL_LIB and
+OPENSSL_LIBPATH both in the same meaning.
+
+Here&apos;s the patch to fix the situation:
+--- configure.in.orig   Tue Jan 28 22:49:42 2003
++++ configure.in        Tue Feb  4 14:08:51 2003
+@@ -632,9 +632,9 @@
+ 
+                ;;
+        *)  OPENSSL_INC=&quot;-I${with_openssl}/include&quot;
+-           OPENSSL_LIBPATH=&quot;${with_openssl}/lib&quot;
++           OPENSSL_LIB=&quot;${with_openssl}/lib&quot;
+            CPPFLAGS=&quot;${CPPFLAGS} ${OPENSSL_INC}&quot;
+-           CMU_ADD_LIBPATH(${OPENSSL_LIBPATH})
++           CMU_ADD_LIBPATH(${OPENSSL_LIB})
+            LIBS=&quot;${LIBS} -lssl -lcrypto&quot;;;
+ esac</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-04 07:22:13 EDT</bug_when>
+            <thetext>Oops, wrong version. This affects the Cyrus IMAP version 2.1.12 (possibly
+2.2.0), but the version menu does not yet have that version.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-04 07:51:42 EDT</bug_when>
+            <thetext>Oops, part 2. The diagnosis was right but the patch was wrong.
+
+Now the perl modules compiles ok and correct ssl libraries are found and used.
+
+Here&apos;s the correct patch:
+--- configure.in.orig   Tue Jan 28 22:49:42 2003
++++ configure.in        Tue Feb  4 14:40:30 2003
+@@ -634,7 +634,7 @@
+        *)  OPENSSL_INC=&quot;-I${with_openssl}/include&quot;
+            OPENSSL_LIBPATH=&quot;${with_openssl}/lib&quot;
+            CPPFLAGS=&quot;${CPPFLAGS} ${OPENSSL_INC}&quot;
+-           CMU_ADD_LIBPATH(${OPENSSL_LIBPATH})
++           CMU_ADD_LIBPATH_TO(${OPENSSL_LIBPATH}, OPENSSL_LIB)
+            LIBS=&quot;${LIBS} -lssl -lcrypto&quot;;;
+ esac
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-04 08:39:50 EDT</bug_when>
+            <thetext>Oops, part 3. Should have tried running configure again after the last patch.
+And should have read the autoconf macro description at cmulocal/README.andrew.
+
+Tested:
+- running configure, OK
+- compilation, OK
+
+Here&apos;s the corrected (and hopefully final) patch:
+--- configure.in.orig   Tue Jan 28 22:49:42 2003
++++ configure.in        Tue Feb  4 15:32:05 2003
+@@ -635,6 +635,7 @@
+            OPENSSL_LIBPATH=&quot;${with_openssl}/lib&quot;
+            CPPFLAGS=&quot;${CPPFLAGS} ${OPENSSL_INC}&quot;
+            CMU_ADD_LIBPATH(${OPENSSL_LIBPATH})
++           CMU_ADD_LIBPATH_TO(${OPENSSL_LIBPATH}, OPENSSL_LIB)
+            LIBS=&quot;${LIBS} -lssl -lcrypto&quot;;;
+ esac
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2003-02-05 12:48:01 EDT</bug_when>
+            <thetext>i think rob and simon were working on this. reassigning to rob.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-02-05 12:49:02 EDT</bug_when>
+            <thetext>heh, I was just about to commit this when you posted the bug.  thanks anyway ;)
+
+(closing)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,196 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2546</bug_id>
+          
+          <creation_ts>2004-11-02 15:36 EDT</creation_ts>
+          <short_desc>spec&apos;d SASL2 libs NOT linked if/when default path for &apos;other&apos; lib also spec&apos;d</short_desc>
+          <delta_ts>2010-10-18 12:43:06 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.2.x</version>
+          <rep_platform>Macintosh</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="OpenMacNews">openmacnews@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="OpenMacNews">openmacnews@gmail.com</who>
+            <bug_when>2004-11-02 15:36:03 EDT</bug_when>
+            <thetext>on my system (OSX 10.3.5), cyrus-sasl-2.1.19 has been built/installed in 
+cd /usr/local/cyrus-sasl:
+
+    ./configure \
+      --prefix=/usr/local/cyrus-sasl \
+      --with-plugindir=/usr/local/cyrus-sasl/lib/sasl2 \
+      ...
+      --with-openssl=/usr/local/ssl \
+      ...
+      --with-dblib=berkeley \
+      --with-bdb-libdir=/usr/lib \
+      --with-bdb-incdir=/usr/include \
+      ...
+
+of course, per numerous messages on the board, in building cyrus-imap 
+you&apos;ve got to make sure to pick up the right sasl2 libs ... NOT the OSX 
+&apos;native&apos; installs in /usr.
+
+to that end, i SPECIFICALLY built cyrus-imapd-2.2.8 with:
+
+    setenv LDFLAGS &quot;-L/usr/local/cyrus-sasl/lib -lsasl2&quot;
+    setenv CPPFLAGS &quot;-I/usr/local/cyrus-sasl/include/sasl&quot;
+
+and
+
+      --with-sasl=/usr/local/cyrus-sasl \
+
+as:
+
+    ./configure \
+      --prefix=/usr/local/cyrus-imap \
+      --with-cyrus-prefix=/usr/local/cyrus-imap/bin \
+      --with-service-path=/usr/local/cyrus-imap/libexec \
+      --with-sasl=/usr/local/cyrus-sasl \
+      --with-snmp=/usr/local/net-snmp \
+    --with-auth=unix \
+    --enable-listext \
+    --with-bdb \
+    --with-bdb-libdir=/usr/lib \
+    --with-bdb-incdir=/usr/include \
+    --with-openssl=/usr/local/ssl \
+    --with-syslogfacility=LOCAL6 \
+    --with-perl=/usr/bin/perl \
+    --with-libwrap \
+    --enable-sieve \
+    --enable-server \
+    --disable-gssapi \
+    --with-syslogfacility=LOCAL6
+
+then
+
+    make depend
+    make all
+
+followed by
+
+    make install
+
+all was (so i thought) OK.
+
+checking AGAIN:
+
+    otool -L /usr/local/cyrus-imap/bin/imtest
+
+to find:
+
+        Load command 5
+        cmd LC_LOAD_DYLIB
+        cmdsize 56
+        name /usr/lib/libsasl2.2.0.1.dylib (offset 24)
+
+STILL linked against the wrong library!
+
+some digging finds multiple ocurrences of:
+
+    EXTRALIBS = -L/usr/lib -ldb-4.2 -L/usr/local/cyrus-sasl/lib -lsasl2 
+-L/usr/local/ssl/lib -L/usr/local/ssl/lib -lssl -lcrypto
+
+and
+
+    LDLOADLIBS = -L/usr/lib -ldb-4.2 -L/usr/local/cyrus-sasl/lib -lsasl2 
+-L/usr/local/ssl/lib -L/usr/local/ssl/lib -lssl -lcrypto
+
+
+note the &quot;-ldb-4.2&quot; PREPENDED by &quot;-L/usr/lib&quot;!
+
+this seems to be picked up from the specification of:
+
+    --with-bdb \
+    --with-bdb-libdir=/usr/lib \
+    --with-bdb-incdir=/usr/include \
+
+in configure.
+
+if I remove the libdir/incdir lines from configure, and reconfigure with 
+just
+
+    --with-bdb \
+
+after:
+
+    make depend
+    make all
+
+i find:
+
+    EXTRALIBS = -ldb-4.2 -L/usr/local/cyrus-sasl/lib -lsasl2 
+-L/usr/local/ssl/lib -L/usr/local/ssl/lib -lssl -lcrypto
+
+and
+
+    LDLOADLIBS = -ldb-4.2 -L/usr/local/cyrus-sasl/lib -lsasl2 
+-L/usr/local/ssl/lib -L/usr/local/ssl/lib -lssl -lcrypto
+
+NOTE: *NO* prepended &quot;-L/usr/lib&quot;
+
+a subsequent:
+
+    make install
+
+goes smoothly, and a check of the rebuilt bin:
+
+    otool -L /usr/local/cyrus-imap/bin/imtest
+
+shows what I expected the first time around:
+
+               Load command 5
+        cmd LC_LOAD_DYLIB
+               cmdsize 80
+        name /usr/local/cyrus-sasl/lib/libsasl2.2.dylib (offset 24)
+
+now linked against the SASL *I* built ...
+
+I&apos;d suggest that the code should be mod&apos;d to pull SASL2 from where it&apos;s 
+told to EVEN IN THE EVENT that another lib (e.g., dbd) is being pulled 
+from /usr.
+
+thx,
+
+richard</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

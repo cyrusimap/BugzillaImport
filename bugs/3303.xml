@@ -1,0 +1,191 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3303</bug_id>
+          
+          <creation_ts>2010-11-04 06:42 EDT</creation_ts>
+          <short_desc>Mailbox index lock lost during DUMP</short_desc>
+          <delta_ts>2011-06-21 17:20:12 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.9</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-11-04 06:42:21 EDT</bug_when>
+            <thetext>Created an attachment (id=1316)
+patch to prevent cyrus.index lock loss during mailbox dumping
+
+When the dump feature is used in IMAP (e.g. DUMP or XFER command), the lock on the mailbox index file is lost while data are dumped.
+
+The dump feature (imap/mbdump.c file) processes the following mailbox data, as of cyrus 2.3.x and 2.4.x:
+ 1. cyrus.{header,index,cache} files
+ 2. message files (files which name is of the form uid.)
+ 3. other metadata like annotations etc.
+Note: in previous cyrus versions (at least 2.1.x), the cyrus.{header,index,cache} files were processed after message files, like other metadata.
+
+Each file is processed the same way:
+ 1. File is opened: new file descriptor is obtained
+ 2. From file desciptor, file content is mmapped
+ 3. mmap data is sent over protocol stream
+ 4. File descriptor is closed
+
+When mailbox dumping is requested, directly with the DUMP IMAP command, or as part of the XFER IMAP command actions, a lock is held on the mailbox. As of cyrus 2.4.x, there is a shared lock for the mailbox, and an exclusive lock (XFER) or shared lock (DUMP) on the mailbox cyrus.index file.
+However, the POSIX specification requests that locks associated with a file for a given process are removed when any file descriptor for that file is closed by that process, even if the lock was never requested for that file descriptor. So, when the cyrus.index file is dumped, the associated lock is &apos;lost&apos;.
+
+
+The problem is then the following: if a mail is being received (LMTP) for this mailbox while it is being dumped, the mail can be stored in that mailbox since the cyrus.index lock is lost. We then have the following situations:
+ - the dumped data does not contain any trace of the received mail
+ - the dumped data contains the mail file, but the cyrus.index (and possibly the cyrus.cache) does not have any information on it (since the lock was still held on cyrus.index while it was being dumped)
+The worst situation happens for the XFER command, which deletes the local mailbox once transfer is complete: the newly arrived mail is then either lost, or physically present but inaccessible (no section in the cyrus.index file) on the new mailbox host.
+
+
+The attached patch (against cyrus 2.4.2) contains the following change: when processing the cyrus.index, it uses the already mmapped data (from the mailbox structure) instead of open/mmap/close. It also does the same for the cyrus.cache data if already mmapped in memory.
+Feel free to analyze/comment/alter this patch, since we don&apos;t use 2.4.x versions yet (still with 2.3.x) and we may have missed some important points.
+
+
+As a side note, I think there are far fewer chances to encounter this issue when using the XFER command on cyrus 2.3.x, because the mailbox entry state was set to &apos;MOVING&apos; right before dumping the mailbox: theorically the issue would thus be encountered during a race-condition between the LMTP process and XFER command.
+However, the DUMP IMAP command (which we uses frequently) can trigger this issue far more often.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-13 07:12:00 EDT</bug_when>
+            <thetext>Hi - this is a really good catch actually.  I thought the index namelock should be enough, but I don&apos;t think we grab an exclusive namelock.
+
+Maybe the correct approach is actually an exclusive namelock, so the cyrus.index lock doesn&apos;t matter.
+
+But still - we have it opened and mapped.  Using that data is sane.
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 07:53:24 EDT</bug_when>
+            <thetext>Your patch had to be modified somewhat to apply on top of 2.4.8.  Applied now.
+
+Thanks,
+
+Bron.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1316</attachid>
+            <date>2010-11-04 06:42 EDT</date>
+            <desc>patch to prevent cyrus.index lock loss during mailbox dumping</desc>
+            <filename>cyrus-dump_lock_fix-2.4.2.patch</filename>
+            <type>text/plain</type>
+            <size>3755</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuNC4yLnZhbmlsbGEvaW1hcC9tYmR1bXAuYwkyMDEwLTEwLTE5IDA1
+OjA4OjI4LjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQtMi40LjIvaW1hcC9tYmR1bXAu
+YwkyMDEwLTExLTA0IDEwOjQyOjE5LjAwMDAwMDAwMCArMDEwMApAQCAtMTUyLDcgKzE1Miw4IEBA
+CiAKIHN0YXRpYyBpbnQgZHVtcF9maWxlKGludCBmaXJzdCwgaW50IHN5bmMsCiAJCSAgICAgc3Ry
+dWN0IHByb3RzdHJlYW0gKnBpbiwgc3RydWN0IHByb3RzdHJlYW0gKnBvdXQsCi0JCSAgICAgY29u
+c3QgY2hhciAqZmlsZW5hbWUsIGNvbnN0IGNoYXIgKmZ0YWcpCisJCSAgICAgY29uc3QgY2hhciAq
+ZmlsZW5hbWUsIGNvbnN0IGNoYXIgKmZ0YWcsCisJCSAgICAgY29uc3QgY2hhciAqZmJhc2UsIHVu
+c2lnbmVkIGxvbmcgZmxlbikKIHsKICAgICBpbnQgZmlsZWZkOwogICAgIGNvbnN0IGNoYXIgKmJh
+c2U7CkBAIC0xNjIsMjUgKzE2Myw0MiBAQAogCiAgICAgLyogbWFwIGZpbGUgKi8KICAgICBzeXNs
+b2coTE9HX0RFQlVHLCAid2FudGluZyB0byBkdW1wICVzIiwgZmlsZW5hbWUpOwotICAgIGZpbGVm
+ZCA9IG9wZW4oZmlsZW5hbWUsIE9fUkRPTkxZLCAwNjY2KTsKLSAgICBpZiAoZmlsZWZkID09IC0x
+KSB7Ci0JLyogSWYgYW4gb3B0aW9uYWwgZmlsZSBkb2Vzbid0IGV4aXN0LCBza2lwIGl0ICovCi0J
+aWYgKGVycm5vID09IEVOT0VOVCkgcmV0dXJuIDA7Ci0Jc3lzbG9nKExPR19FUlIsICJJT0VSUk9S
+OiBvcGVuIG9uICVzOiAlbSIsIGZpbGVuYW1lKTsKLQlyZXR1cm4gSU1BUF9TWVNfRVJST1I7Ci0g
+ICAgfQorICAgIGlmIChmYmFzZSkgeworCS8qIGFscmVhZHkgbWFwcGVkICovCisJYmFzZSA9IGZi
+YXNlOworCisJLyogd2UgbmVlZCB0byBjaGVjayByZWFsIGZpbGUgc2l6ZSBzaW5jZSBhY3R1YWwg
+bW1hcCBzaXplIG1heSBiZSBsYXJnZXIgKi8KKwlpZiAoc3RhdChmaWxlbmFtZSwgJnNidWYpID09
+IC0xKSB7CisJICAgIHN5c2xvZyhMT0dfRVJSLCAiSU9FUlJPUjogc3RhdCBvbiAlczogJW0iLCBm
+aWxlbmFtZSk7CisJICAgIGZhdGFsKCJjYW4ndCBzdGF0IG1lc3NhZ2UgZmlsZSIsIEVDX09TRklM
+RSk7CisJfQorCWlmIChzYnVmLnN0X3NpemUgPiBmbGVuKSB7CisJICAgc3lzbG9nKExPR19FUlIs
+ICJJT0VSUk9SOiBzaXplIG1pc21hdGNoIG9uICVzIiwgZmlsZW5hbWUpOworCSAgIHJldHVybiBJ
+TUFQX1NZU19FUlJPUjsKKwl9CisJbGVuID0gc2J1Zi5zdF9zaXplOworICAgIH0KKyAgICBlbHNl
+IHsKKwlmaWxlZmQgPSBvcGVuKGZpbGVuYW1lLCBPX1JET05MWSwgMDY2Nik7CisJaWYgKGZpbGVm
+ZCA9PSAtMSkgeworCSAgICAvKiBJZiBhbiBvcHRpb25hbCBmaWxlIGRvZXNuJ3QgZXhpc3QsIHNr
+aXAgaXQgKi8KKwkgICAgaWYgKGVycm5vID09IEVOT0VOVCkgcmV0dXJuIDA7CisJICAgIHN5c2xv
+ZyhMT0dfRVJSLCAiSU9FUlJPUjogb3BlbiBvbiAlczogJW0iLCBmaWxlbmFtZSk7CisJICAgIHJl
+dHVybiBJTUFQX1NZU19FUlJPUjsKKwl9CiAgICAgCi0gICAgaWYgKGZzdGF0KGZpbGVmZCwgJnNi
+dWYpID09IC0xKSB7Ci0Jc3lzbG9nKExPR19FUlIsICJJT0VSUk9SOiBmc3RhdCBvbiAlczogJW0i
+LCBmaWxlbmFtZSk7Ci0JZmF0YWwoImNhbid0IGZzdGF0IG1lc3NhZ2UgZmlsZSIsIEVDX09TRklM
+RSk7Ci0gICAgfQkKKwlpZiAoZnN0YXQoZmlsZWZkLCAmc2J1ZikgPT0gLTEpIHsKKwkgICAgc3lz
+bG9nKExPR19FUlIsICJJT0VSUk9SOiBmc3RhdCBvbiAlczogJW0iLCBmaWxlbmFtZSk7CisJICAg
+IGZhdGFsKCJjYW4ndCBmc3RhdCBtZXNzYWdlIGZpbGUiLCBFQ19PU0ZJTEUpOworCX0JCiAKLSAg
+ICBiYXNlID0gTlVMTDsKLSAgICBsZW4gPSAwOworCWJhc2UgPSBOVUxMOworCWxlbiA9IDA7CiAK
+LSAgICBtYXBfcmVmcmVzaChmaWxlZmQsIDEsICZiYXNlLCAmbGVuLCBzYnVmLnN0X3NpemUsIGZp
+bGVuYW1lLCBOVUxMKTsKKwltYXBfcmVmcmVzaChmaWxlZmQsIDEsICZiYXNlLCAmbGVuLCBzYnVm
+LnN0X3NpemUsIGZpbGVuYW1lLCBOVUxMKTsKIAotICAgIGNsb3NlKGZpbGVmZCk7CisJY2xvc2Uo
+ZmlsZWZkKTsKKyAgICB9CiAKICAgICAvKiBzZW5kOiBuYW1lLCBzaXplLCBhbmQgY29udGVudHMg
+Ki8KICAgICBpZiAoZmlyc3QpIHsKQEAgLTIwNSw3ICsyMjMsNyBAQAogCQkgICAgZnRhZywgbGVu
+LCAoc3luYyA/ICIrIiA6ICIiKSk7CiAgICAgfQogICAgIHByb3Rfd3JpdGUocG91dCwgYmFzZSwg
+bGVuKTsKLSAgICBtYXBfZnJlZSgmYmFzZSwgJmxlbik7CisgICAgaWYgKCFmYmFzZSkgbWFwX2Zy
+ZWUoJmJhc2UsICZsZW4pOwogCiAgICAgcmV0dXJuIDA7CiB9CkBAIC0yNzUsOSArMjkzLDMxIEBA
+CiAKICAgICAvKiBEdW1wIGN5cnVzIGRhdGEgZmlsZXMgKi8KICAgICBmb3IgKGRmID0gZGF0YV9m
+aWxlczsgZGYtPm1ldGFuYW1lOyBkZisrKSB7CisJY29uc3QgY2hhciAqZmJhc2UgPSBOVUxMOwor
+CXVuc2lnbmVkIGxvbmcgZmxlbiA9IDA7CisKKwlzd2l0Y2ggKGRmLT5tZXRhbmFtZSkgeworCWNh
+c2UgTUVUQV9JTkRFWDoKKwkgICAgaWYgKG1haWxib3gtPmluZGV4X2Jhc2UpIHsKKwkJZmJhc2Ug
+PSBtYWlsYm94LT5pbmRleF9iYXNlOworCQlmbGVuID0gbWFpbGJveC0+aW5kZXhfbGVuOworCSAg
+ICB9CisJICAgIGJyZWFrOworCisJY2FzZSBNRVRBX0NBQ0hFOgorCSAgICBpZiAobWFpbGJveC0+
+Y2FjaGVfYnVmLnMpIHsKKwkJZmJhc2UgPSBtYWlsYm94LT5jYWNoZV9idWYuczsKKwkJZmxlbiA9
+IG1haWxib3gtPmNhY2hlX2J1Zi5sZW47CisJICAgIH0KKwkgICAgYnJlYWs7CisKKwlkZWZhdWx0
+OgorCSAgICBicmVhazsKKwl9CisKIAlmbmFtZSA9IG1haWxib3hfbWV0YV9mbmFtZShtYWlsYm94
+LCBkZi0+bWV0YW5hbWUpOwogCi0JciA9IGR1bXBfZmlsZShmaXJzdCwgIXRhZywgcGluLCBwb3V0
+LCBmbmFtZSwgZGYtPmZuYW1lKTsKKwlyID0gZHVtcF9maWxlKGZpcnN0LCAhdGFnLCBwaW4sIHBv
+dXQsIGZuYW1lLCBkZi0+Zm5hbWUsIGZiYXNlLCBmbGVuKTsKIAlpZiAocikgZ290byBkb25lOwog
+CiAJZmlyc3QgPSAwOwpAQCAtMzAzLDcgKzM0Myw3IEBACiAJLyogY29uc3RydWN0IHBhdGgvZmls
+ZW5hbWUgKi8KIAlmbmFtZSA9IG1haWxib3hfbWVzc2FnZV9mbmFtZShtYWlsYm94LCB1aWQpOwog
+Ci0JciA9IGR1bXBfZmlsZSgwLCAhdGFnLCBwaW4sIHBvdXQsIGZuYW1lLCBuYW1lKTsKKwlyID0g
+ZHVtcF9maWxlKDAsICF0YWcsIHBpbiwgcG91dCwgZm5hbWUsIG5hbWUsIE5VTEwsIDApOwogCWlm
+IChyKSBnb3RvIGRvbmU7CiAgICAgfQogCkBAIC0zNDYsNyArMzg2LDcgQEAKIAkJZmF0YWwoInVu
+a25vd24gdXNlciBkYXRhIGZpbGUiLCBFQ19PU0ZJTEUpOwogCSAgICB9CiAKLQkgICAgciA9IGR1
+bXBfZmlsZSgwLCAhdGFnLCBwaW4sIHBvdXQsIGZuYW1lLCBmdGFnKTsKKwkgICAgciA9IGR1bXBf
+ZmlsZSgwLCAhdGFnLCBwaW4sIHBvdXQsIGZuYW1lLCBmdGFnLCBOVUxMLCAwKTsKIAkgICAgZnJl
+ZShmbmFtZSk7CiAJICAgIGlmIChyKSBnb3RvIGRvbmU7CiAJfQpAQCAtMzg4LDcgKzQyOCw3IEBA
+CiAJCQkJIHNpZXZlX3BhdGgsIG5leHQtPmRfbmFtZSk7CiAKIAkJCS8qIGR1bXAgZmlsZSAqLwot
+CQkJciA9IGR1bXBfZmlsZSgwLCAhdGFnLCBwaW4sIHBvdXQsIGZpbGVuYW1lLCB0YWdfZm5hbWUp
+OworCQkJciA9IGR1bXBfZmlsZSgwLCAhdGFnLCBwaW4sIHBvdXQsIGZpbGVuYW1lLCB0YWdfZm5h
+bWUsIE5VTEwsIDApOwogCQkJaWYgKHIpIGdvdG8gZG9uZTsKIAkJICAgIH0KIAkJfQo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

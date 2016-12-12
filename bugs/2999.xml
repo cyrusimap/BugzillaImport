@@ -1,0 +1,486 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2999</bug_id>
+          
+          <creation_ts>2007-10-18 12:21 EDT</creation_ts>
+          <short_desc>sync_client and dot in username with unixhierarchysep: yes</short_desc>
+          <delta_ts>2010-10-25 18:46:43 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>kleo@netbox.cz</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>rudy.gevaert@ugent.be</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-18 12:21:14 EDT</bug_when>
+            <thetext>Created an attachment (id=960)
+patch of sync_client.c for dot in username and unixhierarchysep: yes
+
+I think a found a bug in processing of replication of creation a neu user in sync_client.c with unixhierarchysep: yes and   altnamespace: yes.
+
+When i create user with cyradm and in the user name is a dot  like &quot;cm user/test.1&quot; , the user mailbox is create localy, but the user is not replicated and  sync_client sent only &quot;RESET test.1&quot; to syncserver on other host.
+
+The problem is , that sync_client.c translates this username to internal mboxname user.test.1 [on line 2514 ... &apos;(sync_namespace.mboxname_tointernal)(&amp;sync_namespace, &quot;INBOX&quot;,user, buf);&apos; ] for existence check,
+which does not exit , because it shoult by &quot;user.test^1&quot;, which exist, and then sync_client goes to bail out and sents only &quot;RESET test.1&quot;.
+
+I made a small patch and now it works for me. I&apos;m now testing, if my patch is not breaking something other.
+
+I need using &quot;.&quot; in username for our new mailsystem and i think it should by no problem to fix this.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-18 12:23:10 EDT</bug_when>
+            <thetext>This has already been fixed in CVS.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-18 12:27:51 EDT</bug_when>
+            <thetext>(In reply to comment #1)
+&gt; This has already been fixed in CVS.
+&gt; 
+
+when was it fixed ??? i&apos;m testing cvs version
+
+sync_client.c version is:
+  * $Id: sync_client.c,v 1.27 2007/10/12 18:11:37 murch Exp $ 
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-18 12:31:32 EDT</bug_when>
+            <thetext>(In reply to comment #1)
+&gt; This has already been fixed in CVS.
+&gt; 
+
+i have to :
+
+virtdomains: on  and no defaultdomain</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-18 12:37:10 EDT</bug_when>
+            <thetext>i see the same problem  with username &quot;test.1@test.loc&quot; . sync_client sent only &quot;RESET test.1@test.loc&quot;
+then 
+when i use &quot;sam user/test.1@test.loc cyrus all&quot;  the user is created on  second system ...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-18 12:40:44 EDT</bug_when>
+            <thetext>My mistake.  I looked quickly and assumed that you were talking about commandline arguments.  The services SHOULD be logging stuff using the internal namespace.  I&apos;ll take a look and see if the bug is in imapd or sync_client.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-18 12:46:48 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+&gt; My mistake.  I looked quickly and assumed that you were talking about
+&gt; commandline arguments.  The services SHOULD be logging stuff using the internal
+&gt; namespace.  I&apos;ll take a look and see if the bug is in imapd or sync_client.
+&gt; 
+
+i made small patch which resolved this problem for me, but i could by wrong with the real problem source.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-18 13:24:42 EDT</bug_when>
+            <thetext>Try the following patch instead.
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.529;r2=1.530</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-19 10:41:42 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; Try the following patch instead.
+&gt; 
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.529;r2=1.530
+&gt; 
+
+it works for user without domain:
+
+cyradm_1: cm user/test.2
+cyradm_1: lm
+user/test.2 (\HasNoChildren)
+
+sends to syslog &quot;cyrus1 cyrus/sync_client[17500]: USER test^2&quot; and   &quot;USER test^2&quot; to syncserver , response is &quot;NO IMAP_MAILBOX_NONEXISTENT Failed to access inbox for test^2: Mailbox does not exist&quot; then &quot;RESET test^2&quot; and then &quot;!CREATE user.test^2 default 1e87d3f44718be87 &quot;test.2     lrswipkxtecda  &quot; 0 1 1192803975&quot; ...  and the new user is treplicated.
+
+cyradm_2: lm
+user/test.2 (\HasNoChildren)
+
+
+
+BUT it does not work for user with domain, part of the domain is lost:
+
+
+cyradm_1: cm user/kleo.1@test.cz
+cyradm_1: lm
+user/kleo.1@test.cz (\HasNoChildren)
+
+sends to syslog &quot;cyrus1 cyrus/sync_client[17500]: USER cz!user.kleo^1&quot;  and to syncserver on second host only &quot;RESET cz!user.kleo^1&quot; , because there is no user &quot;cz!user.kleo^1&quot; on host1. The domainname has lost one part (&quot;test&quot;)  of created username &quot;kleo.1@test.cz&quot;.
+
+
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rudy Gevaert">rudy.gevaert@ugent.be</who>
+            <bug_when>2007-10-22 02:22:35 EDT</bug_when>
+            <thetext>Hi,
+
+I&apos;m running rc3. I see the same problem.  When a mailbox is created (like rudy.user@domain.com) the mailbox isn&apos;t create on the replica.  As soon as I issue a sam (or I think if the mailbox is accessed on the master) it&apos;s in sync.
+
+When doing sam:
+
+Oct 22 08:19:19 kavula kavula/sync_client[6460]: SETACL received NO response: SetAcl Failed for dict.ugent.be!user.arsene^wauters: Mailbox does not exist
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-22 03:07:04 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; Try the following patch instead.
+&gt; 
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.529;r2=1.530
+&gt; 
+
+i played more with cyrus and found interesting detail.
+
+user createt with cyradm:
+
+cyradm_1: cm user/kleo.point1.point2@dot1.dot2.dot3.cz 
+cyradm_1: lm 
+user/kleo.point1.point2@dot1.dot2.dot3.cz (\HasNoChildren)
+
+localy created OK, but in sync_client sends to syslog:
+
+     cyrus1 cyrus/sync_client[18830]: USER dot2.dot3.cz!user.kleo^point1^point2
+
+In domainame is a part &quot;dot1.&quot; lost and sync_client sends logicaly only reset to syncserver - &quot;RESET dot2.dot3.cz!user.kleo^point1^point2&quot;
+
+where is the first part of domainname  lost ???</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-23 08:04:30 EDT</bug_when>
+            <thetext>(In reply to comment #10)
+&gt; (In reply to comment #7)
+&gt; &gt; Try the following patch instead.
+&gt; &gt; 
+&gt; &gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.529;r2=1.530
+&gt; &gt; 
+&gt; 
+&gt; i played more with cyrus and found interesting detail.
+&gt; 
+&gt; user createt with cyradm:
+&gt; 
+&gt; cyradm_1: cm user/kleo.point1.point2@dot1.dot2.dot3.cz 
+&gt; cyradm_1: lm 
+&gt; user/kleo.point1.point2@dot1.dot2.dot3.cz (\HasNoChildren)
+&gt; 
+&gt; localy created OK, but in sync_client sends to syslog:
+&gt; 
+&gt;      cyrus1 cyrus/sync_client[18830]: USER dot2.dot3.cz!user.kleo^point1^point2
+&gt; 
+&gt; In domainame is a part &quot;dot1.&quot; lost and sync_client sends logicaly only reset
+&gt; to syncserver - &quot;RESET dot2.dot3.cz!user.kleo^point1^point2&quot;
+&gt; 
+&gt; where is the first part of domainname  lost ???
+
+
+i tested a bit more :
+
+cyradm_1&gt; cm user/kleo.one@dot_one.dot_two.dot_3.cz
+
+cyradm_1&gt; lm
+user/kleo.one@dot_one.dot_two.dot_3.cz (\HasNoChildren)
+
+user mailbox is created OK, but sync_client writes to syslog:
+
+cyrus1 cyrus/sync_client[19439]: USER ne.dot_two.dot_3.cz!user.kleo^one
+
+and sents to syncserver on net :
+
+RESET ne.dot_two.dot_3.cz!user.kleo^one
+
+It is lost not the first part of domainname , but only first 5 chars, which was on my other test the first part of domain + &quot;.&quot;   .... 
+
+
+
+
+&gt; 
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-23 12:59:56 EDT</bug_when>
+            <thetext>I believe this is finally fixed with the following patches:
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.530;r2=1.531
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/mboxname.c.diff?r1=1.40;r2=1.41
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/mboxname.h.diff?r1=1.14;r2=1.15</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-24 03:33:44 EDT</bug_when>
+            <thetext>(In reply to comment #12)
+&gt; I believe this is finally fixed with the following patches:
+&gt; 
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.530;r2=1.531
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/mboxname.c.diff?r1=1.40;r2=1.41
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/mboxname.h.diff?r1=1.14;r2=1.15
+&gt; 
+
+creating user with domain is now OK:
+
+cyradm_1&gt; cm user/kleo.1.2.3@dot_one.dot_two.dot_3.cz
+cyradm_1&gt; lm
+user/kleo.1.2.3@dot_one.dot_two.dot_3.cz (\HasNoChildren)  
+
+and on second server
+
+cyradm_2&gt; lm
+user/kleo.1.2.3@dot_one.dot_two.dot_3.cz (\HasNoChildren)
+
+in syslog:
+
+cyrus1 cyrus/sync_client[21707]: USER kleo^1^2^3@dot_one.dot_two
+.dot_3.cz
+cyrus1 cyrus/sync_client[21707]: USER received NO response: IMAP
+_MAILBOX_NONEXISTENT Failed to access inbox for kleo^1^2^3@dot_one.dot_two.dot_3
+.cz: Mailbox does not exist
+
+
+on net:
+
+&gt; LOCK
+&lt; OK Locked
+
+&gt; USER kleo^1^2^3@dot_one.dot_two.dot_3.cz
+&lt; NO IMAP_MAILBOX_NONEXISTENT Failed to access inbox for kleo^1^2^3@dot_one.dot_two.dot_3.cz: Mailbox does not exist
+
+&gt; RESET kleo^1^2^3@dot_one.dot_two.dot_3.cz
+&lt; OK Account reset
+
+&gt; ICREATE dot_one.dot_two.dot_3.cz!user.kleo^1^2^3 default 44a0e483471eece0 &quot;kleo.1.2.3@dot_one.dot_two.dot_3.cz   lrswipkxtecda   &quot; 0 1 1193 ...
+&lt; OK Create completed
+
+&gt; LIST_ANNOTATIONS dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+&lt; OK List_annotations completed
+
+&gt; SELECT dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+&lt; OK 44a0e483471eece0 0
+
+&gt; OUIDLAST 0 0
+&lt; OK Uidlast succeeded
+
+&gt; UNLOCK
+&lt; OK [CONTINUE] Unlocked
+
+
+then a checked :
+
+cyradm_1&gt; sam user/kleo.1.2.3@dot_one.dot_two.dot_3.cz cyrus all
+cyradm_1&gt; lam
+localhost&gt; lam  user/kleo.1.2.3@dot_one.dot_two.dot_3.cz
+kleo.1.2.3@dot_one.dot_two.dot_3.cz lrswipkxtecda
+cyrus lrswipkxtecda
+
+on second server:
+
+cyradm_2&gt; lam kleo.1.2.3@dot_one.dot_two.dot_3.cz
+kleo.1.2.3@dot_one.dot_two.dot_3.cz lrswipkxtecda
+cyrus lrswipkxtecda
+
+in syslog:
+
+cyrus1 cyrus/sync_client[21712]: SETACL: dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+
+on net:
+
+&gt; LOCK
+&lt; OK Locked
+
+&gt; SETACL dot_one.dot_two.dot_3.cz!user.kleo^1^2^3 &quot;kleo.1.2.3@dot_one.dot_two.dot_3.cz    lrswipkxtecda   cyrus   lrswipkxtecda   &quot;
+&lt; OK SetAcl Suceeded
+
+&gt; UNLOCK
+&lt; OK [CONTINUE] Unlocked
+
+
+but delete mbox does not work:
+
+cyradm_1&gt; dm  user/kleo.1.2.3@dot_one.dot_two.dot_3.cz
+cyradm_1&gt; lm
+cyradm_1&gt;
+
+on second server
+
+cyradm_2&gt; lm
+cyradm_2&gt;
+
+the mailbox is deleted
+
+BUT:
+
+
+in syslog:
+Oct 24 09:12:20 cyrus1 cyrus/imap[21709]: Deleted mailbox dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+Oct 24 09:12:20 cyrus1 cyrus/imap[21709]: can not unlink /var/lib/cyrus/domain/d/dot_one.dot_two.dot_3.cz/user/k/kleo^1^2^3.seen: No such file or directory
+Oct 24 09:12:20 cyrus1 cyrus/imap[21709]: can not unlink /var/lib/cyrus/domain/d/dot_one.dot_two.dot_3.cz/user/k/kleo^1^2^3.mboxkey: No such file or directory
+Oct 24 09:12:20 cyrus1 cyrus/sync_client[21712]: MAILBOX dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+Oct 24 09:12:20 cyrus1 cyrus/sync_client[21712]: USER kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz
+Oct 24 09:12:20 cyrus1 cyrus/sync_client[21712]: RESET received NO response: Failed to reset account csync@: Invalid mailbox name
+Oct 24 09:12:22 cyrus1 cyrus/sync_client[21712]: USER kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz
+Oct 24 09:12:22 cyrus1 cyrus/sync_client[21712]: RESET received NO response: Failed to reset account csync@: Invalid mailbox name
+Oct 24 09:12:26 cyrus1 cyrus/sync_client[21712]: USER kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz
+Oct 24 09:12:26 cyrus1 cyrus/sync_client[21712]: RESET received NO response: Failed to reset account csync@: Invalid mailbox name
+Oct 24 09:12:26 cyrus1 cyrus/sync_client[21712]: Error in do_sync(): bailing out!
+Oct 24 09:12:26 cyrus1 cyrus/sync_client[21712]: Processing sync log file /var/lib/cyrus/sync/log-21706 failed: The remote Server(s) denied the operation
+Oct 24 09:12:26 cyrus1 cyrus/sync_client[21706]: process 21712 exited, status 1
+
+
+
+on net:
+
+&gt; LOCK
+&lt; OK Locked
+
+&gt; MAILBOXES dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+&lt; ** 44a0e483471eece0 dot_one.dot_two.dot_3.cz!user.kleo^1^2^3 &quot;kleo.1.2.3@dot_one.dot_two.dot_3.cz       lrswipkxtecda   cyrus   lrswipkxtecda   &quot;
+
+&gt; DELETE dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+&lt; OK Delete completed
+
+&gt; RESET kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz
+&lt; NO Failed to reset account csync@: Invalid mailbox name
+
+&gt; RESET kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz
+&lt; NO Failed to reset account csync@: Invalid mailbox name
+
+&gt; RESET kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz
+&lt; NO Failed to reset account csync@: Invalid mailbox name
+
+&gt; UNLOCK
+&lt; OK [CONTINUE] Unlocked
+
+&gt; NOOP
+&lt; OK Noop completed
+
+and the sync_client exited with status 1 and there is /var/lib/cyrus/sync/log-21706 :
+
+USER kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz
+MAILBOX dot_one.dot_two.dot_3.cz!user.kleo^1^2^3
+
+
+
+I see the problem that imapd sent command &quot;USER kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz&quot; to sync_log and sync_client can&apos;t find such mailbox and sents &quot;RESET kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz&quot; to syncserver a because there is no mailbox of this name and then te sync_client exits.
+
+Where is the mailboxname &quot;kleo^1^2^3@dot_one.dot_two.dot_3.cz@dot_one.dot_two.dot_3.cz&quot; comming form ??? 
+
+Why is there domainname twice ??
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-24 06:55:31 EDT</bug_when>
+            <thetext>Apply this to fix the DELETE issue:
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.531;r2=1.532</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">kleo@netbox.cz</who>
+            <bug_when>2007-10-24 10:57:29 EDT</bug_when>
+            <thetext>(In reply to comment #14)
+&gt; Apply this to fix the DELETE issue:
+&gt; 
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r1=1.531;r2=1.532
+&gt; 
+
+it seems  to work now .... 
+
+i do more test tomorrow ...
+
+should delayed expunge work in this scenario (virt. nomains, altnamespace, unixhierarchysep .) ??
+
+how are the deleted mailboxes and messages named ??
+
+thanks for your help</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-24 11:33:57 EDT</bug_when>
+            <thetext>Delayed expunge should be fine since they are handled with MAILBOX events, not USER events.  The problems that you were having were USER events.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>960</attachid>
+            <date>2007-10-18 12:21 EDT</date>
+            <desc>patch of sync_client.c for dot in username and unixhierarchysep: yes</desc>
+            <filename>sync_client.c_patch</filename>
+            <type>text/plain</type>
+            <size>769</size>
+            <attacher>kleo@netbox.cz</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkX2N2cy9pbWFwL3N5bmNfY2xpZW50LmMJMjAwNy0xMC0xNSAxOTozODoy
+OC4wMDAwMDAwMDAgKzAyMDAKKysrIGN5cnVzLWltYXBkX2N2c193b3JrL2ltYXAvc3luY19jbGll
+bnQuYwkyMDA3LTEwLTE4IDE4OjM3OjU5LjAwMDAwMDAwMCArMDIwMApAQCAtMjUxMSw4ICsyNTEx
+LDE5IEBACiAgICAgaWYgKHZlcmJvc2VfbG9nZ2luZykKICAgICAgICAgc3lzbG9nKExPR19JTkZP
+LCAiVVNFUiAlcyIsIHVzZXIpOwogCisKKyAgICBtYm94bmFtZV9oaWVyc2VwX3RvaW50ZXJuYWwo
+JnN5bmNfbmFtZXNwYWNlLCB1c2VyLAorICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgIGNvbmZpZ192aXJ0ZG9tYWlucyA/CisgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc3RyY3Nwbih1c2VyLCAiQCIpIDogMCk7CisK
+ICAgICAoc3luY19uYW1lc3BhY2UubWJveG5hbWVfdG9pbnRlcm5hbCkoJnN5bmNfbmFtZXNwYWNl
+LCAiSU5CT1giLAogCQkJCQkgIHVzZXIsIGJ1Zik7CisKKyAgICBpZiAodmVyYm9zZV9sb2dnaW5n
+KQorICAgICAgICBzeXNsb2coTE9HX0lORk8sICJLTEVPOiBVU0VSICVzICxidWYgICVzIix1c2Vy
+ICxidWYpOworCisKKwogICAgIHIgPSBtYWlsYm94X29wZW5faGVhZGVyKGJ1ZiwgMCwgJm0pOwog
+ICAgIGlmIChyID09IElNQVBfTUFJTEJPWF9OT05FWElTVEVOVCkgewogCS8qIHVzZXIgaGFzIGJl
+ZW4gcmVtb3ZlZCwgUkVTRVQgc2VydmVyICovCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

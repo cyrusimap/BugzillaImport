@@ -1,0 +1,287 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3402</bug_id>
+          
+          <creation_ts>2011-02-17 08:30 EDT</creation_ts>
+          <short_desc>Cyrus LMTP is a source for backscatter</short_desc>
+          <delta_ts>2011-07-05 17:23:01 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.10</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Simon Matter">simon.matter@invoca.ch</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>hmh@debian.org</cc>
+    
+    <cc>simon.matter@invoca.ch</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2011-02-17 08:30:51 EDT</bug_when>
+            <thetext>Created an attachment (id=1357)
+munge 8bit in envelope
+
+Cyrus LMTP becomes a source for backscatter because popular MTAs like Postfix allow 8bit crap in local-part of MAIL FROM addresses. MTAs are a bit relaxed to accept such crap for good reason. Unfortunately Cyrus LMTP is not relaxed about it and bounces. A discussion about the issue can be found here:
+
+http://marc.info/?l=postfix-users&amp;m=120168533827364&amp;w=2
+
+I have now patched LMTP to replace 8bit characters to &apos;X&apos; in local-part of envelope addresses if munge8bit is enabled. That way such crap is handled the same way like address headers and it doesn&apos;t bounce.
+
+Regards,
+Simon</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-02-17 16:07:54 EDT</bug_when>
+            <thetext>I don&apos;t like the override of munge8bit for this... unlike the other stuff we munge, these are always invalid email...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2011-02-18 05:41:06 EDT</bug_when>
+            <thetext>Do you have other suggestions on the Cyrus side?
+
+I consider most (if not all) mails which are munged somehow by munge8bit as invalid.
+
+Cyrus IMAPd behind Postfix or Exim creates a nice backscatter system, which itself sends out such broken crap because the bounces are sent back to the invalid MAIL FROM addresses. They are then either accepted by the innocent remote system or stuck in the outgoing queue.
+
+Popular MTA in commonly used configuration accept such crap:
+Postfix:  Yes
+Exim:     Yes
+Sendmail: No
+
+Quickly tested it, master.debian.org which is the main MX for debian.org happily accepts such mails, the same applies to the public MX for fastmail.fm. They may of course filter such crap later but then it&apos;s too late.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-02-18 07:53:17 EDT</bug_when>
+            <thetext>I don&apos;t like adding hacks to Cyrus to account for MTAs that accept invalid protocol/data.  If sites don&apos;t like the backstatter, then they should fix the MTA.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-02-18 08:07:06 EDT</bug_when>
+            <thetext>(In reply to comment #3)
+&gt; I don&apos;t like adding hacks to Cyrus to account for MTAs that accept invalid
+&gt; protocol/data.  If sites don&apos;t like the backstatter, then they should fix the
+&gt; MTA.
+
+I agree.
+
+For what it&apos;s worth, however, perhaps we can put the patch provided by Simon in a contrib/ directory, include the tidbits in the documentation, and make the application of the patch a part of the proverbial &apos;make test&apos;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2011-02-18 09:07:55 EDT</bug_when>
+            <thetext>Ken, I think the idea behind what Postfix and Exim do is inspired by RFC793: be conservative in what you do, be liberal in what you accept from others.
+
+The problem is that the combination of Cyrus and one of those MTAs provides this nice &quot;feature&quot; for spammers, and they are widely using it recently.
+
+Jeroen, you may have a look at the logs on mx01.kolabsys.com, it does spam the innocent exactly as my systems did (I&apos;ve just made it send crap to one of my own systems).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-02-18 10:40:54 EDT</bug_when>
+            <thetext>I was thinking about this one, and it is unlikely to generate Evil backscatter (i.e. backscatter that will leak out of your mail domain).
+
+The return path is invalid, the backscatter should bounce and get discarded.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2011-02-18 11:11:50 EDT</bug_when>
+            <thetext>Henrique, I&apos;m not sure I understand what you mean.
+
+(Mit Bezug zu comment #6)
+&gt; I was thinking about this one, and it is unlikely to generate Evil backscatter
+&gt; (i.e. backscatter that will leak out of your mail domain).
+
+From my point of view it does indeed leak out of our mail domain.
+
+&gt; 
+&gt; The return path is invalid, the backscatter should bounce and get discarded.
+
+No, that&apos;s exactly the problem, the return path is NOT considered invalid by those MTAs, which is why they accepted the mail when it came in. After Cyrus LMTP refuses to eat it, the MTA now tries to send the bounce back - to a completely innocent remote system.
+
+Here&apos;s the problem, our MTA sends crap, which it has received before from spammers, to innocent remote servers. That&apos;s evil, that will help you get on blacklists, will give you bad points on greylisting servers, will eat ressources on your own and foreign servers. Not good.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-02-18 11:25:22 EDT</bug_when>
+            <thetext>I still don&apos;t see how this is a Cyrus problem.  I understand the &quot;be liberal in what you accept&quot; philosophy, but in this case your MTA is accepting illegal protocol.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-02-18 12:20:45 EDT</bug_when>
+            <thetext>If my MTA is a ****tard and tries to send to &amp;#346;mæg€ol@example.com, it is not Cyrus fault.
+
+It outright violates RFC2821, section 4.1.1.* and 4.1.2.
+
+Which apparently postfix does, so it looks like we all have some MTA config bashing on our horizons.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-02-20 20:17:44 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+&gt; Jeroen, you may have a look at the logs on mx01.kolabsys.com, it does spam the
+&gt; innocent exactly as my systems did (I&apos;ve just made it send crap to one of my
+&gt; own systems).
+
+Wrong or right aside, this is exactly the same as non-delivery reports.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-02-21 17:03:43 EDT</bug_when>
+            <thetext>Well as far as I can tell from the RFCs, a MTA must NOT send to an invalid address.  Cyrus is correct in rejecting the message.  The problem is that the MTA tries to bounce to something it must not deliver to, instead of triggering the last-resort path (the double-bounce path), which usually either discards or sends the crap to the postmaster.
+
+I don&apos;t have a problem with a separate option to let Cyrus try to deliver the crap to the user, BTW.  I just would prefer it to not overload munge8bit.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2011-02-22 02:17:54 EDT</bug_when>
+            <thetext>(Mit Bezug zu comment #11)
+&gt; I don&apos;t have a problem with a separate option to let Cyrus try to deliver the
+&gt; crap to the user, BTW.  I just would prefer it to not overload munge8bit.
+
+I have updated the patch to use a separate option called &apos;lmtp_strict_rfc2821&apos;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Simon Matter">simon.matter@invoca.ch</who>
+            <bug_when>2011-02-22 02:18:54 EDT</bug_when>
+            <thetext>Created an attachment (id=1358)
+Add lmtp_strict_rfc2821 option</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-03-16 06:20:17 EDT</bug_when>
+            <thetext>Are we happy to include Simon&apos;s latest patch?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-03-21 10:14:28 EDT</bug_when>
+            <thetext>As long as it is not enabled by default, sure!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-03-21 10:16:01 EDT</bug_when>
+            <thetext>(by that, I mean that we should be strict by default, i.e. exactly what the patch does).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-29 07:29:50 EDT</bug_when>
+            <thetext>Applied to master and stable, will be in 2.4.10.
+
+I reworded the imapoptions text to make it clear that the default is &quot;on&quot;, and give a justification for being able to turn it off.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1357</attachid>
+            <date>2011-02-17 08:30 EDT</date>
+            <desc>munge 8bit in envelope</desc>
+            <filename>cyrus-imapd-2.4.6-lmtp_backscatter.patch</filename>
+            <type>text/plain</type>
+            <size>640</size>
+            <attacher>simon.matter@invoca.ch</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuNC42L2ltYXAvbG10cGVuZ2luZS5jLm9yaWcJMjAxMC0xMi0yMCAx
+NDoxNTo0OS4wMDAwMDAwMDAgKzAxMDAKKysrIGN5cnVzLWltYXBkLTIuNC42L2ltYXAvbG10cGVu
+Z2luZS5jCTIwMTEtMDItMTcgMTM6Mjc6NDkuMDAwMDAwMDAwICswMTAwCkBAIC00NjIsNiArNDYy
+LDcgQEAKIHsKICAgICBjaGFyICpwLCAqcmV0OwogICAgIGludCBsZW47CisgICAgaW50IG11bmdl
+OGJpdCA9IGNvbmZpZ19nZXRzd2l0Y2goSU1BUE9QVF9NVU5HRThCSVQpOwogCiAgICAgcCA9IHM7
+CiAKQEAgLTUwMCw2ICs1MDEsMTIgQEAKIAkJaWYgKCEqKytwKSByZXR1cm4gMDsKIAkgICAgfQog
+CSAgICBlbHNlIHsKKwkJaWYgKCpwICYgMTI4ICYmIG11bmdlOGJpdCkgeworCQkgICAgLyogdGhp
+cyBwcmV2ZW50cyB1cyBmcm9tIGJlY29taW5nIGEgYmFja3NjYXR0ZXIKKwkJICAgICAgIHNvdXJj
+ZSBiZWNhdXNlIHBvcHVsYXIgTVRBcyBhbGxvdyA4Yml0IGluCisJCSAgICAgICBsb2NhbC1wYXJ0
+IG9mIGFkcmVzc2VzLiAqLworCQkgICAgKnAgPSAnWCc7CisJCX0KIAkJaWYgKCpwIDw9ICcgJyB8
+fCAoKnAgJiAxMjgpIHx8CiAJCSAgICBzdHJjaHIoIjw+KClbXVxcLDs6XCIiLCAqcCkpIHJldHVy
+biAwOwogCSAgICB9Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1358</attachid>
+            <date>2011-02-22 02:18 EDT</date>
+            <desc>Add lmtp_strict_rfc2821 option</desc>
+            <filename>cyrus-imapd-2.4.6-lmtp_strict_rfc2821.patch</filename>
+            <type>text/plain</type>
+            <size>1696</size>
+            <attacher>simon.matter@invoca.ch</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTmF1ciBjeXJ1cy1pbWFwZC0yLjQuNi5vcmlnL2ltYXAvbG10cGVuZ2luZS5jIGN5cnVz
+LWltYXBkLTIuNC42L2ltYXAvbG10cGVuZ2luZS5jCi0tLSBjeXJ1cy1pbWFwZC0yLjQuNi5vcmln
+L2ltYXAvbG10cGVuZ2luZS5jCTIwMTAtMTItMjAgMTQ6MTU6NDkuMDAwMDAwMDAwICswMTAwCisr
+KyBjeXJ1cy1pbWFwZC0yLjQuNi9pbWFwL2xtdHBlbmdpbmUuYwkyMDExLTAyLTIyIDA3OjIzOjUx
+LjAwMDAwMDAwMCArMDEwMApAQCAtNDYyLDYgKzQ2Miw3IEBACiB7CiAgICAgY2hhciAqcCwgKnJl
+dDsKICAgICBpbnQgbGVuOworICAgIGludCBsbXRwX3N0cmljdF9yZmMyODIxID0gY29uZmlnX2dl
+dHN3aXRjaChJTUFQT1BUX0xNVFBfU1RSSUNUX1JGQzI4MjEpOwogCiAgICAgcCA9IHM7CiAKQEAg
+LTUwMCw2ICs1MDEsMTIgQEAKIAkJaWYgKCEqKytwKSByZXR1cm4gMDsKIAkgICAgfQogCSAgICBl
+bHNlIHsKKwkJaWYgKCpwICYgMTI4ICYmICFsbXRwX3N0cmljdF9yZmMyODIxKSB7CisJCSAgICAv
+KiB0aGlzIHByZXZlbnRzIHVzIGZyb20gYmVjb21pbmcgYSBiYWNrc2NhdHRlcgorCQkgICAgICAg
+c291cmNlIGlmIG91ciBNVEEgYWxsb3dzIDhiaXQgaW4gbG9jYWwtcGFydAorCQkgICAgICAgb2Yg
+YWRyZXNzZXMuICovCisJCSAgICAqcCA9ICdYJzsKKwkJfQogCQlpZiAoKnAgPD0gJyAnIHx8ICgq
+cCAmIDEyOCkgfHwKIAkJICAgIHN0cmNocigiPD4oKVtdXFwsOzpcIiIsICpwKSkgcmV0dXJuIDA7
+CiAJICAgIH0KZGlmZiAtTmF1ciBjeXJ1cy1pbWFwZC0yLjQuNi5vcmlnL2xpYi9pbWFwb3B0aW9u
+cyBjeXJ1cy1pbWFwZC0yLjQuNi9saWIvaW1hcG9wdGlvbnMKLS0tIGN5cnVzLWltYXBkLTIuNC42
+Lm9yaWcvbGliL2ltYXBvcHRpb25zCTIwMTAtMTItMjAgMTQ6MTU6NDkuMDAwMDAwMDAwICswMTAw
+CisrKyBjeXJ1cy1pbWFwZC0yLjQuNi9saWIvaW1hcG9wdGlvbnMJMjAxMS0wMi0yMiAwNzoyOToy
+Ni4wMDAwMDAwMDAgKzAxMDAKQEAgLTU4Niw2ICs1ODYsMTMgQEAKICAgIHdpbGwgY2F1c2UgdGhl
+IHVzZXIncyBtYWlsYm94IHRvIGV4Y2VlZCBpdHMgcXVvdGEuICBCeSBkZWZhdWx0LCB0aGUKICAg
+IGZhaWx1cmUgd29uJ3Qgb2NjdXIgdW50aWwgdGhlIG1haWxib3ggaXMgYWxyZWFkeSBvdmVyIHF1
+b3RhLiAqLwogCit7ICJsbXRwX3N0cmljdF9yZmMyODIxIiwgMSwgU1dJVENIIH0KKy8qIElmIGVu
+YWJsZWQsIGxtdHBkIHdpbGwgYmUgc3RyaWN0IChwZXIgUkZDIDI4MjEpIHdpdGggcmVnYXJkcyB0
+byB3aGljaAorICAgZW52ZWxvcGUgYWRkcmVzc2VzIGFyZSBhbGxvd2VkLiBXaGVuIGRpc2FibGVk
+LCA4Yml0IGNoYXJhY3RlcnMgYXJlCisgICBhbGxvd2VkIGluIHRoZSBsb2NhbC1wYXJ0IG9mIGVu
+dmVsb3BlIGFkZHJlc3NlcyBidXQgdGhleSBhcmUgY2hhbmdlZAorICAgdG8gJ1gnLiBUaGlzIGlz
+IHVzZWZ1bCB3aXRoIGNlcnRhaW4gTVRBcyBsaWtlIFBvc3RmaXggb3IgRXhpbSB3aGljaAorICAg
+YWNjZXB0IHN1Y2ggbWVzc2FnZXMuICovCisKIHsgImxtdHBzb2NrZXQiLCAie2NvbmZpZ2RpcmVj
+dG9yeX0vc29ja2V0L2xtdHAiLCBTVFJJTkcgfQogLyogVW5peCBkb21haW4gc29ja2V0IHRoYXQg
+bG10cGQgbGlzdGVucyBvbiwgdXNlZCBieSBkZWxpdmVyKDgpLiBUaGlzIHNob3VsZAogICAgbWF0
+Y2ggdGhlIHBhdGggc3BlY2lmaWVkIGluIGN5cnVzLmNvbmYoNSkuICovCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

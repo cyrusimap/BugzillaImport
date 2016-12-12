@@ -1,0 +1,78 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3601</bug_id>
+          
+          <creation_ts>2011-11-22 00:23 EDT</creation_ts>
+          <short_desc>mailbox uniqueid sometimes isn&apos;t</short_desc>
+          <delta_ts>2011-11-22 22:12:26 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-11-22 00:23:09 EDT</bug_when>
+            <thetext>Cyrus mailboxes are given a uniqueid at creation, which remains stable across mailbox renames and is different for every mailbox created.  In particular, the sequence of operations
+
+. create inbox.foo
+. delete inbox.foo
+. create inbox.foo
+
+should result in the 2nd &quot;inbox.foo&quot; mailbox having a different uniqueid to the first one.  The recently added feature which allows to key the duplicate delivery database off mailbox uniqueid implicitly relies on this behaviour.
+
+Except...if the 2nd &quot;create&quot; call happens in the same system clock second as the first, both generations of mailbox &quot;inbox.foo&quot; end up with the same uniqueid.  This is happening, *most* of the time, in test Cassandane::Cyrus::Delivery.duplicate_suppression_on_uniqueid_delete.
+
+The problem is that the uniqueid includes the uidvalidity of the mailbox, which is just a second-resolution system clock timestamp.
+
+Fortunately it turns out that the uniqueid is stored everywhere as an uninterpreted string which is compared bytewise for uniqueness.  As long as the string does not contain \0 or TAB characters, and is acceptable to getastring(), we can stick anything we like in there.  Like an RFC4122 UUID.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-11-22 22:12:26 EDT</bug_when>
+            <thetext>Fixed in
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=7596186c8fedde8fe5e672cfa82c21162e1cba7f
+
+using libuuid, where available, to generate the uniqueid string (and falling back to the legacy Cyrus algorithm otherwise).</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,268 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3394</bug_id>
+          
+          <creation_ts>2011-02-02 01:15 EDT</creation_ts>
+          <short_desc>imtest bug leads to null mechlist processing</short_desc>
+          <delta_ts>2011-04-05 07:08:48 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.6</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dan White">dwhite@olp.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+    
+    <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-02-02 01:15:19 EDT</bug_when>
+            <thetext>imtest contains a bug which processes a null mechlist when parsing the capability response. This issue only presents itself when called without a &apos;-m&apos; parameter. imtest and pop3test are not affected since they fallback to login or user/pass authentication.
+
+When either smtptest or lmtptest are called with a &apos;-m&apos; option, a bogus &apos;Authenticated&apos; response is returned, such as:
+
+$ lmtptest -p 2004 neo.olp.net
+S: 220 neo Cyrus LMTP Murder v2.3.12-Debian-2.3.12-1-5 server ready
+C: LHLO lmtptest
+S: 250-neo
+S: 250-8BITMIME
+S: 250-ENHANCEDSTATUSCODES
+S: 250-PIPELINING
+S: 250-SIZE
+S: 250-STARTTLS
+S: 250-AUTH CRAM-MD5 PLAIN GSSAPI OTP DIGEST-MD5 LOGIN
+S: 250 IGNOREQUOTA
+Authenticated.
+Security strength factor: 0
+lhlo olp.net
+250-neo
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-PIPELINING
+250-SIZE
+250-STARTTLS
+250-AUTH CRAM-MD5 PLAIN GSSAPI OTP DIGEST-MD5 LOGIN
+250 IGNOREQUOTA
+mail from:&lt;dwhite@olp.net&gt;
+430 Authentication required
+quit
+221 2.0.0 bye
+
+The attached patch fixes the issue for me. It also disables the use of the xmtp_do_auth function, which catches the case where there might not actually be a mech list, but that might not be the best fix.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-02-02 01:18:16 EDT</bug_when>
+            <thetext>Correction. The second paragraph should actually say:
+
+When either smtptest or lmtptest are called *without* a &apos;-m&apos; option, a bogus
+&apos;Authenticated&apos; response is returned, such as:</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-02-02 01:19:39 EDT</bug_when>
+            <thetext>Created an attachment (id=1353)
+Proposed fix.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2011-02-02 11:08:43 EDT</bug_when>
+            <thetext>Given that the server is returning:
+
+  S: 250-AUTH CRAM-MD5 PLAIN GSSAPI OTP DIGEST-MD5 LOGIN
+
+how is the returned mechlist null?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-02-02 11:27:14 EDT</bug_when>
+            <thetext>It&apos;d be more correct to say that imtest contains a bug in which a NULL mechlist is always (in my tests) being submitted to libsasl. At least for smtptest and lmtptest.
+
+The problem is in this section of code in ask_capability:
+
+
+    do { /* look for the end of the capabilities */
+        if (ret) {
+            free(ret);
+            ret = NULL;
+        }
+        if (prot_fgets(str, sizeof(str), pin) == NULL) {
+            if (!*str) imtest_fatal(&quot;prot layer failure&quot;);
+            else break;
+        }
+        printf(&quot;S: %s&quot;, str);
+
+        /* check for starttls */
+        if (prot-&gt;capa_cmd.tls &amp;&amp;
+            strstr(str, prot-&gt;capa_cmd.tls) != NULL) {
+            *supports_starttls = 1;
+        }
+        
+        /* check for compress */
+        if (prot-&gt;capa_cmd.compress &amp;&amp;
+            strstr(str, prot-&gt;capa_cmd.compress) != NULL) {
+            *supports_compress = 1;
+        }
+        
+        /* check for auth */
+        if (prot-&gt;capa_cmd.auth &amp;&amp;
+            (tmp = strstr(str, prot-&gt;capa_cmd.auth)) != NULL) {
+            if (prot-&gt;capa_cmd.parse_mechlist)
+                ret = prot-&gt;capa_cmd.parse_mechlist(str, prot);
+            else
+                ret = strdup(tmp+strlen(prot-&gt;capa_cmd.auth));
+        }
+
+        if (!resp) {
+            /* multiline response with no distinct end (IMAP banner) */
+            prot_NONBLOCK(pin);
+        }
+
+        /* look for the end of the capabilities */
+    } while (!resp || strncasecmp(str, resp, strlen(resp)));
+    
+    prot_BLOCK(pin);
+    return ret;
+
+
+I assume that free(ret) is there to catch a memory leak if the server should return multiple mechlists (such as with broken_sasl_auth_clients = yes in postfix), but it appears to be misplaced.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-02-02 11:39:25 EDT</bug_when>
+            <thetext>I found this bug the other day myself.  This is the fix that I came up with but haven&apos;t committed it yet.
+
+@@ -1493,10 +1493,6 @@ static char *ask_capability(struct protocol_t *prot,
+     }
+ 
+     do { /* look for the end of the capabilities */
+-	if (ret) {
+-	    free(ret);
+-	    ret = NULL;
+-	}
+ 	if (prot_fgets(str, sizeof(str), pin) == NULL) {
+ 	    if (!*str) imtest_fatal(&quot;prot layer failure&quot;);
+ 	    else break;
+@@ -1518,6 +1514,11 @@ static char *ask_capability(struct protocol_t *prot,
+ 	/* check for auth */
+ 	if (prot-&gt;capa_cmd.auth &amp;&amp;
+ 	    (tmp = strstr(str, prot-&gt;capa_cmd.auth)) != NULL) {
++	    if (ret) {
++		free(ret);
++		ret = NULL;
++	    }
++
+ 	    if (prot-&gt;capa_cmd.parse_mechlist)
+ 		ret = prot-&gt;capa_cmd.parse_mechlist(str, prot);
+ 	    else</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-03-16 06:06:27 EDT</bug_when>
+            <thetext>Ken - that looks fine, though all it really needs is a single &quot;free(ret);&quot;
+
+Which I have committed to 2.4 stable and master.  Marking this bug &quot;resolved&quot;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-03-24 19:05:14 EDT</bug_when>
+            <thetext>Bron, I don&apos;t see this fix in master or 2.4</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-03-25 05:42:53 EDT</bug_when>
+            <thetext>Setting the appropriate status so it pops up on my radar</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-03-25 12:00:16 EDT</bug_when>
+            <thetext>Committed fix to master:
+
+http://git.cyrusimap.org/cyrus-imapd/patch/?id=fb009e2dcd16855717e71c49fdc7db8fc2bf7971</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-04-05 07:08:48 EDT</bug_when>
+            <thetext>Updating milestone to reflect the branch this has been committed to.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1353</attachid>
+            <date>2011-02-02 01:19 EDT</date>
+            <desc>Proposed fix.</desc>
+            <filename>imtest-nullmechlist.patch</filename>
+            <type>text/plain</type>
+            <size>1396</size>
+            <attacher>dwhite@olp.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtcnVOIGN5cnVzLWltYXBkLTIuNC42LmJhay8vaW10ZXN0L2ltdGVzdC5jIGN5cnVzLWlt
+YXBkLTIuNC42L2ltdGVzdC9pbXRlc3QuYwotLS0gY3lydXMtaW1hcGQtMi40LjYuYmFrLy9pbXRl
+c3QvaW10ZXN0LmMJMjAxMS0wMi0wMiAwNTo0OTowOC42NjY3NzUyMjggKzAwMDAKKysrIGN5cnVz
+LWltYXBkLTIuNC42L2ltdGVzdC9pbXRlc3QuYwkyMDExLTAyLTAyIDA1OjU5OjA3LjY5OTgxODUw
+NCArMDAwMApAQCAtMTQ4NSwxMCArMTQ4NSw2IEBACiAgICAgfQogCiAgICAgZG8geyAvKiBsb29r
+IGZvciB0aGUgZW5kIG9mIHRoZSBjYXBhYmlsaXRpZXMgKi8KLQlpZiAocmV0KSB7Ci0JICAgIGZy
+ZWUocmV0KTsKLQkgICAgcmV0ID0gTlVMTDsKLQl9CiAJaWYgKHByb3RfZmdldHMoc3RyLCBzaXpl
+b2Yoc3RyKSwgcGluKSA9PSBOVUxMKSB7CiAJICAgIGlmICghKnN0cikgaW10ZXN0X2ZhdGFsKCJw
+cm90IGxheWVyIGZhaWx1cmUiKTsKIAkgICAgZWxzZSBicmVhazsKQEAgLTE1MTAsNiArMTUwNiw4
+IEBACiAJLyogY2hlY2sgZm9yIGF1dGggKi8KIAlpZiAocHJvdC0+Y2FwYV9jbWQuYXV0aCAmJgog
+CSAgICAodG1wID0gc3Ryc3RyKHN0ciwgcHJvdC0+Y2FwYV9jbWQuYXV0aCkpICE9IE5VTEwpIHsK
+KwkgICAgaWYgKHJldCkKKwkJZnJlZShyZXQpOwogCSAgICBpZiAocHJvdC0+Y2FwYV9jbWQucGFy
+c2VfbWVjaGxpc3QpCiAJCXJldCA9IHByb3QtPmNhcGFfY21kLnBhcnNlX21lY2hsaXN0KHN0ciwg
+cHJvdCk7CiAJICAgIGVsc2UKQEAgLTIyNzgsNyArMjI3Niw3IEBACiAgICAgICB7ICJTVEFSVFRM
+UyIsICIyMjAiLCAiNDU0IiwgMCB9LAogICAgICAgeyAiQVVUSCIsIDUxMiwgMCwgIjIzNSIsICI1
+IiwgIjMzNCAiLCAiKiIsIE5VTEwsIDAgfSwKICAgICAgIHsgTlVMTCwgTlVMTCwgTlVMTCwgfSwK
+LSAgICAgICZ4bXRwX2RvX2F1dGgsIHsgIlFVSVQiLCAiMjIxIiB9LAorICAgICAgTlVMTCwgeyAi
+UVVJVCIsICIyMjEiIH0sCiAgICAgICAmeG10cF9pbml0X2Nvbm4sICZnZW5lcmljX3BpcGUsICZ4
+bXRwX3Jlc2V0CiAgICAgfSwKICAgICB7ICJzbXRwIiwgInNtdHBzIiwgInNtdHAiLApAQCAtMjI4
+Nyw3ICsyMjg1LDcgQEAKICAgICAgIHsgIlNUQVJUVExTIiwgIjIyMCIsICI0NTQiLCAwIH0sCiAg
+ICAgICB7ICJBVVRIIiwgNTEyLCAwLCAiMjM1IiwgIjUiLCAiMzM0ICIsICIqIiwgTlVMTCwgMCB9
+LAogICAgICAgeyBOVUxMLCBOVUxMLCBOVUxMLCB9LAotICAgICAgJnhtdHBfZG9fYXV0aCwgeyAi
+UVVJVCIsICIyMjEiIH0sCisgICAgICBOVUxMLCB7ICJRVUlUIiwgIjIyMSIgfSwKICAgICAgICZ4
+bXRwX2luaXRfY29ubiwgJmdlbmVyaWNfcGlwZSwgJnhtdHBfcmVzZXQKICAgICB9LAogICAgIHsg
+Im11cGRhdGUiLCBOVUxMLCAibXVwZGF0ZSIsCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

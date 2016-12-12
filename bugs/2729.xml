@@ -1,0 +1,165 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2729</bug_id>
+          
+          <creation_ts>2005-10-18 14:39 EDT</creation_ts>
+          <short_desc>getpeername() issue: lmtp delivery to cyrus store over unix socket requires /etc/hosts.allow entry.</short_desc>
+          <delta_ts>2010-10-25 18:46:36 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.3.x</version>
+          <rep_platform>Macintosh</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="OpenMacNews">openmacnews@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>ume@mahoroba.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="OpenMacNews">openmacnews@gmail.com</who>
+            <bug_when>2005-10-18 14:39:23 EDT</bug_when>
+            <thetext>i&apos;m delivering to my macOSX 10.4.2 + cyrus-imap (CVS) store using an lmtp socket
+transport from exim
+4.54:
+
+cyrus_lmtp_unixsock:
+    debug_print             = &quot;EXIM-DEBUG [T:cyrus_lmtp_unixsock] for
+$local_part@$domain&quot;
+    driver                  = lmtp
+    socket                  = /var/MailServer/Process/lmtp.socket
+    envelope_to_add
+    user                    = MY_USER
+
+
+cyrus.conf is configured with:
+
+    lmtpunix     cmd=&quot;lmtpd -a  -C /var/MailServer/Conf/imapd.conf&quot;
+listen=&quot;/var/MailServer/Process/lmtp.socket&quot; prefork=2
+
+
+on delivery attempt, my EXIM log shows a failed attempt, indicating that the
+LMTP connection is
+closed:
+
+	2005-10-17 20:35:14 -0700 IOJDYN-0000FT-OY ==
+testuser@testdomain.com@testdomain.com
+&lt;testuser@testdomain.com&gt; R=cyrus_localuser T=cyrus_lmtp_unixsock defer (-1):
+LMTP connection
+closed after initial connection
+
+and syslog shows:
+
+	Oct 17 20:35:14 devbox CYRUS/lmtpunix[564]: refused connection from 0.0.0.0
+
+after a bit of thrashing around, i find that if i add to /etc/hosts.allow
+
+	lmtpunix : 0.0.0.0
+
+delivery completes successfully!
+
+now, cyrus IS config&apos;d/built &quot;--with-libwrap&quot;, so i can use tcpwrappers to
+secure my OTHER cyrus
+services (imap, imaps, sieve, etc) which are running on TCPSockets ...
+
+QUESTION:  why is a hosts.allow entry required in the 1st place for lmtpunix
+transport over a
+UNIXsocket?
+
+and, why &quot;0.0.0.0&quot; for localhost, rather than 127.0.0.1 or &apos;localhost&apos; in
+hosts.allow?
+
+a suggestion on exim-users is that:
+
+    the code looks like it won&apos;t call tcpwrappers for Unix domain sockets.
+
+    BUT, if the kernel &apos;lies&apos; to it and returns the wrong kind of socket address
+from
+getpeername() then Cyrus will do the wrong thing.
+
+
+cheers,
+
+richard</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="OpenMacNews">openmacnews@gmail.com</who>
+            <bug_when>2005-10-18 15:29:04 EDT</bug_when>
+            <thetext>hi,
+
+a suggestion from Hajimu Umemoto on the user list seems to provide a workaround
+... dunno it its a legit &apos;fix&apos;.
+
+making changes in IMAP src to two files:
+
+          master/service-thread.c
+          master/service.c
+
+of:
+===================================================
+@106
+     struct sockaddr_storage sin;
+     socklen_t len = sizeof(sin);
+     
++    /* XXX: old FreeBSD didn&apos;t fill sockaddr correctly against AF_UNIX */
++    sin.ss_family = AF_UNIX;
++
+     /* is this a connection from the local host? */
+     if (getpeername(fd, (struct sockaddr *) &amp;sin, &amp;len) == 0) {
+ 	if (((struct sockaddr *)&amp;sin)-&gt;sa_family == AF_UNIX) {
+===================================================
+
+seems to do the trick, in that the:
+
+      lmtpunix: 0.0.0.0
+
+entry is no longer needed for delivery to complete successfully.
+
+cheers,
+
+richard</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-01 16:18:43 EDT</bug_when>
+            <thetext>Fix applied to CVS.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="OpenMacNews">openmacnews@gmail.com</who>
+            <bug_when>2005-12-01 16:22:25 EDT</bug_when>
+            <thetext>thank you!</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

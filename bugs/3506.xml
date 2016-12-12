@@ -1,0 +1,120 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3506</bug_id>
+          
+          <creation_ts>2011-08-10 05:22 EDT</creation_ts>
+          <short_desc>dlist.c uses synchronizing IMAP LITERALS without  backchannel.</short_desc>
+          <delta_ts>2011-08-15 15:23:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.11</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="David Carter">dpc22@cam.ac.uk</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="David Carter">dpc22@cam.ac.uk</who>
+            <bug_when>2011-08-10 05:22:37 EDT</bug_when>
+            <thetext>Created an attachment (id=1411)
+Turn sync_client and sync_server into &quot;clients&quot; to enable LITERAL+
+
+sync_client in Cyrus 2.4 was exploding when I tried to populate new accounts.
+
+A bit of digging reveals that dlist.c calls getastring() and getbastring()
+with a NULL argument for pout. lib/imapparse.c getxstring():
+
+  prot_printf(pout, &quot;+ go ahead\r\n&quot;);
+  prot_flush(pout);
+
+Unsuprisinging this just segfaults. I see this mostly because we allow an extended list of characters in mailbox names:
+
+imap/mboxname.c:
+
+  #define GOODCHARS &quot;\\\&quot; #$%&apos;()*+,-.0123456789:;&lt;=&gt; @ABCDEFGHIJKLMNOPQRSTUVWXYZ[]_`abcdefghijklmnopqrstuvwxyz{|}~&quot;
+
+However certain Sieve files appear to generate the same problem.
+
+Workaround:
+
+  prot_setisclient(sync_in, 1);
+
+enables of the use of LITERAL+ literals which only require one way
+communication. Patch attached.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-10 05:54:07 EDT</bug_when>
+            <thetext>Yep, looks good - thanks.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1411</attachid>
+            <date>2011-08-10 05:22 EDT</date>
+            <desc>Turn sync_client and sync_server into &quot;clients&quot; to enable LITERAL+</desc>
+            <filename>sync_literal.patch</filename>
+            <type>text/plain</type>
+            <size>987</size>
+            <attacher>dpc22@cam.ac.uk</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkL2ltYXAvc3luY19jbGllbnQuYy1ESVNUCTIwMTEtMDgtMTAgMDk6NTE6
+NTcuMDAwMDAwMDAwICswMTAwCisrKyBjeXJ1cy1pbWFwZC9pbWFwL3N5bmNfY2xpZW50LmMJMjAx
+MS0wOC0xMCAwOTo1Mjo0OC4wMDAwMDAwMDAgKzAxMDAKQEAgLTI2NjEsNiArMjY2MSwxMSBAQAog
+ICAgIC8qIGxpbmtzIHRvIHNvY2tldHMgKi8KICAgICBzeW5jX2luID0gc3luY19iYWNrZW5kLT5p
+bjsKICAgICBzeW5jX291dCA9IHN5bmNfYmFja2VuZC0+b3V0OworCisgICAgLyogRm9yY2UgdXNl
+IG9mIExJVEVSQUwrIHNvIHdlIGRvbid0IG5lZWQgdHdvIHdheSBjb21tdW5pY2F0aW9ucyAqLwor
+ICAgIHByb3Rfc2V0aXNjbGllbnQoc3luY19pbiwgMSk7CisgICAgcHJvdF9zZXRpc2NsaWVudChz
+eW5jX291dCwgMSk7CisKIH0KIAogc3RhdGljIHZvaWQgcmVwbGljYV9kaXNjb25uZWN0KCkKLS0t
+IGN5cnVzLWltYXBkL2ltYXAvc3luY19zZXJ2ZXIuYy1ESVNUCTIwMTEtMDgtMTAgMDk6NTI6MDUu
+MDAwMDAwMDAwICswMTAwCisrKyBjeXJ1cy1pbWFwZC9pbWFwL3N5bmNfc2VydmVyLmMJMjAxMS0w
+OC0xMCAwOTo1MzoxOS4wMDAwMDAwMDAgKzAxMDAKQEAgLTM0OSw2ICszNDksMTAgQEAKICAgICBz
+eW5jX2luID0gcHJvdF9uZXcoMCwgMCk7CiAgICAgc3luY19vdXQgPSBwcm90X25ldygxLCAxKTsK
+IAorICAgIC8qIEZvcmNlIHVzZSBvZiBMSVRFUkFMKyBzbyB3ZSBkb24ndCBuZWVkIHR3byB3YXkg
+Y29tbXVuaWNhdGlvbnMgKi8KKyAgICBwcm90X3NldGlzY2xpZW50KHN5bmNfaW4sIDEpOworICAg
+IHByb3Rfc2V0aXNjbGllbnQoc3luY19vdXQsIDEpOworCiAgICAgLyogRmluZCBvdXQgbmFtZSBv
+ZiBjbGllbnQgaG9zdCAqLwogICAgIHNhbGVuID0gc2l6ZW9mKHN5bmNfcmVtb3RlYWRkcik7CiAg
+ICAgaWYgKGdldHBlZXJuYW1lKDAsIChzdHJ1Y3Qgc29ja2FkZHIgKikmc3luY19yZW1vdGVhZGRy
+LCAmc2FsZW4pID09IDAgJiYK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

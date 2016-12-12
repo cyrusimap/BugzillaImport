@@ -1,0 +1,132 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3912</bug_id>
+          
+          <creation_ts>2015-10-21 14:57 EDT</creation_ts>
+          <short_desc>SASL GSSAPI mechanism acceptor wrongly returns zero maxbufsize</short_desc>
+          <delta_ts>2015-10-21 14:57:05 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sergio Gelato">Sergio.Gelato@astro.su.se</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Sergio Gelato">Sergio.Gelato@astro.su.se</who>
+            <bug_when>2015-10-21 14:57:05 EDT</bug_when>
+            <thetext>Created an attachment (id=1560)
+Postpone computing maxbufsize until after security layers have been set
+
+Under some circumstances (mainly when min_ssf &lt;= external_ssf &lt; max_ssf, as will happen when using GSSAPI authentication within a TLS layer strong enough to satisfy the application&apos;s policy), the server has been observed to return a security layer bitmask of 7 and a zero maximum token size. The symptoms when using a Java client (e.g., the LDAP directory browser/editor Jxplorer) are as described in Bug #3787. (The negative array size results from subtracting the wrapping overhead from the maximum token size returned by the server, which is zero in this case.)
+
+The reason I&apos;m filing a new bug is that the reporter of #3787 claimed that the connection succeeds when using both GSSAPI and TLS together whereas I&apos;m seeing the opposite. Also, bug #3480 is clearly unrelated to this issue.
+
+I have developed a patch for this problem and successfully used it in production for two years. As of today the patch still applies to the tip of the master branch in git.
+
+The problem, as I see it, is that under some circumstances the code zeroes the maximum token length and then goes on to turn on LAYER_INTEGRITY and/or LAYER_CONFIDENTIALITY. This can happen when text-&gt;requiressf == 0 &amp;&amp; text-&gt;limitssf &gt;= 1. My solution is simply to postpone the zeroing of the maximum token length until after the security layer bitmask has been computed, and base the decision whether to zero the maximum token length solely on the bitmask value (exactly as specified in RFC 4752).
+
+This issue was previously reported to the Debian project as https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=721010 but that bug was closed with an incorrect claim that the patch had been incorporated upstream in 2.1.26.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1560</attachid>
+            <date>2015-10-21 14:57 EDT</date>
+            <desc>Postpone computing maxbufsize until after security layers have been set</desc>
+            <filename>06260404c047e111f86b67de2862ec124f8fe2ec.patch</filename>
+            <type>text/plain</type>
+            <size>2697</size>
+            <attacher>Sergio.Gelato@astro.su.se</attacher>
+            
+              <data encoding="base64">Y29tbWl0IDA2MjYwNDA0YzA0N2UxMTFmODZiNjdkZTI4NjJlYzEyNGY4ZmUyZWMKQXV0aG9yOiBT
+ZXJnaW8gR2VsYXRvIDxTZXJnaW8uR2VsYXRvQGFzdHJvLnN1LnNlPgpEYXRlOiAgIFdlZCBPY3Qg
+MjEgMjA6NDU6MTcgMjAxNSArMDIwMAoKICAgIFBvc3Rwb25lIGNvbXB1dGluZyBtYXhidWZzaXpl
+IHVudGlsIGFmdGVyIHNlY3VyaXR5IGxheWVycyBoYXZlIGJlZW4gc2V0LgogICAgCiAgICBQcmlv
+ciB0byB0aGlzIGNvbW1pdCBpdCB3YXMgcG9zc2libGUgZm9yIHRoZSBHU1NBUEkgbWVjaGFuaXNt
+IGFjY2VwdG9yIHRvCiAgICByZXR1cm4gYSB6ZXJvIG1heGJ1ZnNpemUgdG9nZXRoZXIgd2l0aCB0
+aGUgaW50ZWdyaXR5IGFuZC9vciBjb25maWRlbnRpYWxpdHkKICAgIGxheWVyIGJpdHMgc2V0LiBU
+aGlzIGlzIG5vdCBhIHdvcmthYmxlIGNvbWJpbmF0aW9uLgogICAgCiAgICBTb2x2ZSB0aGlzIGJ5
+IG5vdCB6ZXJvaW5nIG1heGJ1ZnNpemUgKGFzIHJlcXVpcmVkIGJ5IFJGQyA0NzUyIHdoZW4gb25s
+eQogICAgdGhlIG9ubHkgc2VjdXJpdHkgbGF5ZXIgc2VsZWN0ZWQgaXMgYXV0aGVudGljYXRpb24p
+IHVudGlsIGNvbXB1dGF0aW9uIG9mCiAgICB0aGUgc2VjdXJpdHkgbGF5ZXIgbWFzayBpcyBjb21w
+bGV0ZS4gVGhlIGNvbmRpdGlvbiBmb3IgemVyb2luZyBtYXhidWZzaXplCiAgICB0aGVuIGJlY29t
+ZXMgbXVjaCBtb3JlIHN0cmFpZ2h0Zm9yd2FyZC4KCmRpZmYgLS1naXQgYS9wbHVnaW5zL2dzc2Fw
+aS5jIGIvcGx1Z2lucy9nc3NhcGkuYwppbmRleCAyZmQxYjNiLi5lODYxODY0IDEwMDY0NAotLS0g
+YS9wbHVnaW5zL2dzc2FwaS5jCisrKyBiL3BsdWdpbnMvZ3NzYXBpLmMKQEAgLTEwMDcsMjEgKzEw
+MDcsMTQgQEAgZ3NzYXBpX3NlcnZlcl9tZWNoX3NzZmNhcChjb250ZXh0X3QgKnRleHQsCiAgICAg
+fQogCiAgICAgLyogYnVpbGQgdXAgb3VyIHNlY3VyaXR5IHByb3BlcnRpZXMgdG9rZW4gKi8KLSAg
+ICBpZiAodGV4dC0+cmVxdWlyZXNzZiAhPSAwICYmCi0JKHRleHQtPnFvcCAmIChMQVlFUl9JTlRF
+R1JJVFl8TEFZRVJfQ09ORklERU5USUFMSVRZKSkpIHsKLQlpZiAocGFyYW1zLT5wcm9wcy5tYXhi
+dWZzaXplID4gMHhGRkZGRkYpIHsKLQkgICAgLyogbWFrZSBzdXJlIG1heGJ1ZnNpemUgaXNuJ3Qg
+dG9vIGxhcmdlICovCi0JICAgIC8qIG1heGJ1ZnNpemUgPSAweEZGRkZGRiAqLwotCSAgICBzYXNs
+ZGF0YVsxXSA9IHNhc2xkYXRhWzJdID0gc2FzbGRhdGFbM10gPSAweEZGOwotCX0gZWxzZSB7Ci0J
+ICAgIHNhc2xkYXRhWzFdID0gKHBhcmFtcy0+cHJvcHMubWF4YnVmc2l6ZSA+PiAxNikgJiAweEZG
+OwotCSAgICBzYXNsZGF0YVsyXSA9IChwYXJhbXMtPnByb3BzLm1heGJ1ZnNpemUgPj4gOCkgJiAw
+eEZGOwotCSAgICBzYXNsZGF0YVszXSA9IChwYXJhbXMtPnByb3BzLm1heGJ1ZnNpemUgPj4gMCkg
+JiAweEZGOwotCX0KKyAgICBpZiAocGFyYW1zLT5wcm9wcy5tYXhidWZzaXplID4gMHhGRkZGRkYp
+IHsKKwkvKiBtYWtlIHN1cmUgbWF4YnVmc2l6ZSBpc24ndCB0b28gbGFyZ2UgKi8KKwkvKiBtYXhi
+dWZzaXplID0gMHhGRkZGRkYgKi8KKwlzYXNsZGF0YVsxXSA9IHNhc2xkYXRhWzJdID0gc2FzbGRh
+dGFbM10gPSAweEZGOwogICAgIH0gZWxzZSB7Ci0JLyogRnJvbSBSRkMgNDc1MjogIlRoZSBjbGll
+bnQgdmVyaWZpZXMgdGhhdCB0aGUgc2VydmVyIG1heGltdW0gYnVmZmVyIGlzIDAKLQkgICBpZiB0
+aGUgc2VydmVyIGRvZXMgbm90IGFkdmVydGlzZSBzdXBwb3J0IGZvciBhbnkgc2VjdXJpdHkgbGF5
+ZXIuIiAqLwotCXNhc2xkYXRhWzFdID0gc2FzbGRhdGFbMl0gPSBzYXNsZGF0YVszXSA9IDA7CisJ
+c2FzbGRhdGFbMV0gPSAocGFyYW1zLT5wcm9wcy5tYXhidWZzaXplID4+IDE2KSAmIDB4RkY7CisJ
+c2FzbGRhdGFbMl0gPSAocGFyYW1zLT5wcm9wcy5tYXhidWZzaXplID4+IDgpICYgMHhGRjsKKwlz
+YXNsZGF0YVszXSA9IChwYXJhbXMtPnByb3BzLm1heGJ1ZnNpemUgPj4gMCkgJiAweEZGOwogICAg
+IH0KIAogICAgIHNhc2xkYXRhWzBdID0gMDsKQEAgLTEwNDcsNiArMTA0MCwxMiBAQCBnc3NhcGlf
+c2VydmVyX21lY2hfc3NmY2FwKGNvbnRleHRfdCAqdGV4dCwKIAlzYXNsZGF0YVswXSB8PSBMQVlF
+Ul9DT05GSURFTlRJQUxJVFk7CiAgICAgfQogCisgICAgaWYgKChzYXNsZGF0YVswXSAmIH5MQVlF
+Ul9OT05FKSA9PSAwKSB7CisJLyogRnJvbSBSRkMgNDc1MjogIlRoZSBjbGllbnQgdmVyaWZpZXMg
+dGhhdCB0aGUgc2VydmVyIG1heGltdW0gYnVmZmVyIGlzIDAKKwkgICBpZiB0aGUgc2VydmVyIGRv
+ZXMgbm90IGFkdmVydGlzZSBzdXBwb3J0IGZvciBhbnkgc2VjdXJpdHkgbGF5ZXIuIiAqLworCXNh
+c2xkYXRhWzFdID0gc2FzbGRhdGFbMl0gPSBzYXNsZGF0YVszXSA9IDA7CisgICAgfQorCiAgICAg
+LyogUmVtZW1iZXIgd2hhdCB3ZSB3YW50IGFuZCBjYW4gb2ZmZXIgKi8KICAgICB0ZXh0LT5xb3Ag
+PSBzYXNsZGF0YVswXTsKIApAQCAtMTQwMSw3ICsxNDAwLDcgQEAgaW50IGdzc2FwaXYyX3NlcnZl
+cl9wbHVnX2luaXQoCiAJCSAgICAgICBrZXl0YWIsIGVycm5vKTsKIAkgICAgcmV0dXJuIFNBU0xf
+RkFJTDsKIAl9Ci0JCisKIAlpZihzdHJsZW4oa2V5dGFiKSA+IDEwMjQpIHsKIAkgICAgdXRpbHMt
+PmxvZyhOVUxMLCBTQVNMX0xPR19FUlIsCiAJCSAgICAgICAicGF0aCB0byBrZXl0YWIgaXMgPiAx
+MDI0IGNoYXJhY3RlcnMiKTsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

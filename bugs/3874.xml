@@ -1,0 +1,150 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3874</bug_id>
+          
+          <creation_ts>2014-11-21 18:01 EDT</creation_ts>
+          <short_desc>SSL private key cannot be read if chmod is 640 and path contains a symlink</short_desc>
+          <delta_ts>2014-11-22 05:24:01 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="bmn">b3364320@trbvm.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="bmn">b3364320@trbvm.com</who>
+            <bug_when>2014-11-21 18:01:09 EDT</bug_when>
+            <thetext>I think I have found a bug in Cyrus.
+
+Operating system: Debian 7 stable
+
+I have following permissions:
+
+/daten = drwxr-x---+ homepage:daten
+/daten/ssl = lrwxrwxrwx root:root --&gt; symlink to /etc/apache2/ssl
+
+/etc = drwxr-xr-x root:root
+/etc/apache2 = drwxr-xr-x root:root
+/etc/apache2/ssl = drwxr-xr-x root:root
+/etc/apache2/ssl/mail.example.cmo = drwxr-xr-x root:root
+/etc/apache2/ssl/mail.example.cmo/certificate.pem = -rw-r--r-- root:root
+/etc/apache2/ssl/mail.example.cmo/private.key = -rw-r----- root:ssl
+
+$getfacl /daten/
+# file: daten/
+# owner: homepage
+# group: daten
+user::rwx
+group::r-x
+mask::r-x
+other::---
+
+The group ssl contains cyrus and postfix .
+
+This setting allows all users to access certificate.pem , but only cyrus and postfix may read the private.key (chmod 640, group ssl). The private.key is not encrypted.
+
+/etc/imapd.conf contains following:
+
+tls_cert_file: /daten/ssl/mail.example.com/certificate.pem
+tls_key_file: /daten/ssl/mail.example.com/private.key
+tls_ca_file: /daten/ssl/ca/startcom/startcom.sub.class1.server.ca.crt
+tls_ca_path: /daten/ssl/ca/startcom
+
+The process cyrus is running as user cyris:
+
+$ ps aux | grep cyrus
+cyrus     1294  0.0  0.0 126256  8112 ?        S    16:23   0:00 imapd -s -U 30
+cyrus     1695  0.0  0.0  57036  3544 ?        Ss   Nov20   0:03 /usr/sbin/cyrmaster -d
+cyrus     3656  0.0  0.0  83708  2408 ?        S    Nov20   0:00 notifyd
+root     10779  0.0  0.0  11540   892 pts/1    S+   21:12   0:00 grep cyrus
+
+The permissions are OK - I checked it:
+
+$su cyrus
+$cat /daten/ssl/mail.example.com/private.key
+(Private key is shown)
+
+But when I try to connect to my IMAP, I get following error in the syslog:
+
+$tail /var/log/syslog
+Nov 21 20:13:47 debian cyrus/imaps[20647]: unable to get private key from &apos;/daten/ssl/mail.example.com/private.key&apos;
+Nov 21 20:13:47 debian cyrus/imaps[20647]: TLS server engine: cannot load cert/key data, may be a cert/key mismatch?
+Nov 21 20:13:47 debian cyrus/imaps[20647]: error initializing TLS
+Nov 21 20:13:47 debian cyrus/imaps[20647]: Fatal error: tls_init() failed
+
+Workarounds:
+
+1. When the private.key is changed from 640 to 644 , cyrus can access /etc/apache2/ssl/mail.example.cmo/private.key again
+
+2. When I change the path /daten/ssl (symlink) to /etc/apache2/ssl in the imapd.conf , then it will work too (with chmod 640).
+
+As I showed with &quot;su cyrus&quot;, the symlink resolution and system level permission settings seem to be OK. The user cyrus can read /daten/ssl/mail.example.com/private.key and /etc/apache2/ssl/mail.example.com/private.key .</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="bmn">b3364320@trbvm.com</who>
+            <bug_when>2014-11-21 18:05:59 EDT</bug_when>
+            <thetext>Sorry, I made a mistake, I meant:
+
+1. When the private.key is changed from 640 to 644 , cyrus can access
+/daten/ssl/mail.example.com/private.key again.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-11-21 19:19:46 EDT</bug_when>
+            <thetext>So cyrus changes uid at with become_cyrus() in lib/util.c.
+
+I&apos;m not sure why it&apos;s not using the group.  If you have some suggestions, I&apos;d be happy to consider a patch.
+
+I think the world is moving the opposite direction (containers per service) these days, so maybe having a copy of the private key owned by cyrus is going to work better for you.
+
+Regards,
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="bmn">b3364320@trbvm.com</who>
+            <bug_when>2014-11-22 05:24:01 EDT</bug_when>
+            <thetext>The weird thing is that 640 works with the non-symlink path, but not with the symlink path.  So I don&apos;t think it has something to do with the group.
+If the file has 644, the normal and the symlink paths work both, so the symlink and its permissions should be ok too.
+
+Do you have an idea how this can be debugged? Great would be a log which says &quot;process X with user Y and group Z cannot enter directory/file A because ...&quot;</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

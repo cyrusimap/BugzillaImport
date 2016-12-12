@@ -1,0 +1,123 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3534</bug_id>
+          
+          <creation_ts>2011-08-26 12:05 EDT</creation_ts>
+          <short_desc>Authentication without a password in shadow file.</short_desc>
+          <delta_ts>2011-08-26 12:14:44 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Grant Delaney">delaneygrant@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>dwhite@olp.net</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Grant Delaney">delaneygrant@gmail.com</who>
+            <bug_when>2011-08-26 12:05:15 EDT</bug_when>
+            <thetext>I have found an issue with saslauthd, it appears to let a user authenticate with any password if the users password is blank in the /etc/shadow file on the smtp service.
+
+Environment:
+
+Opensuse 11.4
+rpm -qa cyrus-sasl
+cyrus-sasl-2.1.23-15.1.x86_64
+
+#/etc/sysconfig/saslauthd
+SASLAUTHD_AUTHMECH=shadow
+
+# id sasltest
+uid=1001(sasltest) gid=100(users) groups=33(video),100(users)
+
+
+# testsaslauthd -u sasltest -p test  -s smtp
+0: OK &quot;Success.&quot;
+
+# testsaslauthd -u sasltest -p wrongtest  -s smtp
+0: NO &quot;authentication failed&quot;
+
+# grep sasltest /etc/shadow
+sasltest:$2y$10$RlSnCi99SDDFguMNk.rhcurpXphwm.NA9121vnVFi5RqzgmruFKye:15212:0:99999:7:::
+
+Now if I remove the password in the shadow file.
+
+# grep sasltest /etc/shadow
+sasltest::15212:0:99999:7:::
+
+ # testsaslauthd -u sasltest -p test  -s smtp
+0: OK &quot;Success.&quot;
+
+# testsaslauthd -u sasltest -p wrongtest  -s smtp
+0: OK &quot;Success.&quot;
+
+# testsaslauthd -u sasltest -p icanputanythingIwanthere  -s smtp
+0: OK &quot;Success.&quot;
+
+Is this the expected result when using shadow as the auth mech ?
+
+I know the solution is not to use blank passwords, but I would expect it to fail because you supplied a password when it does not have one or not allow a blank password. Recently had a customer being used as a spam relay because of this. I have already explained that blank passwords are a bad idea.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-08-26 12:14:44 EDT</bug_when>
+            <thetext>I can confirm using both the getpwent and shadow backends, but not the pam backend.
+
+This may not be entirely unexpected; Per the passwd(5) (linux):
+
+       The encrypted password field may be blank, in which case no
+       password is required to authenticate as the specified login
+       name. However, some applications which read the /etc/passwd
+       file may decide not to permit any access at all if the password
+       field is blank. If the password field is a lower-case “x”, then
+       the encrypted password is actually stored in the shadow(5) file
+       instead; there must be a corresponding line in the /etc/shadow
+       file, or else the user account is invalid. If the password
+       field is any other string, then it will be treated as an
+       encrypted password, as specified by crypt(3).
+
+and shadow(5) (linux):
+
+           This field may be empty, in which case no passwords are
+           required to authenticate as the specified login name.
+           However, some applications which read the /etc/shadow file
+           may decide not to permit any access at all if the password
+           field is empty.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

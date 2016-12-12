@@ -1,0 +1,129 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2688</bug_id>
+          
+          <creation_ts>2005-07-01 18:09 EDT</creation_ts>
+          <short_desc>User meta-data not removed on replica when user is deleted</short_desc>
+          <delta_ts>2010-10-25 18:46:36 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="John Capo">jc@irbs.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>jc@irbs.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="John Capo">jc@irbs.com</who>
+            <bug_when>2005-07-01 18:09:21 EDT</bug_when>
+            <thetext>Subscriptions to a mailbox are not deleted when the mailbox is deleted and the user data directory is
+not deleted on a replica when the user&apos;s top level mailbox is deleted.
+
+This is probably not the correct fix but it may help someone in the meantime.
+
+imap/imapd.c: cmd_delete()
+
+     /* local mailbox */
+     if (!r) {
+        if (config_virtdomains &amp;&amp; (p = strchr(mailboxname, &apos;!&apos;)))
+            domainlen = p - mailboxname + 1;
+ 
+        r = mboxlist_deletemailbox(mailboxname, imapd_userisadmin,
+                                   imapd_userid, imapd_authstate, 1-force,
+                                   localonly, 0);
++       if (!r)         /* Delete subscriptions for this mailbox */
++           mboxlist_changesub(mailboxname, imapd_userid, imapd_authstate, 0, 0);
+     }
+ 
+imap/sync_server.c: cmd_delete()
+
+     if (r)
+         prot_printf(sync_out, &quot;NO Failed to delete %s: %s\r\n&quot;,
+                  name, error_message(r));
+     else
+-        prot_printf(sync_out, &quot;OK Delete completed\r\n&quot;);
++    {
++       if (!strncmp(name, &quot;user.&quot;, 5) &amp;&amp; !strchr(name+5, &apos;.&apos;))
++       {
++           user_deletedata(name+5, sync_userid, sync_authstate, 1);
++        }
++       else
++       {
++           char buf[MAX_MAILBOX_PATH+1];
++           char *s;
++
++           strlcpy(buf, name + 5, sizeof (buf));
++
++           /* Find the . following the username and isolate just the username.
++           */
++           for (s = buf; *s; s++)
++           {
++               if (*s == &apos;.&apos;)
++               {
++                   *s = &apos;\0&apos;;
++                   break;
++               }
++           }
++           mboxlist_changesub(name, buf, sync_authstate, 0, 0);
++       }
++    }
++
++    prot_printf(sync_out, &quot;OK Delete completed\r\n&quot;);
+ }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-11-18 18:01:46 EDT</bug_when>
+            <thetext>Deleting a subscription is not required by RFC 3501 and could be costly because
+multiple users might be subscribed.  In fact the LSUB command specifically
+allows non-existent mailboxes to be returned.
+
+I&apos;ll look into the sync_server stuff.  (changing summary)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-06-13 13:29:16 EDT</bug_when>
+            <thetext>I believe this issue has been fixed in CVS.  Please test and advise.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-02 13:32:47 EDT</bug_when>
+            <thetext>No feedback.  Assuming its resolved.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

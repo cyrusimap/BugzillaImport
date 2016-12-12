@@ -1,0 +1,278 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3904</bug_id>
+          
+          <creation_ts>2015-09-26 15:48 EDT</creation_ts>
+          <short_desc>sieve regex bug ?</short_desc>
+          <delta_ts>2016-03-14 20:09:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ronny">onlinegeld@gmx.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ronny">onlinegeld@gmx.de</who>
+            <bug_when>2015-09-26 15:48:21 EDT</bug_when>
+            <thetext>Cyrus-Imapd-2.5.6 (Gentoo ebuild) 
+
+Hello,
+
+i tried to used a regex in my sieve script and maybe triggered a bug/issue
+
+My sieve script:
+===================================
+require [&quot;imap4flags&quot;,&quot;regex&quot;];
+
+# rule:[IPv6Test]
+if header :regex :comparator &quot;i;ascii-casemap&quot; &quot;received&quot; &quot;(from).+\[IPv6:.*([[:space:]]*.*)*(by mx1\.domain\.tld)&quot;
+{
+        addflag [&quot;$label6&quot;];
+}
+ rule:[TLSTest]
+ if header :regex &quot;received&quot; &quot;(from).+[[:space:]]+\\(using TLS.+([[:space:]]*.*)*(by mx1\\.domain\\.tld)&quot;
+{
+        addflag [&quot;$label7&quot;];
+}
+===================================
+
+* If i try to upload it with sieveshell, i get:
+&gt; put test
+Bad protocol from MANAGESIEVE server: lost connection
+
+* If i try it with sievec, i get:
+/usr/lib/cyrus/sievec test test
+*** Error in `/usr/lib/cyrus/sievec&apos;: corrupted double-linked list: 0x08e3d9c0 ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-02-29 01:33:09 EDT</bug_when>
+            <thetext>I can&apos;t reproduce this
+
+If I put the script exactly as provided through sievec, I get sensible parse errors about the first regex (unmatched brackets) and the &quot; rule:[TLSTest]&quot; line (which is missing &apos;#&apos; at start).  This makes sense.  I don&apos;t get any sort of crash or corrupted double-linked list error.
+
+If I double-backslash the &apos;[&apos; before &apos;IPv6&apos; in the first regex (c.f. &apos;mx1\\.domain&apos; in the second regex), then the unmatched brackets error goes away.  I&apos;m not fluent in sieve, but I&apos;m assuming here that with only a single backslash, \[ gets expanded to [ by the quoted string handling, and so the regex engine sees an unmatched [.  And that using the double backslash means the quoted string handling passes through \[ to the regex engine, and so it gets treated correctly.
+
+If I comment the &quot; rule:[TLSTest]&quot; line, the other error goes away.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ronny">onlinegeld@gmx.de</who>
+            <bug_when>2016-03-14 15:59:31 EDT</bug_when>
+            <thetext>Thanks for looking into this. The missing &quot;#&quot; in one line was a copy/paste error from me ,sorry for that.
+
+I checked this again with the following sieve file (i have fixed the missing &quot;#&quot; and the not correct escapped &quot;[&quot; so this should now be ok)
+
+========================================================================
+require [&quot;fileinto&quot;,&quot;reject&quot;,&quot;vacation&quot;,&quot;imap4flags&quot;,&quot;regex&quot;];
+
+# rule:[IPv6Test]
+if header :regex :comparator &quot;i;ascii-casemap&quot; &quot;received&quot; &quot;(from).+\\[IPv6:.*([[:space:]]*.*)*(by mx1\.domain\.tld)&quot;
+{
+        addflag [&quot;$label6&quot;];
+}
+# rule:[TLSTest]
+ if header :regex &quot;received&quot; &quot;(from).+[[:space:]]+\\(using TLS.+([[:space:]]*.*)*(by mx1\\.domain\\.tld)&quot;
+{
+        addflag [&quot;$label7&quot;];
+}
+========================================================================
+
+
+And now i get with sievec test test.sieve the following output:
+(runs as cyrus user:#  ~/sievec test test.sieve)
+
+========================================================================
+ *** Error in `/usr/lib/cyrus/sievec&apos;: free(): invalid next size (fast): 0x0000000001ee8440 ***
+======= Backtrace: =========
+/lib64/libc.so.6(+0x71f4b)[0x7f4451046f4b]
+/lib64/libc.so.6(+0x7740e)[0x7f445104c40e]
+/lib64/libc.so.6(+0x77bfb)[0x7f445104cbfb]
+/usr/lib64/libcyrus_sieve.so.0(+0x12b88)[0x7f44517d8b88]
+/usr/lib64/libcyrus_sieve.so.0(+0x12c09)[0x7f44517d8c09]
+/usr/lib64/libcyrus_sieve.so.0(+0x168d4)[0x7f44517dc8d4]
+/usr/lib64/libcyrus_sieve.so.0(sieve_script_parse+0xc0)[0x7f44517d4f20]
+/usr/lib/cyrus/sievec[0x401532]
+/lib64/libc.so.6(__libc_start_main+0xf0)[0x7f4450ff57b0]
+/usr/lib/cyrus/sievec[0x401729]
+======= Memory map: ========
+00400000-00402000 r-xp 00000000 08:13 3955652                            /usr/lib64/cyrus/sievec
+00601000-00602000 r--p 00001000 08:13 3955652                            /usr/lib64/cyrus/sievec
+00602000-00603000 rw-p 00002000 08:13 3955652                            /usr/lib64/cyrus/sievec
+01ee0000-01f01000 rw-p 00000000 00:00 0                                  [heap]
+7f444da0d000-7f444da23000 r-xp 00000000 08:13 4228471                    /usr/lib64/gcc/x86_64-pc-linux-gnu/4.9.3/libgcc_s.so.1
+7f444da23000-7f444dc22000 ---p 00016000 08:13 4228471                    /usr/lib64/gcc/x86_64-pc-linux-gnu/4.9.3/libgcc_s.so.1
+7f444dc22000-7f444dc23000 r--p 00015000 08:13 4228471                    /usr/lib64/gcc/x86_64-pc-linux-gnu/4.9.3/libgcc_s.so.1
+7f444dc23000-7f444dc24000 rw-p 00016000 08:13 4228471                    /usr/lib64/gcc/x86_64-pc-linux-gnu/4.9.3/libgcc_s.so.1
+7f444dc24000-7f444dc49000 r-xp 00000000 08:13 7111183                    /lib64/liblzma.so.5.2.2
+7f444dc49000-7f444de48000 ---p 00025000 08:13 7111183                    /lib64/liblzma.so.5.2.2
+7f444de48000-7f444de49000 r--p 00024000 08:13 7111183                    /lib64/liblzma.so.5.2.2
+7f444de49000-7f444de4a000 rw-p 00025000 08:13 7111183                    /lib64/liblzma.so.5.2.2
+7f444de4a000-7f444deb9000 r-xp 00000000 08:13 3424434                    /lib64/libpcre.so.1.2.6
+7f444deb9000-7f444e0b8000 ---p 0006f000 08:13 3424434                    /lib64/libpcre.so.1.2.6
+7f444e0b8000-7f444e0b9000 r--p 0006e000 08:13 3424434                    /lib64/libpcre.so.1.2.6
+7f444e0b9000-7f444e0ba000 rw-p 0006f000 08:13 3424434                    /lib64/libpcre.so.1.2.6
+7f444e0ba000-7f444e0bc000 r-xp 00000000 08:13 7489165                    /lib64/libdl-2.21.so
+7f444e0bc000-7f444e2bc000 ---p 00002000 08:13 7489165                    /lib64/libdl-2.21.so
+7f444e2bc000-7f444e2bd000 r--p 00002000 08:13 7489165                    /lib64/libdl-2.21.so
+7f444e2bd000-7f444e2be000 rw-p 00003000 08:13 7489165                    /lib64/libdl-2.21.so
+7f444e2be000-7f444e3b9000 r-xp 00000000 08:13 7222965                    /usr/lib64/libsqlite3.so.0.8.6
+7f444e3b9000-7f444e5b8000 ---p 000fb000 08:13 7222965                    /usr/lib64/libsqlite3.so.0.8.6
+7f444e5b8000-7f444e5bb000 r--p 000fa000 08:13 7222965                    /usr/lib64/libsqlite3.so.0.8.6
+7f444e5bb000-7f444e5be000 rw-p 000fd000 08:13 7222965                    /usr/lib64/libsqlite3.so.0.8.6
+7f444e5be000-7f444e5bf000 rw-p 00000000 00:00 0
+7f444e5bf000-7f444e62b000 r-xp 00000000 08:13 7352871                    /usr/lib64/libssl.so.1.0.0
+7f444e62b000-7f444e82a000 ---p 0006c000 08:13 7352871                    /usr/lib64/libssl.so.1.0.0
+7f444e82a000-7f444e82f000 r--p 0006b000 08:13 7352871                    /usr/lib64/libssl.so.1.0.0
+7f444e82f000-7f444e836000 rw-p 00070000 08:13 7352871                    /usr/lib64/libssl.so.1.0.0
+7f444e836000-7f444eb1e000 r-xp 00000000 08:13 7365322                    /usr/lib64/libmysqlclient.so.18.0.0
+7f444eb1e000-7f444ed1e000 ---p 002e8000 08:13 7365322                    /usr/lib64/libmysqlclient.so.18.0.0
+7f444ed1e000-7f444ed25000 r--p 002e8000 08:13 7365322                    /usr/lib64/libmysqlclient.so.18.0.0
+7f444ed25000-7f444ed8b000 rw-p 002ef000 08:13 7365322                    /usr/lib64/libmysqlclient.so.18.0.0
+7f444ed8b000-7f444ed95000 rw-p 00000000 00:00 0
+7f444ed95000-7f444ef10000 r-xp 00000000 08:13 3538958                    /usr/lib64/libdb-4.8.so
+7f444ef10000-7f444f10f000 ---p 0017b000 08:13 3538958                    /usr/lib64/libdb-4.8.so
+7f444f10f000-7f444f112000 r--p 0017a000 08:13 3538958                    /usr/lib64/libdb-4.8.so
+7f444f112000-7f444f115000 rw-p 0017d000 08:13 3538958                    /usr/lib64/libdb-4.8.so
+7f444f115000-7f444f131000 r-xp 00000000 08:13 3953367                    /usr/lib64/libsasl2.so.3.0.0
+7f444f131000-7f444f331000 ---p 0001c000 08:13 3953367                    /usr/lib64/libsasl2.so.3.0.0
+7f444f331000-7f444f332000 r--p 0001c000 08:13 3953367                    /usr/lib64/libsasl2.so.3.0.0
+7f444f332000-7f444f333000 rw-p 0001d000 08:13 3953367                    /usr/lib64/libsasl2.so.3.0.0
+7f444f333000-7f444f348000 r-xp 00000000 08:13 3282385                    /lib64/libz.so.1.2.8
+7f444f348000-7f444f547000 ---p 00015000 08:13 3282385                    /lib64/libz.so.1.2.8
+7f444f547000-7f444f548000 r--p 00014000 08:13 3282385                    /lib64/libz.so.1.2.8
+7f444f548000-7f444f549000 rw-p 00015000 08:13 3282385                    /lib64/libz.so.1.2.8
+7f444f549000-7f444f64b000 r-xp 00000000 08:13 7488115                    /lib64/libm-2.21.so
+7f444f64b000-7f444f84a000 ---p 00102000 08:13 7488115                    /lib64/libm-2.21.so
+7f444f84a000-7f444f84b000 r--p 00101000 08:13 7488115                    /lib64/libm-2.21.so
+7f444f84b000-7f444f84c000 rw-p 00102000 08:13 7488115                    /lib64/libm-2.21.so
+7f444f84c000-7f444f858000 r-xp 00000000 08:13 3163210                    /usr/lib64/libjansson.so.4.7.0
+7f444f858000-7f444fa57000 ---p 0000c000 08:13 3163210                    /usr/lib64/libjansson.so.4.7.0
+7f444fa57000-7f444fa58000 r--p 0000b000 08:13 3163210                    /usr/lib64/libjansson.so.4.7.0
+7f444fa58000-7f444fa59000 rw-p 0000c000 08:13 3163210                    /usr/lib64/libjansson.so.4.7.0
+7f444fa59000-7f444fa69000 r-xp 00000000 08:13 3677591                    /usr/lib64/libicalvcal.so.1.0.1
+7f444fa69000-7f444fc69000 ---p 00010000 08:13 3677591                    /usr/lib64/libicalvcal.so.1.0.1
+7f444fc69000-7f444fc6c000 r--p 00010000 08:13 3677591                    /usr/lib64/libicalvcal.so.1.0.1
+7f444fc6c000-7f444fc6e000 rw-p 00013000 08:13 3677591                    /usr/lib64/libicalvcal.so.1.0.1
+7f444fc6e000-7f444fc6f000 rw-p 00000000 00:00 0
+7f444fc6f000-7f444fc84000 r-xp 00000000 08:13 3677835                    /usr/lib64/libicalss.so.1.0.1
+7f444fc84000-7f444fe84000 ---p 00015000 08:13 3677835                    /usr/lib64/libicalss.so.1.0.1
+7f444fe84000-7f444fe85000 r--p 00015000 08:13 3677835                    /usr/lib64/libicalss.so.1.0.1
+7f444fe85000-7f444fe86000 rw-p 00016000 08:13 3677835                    /usr/lib64/libicalss.so.1.0.1
+7f444fe86000-7f444fe88000 rw-p 00000000 00:00 0
+7f444fe88000-7f444fedf000 r-xp 00000000 08:13 3677834                    /usr/lib64/libical.so.1.0.1
+7f444fedf000-7f44500de000 ---p 00057000 08:13 3677834                    /usr/lib64/libical.so.1.0.1
+7f44500de000-7f44500eb000 r--p 00056000 08:13 3677834                    /usr/lib64/libical.so.1.0.1
+7f44500eb000-7f44500ed000 rw-p 00063000 08:13 3677834                    /usr/lib64/libical.so.1.0.1
+7f44500ed000-7f44500ee000 rw-p 00000000 00:00 0
+7f44500ee000-7f445024b000 r-xp 00000000 08:13 7231504                    /usr/lib64/libxml2.so.2.9.3
+7f445024b000-7f445044a000 ---p 0015d000 08:13 7231504                    /usr/lib64/libxml2.so.2.9.3
+7f445044a000-7f4450452000 r--p 0015c000 08:13 7231504                    /usr/lib64/libxml2.so.2.9.3
+7f4450452000-7f4450454000 rw-p 00164000 08:13 7231504                    /usr/lib64/libxml2.so.2.9.3
+7f4450454000-7f4450456000 rw-p 00000000 00:00 0
+7f4450456000-7f4450458000 r-xp 00000000 08:13 3424484                    /usr/lib64/libpcreposix.so.0.0.3
+7f4450458000-7f4450657000 ---p 00002000 08:13 3424484                    /usr/lib64/libpcreposix.so.0.0.3
+7f4450657000-7f4450658000 r--p 00001000 08:13 3424484                    /usr/lib64/libpcreposix.so.0.0.3
+7f4450658000-7f4450659000 rw-p 00002000 08:13 3424484                    /usr/lib64/libpcreposix.so.0.0.3
+7f4450659000-7f445086d000 r-xp 00000000 08:13 7351199                    /usr/lib64/libcrypto.so.1.0.0
+7f445086d000-7f4450a6c000 ---p 00214000 08:13 7351199                    /usr/lib64/libcrypto.so.1.0.0
+7f4450a6c000-7f4450a8a000 r--p 00213000 08:13 7351199                    /usr/lib64/libcrypto.so.1.0.0
+7f4450a8a000-7f4450a96000 rw-p 00231000 08:13 7351199                    /usr/lib64/libcrypto.so.1.0.0
+7f4450a96000-7f4450a9a000 rw-p 00000000 00:00 0
+7f4450a9a000-7f4450bcf000 r-xp 00000000 08:13 3956619                    /usr/lib64/libcyrus.so.0.0.0
+7f4450bcf000-7f4450dce000 ---p 00135000 08:13 3956619                    /usr/lib64/libcyrus.so.0.0.0
+7f4450dce000-7f4450dcf000 r--p 00134000 08:13 3956619                    /usr/lib64/libcyrus.so.0.0.0
+7f4450dcf000-7f4450dd1000 rw-p 00135000 08:13 3956619                    /usr/lib64/libcyrus.so.0.0.0
+7f4450dd1000-7f4450dd2000 rw-p 00000000 00:00 0
+7f4450dd2000-7f4450dd4000 r-xp 00000000 08:13 3955578                    /usr/lib64/libcyrus_com_err.so.0.0.0
+7f4450dd4000-7f4450fd3000 ---p 00002000 08:13 3955578                    /usr/lib64/libcyrus_com_err.so.0.0.0
+7f4450fd3000-7f4450fd4000 r--p 00001000 08:13 3955578                    /usr/lib64/libcyrus_com_err.so.0.0.0
+7f4450fd4000-7f4450fd5000 rw-p 00002000 08:13 3955578                    /usr/lib64/libcyrus_com_err.so.0.0.0
+7f4450fd5000-7f4451167000 r-xp 00000000 08:13 7488248                    /lib64/libc-2.21.so
+7f4451167000-7f4451366000 ---p 00192000 08:13 7488248                    /lib64/libc-2.21.so
+7f4451366000-7f445136a000 r--p 00191000 08:13 7488248                    /lib64/libc-2.21.so
+7f445136a000-7f445136c000 rw-p 00195000 08:13 7488248                    /lib64/libc-2.21.so
+7f445136c000-7f4451370000 rw-p 00000000 00:00 0
+7f4451370000-7f4451387000 r-xp 00000000 08:13 7488237                    /lib64/libpthread-2.21.so
+7f4451387000-7f4451586000 ---p 00017000 08:13 7488237                    /lib64/libpthread-2.21.so
+7f4451586000-7f4451587000 r--p 00016000 08:13 7488237                    /lib64/libpthread-2.21.so
+7f4451587000-7f4451588000 rw-p 00017000 08:13 7488237                    /lib64/libpthread-2.21.so
+7f4451588000-7f445158c000 rw-p 00000000 00:00 0
+7f445158c000-7f44515a3000 r-xp 00000000 08:13 3956618                    /usr/lib64/libcyrus_min.so.0.0.0
+7f44515a3000-7f44517a2000 ---p 00017000 08:13 3956618                    /usr/lib64/libcyrus_min.so.0.0.0
+7f44517a2000-7f44517a3000 r--p 00016000 08:13 3956618                    /usr/lib64/libcyrus_min.so.0.0.0
+7f44517a3000-7f44517c6000 rw-p 00017000 08:13 3956618                    /usr/lib64/libcyrus_min.so.0.0.0
+7f44517c6000-7f44517e6000 r-xp 00000000 08:13 3955605                    /usr/lib64/libcyrus_sieve.so.0.0.0
+7f44517e6000-7f44519e5000 ---p 00020000 08:13 3955605                    /usr/lib64/libcyrus_sieve.so.0.0.0
+7f44519e5000-7f44519e6000 r--p 0001f000 08:13 3955605                    /usr/lib64/libcyrus_sieve.so.0.0.0
+7f44519e6000-7f44519e7000 rw-p 00020000 08:13 3955605                    /usr/lib64/libcyrus_sieve.so.0.0.0
+7f44519e7000-7f4451a09000 r-xp 00000000 08:13 7487553                    /lib64/ld-2.21.so
+7f4451bd6000-7f4451be2000 rw-p 00000000 00:00 0
+7f4451c05000-7f4451c08000 rw-p 00000000 00:00 0
+7f4451c08000-7f4451c09000 r--p 00021000 08:13 7487553                    /lib64/ld-2.21.so
+7f4451c09000-7f4451c0a000 rw-p 00022000 08:13 7487553                    /lib64/ld-2.21.so
+7f4451c0a000-7f4451c0b000 rw-p 00000000 00:00 0
+7fff76e2e000-7fff76e4f000 rw-p 00000000 00:00 0                          [stack]
+7fff76eaa000-7fff76eac000 r--p 00000000 00:00 0                          [vvar]
+7fff76eac000-7fff76eae000 r-xp 00000000 00:00 0                          [vdso]
+ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]
+Abgebrochen
+========================================================================
+
+I am running now &quot;cyrus-imapd 2.5.7&quot; (aka Gentoo: net-mail/cyrus-imapd-2.5.7) (x86_64 now, while opening the bug, it was and older system running in 32bits only (if that makes any difference))
+
+Perhaps, you can provide some test sieve cases with regex, which i can then verify  with sievec ?
+If i can help you to track this further or you need any information, please ask, thanks
+Ronny</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-03-14 20:09:04 EDT</bug_when>
+            <thetext>Thanks for the update.  It&apos;s interesting that it&apos;s still happening on a newer system (though I notice the exact error has changed, though it&apos;s similar in spirit)
+
+I&apos;ve tried again with your updated test sieve and I still can&apos;t reproduce this myself (cyrus-imapd-2.5.7, debian testing)
+
+The backtrace you&apos;ve provided isn&apos;t very useful, looks like your binaries are stripped or were compiled without debug symbols (CFLAGS=-g) enabled.  Are you able to reproduce this in a build that has been compiled with debug symbols enabled, and provide the backtrace from that?  (Sorry I can&apos;t provide more specific directions than this, I don&apos;t know how Gentoo packages work.)
+
+At this point, I suspect there&apos;s probably some kind of memory mishandling happening, and for whatever reason Gentoo complains about it where Debian doesn&apos;t.  If this is the case, it&apos;d be good to find it and fix it if we can.
+
+The other thing that might be informative is running sievec under valgrind.  I&apos;ve just done this myself and it reports a couple of leaks, but doesn&apos;t detect anything else.  It&apos;d be interesting to see what valgrind on Gentoo reports.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

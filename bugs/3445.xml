@@ -1,0 +1,144 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3445</bug_id>
+          
+          <creation_ts>2011-04-18 00:07 EDT</creation_ts>
+          <short_desc>plugins/gssapi.c segfaults in sasl_gss_encode (CVS only)</short_desc>
+          <delta_ts>2012-10-12 06:36:00 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.1-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dan White">dwhite@olp.net</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+    
+    <cc>gadams+cyrus-bugzilla@avernus.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-04-18 00:07:55 EDT</bug_when>
+            <thetext>Created an attachment (id=1377)
+reverts section of gssapi.c/sasl_gss_encode to 2.1.23
+
+The CVS version of plugins/gssapi.c always causes a segfault on my system while attempting to use the gssapi plugin. imtest, ldapwhoami, and slapd all crash.
+
+My system is running Debian Wheezy, on Linux/amd64. The offending section of code appears to be:
+
+
+    if (output_token-&gt;value &amp;&amp; output) {
+        unsigned char * p = (unsigned char *) text-&gt;encode_buf;
+        
+        ret = _plug_buf_alloc(text-&gt;utils,
+                              &amp;(text-&gt;encode_buf),
+                              &amp;(text-&gt;encode_buf_len),
+                              output_token-&gt;length + 4);
+        
+        if (ret != SASL_OK) {
+            GSS_LOCK_MUTEX(text-&gt;utils);
+            gss_release_buffer(&amp;min_stat, output_token);
+            GSS_UNLOCK_MUTEX(text-&gt;utils);
+            return ret;
+        }
+        
+        p[0] = (output_token-&gt;length&gt;&gt;24) &amp; 0xFF;
+        p[1] = (output_token-&gt;length&gt;&gt;16) &amp; 0xFF;
+        p[2] = (output_token-&gt;length&gt;&gt;8) &amp; 0xFF;
+        p[3] = output_token-&gt;length &amp; 0xFF;
+
+        memcpy(text-&gt;encode_buf + 4, output_token-&gt;value, output_token-&gt;length);
+    }
+
+and the first assigned (to p[0]) is where I encounter the segfault. Reverting to the code in 2.1.23 (patch attached) resolves the trouble.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-06-02 22:03:40 EDT</bug_when>
+            <thetext>Please review. This bug is still present in CVS, and has been observed in the debian unstable respository (libsasl2-modules-gssapi-mit 2.1.24~rc1.dfsg1+cvs2011-05-23-2).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-02-08 09:21:48 EDT</bug_when>
+            <thetext>Can you check if the bug is still present on the HEAD? I think it was caused by:
+
+unsigned char * p = (unsigned char *) text-&gt;encode_buf;
+
+which were later on in the function was pointing to freed memory. This was fixed by another patch.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-06-01 12:55:09 EDT</bug_when>
+            <thetext>Fixed post 2.1.25.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-10-12 06:36:00 EDT</bug_when>
+            <thetext>*** Bug 3732 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1377</attachid>
+            <date>2011-04-18 00:07 EDT</date>
+            <desc>reverts section of gssapi.c/sasl_gss_encode to 2.1.23</desc>
+            <filename>gssapi-segfault.patch</filename>
+            <type>text/plain</type>
+            <size>748</size>
+            <attacher>dwhite@olp.net</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLXNhc2wtMi4xLjI0Lm9sZC9wbHVnaW5zL2dzc2FwaS5jCTIwMTAtMTAtMjYgMTE6
+MDg6MDIuMDAwMDAwMDAwICswMDAwCisrKyBjeXJ1cy1zYXNsLTIuMS4yNC9wbHVnaW5zL2dzc2Fw
+aS5jCTIwMTEtMDQtMTggMDM6NDg6NTEuMTY1NTE0NTI5ICswMDAwCkBAIC0zNzAsNyArMzcwLDcg
+QEAKICAgICB9CiAgICAgCiAgICAgaWYgKG91dHB1dF90b2tlbi0+dmFsdWUgJiYgb3V0cHV0KSB7
+Ci0JdW5zaWduZWQgY2hhciAqIHAgPSAodW5zaWduZWQgY2hhciAqKSB0ZXh0LT5lbmNvZGVfYnVm
+OworCWludCBsZW47CiAJCiAJcmV0ID0gX3BsdWdfYnVmX2FsbG9jKHRleHQtPnV0aWxzLAogCQkJ
+ICAgICAgJih0ZXh0LT5lbmNvZGVfYnVmKSwKQEAgLTM4NCwxMSArMzg0LDggQEAKIAkgICAgcmV0
+dXJuIHJldDsKIAl9CiAJCi0JcFswXSA9IChvdXRwdXRfdG9rZW4tPmxlbmd0aD4+MjQpICYgMHhG
+RjsKLQlwWzFdID0gKG91dHB1dF90b2tlbi0+bGVuZ3RoPj4xNikgJiAweEZGOwotCXBbMl0gPSAo
+b3V0cHV0X3Rva2VuLT5sZW5ndGg+PjgpICYgMHhGRjsKLQlwWzNdID0gb3V0cHV0X3Rva2VuLT5s
+ZW5ndGggJiAweEZGOwotCisJbGVuID0gaHRvbmwob3V0cHV0X3Rva2VuLT5sZW5ndGgpOworCW1l
+bWNweSh0ZXh0LT5lbmNvZGVfYnVmLCAmbGVuLCA0KTsKIAltZW1jcHkodGV4dC0+ZW5jb2RlX2J1
+ZiArIDQsIG91dHB1dF90b2tlbi0+dmFsdWUsIG91dHB1dF90b2tlbi0+bGVuZ3RoKTsKICAgICB9
+CiAgICAgCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

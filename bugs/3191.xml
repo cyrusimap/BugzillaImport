@@ -1,0 +1,193 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3191</bug_id>
+          
+          <creation_ts>2010-01-22 08:57 EDT</creation_ts>
+          <short_desc>RENAME/DELETE may leave empty directories on filesystem</short_desc>
+          <delta_ts>2011-04-01 17:32:52 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-01-22 08:57:57 EDT</bug_when>
+            <thetext>Created an attachment (id=1255)
+patch to check actual mailbox and metadata path upon folder deletion
+
+Observed in cyrus 2.3.13.
+When deleting or renaming a mailbox, at some point (imap/mailbox.c:mailbox_delete) cyrus cleans the filesystem folder containing messages (and the metadata folder if any), but this leaves empty directories in some cases:
+ - when moving a mailbox (with subfolders) on another partition
+ - when renaming a mailbox which has a subfolder on another partition
+ - when deleting a mailbox which has a subfolder on another partition
+The 2nd and 3rd cases may not be common: not everyone purposely set subfolders on other partitions than the one used by the parent mailbox; but it can happen when moving a mailbox to a new partition fails on a subfolder, leaving the folders not yet processed on the original partition.
+
+
+The reason is that upon cleaning the actual filesystem folder is removed only if it has no logical subfolder, and its filesystem parent is recursively processed only if it does not logically exist. This thus leaves empty directories when those logical folders actually do not reside on the same partition.
+
+Example with the following mailbox:
+user.test
+user.test.a
+
+When moving user.test to another partition:
+ - user.test is processed
+   -&gt; user.test is copied to the new partition
+   -&gt; filesystem folder associated to user.test is emptied
+   -&gt; the folder is not removed because there is at least one logical child: user.test.a
+ - user.test.a is processed
+   -&gt; user.test.a is copied to the new partition
+   -&gt; filesystem folder associated to user.test.a is emptied
+   -&gt; the folder is removed because is has no logical child
+   -&gt; the parent filesystem folder is not removed, because the logical parent (user.test) exists (while not being on the same partition than the filesystem folder being probed for removal)
+So, after moving the mailbox the original filesystem folder associated to user.test still exists.
+Note: for SQL backend, the query retrieving mailbox entries orders result by mailbox name.
+
+
+The attached patch (against version 2.3.16) fixes the issue by checking the actual filesystem folders (for messages folder, and metadata folder if any).
+Maybe someone will find a better fix, since I think of mine as a bit too weighty (due to the fact I took care of both message and metadata folders) and suboptimal (has to perform more requests to get mailboxes entries data compared to original code). Maybe a compromise between the current code and the previous one from version 2.1, which did not care about logical folders  and recursively performed rmdir on filesystem parent until it failed (not logging failures) ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-04-01 17:32:52 EDT</bug_when>
+            <thetext>I&apos;ve actually fixed this independently on 2.4.7 and master, due to:
+
+Bug #3391 - make rename work between partitions
+
+Lots of tidy up in there :)
+
+Sorry I didn&apos;t get to your patch first.  I haven&apos;t been through bugzilla for a while...</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1255</attachid>
+            <date>2010-01-22 08:57 EDT</date>
+            <desc>patch to check actual mailbox and metadata path upon folder deletion</desc>
+            <filename>cyrus-delete_thorough-2.3.16.patch</filename>
+            <type>text/plain</type>
+            <size>4379</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtciAtdSBjeXJ1cy1pbWFwZC0yLjMuMTYub3JpZy9pbWFwL21haWxib3guYyBjeXJ1cy1p
+bWFwZC0yLjMuMTYvaW1hcC9tYWlsYm94LmMKLS0tIGN5cnVzLWltYXBkLTIuMy4xNi5vcmlnL2lt
+YXAvbWFpbGJveC5jCTIwMDktMTItMTUgMDQ6Mjk6MzMuMDAwMDAwMDAwICswMTAwCisrKyBjeXJ1
+cy1pbWFwZC0yLjMuMTYvaW1hcC9tYWlsYm94LmMJMjAxMC0wMS0yMiAxMToyMTowNy4wMDAwMDAw
+MDAgKzAxMDAKQEAgLTI4MzUsMTMgKzI4MzUsNTIgQEAKICAgICB9CiB9CiAKK3N0cnVjdCBjaGty
+b2NrCit7CisgICAgY2hhciBtYWlsYm94cGF0aFtNQVhfTUFJTEJPWF9QQVRIKzFdOworICAgIGNo
+YXIgbWFpbGJveG1wYXRoW01BWF9NQUlMQk9YX1BBVEgrMV07CisgICAgaW50IHBhdGhjaGlsZHJl
+bjsKKyAgICBpbnQgbXBhdGhjaGlsZHJlbjsKK307CisKIC8qIENhbGxiYWNrIGZvciB1c2UgYnkg
+Y21kX2RlbGV0ZSAqLwotc3RhdGljIGludCBjaGtjaGlsZHJlbihjaGFyICpuYW1lIF9fYXR0cmli
+dXRlX18oKHVudXNlZCkpLAorc3RhdGljIGludCBjaGtjaGlsZHJlbihjaGFyICpuYW1lLAogCQkg
+ICAgICAgaW50IG1hdGNobGVuIF9fYXR0cmlidXRlX18oKHVudXNlZCkpLAogCQkgICAgICAgaW50
+IG1heWNyZWF0ZSBfX2F0dHJpYnV0ZV9fKCh1bnVzZWQpKSwKLQkJICAgICAgIHZvaWQgKnJvY2sg
+X19hdHRyaWJ1dGVfXygodW51c2VkKSkpCisJCSAgICAgICB2b2lkICpyb2NrcCkKIHsKLSAgICBy
+ZXR1cm4gQ1lSVVNEQl9ET05FOworICAgIHN0cnVjdCBjaGtyb2NrKiByb2NrID0gKHN0cnVjdCBj
+aGtyb2NrKilyb2NrcDsKKyAgICBpbnQgcGF0aGxlbjsKKyAgICBpbnQgbXBhdGhsZW47CisgICAg
+Y2hhciAqcGF0aDsKKyAgICBjaGFyICptcGF0aDsKKyAgICBpbnQgcjsKKyAgICBpbnQgaGFzbXBh
+dGggPSAocm9jay0+bWFpbGJveG1wYXRoWzBdID09IDAgPyAwIDogMSk7CisKKyAgICByID0gbWJv
+eGxpc3RfZGV0YWlsKG5hbWUsIE5VTEwsICZwYXRoLCAmbXBhdGgsIE5VTEwsIE5VTEwsIE5VTEwp
+OworICAgIGlmIChyKSB7CisgICAgICAgIHJldHVybiByOworICAgIH0KKworICAgIHBhdGhsZW4g
+PSBzdHJsZW4ocm9jay0+bWFpbGJveHBhdGgpOworICAgIG1wYXRobGVuID0gc3RybGVuKHJvY2st
+Pm1haWxib3htcGF0aCk7CisgICAgaWYgKCFyb2NrLT5wYXRoY2hpbGRyZW4gJiYgIXN0cm5jYXNl
+Y21wKHJvY2stPm1haWxib3hwYXRoLCBwYXRoLCBwYXRobGVuKQorICAgICAgICAmJiAocGF0aFtw
+YXRobGVuXSA9PSAnLycpKQorICAgIHsKKyAgICAgICAgcm9jay0+cGF0aGNoaWxkcmVuID0gMTsK
+KyAgICB9CisgICAgaWYgKGhhc21wYXRoICYmICFyb2NrLT5tcGF0aGNoaWxkcmVuICYmIG1wYXRo
+ICYmICFzdHJuY2FzZWNtcChyb2NrLT5tYWlsYm94bXBhdGgsIG1wYXRoLCBtcGF0aGxlbikKKyAg
+ICAgICAgJiYgKG1wYXRoW21wYXRobGVuXSA9PSAnLycpKQorICAgIHsKKyAgICAgICAgcm9jay0+
+bXBhdGhjaGlsZHJlbiA9IDE7CisgICAgfQorCisgICAgaWYgKHJvY2stPnBhdGhjaGlsZHJlbiAm
+JiAoIWhhc21wYXRoIHx8IHJvY2stPm1wYXRoY2hpbGRyZW4pKSB7CisgICAgICAgIC8qIEFjdHVh
+bCBwYXRoIGNoaWxkcmVuIGZvdW5kICovCisgICAgICAgIHJldHVybiBDWVJVU0RCX0RPTkU7Cisg
+ICAgfQorCisgICAgcmV0dXJuIENZUlVTREJfT0s7CiB9CiAKIC8qCkBAIC0yODU1LDYgKzI4OTQs
+MTEgQEAKICAgICBjaGFyIHBidWZbTUFYX01BSUxCT1hfUEFUSCsxXSwgbWJ1ZltNQVhfTUFJTEJP
+WF9QQVRIKzFdOwogICAgIGNoYXIgKm50YWlsLCAqcHRhaWwsICptdGFpbCA9IE5VTEw7CiAgICAg
+c3RydWN0IHR4biAqdGlkID0gTlVMTDsKKyAgICBzdHJ1Y3QgY2hrcm9jayByb2NrOworICAgIGNo
+YXIgKnBhcmVudHBhdGg7CisgICAgY2hhciAqcGFyZW50bXBhdGg7CisgICAgaW50IHBhdGhsZW47
+CisgICAgaW50IG1wYXRobGVuOwogICAgIAogICAgIC8qIEVuc3VyZSB0aGF0IHdlIGFyZSBsb2Nr
+ZWQgKi8KICAgICBpZighbWFpbGJveC0+aGVhZGVyX2xvY2tfY291bnQpIHJldHVybiBJTUFQX0lO
+VEVSTkFMOwpAQCAtMjkwNSwyNiArMjk0OSwzNSBAQAogICAgIG1haWxib3hfY2xvc2UobWFpbGJv
+eCk7CiAKIAorICAgIGJ6ZXJvKCZyb2NrLCBzaXplb2Yocm9jaykpOwogICAgIGRvIHsKIAkvKiBD
+aGVjayBpZiB0aGUgbWFpbGJveCBoYXMgY2hpbGRyZW4gKi8KIAlzdHJjcHkobnRhaWwsICIuKiIp
+OwotCXIgPSBtYm94bGlzdF9maW5kYWxsKE5VTEwsIG5idWYsIDEsIE5VTEwsIE5VTEwsIGNoa2No
+aWxkcmVuLCBOVUxMKTsKKwlzdHJsY3B5KHJvY2subWFpbGJveHBhdGgsIHBidWYsIHNpemVvZihy
+b2NrLm1haWxib3hwYXRoKSk7CisJaWYgKG10YWlsKSB7CisJICAgIHN0cmxjcHkocm9jay5tYWls
+Ym94bXBhdGgsIG1idWYsIHNpemVvZihyb2NrLm1haWxib3htcGF0aCkpOworCX0KKwlyID0gbWJv
+eGxpc3RfZmluZGFsbChOVUxMLCBuYnVmLCAxLCBOVUxMLCBOVUxMLCBjaGtjaGlsZHJlbiwgJnJv
+Y2spOwogCWlmIChyICE9IDApIGJyZWFrOyAvKiBXZSBzaG9ydC1jaXJjdWl0IHdpdGggQ1lSVVNE
+Ql9ET05FICovCiAKLQkvKiBObyBjaGlsZHJlbiwgcmVtb3ZlIG1haWxib3ggc3Bvb2wgZGlyKHMp
+ICovCi0JaWYgKHJtZGlyKHBidWYpKSB7Ci0JICAgIHN5c2xvZyhMT0dfTk9USUNFLAotCQkgICAi
+UmVtb3ZlIG9mIHN1cHBvc2VkbHkgZW1wdHkgZGlyZWN0b3J5ICVzIGZhaWxlZDogJW0iLAotCQkg
+ICBwYnVmKTsKKwlpZiAoIXJvY2sucGF0aGNoaWxkcmVuKSB7CisJICAgIC8qIE5vIGNoaWxkcmVu
+LCByZW1vdmUgbWFpbGJveCBzcG9vbCBkaXIocykgKi8KKwkgICAgaWYgKHJtZGlyKHBidWYpKSB7
+CisJCXN5c2xvZyhMT0dfTk9USUNFLAorCQkgICAgICAgIlJlbW92ZSBvZiBzdXBwb3NlZGx5IGVt
+cHR5IGRpcmVjdG9yeSAlcyBmYWlsZWQ6ICVtIiwKKwkJICAgICAgIHBidWYpOworCSAgICB9CiAJ
+fQogCXB0YWlsID0gc3RycmNocihwYnVmLCAnLycpOwogCSpwdGFpbCA9J1wwJzsKIAogCWlmICht
+dGFpbCkgewotCSAgICBpZiAocm1kaXIobWJ1ZikpIHsKLQkJc3lzbG9nKExPR19OT1RJQ0UsCi0J
+CSAgICAgICAiUmVtb3ZlIG9mIHN1cHBvc2VkbHkgZW1wdHkgZGlyZWN0b3J5ICVzIGZhaWxlZDog
+JW0iLAotCQkgICAgICAgbWJ1Zik7CisJICAgIGlmICghcm9jay5tcGF0aGNoaWxkcmVuKSB7CisJ
+CWlmIChybWRpcihtYnVmKSkgeworCQkgICAgc3lzbG9nKExPR19OT1RJQ0UsCisJCSAgICAgICAg
+ICAgIlJlbW92ZSBvZiBzdXBwb3NlZGx5IGVtcHR5IGRpcmVjdG9yeSAlcyBmYWlsZWQ6ICVtIiwK
+KwkJICAgICAgICAgICBtYnVmKTsKKwkJfQogCSAgICB9CiAJICAgIG10YWlsID0gc3RycmNociht
+YnVmLCAnLycpOwogCSAgICAqbXRhaWwgPSdcMCc7CkBAIC0yOTQzLDggKzI5OTYsMzMgQEAKIAkg
+ICAgLyogSGl0IHRvcCBvZiAndXNlcicgaGllcmFyY2h5ICovCiAJICAgIGJyZWFrOwogCX0KLQly
+ID0gbWJveGxpc3RfbG9va3VwKG5idWYsIE5VTEwsIE5VTEwpOwotICAgIH0gd2hpbGUociA9PSBJ
+TUFQX01BSUxCT1hfTk9ORVhJU1RFTlQpOworCXIgPSBtYm94bGlzdF9kZXRhaWwobmJ1ZiwgTlVM
+TCwgJnBhcmVudHBhdGgsICZwYXJlbnRtcGF0aCwgTlVMTCwgTlVMTCwgTlVMTCk7CisJaWYgKHIg
+PT0gSU1BUF9NQUlMQk9YX05PTkVYSVNURU5UKSB7CisJICAgIC8qIFBhcmVudCBkb2VzIG5vdCBl
+eGlzdCwgZ28gb24gKi8KKwkgICAgY29udGludWU7CisJfQorCWVsc2UgaWYgKHIgIT0gMCkgewor
+CSAgICBicmVhazsKKwl9CisKKwlwYXRobGVuID0gc3RybGVuKHBhcmVudHBhdGgpOworCWlmIChw
+YXJlbnRtcGF0aCkgeworCSAgICBtcGF0aGxlbiA9IHN0cmxlbihwYXJlbnRtcGF0aCk7CisJfQor
+CWlmIChzdHJuY2FzZWNtcChwYXJlbnRwYXRoLCByb2NrLm1haWxib3hwYXRoLCBwYXRobGVuKSB8
+fCAocm9jay5tYWlsYm94cGF0aFtwYXRobGVuXSAhPSAnLycpKSB7CisJICAgIC8qIFdlIG1heSBi
+ZSBhYmxlIHRvIGRlbGV0ZSBwYXJlbnQgcGF0aCAqLworCSAgICBjb250aW51ZTsKKwl9CisJaWYg
+KG10YWlsICYmICghcGFyZW50bXBhdGggfHwgKHBhcmVudG1wYXRoCisJICAgICYmIChzdHJuY2Fz
+ZWNtcChwYXJlbnRtcGF0aCwgcm9jay5tYWlsYm94bXBhdGgsIG1wYXRobGVuKSB8fCAocm9jay5t
+YWlsYm94bXBhdGhbbXBhdGhsZW5dICE9ICcvJykpKSkpCisJeworCSAgICAvKiBXZSBtYXkgYmUg
+YWJsZSB0byBkZWxldGUgcGFyZW50IG1ldGFkYXRhIHBhdGggKi8KKwkgICAgY29udGludWU7CisJ
+fQorCisJLyogUGFyZW50IG1haWxib3ggaXMgYWxzbyBwYXJlbnQgcGF0aCwgc3RvcCBoZXJlICov
+CisJYnJlYWs7CisgICAgfSB3aGlsZSgxKTsKIAogICAgIHJldHVybiAwOwogfQo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

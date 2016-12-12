@@ -1,0 +1,153 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3053</bug_id>
+          
+          <creation_ts>2008-04-06 11:23 EDT</creation_ts>
+          <short_desc>force cyrus to reload its configuration in a more rigorous way</short_desc>
+          <delta_ts>2010-10-14 05:34:56 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alain Spineux">alain.spineux@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alain Spineux">alain.spineux@gmail.com</who>
+            <bug_when>2008-04-06 11:23:15 EDT</bug_when>
+            <thetext>Created an attachment (id=998)
+patch
+
+The problem is that after a configuration change, any process that
+was waiting for a new connection, will handle one (hopefully only one) new
+connection without taking care of the changes.
+Process that was handling a connection will detect the change at the end
+and terminate.
+Process that will not handle a new connection will normally timeout.
+
+Then if an administrator test its configuration just after the change,
+he can get a bad surprise.
+
+This patch force any pending process to terminate.
+The patch force cyrmaster to send a SIGHUP to all its children. 
+And help the services to handle this signal appropriately.
+
+I made some post about this:
+http://lists.andrew.cmu.edu/pipermail/cyrus-devel/2008-April/000788.html
+http://lists.andrew.cmu.edu/pipermail/cyrus-devel/2008-April/000789.html</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2008-09-18 20:32:55 EDT</bug_when>
+            <thetext>The patch to imap/signals.c is a bit bogus: just below setting the HUP handler, we set the HUP handler again in the for loop.  See the value of &quot;catch&quot;.  Perhaps explain your comment more: &quot;SIGHUP is used to force a configuration reload, and the waiting period is a privileged moment, so we don&apos;t set SA_RESTART&quot;.  SA_RESTART *does* end up set after all.
+
+For reread_conf(), I&apos;d like to see the kill(c-&gt;pid, SIGHUP) code shared.  I think you can just move the /* send SIGHUP to all children */ block from:
+
+        if (!Services[i].exec &amp;&amp; Services[i].socket) {
+
+to
+
+        if (Services[i].socket) {
+
+and leave the rest of the disabled code intact.
+
+The change to master/service.c doesn&apos;t have any impact on whether there&apos;s a HUP handler, due to the bug above.  Luckily, only fud and smmapd are checking the return value of signals_poll() and SA_RESTART *is* set, so read() and write() aren&apos;t interrupted.
+
+I think this patch is pretty close, but still needs a little work to be accepted.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>998</attachid>
+            <date>2008-04-06 11:23 EDT</date>
+            <desc>patch</desc>
+            <filename>cyrus-imapd-2.3.11_reload_conf-asx.patch</filename>
+            <type>text/plain</type>
+            <size>2373</size>
+            <attacher>alain.spineux@gmail.com</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMy4xMS9pbWFwL3NpZ25hbHMuYy5vcmlnCTIwMDYtMTEtMzAgMTg6
+MTE6MjAuMDAwMDAwMDAwICswMTAwCisrKyBjeXJ1cy1pbWFwZC0yLjMuMTEvaW1hcC9zaWduYWxz
+LmMJMjAwOC0wMy0yMyAxNzoyNDo1NC4wMDAwMDAwMDAgKzAxMDAKQEAgLTc5LDYgKzc5LDEyIEBA
+CiAJZmF0YWwoInVuYWJsZSB0byBpbnN0YWxsIHNpZ25hbCBoYW5kbGVyIGZvciAlZDogJW0iLCBT
+SUdBTFJNKTsKICAgICB9CiAKKyAgICAvKiBBU1g6IFNJR0hVUCBpcyB1c2VkIHRvIGZvcmNlIGEg
+Y29uZmlndXJhdGlvbiByZWxvYWQsIGFuZCB0aGUgd2FpdGluZworICAgICAqIHBlcmlvZCBpcyBh
+IHByaXZpbGVnZWQgbW9tZW50LCBzbyB3ZSBkb24ndCBzZXQgU0FfUkVTVEFSVCAqLworICAgIGlm
+IChhbGFybSAmJiBzaWdhY3Rpb24oU0lHSFVQLCAmYWN0aW9uLCBOVUxMKSA8IDApIHsKKyAgICAg
+ICBmYXRhbCgidW5hYmxlIHRvIGluc3RhbGwgc2lnbmFsIGhhbmRsZXIgZm9yICVkOiAlbSIsIFNJ
+R0hVUCk7CisgICAgfQorCiAjaWZkZWYgU0FfUkVTVEFSVAogICAgIGFjdGlvbi5zYV9mbGFncyB8
+PSBTQV9SRVNUQVJUOwogI2VuZGlmCi0tLSBjeXJ1cy1pbWFwZC0yLjMuMTEvbWFzdGVyL21hc3Rl
+ci5jLm9yaWcJMjAwNy0xMC0xMCAxNTo1OTo0OC4wMDAwMDAwMDAgKzAyMDAKKysrIGN5cnVzLWlt
+YXBkLTIuMy4xMS9tYXN0ZXIvbWFzdGVyLmMJMjAwOC0wMy0yMyAxNzoyOTozMy4wMDAwMDAwMDAg
+KzAxMDAKQEAgLTE1NjgsNiArMTU2OCwyMyBAQAogCQlzeXNsb2coTE9HX0RFQlVHLCAiaW5pdDog
+c2VydmljZSAlcyBzb2NrZXQgJWQgcGlwZSAlZCAlZCIsCiAJCSAgICAgICBTZXJ2aWNlc1tpXS5u
+YW1lLCBTZXJ2aWNlc1tpXS5zb2NrZXQsCiAJCSAgICAgICBTZXJ2aWNlc1tpXS5zdGF0WzBdLCBT
+ZXJ2aWNlc1tpXS5zdGF0WzFdKTsKKyAgICAgICAgfSBlbHNlIGlmIChTZXJ2aWNlc1tpXS5leGVj
+ICYmIFNlcnZpY2VzW2ldLnNvY2tldCkgeworICAgICAgICAgICAgLyogcmVmcmVzaCB0aGUgb2xk
+IG9uZSAqLworICAgICAgICAgICAgc3lzbG9nKExPR19ERUJVRywgIkFTWCBTT01FVEhJTkcgVE8g
+RE8gc2VydmljZSAlcyBzb2NrZXQgJWQgcGlwZSAlZCAlZCAlZCIsCisgICAgICAgICAgICAgICAg
+ICAgICAgU2VydmljZXNbaV0ubmFtZSwgU2VydmljZXNbaV0uc29ja2V0LAorICAgICAgICAgICAg
+ICAgICAgICAgIFNlcnZpY2VzW2ldLnN0YXRbMF0sIFNlcnZpY2VzW2ldLnN0YXRbMV0sCisgICAg
+ICAgICAgICAgICAgICAgICAgIFNlcnZpY2VzW2ldLmV4ZWMgPyAxOjApOworICAgICAgICAgICAg
+Lyogc2VuZCBTSUdIVVAgdG8gYWxsIGNoaWxkcmVuICovCisgICAgICAgICAgICBmb3IgKGogPSAw
+IDsgaiA8IGNoaWxkX3RhYmxlX3NpemUgOyBqKysgKSB7CisgICAgICAgICAgICAgICAgYyA9IGN0
+YWJsZVtqXTsKKyAgICAgICAgICAgICAgICB3aGlsZSAoYyAhPSBOVUxMKSB7CisgICAgICAgICAg
+ICAgICAgICAgIGlmICgoYy0+c2kgPT0gaSkgJiYgKGMtPnNlcnZpY2Vfc3RhdGUgIT0gU0VSVklD
+RV9TVEFURV9ERUFEKSkgeworICAgICAgICAgICAgICAgICAgICAgICAgc3lzbG9nKExPR19ERUJV
+RywgIkFTWCBzZW5kIFNJR0hVUCB0byAlZCIsIGMtPnBpZCk7CisgICAgICAgICAgICAgICAgICAg
+ICAgICBraWxsKGMtPnBpZCwgU0lHSFVQKTsKKyAgICAgICAgICAgICAgICAgICAgfQorICAgICAg
+ICAgICAgICAgICAgICBjID0gYy0+bmV4dDsKKyAgICAgICAgICAgICAgICB9CisgICAgICAgICAg
+ICB9CiAJfQogICAgIH0KIAotLS0gY3lydXMtaW1hcGQtMi4zLjExL21hc3Rlci9zZXJ2aWNlLmMu
+b3JpZwkyMDA3LTA5LTI3IDIyOjEwOjM5LjAwMDAwMDAwMCArMDIwMAorKysgY3lydXMtaW1hcGQt
+Mi4zLjExL21hc3Rlci9zZXJ2aWNlLmMJMjAwOC0wMy0yMyAxNzozMjo0Ni4wMDAwMDAwMDAgKzAx
+MDAKQEAgLTQ2MCw3ICs0NjAsMTIgQEAKIAkJCSAgICBub3RpZnlfbWFzdGVyKFNUQVRVU19GRCwg
+TUFTVEVSX1NFUlZJQ0VfVU5BVkFJTEFCTEUpOwkKIAkJCXNlcnZpY2VfYWJvcnQoRVhfT1NFUlIp
+OwogCQkgICAgfQotCQl9CisgICAgICAgICAgICAgICAgfSBlbHNlIHsKKyAgICAgICAgICAgICAg
+ICAgICAgIC8qIGZkID49IDAgKi8KKyAgICAgICAgICAgICAgICAgICAgIC8qIEFTWCB3ZSBkb250
+IHdhbnQgU0lHSFVQIHRvIGRpc3J1cHQgYSBjb25uZWN0aW9uCisgICAgICAgICAgICAgICAgICAg
+ICAgKiBiZWZvcmUgdGhlIGVuZCAqLworICAgICAgICAgICAgICAgICAgICAgc2lnbmFsc19hZGRf
+aGFuZGxlcnMoMCk7CisgICAgICAgICAgICAgICAgfQogCSAgICB9IGVsc2UgewogCQkvKiB1ZHAg
+Ki8KIAkJc3RydWN0IHNvY2thZGRyX3N0b3JhZ2UgZnJvbTsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

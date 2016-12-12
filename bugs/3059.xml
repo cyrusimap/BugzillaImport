@@ -1,0 +1,128 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3059</bug_id>
+          
+          <creation_ts>2008-04-22 16:26 EDT</creation_ts>
+          <short_desc>Crash when parsing config file.</short_desc>
+          <delta_ts>2010-10-25 18:46:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>cyrus@fiddaman.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">cyrus@fiddaman.net</who>
+            <bug_when>2008-04-22 16:26:20 EDT</bug_when>
+            <thetext>The new continuation line code accesses memory outside of the buffer when it encounters a blank line in a configuration file. On some systems this causes an immediate SEGV, on others it (just) corrupts memory.
+
+Program received signal SIGSEGV, Segmentation fault.
+0x000000010000cd08 in config_read_file (
+    filename=0x100136500 &quot;/opt/cyrus/etc/imapd.conf&quot;) at ../lib/libconfig.c:347
+347                     if (buf[len-1] == &apos;\\&apos;) {
+(gdb) print lineno
+$1 = 5
+(gdb) print buf
+$2 = 0x1001395f0 &quot;&quot;
+
+
+
+At this point, for an empty line in the file, len is 0 so buf[-1] is being accessed.
+
+Here&apos;s the relevant code from lib/libconfig.c
+
+    while (fgets(buf+len, bufsize-len, infile)) {
+        if (buf[len]) {
+            len = strlen(buf);                     &lt;----------- len = 1
+            if (buf[len-1] == &apos;\n&apos;) {
+                /* end of line */
+                buf[--len] = &apos;\0&apos;;                 &lt;----------- --len
+
+                if (buf[len-1] == &apos;\\&apos;) {          &lt;----------- buf[-1]
+                    /* line continuation */
+                    len--;
+                    lineno++;
+                    continue;
+                }
+            }
+
+I added a couple of fprintf statements to check and here&apos;s the output:
+
+...
+Read buf: [#
+]
+len = 2
+Read buf: [# Cyrus mail server configuration
+]
+len = 34
+Read buf: [#
+]
+len = 2
+Read buf: [
+]
+len = 1
+
+Program received signal SIGSEGV, Segmentation fault.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">cyrus@fiddaman.net</who>
+            <bug_when>2008-04-22 17:17:44 EDT</bug_when>
+            <thetext>
+This fixes it for me...
+
+--- libconfig.c~        Tue Apr 22 20:30:33 2008
++++ libconfig.c Tue Apr 22 20:30:40 2008
+@@ -344,7 +344,7 @@
+                /* end of line */
+                buf[--len] = &apos;\0&apos;;
+ 
+-               if (buf[len-1] == &apos;\\&apos;) {
++               if (len &amp;&amp; buf[len-1] == &apos;\\&apos;) {
+                    /* line continuation */
+                    len--;
+                    lineno++;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-04-23 07:02:48 EDT</bug_when>
+            <thetext>Patch applied to CVS</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

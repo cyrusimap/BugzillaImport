@@ -1,0 +1,274 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3621</bug_id>
+          
+          <creation_ts>2012-01-05 07:18 EDT</creation_ts>
+          <short_desc>quota bug involving nested quota roots</short_desc>
+          <delta_ts>2012-04-18 07:26:23 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.12</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P4</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.15</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>allgeyer@web.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>allgeyer@web.de</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">allgeyer@web.de</who>
+            <bug_when>2012-01-05 07:18:14 EDT</bug_when>
+            <thetext>The calculation of quota is totally wrong,
+if one has quotas on sub mailboxes, too.
+
+Working example:
+----------------
+
+cyrus@localhost:~$ /usr/sbin/quota user.aaa
+   Quota   % Used     Used Root
+ 1200000       69   837428 user.aaa
+
+As you can see, only one quota root is defined.
+
+du -sh reports:
+/var/imap/data/home/user/aaa is 818M.
+/var/imap/data/archive/user/aaa is 16M.
+
+(I&apos;ve created two partitions)
+
+
+Non working example:
+--------------------
+
+cyrus@localhost:~$ /usr/sbin/quota user.aaa
+   Quota   % Used     Used Root
+ 1200000       20   250310 user.aaa
+       0            10688 user.aaa.Archives
+
+Here, two quota roots are defined, where one is a sub mailbox of another.
+
+du -sh reports:
+/var/imap/data/home/user/aaa is 818M.
+/var/imap/data/archive/user/aaa is 16M.
+
+(I&apos;ve created two partitions)
+
+
+Conclusion:
+-----------
+
+There must be a bug in calculating quotas (especially the &quot;used&quot; part), when nestes quota roots are defined and/or sub mailboxes are on another partition. I can confirm the problem on cyrus-imapd-2.2.13 and cyrus-imapd-2.4.12 (both compiled from scratch).
+
+The bug was also described here:
+http://www.spinics.net/lists/info-cyrus/msg07418.html</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-01-05 11:04:36 EDT</bug_when>
+            <thetext>Seems to work in the master branch:
+
+=====&gt; Cyrus::Quota[1010] check that STORAGE quota is used
+C: 6 getquota user.cassandane
+S: * QUOTA user.cassandane (STORAGE 14 100000)
+S: 6 OK Completed
+=====&gt; Cyrus::Quota[1013] create a bogus quota file
+C: 7 getquota user.cassandane
+S: * QUOTA user.cassandane (STORAGE 0 100000)
+S: 7 OK Completed
+=====&gt; Cyrus::Quota[1017] run quota -f to find and add the quota
+=====&gt; Instance[730] Running: &quot;/usr/cyrus/bin/quota&quot; &quot;-C&quot; &quot;/var/tmp/cass/1554541/conf/imapd.conf&quot; &quot;-f&quot;
+user.cassandane: STORAGE usage was 0, now 14587
+user.cassandane: MESSAGE usage was 0, now 20
+   Quota   % Used     Used             Resource Root
+  100000        0       14              STORAGE user.cassandane
+                        20              MESSAGE user.cassandane
+                         0 X-ANNOTATION-STORAGE user.cassandane
+       5        0        0              STORAGE user.cassandane.nested
+                         0              MESSAGE user.cassandane.nested
+                         0 X-ANNOTATION-STORAGE user.cassandane.nested
+=====&gt; Cyrus::Quota[1020] check that STORAGE quota is restored
+C: 8 getquota user.cassandane
+S: * QUOTA user.cassandane (STORAGE 14 100000)
+S: 8 OK Completed
+
+There&apos;s been a lot of work on fixing quotas in the master branch.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-01-11 22:19:41 EDT</bug_when>
+            <thetext>After some off-Bugzilla emails, we have some more information...
+
+On Mon, Jan 9, 2012, at 12:25 PM, Peter Allgeyer wrote:
+&gt; Hi Greg!
+&gt; 
+&gt; For the test, I&apos;ve set up cyrus-imap, master branch, and deleted all
+&gt; quotas,
+&gt; that might exist before (rm quota*, db.backup?/quota*).
+
+Ah.  So, here&apos;s the first problem: what you&apos;re doing here isn&apos;t deleting
+all the quota information, it&apos;s deleting *parts* of it and leaving the
+remainder in an inconsistent state.  In particular, the quotaroot strings
+in the cyrus.header files for each mailbox will still point to the original
+quotaroot.  Unfortunately, I don&apos;t see any way to be able to remove those.
+
+&gt; 
+&gt; Now I started the imapd:
+&gt; mail:/usr/cyrus/bin# ./master -C /etc/imapd.conf -M
+&gt; /etc/cyrus_master.conf
+&gt; 
+&gt; cyrus@mail:~$ /usr/local/DIR/cyrus-imapd-git/bin/cyradm mail
+&gt; =====&gt; queck quotas set
+&gt; mail&gt; lq user.aaa
+&gt; 
+&gt; mail&gt; lq user.aaa.AAA
+
+At this point, if you use the &quot;lqr&quot; command you&apos;ll see that each mailbox
+still thinks it&apos;s part of a quotaroot.
+
+&gt; Set quota and test it:
+&gt; mail&gt; sq user.aaa 2000000
+&gt; quota:2000000
+&gt; mail&gt; sq user.aaa.AAA 1000000
+&gt; quota:1000000
+&gt; mail&gt; lq user.aaa
+&gt;  STORAGE 777318/2000000 (38.8659%)
+&gt; mail&gt; lq user.aaa.AAA
+&gt;  STORAGE 0/1000000 (0%)
+&gt; 
+&gt; =====&gt; totally wrong! 
+
+It&apos;s wrong because of the leftover state from your earlier procedure.
+The imapd code that implements &quot;sq&quot; is trying to carefully calculate
+the &apos;used&apos; numbers for the new quotaroot, but when it looks at the
+mailboxes it thinks that they&apos;re already part of the quotaroot due to
+the leftovers, and skips them.
+
+If you had started with freshly created mailboxes which had never
+had any quota set on them, those two &quot;sq&quot; commands would result in the
+correct counts.  I know because I&apos;ve just tested this in the test suite.
+
+Nevertheless, at this point running &quot;quota -f&quot; should fix everything up,
+regardless of the state it&apos;s in.
+
+&gt; Run quota -f user.aaa:
+&gt; cyrus@mail:~$ /usr/cyrus/bin/quota -f user.aaa
+&gt; user.aaa: STORAGE usage was 795974530, now 158098740
+&gt; user.aaa: MESSAGE usage was 2846, now 503
+&gt; user.aaa.Junk: quota root user.aaa --&gt; (none)
+&gt; user.aaa.Sent: quota root user.aaa --&gt; (none)
+&gt; user.aaa.Trash: quota root user.aaa --&gt; (none)
+&gt; user.aaa.sent: quota root user.aaa --&gt; (none)
+
+Well, that&apos;s totally wrong:  quota -f is deciding that all those folders
+belong to no quotaroot at all, which is not correct.
+
+&gt; user.aaa.AAA: STORAGE usage was 0, now 248119256
+&gt; user.aaa.AAA: MESSAGE usage was 0, now 693
+&gt;    Quota   % Used     Used             Resource Root
+&gt;  2000000        7   154393              STORAGE user.aaa
+&gt;                        503              MESSAGE user.aaa
+&gt;                          0 X-ANNOTATION-STORAGE user.aaa
+&gt;  1000000       24   242303              STORAGE user.aaa.AAA
+&gt;                        693              MESSAGE user.aaa.AAA
+&gt;                          0 X-ANNOTATION-STORAGE user.aaa.AAA
+&gt; cyrus@mail:~$ 
+&gt; 
+&gt; =====&gt; still wrong!
+
+So I&apos;ve done a bit more experimenting, and there&apos;s definitely a bug in
+quota -f.  Given the following folders
+
+user.cassandane
+user.cassandane.aaa
+user.cassandane.nnn
+user.cassandane.zzz
+
+and the following quotaroots
+
+user.cassandane
+user.cassandane.nnn
+
+quota -f SHOULD count the folders thusly:
+
+quotaroot user.cassandane = 
+		folder user.cassandane +
+		folder user.cassandane.aaa +
+		folder user.cassandane.zzz
+quotaroot user.cassandane.nnn = 
+		folder user.cassandane.nnn
+
+Instead, it simply loses track of .zzz.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-01-11 22:47:24 EDT</bug_when>
+            <thetext>Fixed in
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=a631f0afffb1ca991a8d3f4e4a0f2fa23833c307
+
+Test case updated in
+
+http://git.cyrusimap.org/cassandane/commit/?id=bf094c0e5abe40ea6a3219fc941fd17dc6403e16</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-01-12 06:35:00 EDT</bug_when>
+            <thetext>Peter reports this solved his problem - thanks Peter!
+
+Bron &amp; Jeroen: shall we do a 2.4 backport?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-21 00:13:29 EDT</bug_when>
+            <thetext>Hmm, no idea how this bug got a Target Milestone in the past.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-21 04:09:10 EDT</bug_when>
+            <thetext>Backported to 2.4.
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.4&amp;id=24cad084e82eb05e803e6eb3f44dcf294a23580f
+http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.4&amp;id=0cfc5b77d6dd8930e7e31a5336cb9233629986da</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-18 07:26:23 EDT</bug_when>
+            <thetext>Closing ticket in preparation of the 2.4.15 release.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

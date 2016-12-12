@@ -1,0 +1,111 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3203</bug_id>
+          
+          <creation_ts>2010-04-06 11:50 EDT</creation_ts>
+          <short_desc>cyr_expire silently quits if it hits a non-existant account</short_desc>
+          <delta_ts>2010-04-06 11:50:29 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alan Robertson">alanjrobertson@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alan Robertson">alanjrobertson@gmail.com</who>
+            <bug_when>2010-04-06 11:50:29 EDT</bug_when>
+            <thetext>OS: RHEL5 32bit
+Cyrus IMAP: v2.3.16
+
+I have a system that had a partition removed. Our delayed delete caused a stray account to be in deleted state against the removed partition. Easy fixed but it was odd behaviour from cyr_expire that led me to find the deleted account.
+
+Basically some accounts at a variety of domains were not getting deleted after the defined number of days (8 in this case). I left it to allow a pattern to emerge and it became clear it was all domains beginning with letters further through the alphabet than the domain with a stuck account. 
+
+I removed the dead account from the database and re-ran cyr_expire in verbose mode and it correctly cleared out all the domains it had been skipping. It was *also* affecting the delayed expunge of messages on domains after that damaged domain as thousands of messages were expired and deleted for good.
+
+My logs are set to info events, not debug and nothing was reported in the logs when cyr_expire exited abnormally. So anyone in a similar situation could have their disk space slowly eroded filling up with deleted accounts and expired messages.
+
+Logs for the message expiry:
+
+Before fixing the dead account:
+Apr  6 12:15:59 cyr_expire[22735]: Expunged 0 out of 20231 messages from 520 mailboxes
+
+After:
+Apr  6 13:00:06 cyr_expire[1837]: Expunged 28834 out of 75122 messages from 1210 mailboxes
+
+Hope this helps
+
+cyrus.conf has
+--------------
+
+delprune      cmd=&quot;cyr_expire -E 3 -X 2 -D 8&quot; at=0400
+
+imapd.conf
+----------
+defaultpartition: default
+defaultdomain: x
+configdirectory: /var/imap
+partition-default: /var/spool/imap
+admins: x
+allowanonymouslogin: no
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: plain
+allowplaintext: yes
+sasl_saslauthd_path: /var/state/saslauthd/mux
+virtdomains: userid
+unixhierarchysep: on
+altnamespace: on
+allowusermoves: yes
+lmtp_over_quota_perm_failure: yes
+quotawarn: 90
+allowapop: no
+hashimapspool: yes
+popminpoll: 1
+poppollpadding: 4
+serverinfo: min
+duplicate_db: skiplist
+expunge_mode: delayed
+delete_mode: delayed
+statuscache: 1
+statuscache_db: skiplist
+guid_mode: sha1</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

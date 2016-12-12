@@ -1,0 +1,99 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3345</bug_id>
+          
+          <creation_ts>2010-11-21 04:34 EDT</creation_ts>
+          <short_desc>Crash when parsing a message which is truncated in the middle of a boundary</short_desc>
+          <delta_ts>2010-11-29 08:35:40 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.5</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bron Gondwana">brong@fastmail.fm</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2010-11-21 04:34:48 EDT</bug_when>
+            <thetext>Yeah, this is a great one.
+
+(gdb) bt
+#0  0x55a31999 in strncmp () from /lib/libc.so.6
+#1  0x0809e73d in message_pendingboundary (s=0x57f30fdd &lt;Address 0x57f30fdd out of bounds&gt;, boundaries=0xa0a05f8, 
+    boundaryct=0xffa46834) at message.c:1925
+#2  0x0809e2f4 in message_parse_content (msg=0xffa46880, body=0xffa464ac, boundaries=0xffa46830) at message.c:1797
+#3  0x0809df2f in message_parse_multipart (msg=0xffa46880, body=0xa0a0a48, boundaries=0xffa46830) at message.c:1722
+#4  0x0809af6f in message_parse_body (msg=0xffa46880, body=0xa0a0a48, 
+    defaultContentType=0x80e894a &quot;TEXT/PLAIN; CHARSET=us-ascii&quot;, boundaries=0xffa46830) at message.c:569
+#5  0x0809de98 in message_parse_multipart (msg=0xffa46880, body=0xa0a00f8, boundaries=0xffa46830) at message.c:1710
+#6  0x0809af6f in message_parse_body (msg=0xffa46880, body=0xa0a00f8, 
+    defaultContentType=0x80e894a &quot;TEXT/PLAIN; CHARSET=us-ascii&quot;, boundaries=0xffa46830) at message.c:569
+#7  0x0809a654 in message_parse_mapped (msg_base=0x57efd000 &lt;Address 0x57efd000 out of bounds&gt;, msg_len=212992, 
+    body=0xa0a00f8) at message.c:398
+#8  0x0809a3a7 in message_parse_file (infile=0x9fb83e0, msg_base=0xffa46938, msg_len=0xffa46934, body=0xffa48af0)
+    at message.c:323
+#9  0x0808140b in append_fromstage (as=0xffa48b38, body=0xffa48af0, stage=0x9fb85f8, internaldate=1181731210, 
+    flag=0x9fb3a00, nflags=1, nolink=0) at append.c:453
+#10 0x08058cfa in cmd_append (tag=0x9fa91d0 &quot;699&quot;, name=0x9fa99e0 &quot;Inbox.CENSORED&quot;, cur_name=0x0)
+    at imapd.c:3335
+#11 0x08051ef0 in cmdloop () at imapd.c:1216
+#12 0x08050fd7 in service_main (argc=3, argv=0x9f9e008, envp=0xffa4d45c) at imapd.c:883
+#13 0x0804f9ab in main (argc=5, argv=0xffa4d444, envp=0xffa4d45c) at service.c:581
+
+The message appears to be actually truncated!  The dead process leaves a stage file which contains the damage, right here:
+
+$ grep _Part 8440-1290290440-1 
+	boundary=&quot;----=_Part_9393_5159399.1170319862533&quot;
+------=_Part_9393_5159399.1170319862533
+------=_Part_9393_5159399.1170319862533
+------=_Part_9393_5159399.1170319862533
+	boundary=&quot;----=_Part_9392_2725469.1170319862533&quot;
+------=_Part_9392_2725469.1170319862533
+------=_Part_9392_2725469.1170319862533--
+------=_Part_9393_5159399.11703198625
+
+Notice that _Part.  I actually have three identical stage files from three attempts by the user before they gave up!
+
+That final line is the last line of the file, and hence the strncmp() ran
+past the end of the map.
+
+The fix will pass a line length down to message_pendingboundary (both callers know it - one also null terminates the line, the other - the cause of this bug - just passes a pointer into the mapped file)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,163 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3656</bug_id>
+          
+          <creation_ts>2012-03-27 00:47 EDT</creation_ts>
+          <short_desc>idled should not use signals for communication</short_desc>
+          <delta_ts>2012-03-27 01:45:03 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          <dependson>3100</dependson>
+    
+    <dependson>3648</dependson>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          <cc>vilius@lnk.lt</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-27 00:47:42 EDT</bug_when>
+            <thetext>See Bug 3100 and Bug 3648 for other examples of poor Unix coding
+practices related to signals.
+
+The idled code helps implement the IDLE command, and communicates
+with the imapd code in two ways.  imapd sends small datagrams to
+idled over a AF_UNIX socket created by idled and bound to the
+filesystem.  The reverse communication is via signals (!!).  idled
+will remember the pid of the imapd which communicated with it and
+later (when things like mail delivery happen) sends that pid either
+SIGUSR1 or SIGUSR2 to wake it up.
+
+There are several major problems with this design.
+
+ * imapd is doing IO to the IMAP client in signal handler context
+
+ * idled takes the pid number from the datagram and makes no
+   attempt to verify it
+
+ * idled remembers the pid number potentially beyond the lifetime
+   of the original imapd
+
+ * the default action for SIGUSR1 and SIGUSR2 is to terminate the
+   process, so if the process signalled was not expecting to receive
+   those signals it will just die
+
+ * at times of high pid churn, it is possible for a new process to
+   have the same pid as a historic process which is remembered in
+   idled
+
+and in fact we have seen in production at Fastmail that some combinations
+of actions result in idled assassinating innocent processes, like this:
+
+2012-01-30T06:50:24.723742-05:00 imap10 slots12b1p3/master[10100]: process 4581 exited, signaled to death by 10
+2012-01-30T06:50:18.717832-05:00 imap11 slots17b1p1/master[7226]: process 26172 exited, signaled to death by 10
+
+One way to fix this would be to make the back channel from idled to
+imapd operate over a bound AF_UNIX socket.  This way, if the original
+imapd died, either the socket will be removed or the no process will
+be listening, either of which is significantly less harmful than killing
+a random process.  Also, the imapd&apos;s loop when doing the IDLE command
+can now be a select() on two fds.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-27 01:12:12 EDT</bug_when>
+            <thetext>Fixed in
+
+The following changes since commit 2b6ab6468614450cdac0e807cf3831dcdbb555e0:
+
+  Bug 3654 - Complain about invalid cyrus.conf names (2012-03-21 20:01:30 +1100)
+
+are available in the git repository at:
+  ssh://git.cyrusimap.org/git/cyrus-imapd master
+
+Greg Banks (13):
+      idle: whitespace cleanup
+      idle: rename messages IDLE_FOO -&gt; IDLE_MSG_FOO
+      idle: remove &quot;freelist&quot; ientry memory management
+      idle: some const correctness
+      idle: better function names in idled
+      idle: rename idle_data_t -&gt; idle_message_t
+      idle: move message send/recv into a common file
+      idle: centralise AF_UNIX socket creation
+      idle: rename notify_sock -&gt; idle_sock
+      idle: unlink local AF_UNIX socket when done
+      idle: don&apos;t use signals, use AF_UNIX dgrams
+      Remove unused variable shutdownfilename[]
+      idled: use library function shutdown_file()
+
+ imap/Makefile.in            |    6 +-
+ imap/global.c               |    6 +
+ imap/idle.c                 |  191 ++++++++++++++++--------------------
+ imap/idle.h                 |   25 ++++--
+ imap/idled.c                |  227 ++++++++++++++++---------------------------
+ imap/idlemsg.c              |  202 ++++++++++++++++++++++++++++++++++++++
+ imap/{idled.h =&gt; idlemsg.h} |   45 ++++++---
+ imap/imapd.c                |   69 ++++++--------
+ 8 files changed, 460 insertions(+), 311 deletions(-)
+ create mode 100644 imap/idlemsg.c
+ rename imap/{idled.h =&gt; idlemsg.h} (71%)
+
+
+and tested in
+
+The following changes since commit 67461dfcdf0e989ced45c8e6bf1deaea8d8b7fac:
+
+  Regression test for Bug 3654 (2012-03-21 20:03:03 +1100)
+
+are available in the git repository at:
+  ssh://git.cyrusimap.org/git/cassandane master
+
+Greg Banks (7):
+      Add an API for the IDLE command
+      Add basic tests for the IDLE command
+      Test that IDLE can be disabled in imapd.conf
+      C:C:TestCase allows instances not to be started
+      Use start_instances=0 in Idle tests
+      Double up Idle basic/delivery/shutdownfile tests
+      Test the IDLE works even if idled is aborted
+
+ Cassandane/Cyrus/Idle.pm       |  402 ++++++++++++++++++++++++++++++++++++++++
+ Cassandane/Cyrus/TestCase.pm   |    8 +
+ Cassandane/IMAPMessageStore.pm |   99 ++++++++++
+ 3 files changed, 509 insertions(+), 0 deletions(-)
+ create mode 100644 Cassandane/Cyrus/Idle.pm</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

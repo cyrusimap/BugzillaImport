@@ -1,0 +1,161 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2927</bug_id>
+          
+          <creation_ts>2007-03-19 21:45 EDT</creation_ts>
+          <short_desc>Creating a mailbox on a remote server always fails</short_desc>
+          <delta_ts>2010-10-25 18:46:42 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Gary Mills">mills@cc.umanitoba.ca</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Gary Mills">mills@cc.umanitoba.ca</who>
+            <bug_when>2007-03-19 21:45:31 EDT</bug_when>
+            <thetext>When using cyradm as an administrator, connected to a front-end server, cyradm
+proxies the connection to the back-end server, but the `create mailbox&apos; function
+always fails.  Here&apos;s my test:
+
+setup01.cc.umanitoba.ca&gt; cm user.milton mbox.testing.umanitoba.ca
+createmailbox: Permission denied
+setup01.cc.umanitoba.ca&gt; cm user.milton mbox.testing.umanitoba.ca!default
+createmailbox: Invalid partition name in Create
+setup01.cc.umanitoba.ca&gt; cm user.milton mbox.testing.umanitoba.ca!p1
+createmailbox: Invalid partition name in Create
+
+Here&apos;s the transcript on the back-end:
+
+&lt;1174008084&lt;PROXY0 GETANNOTATION &quot;user.fastedy&quot; (&quot;*&quot;) (&quot;value.shared&quot;)
+&gt;1174008084&gt;PROXY0 OK Completed
+&lt;1174008115&lt;N01 NOOP
+&gt;1174008115&gt;N01 OK Completed
+&lt;1174008115&lt;7 CREATE {11+}
+user.milton
+&gt;1174008115&gt;7 NO Permission denied
+&lt;1174008185&lt;N01 NOOP
+&gt;1174008185&gt;N01 OK Completed
+&lt;1174008185&lt;8 CREATE {11+}
+user.milton {7+}
+default
+&gt;1174008185&gt;8 BAD Invalid partition name in Create
+&gt;1174008185&gt;* BAD Invalid tag
+&lt;1174008319&lt;N01 NOOP
+&gt;1174008319&gt;N01 OK Completed
+&lt;1174008319&lt;9 CREATE {11+}
+user.milton {2+}
+p1
+&gt;1174008319&gt;9 BAD Invalid partition name in Create
+&gt;1174008319&gt;* BAD Invalid tag
+
+The first error was because the Cyrus administrator can&apos;t be proxied from the
+front-end to the back-end.  A referral is needed for this to work.
+
+The other two are a result of a parsing failure in imapd.c.  I&apos;m attaching a
+patch that fixes both problems.  This patch uncovers two deficiencies in cyradm.
+It omits the partition when being referred for a `create mailbox&apos; request.
+It also doesn&apos;t display error messages from the referral.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gary Mills">mills@cc.umanitoba.ca</who>
+            <bug_when>2007-03-19 21:47:44 EDT</bug_when>
+            <thetext>Created an attachment (id=532)
+Referral and format fix for create mailbox
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-03-23 14:52:22 EDT</bug_when>
+            <thetext>I applied the CREATE fix, but I&apos;m not sure that we need to add the referral
+patch.  You can&apos;t create a new toplevel mailbox on a frontend since we don&apos;t
+know on which backend to CREATE it on, therefore we have nowwhere to refer it. 
+The 2.2 Murder code also required toplevel mailboxes to be CREATEd directly on a
+backend.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Gary Mills">mills@cc.umanitoba.ca</who>
+            <bug_when>2007-03-23 17:39:57 EDT</bug_when>
+            <thetext>The referral patch works because, even though cyradm is connected to a front end,
+you specify the back end as the partition on the `cm&apos; command.  Imapd only has to
+refer cyradm to that back end.  Without the patch, you certainly can&apos;t create a
+top-level mailbox on the back end.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-03-27 14:09:52 EDT</bug_when>
+            <thetext>Applied the referral patch to CVS</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>532</attachid>
+            <date>2007-03-19 21:47 EDT</date>
+            <desc>Referral and format fix for create mailbox</desc>
+            <filename>imapd.c.diff</filename>
+            <type>text/plain</type>
+            <size>945</size>
+            <attacher>mills@cc.umanitoba.ca</attacher>
+            
+              <data encoding="base64">LS0tIGltYXBkLk9jCVNhdCBGZWIgMTAgMTM6MTQ6MDQgMjAwNworKysgaW1hcGQuYwlTdW4gTWFy
+IDE4IDIwOjQyOjM5IDIwMDcKQEAgLTQ5NjcsNiArNDk2NywxMyBAQAogCQkJCSAmYmFja2VuZF9j
+dXJyZW50LCAmYmFja2VuZF9pbmJveCwgaW1hcGRfaW4pOwogCSAgICBpZiAoIXMpIHIgPSBJTUFQ
+X1NFUlZFUl9VTkFWQUlMQUJMRTsKIAorCSAgICBpZiAoIXIgJiYgaW1hcGRfdXNlcmlzYWRtaW4g
+JiYgc3VwcG9ydHNfcmVmZXJyYWxzKSB7CisJICAgICAgLyogVGhleSBhcmVuJ3QgYW4gYWRtaW4g
+cmVtb3RlbHksIHNvIGxldCdzIHJlZmVyIHRoZW0gKi8KKwkgICAgICBpbWFwZF9yZWZlcih0YWcs
+IHNlcnZlciwgbmFtZSk7CisJICAgICAgcmVmZXJyYWxfa2ljayA9IDE7CisJICAgICAgcmV0dXJu
+OworCSAgICB9CisKIAkgICAgaWYgKCFyKSB7CiAJCWlmICghQ0FQQShzLCBDQVBBX01VUERBVEUp
+KSB7CiAJCSAgICAvKiByZXNlcnZlIG1haWxib3ggb24gTVVQREFURSAqLwpAQCAtNDk3Nyw5ICs0
+OTg0LDkgQEAKIAkJLyogb2ssIHNlbmQgdGhlIGNyZWF0ZSB0byB0aGF0IHNlcnZlciAqLwogCQlp
+ZiAocGFydGl0aW9uKQogCQkgICAgcHJvdF9wcmludGYocy0+b3V0LAotCQkJCSIlcyBDUkVBVEUg
+eyVkK31cclxuJXMgeyVkK31cclxuJXNcclxuIiwgCi0JCQkJdGFnLCBzdHJsZW4obmFtZSksIG5h
+bWUsCi0JCQkJc3RybGVuKHBhcnRpdGlvbiksIHBhcnRpdGlvbik7CisJCQkJLyogbmVlZCB0byBz
+ZW5kIHBhcnRpdGlvbiBhcyBhbiBhdG9tICovCisJCQkJIiVzIENSRUFURSB7JWQrfVxyXG4lcyAl
+c1xyXG4iLCAKKwkJCQl0YWcsIHN0cmxlbihuYW1lKSwgbmFtZSwgcGFydGl0aW9uKTsKIAkJZWxz
+ZQogCQkgICAgcHJvdF9wcmludGYocy0+b3V0LCAiJXMgQ1JFQVRFIHslZCt9XHJcbiVzXHJcbiIs
+IAogCQkJCXRhZywgc3RybGVuKG5hbWUpLCBuYW1lKTsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,406 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3496</bug_id>
+          
+          <creation_ts>2011-07-23 11:21 EDT</creation_ts>
+          <short_desc>Berkeley DB ERROR while upgrading from 2.3.16 to 2.4.10</short_desc>
+          <delta_ts>2011-10-05 10:43:47 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Yann Rouillard">yann@pleiades.fr.eu.org</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2011-07-23 11:21:28 EDT</bug_when>
+            <thetext>Hi,
+
+I am currently packaging cyrus imapd 2.4.10 for the opencsw project (http://www.opencsw.org).
+The previously packaged version is the 2.3.16.
+
+While trying the upgrade path, I ran into the following error:
+Jul 23 17:05:54 solaris10-vm master[1877]: [ID 392559 local6.debug] about to exec /opt/csw/sbin/ctl_cyrusdb
+Jul 23 17:05:54 solaris10-vm ctl_cyrusdb[1877]: [ID 866726 local6.warning] DBERROR db4: /opt/csw/var/cyrus/config/deliver.db: unexpected file type or format
+Jul 23 17:05:54 solaris10-vm ctl_cyrusdb[1877]: [ID 866726 local6.warning] DBERROR db4: Recovery function for LSN 1 18274 failed
+Jul 23 17:05:54 solaris10-vm ctl_cyrusdb[1877]: [ID 866726 local6.warning] DBERROR db4: PANIC: Invalid argument
+Jul 23 17:05:54 solaris10-vm ctl_cyrusdb[1877]: [ID 864961 local6.crit] DBERROR: critical database situation
+Jul 23 17:05:54 solaris10-vm master[1876]: [ID 310780 local6.error] process 1877 exited, status 75
+
+More precisely, the first time Cyrus is launched after the upgrade, everything works fine:
+Jul 23 17:28:43 solaris10-vm master[3056]: [ID 965400 local6.notice] process started
+Jul 23 17:28:43 solaris10-vm master[3057]: [ID 392559 local6.debug] about to exec /opt/csw/sbin/ctl_cyrusdb
+Jul 23 17:28:43 solaris10-vm ctl_cyrusdb[3057]: [ID 702911 local6.notice] recovering cyrus databases
+Jul 23 17:28:43 solaris10-vm ctl_cyrusdb[3057]: [ID 845600 local6.notice] converting /opt/csw/var/cyrus/config/deliver.db from berkeley to skiplist
+Jul 23 17:28:43 solaris10-vm ctl_cyrusdb[3057]: [ID 893043 local6.debug] foreach: starting txn 2147483650
+Jul 23 17:28:43 solaris10-vm ctl_cyrusdb[3057]: [ID 994332 local6.debug] mycommit: committing txn 2147483650
+Jul 23 17:28:43 solaris10-vm ctl_cyrusdb[3057]: [ID 301543 local6.info] skiplist: checkpointed /opt/csw/var/cyrus/config/mailboxes.db (12 records, 1256 bytes) in 0 seconds
+Jul 23 17:28:43 solaris10-vm ctl_cyrusdb[3057]: [ID 301543 local6.info] skiplist: checkpointed /opt/csw/var/cyrus/config/annotations.db (0 records, 144 bytes) in 0 seconds
+Jul 23 17:28:43 solaris10-vm ctl_cyrusdb[3057]: [ID 127214 local6.notice] done recovering cyrus databases
+Jul 23 17:28:43 solaris10-vm master[3056]: [ID 139525 local6.notice] ready for work
+[...]
+
+But the second time Cyrus Imap is launched, the error is triggered.
+
+I dig a bit and found that deliver.db was perfectly converted. The problem happens when cyrus tries to init the berkeley backend.
+I suppose it reads file in db/ and theses files still reference the deliver.db file:
+
+# strings -a db/log.0000000001 | grep deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+/opt/csw/var/cyrus/config/deliver.db
+
+The Berkeleydb backend seems to try to open the deliver.db file which is not in skiplist format and not anymore in berleleydb format and then Kaboom !
+
+
+I am not sure exactly what is the best way to solve this problem and I don&apos;t understand why it has not been raised before.
+
+I am using berkeleydb 4.2.52.
+
+Thanks in advance for your answer.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-07-30 08:53:38 EDT</bug_when>
+            <thetext>Wow - I don&apos;t know why this hasn&apos;t been noticed before either.  I admit I only ran the upgrade tests in a testbed environment which maybe hadn&apos;t got into the state that your tests get in to.
+
+I really, REALLY don&apos;t like Berkeley DB as an environment.  It doesn&apos;t seem to play nice with anything - version changes, upgrades, databases being removed...
+
+I wonder if there&apos;s endian-ness crap going on here:
+
+    bdb_magic = *(uint32_t *)(buf+12);
+
+    if (bdb_magic == 0x053162) /* BDB BTREE MAGIC */
+&gt;-------return &quot;berkeley&quot;;
+
+    if (bdb_magic == 0x061561) /* BDB HASH MAGIC */
+&gt;-------return &quot;berkeley-hash&quot;;
+
+
+I suspect that may need an ntohl around it.  We probably should just check for
+both endian-nesses.
+
+Do you have a copy of the environment that I can use to replicate the issue?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2011-08-02 15:21:18 EDT</bug_when>
+            <thetext>Created an attachment (id=1403)
+Archive of the cyrus config directory</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2011-08-02 15:51:10 EDT</bug_when>
+            <thetext>I attached my cyrus config directory. As said, I can trigger the error with this configuration by launching ctl_cyrusdb -r twice in a row.
+
+I will also attach cyrus.conf and imapd.conf.
+
+The build instructions patchs applied can be consulted here:
+http://gar.svn.sourceforge.net/viewvc/gar/csw/mgar/pkg/cyrus_imapd/trunk/Makefile?revision=15161&amp;view=markup
+and here:
+http://gar.svn.sourceforge.net/viewvc/gar/csw/mgar/pkg/cyrus_imapd/trunk/files/0001-Force-linkage-to-libperl.so.patch?revision=13231&amp;view=markup
+http://gar.svn.sourceforge.net/viewvc/gar/csw/mgar/pkg/cyrus_imapd/trunk/files/restore_allowplaintext_default.patch?view=log
+http://gar.svn.sourceforge.net/viewvc/gar/csw/mgar/pkg/cyrus_imapd/trunk/files/cyrus-imapd-2.3.7-nobarenewlinescheck.patch?view=log
+http://gar.svn.sourceforge.net/viewvc/gar/csw/mgar/pkg/cyrus_imapd/trunk/files/0002-fix-config2header.patch?view=log
+http://www.vx.sk/download/patches/cyrus-imapd/</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2011-08-02 15:51:52 EDT</bug_when>
+            <thetext>Created an attachment (id=1404)
+cyrus.conf</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2011-08-02 15:52:06 EDT</bug_when>
+            <thetext>Created an attachment (id=1405)
+imapd.conf</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-10 10:52:56 EDT</bug_when>
+            <thetext>Don&apos;t worry, I haven&apos;t forgotten about you!  Going to have a look at this one soon.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2011-08-10 17:15:24 EDT</bug_when>
+            <thetext>:) Thanks Bron. 
+
+Ping me if you need any more details.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2011-09-19 16:29:46 EDT</bug_when>
+            <thetext>Now you did forget me, didn&apos;t you ? ;)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-10-05 10:43:47 EDT</bug_when>
+            <thetext>No, I think about it in a guilty way occasionally - but I really don&apos;t know how to deal with it... so I keep doing other stuff instead.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1403</attachid>
+            <date>2011-08-02 15:21 EDT</date>
+            <desc>Archive of the cyrus config directory</desc>
+            <filename>config_cyrus.tar.bz2</filename>
+            <type>application/x-bzip</type>
+            <size>6043</size>
+            <attacher>yann@pleiades.fr.eu.org</attacher>
+            
+              <data encoding="base64">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
+YA==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1404</attachid>
+            <date>2011-08-02 15:51 EDT</date>
+            <desc>cyrus.conf</desc>
+            <filename>cyrus.conf</filename>
+            <type>application/octet-stream</type>
+            <size>1386</size>
+            <attacher>yann@pleiades.fr.eu.org</attacher>
+            
+              <data encoding="base64">IyBzdGFuZGFyZCBzdGFuZGFsb25lIHNlcnZlciBpbXBsZW1lbnRhdGlvbgoKU1RBUlQgewogICMg
+ZG8gbm90IGRlbGV0ZSB0aGlzIGVudHJ5IQogIHJlY292ZXIJY21kPSIvb3B0L2Nzdy9zYmluL2N0
+bF9jeXJ1c2RiIC1yIgoKICAjIHRoaXMgaXMgb25seSBuZWNlc3NhcnkgaWYgdXNpbmcgaWRsZWQg
+Zm9yIElNQVAgSURMRQojICBpZGxlZAkJY21kPSJpZGxlZCIKfQoKIyBVTklYIHNvY2tldHMgc3Rh
+cnQgd2l0aCBhIHNsYXNoIGFuZCBhcmUgcHV0IGludG8gL3Zhci9pbWFwL3NvY2tldHMKU0VSVklD
+RVMgewogICMgYWRkIG9yIHJlbW92ZSBiYXNlZCBvbiBwcmVmZXJlbmNlcwogIGltYXAJCWNtZD0i
+aW1hcGQiIGxpc3Rlbj0iaW1hcCIgcHJlZm9yaz01CiMgIGltYXBzCQljbWQ9ImltYXBkIC1zIiBs
+aXN0ZW49ImltYXBzIiBwcmVmb3JrPTEKICBwb3AzCQljbWQ9InBvcDNkIiBsaXN0ZW49InBvcDMi
+IHByZWZvcms9MwojICBwb3AzcwkJY21kPSJwb3AzZCAtcyIgbGlzdGVuPSJwb3AzcyIgcHJlZm9y
+az0xCiAgc2lldmUJCWNtZD0idGltc2lldmVkIiBsaXN0ZW49InNpZXZlIiBwcmVmb3JrPTAKCiAg
+IyB0aGVzZSBhcmUgb25seSBuZWNlc3NhcnkgaWYgcmVjZWl2aW5nL2V4cG9ydGluZyB1c2VuZXQg
+dmlhIE5OVFAKIyAgbm50cAkJY21kPSJubnRwZCIgbGlzdGVuPSJubnRwIiBwcmVmb3JrPTMKIyAg
+bm50cHMJCWNtZD0ibm50cGQgLXMiIGxpc3Rlbj0ibm50cHMiIHByZWZvcms9MQoKICAjIGF0IGxl
+YXN0IG9uZSBMTVRQIGlzIHJlcXVpcmVkIGZvciBkZWxpdmVyeQojICBsbXRwCQljbWQ9ImxtdHBk
+IiBsaXN0ZW49ImxtdHAiIHByZWZvcms9MAogIGxtdHB1bml4CWNtZD0ibG10cGQiIGxpc3Rlbj0i
+L29wdC9jc3cvdmFyL2N5cnVzL2NvbmZpZy9zb2NrZXQvbG10cCIgcHJlZm9yaz0xCgogICMgdGhp
+cyBpcyBvbmx5IG5lY2Vzc2FyeSBpZiB1c2luZyBub3RpZmljYXRpb25zCiMgIG5vdGlmeQljbWQ9
+Im5vdGlmeWQiIGxpc3Rlbj0iL3Zhci9vcHQvY3N3L2N5cnVzL2NvbmZpZy9zb2NrZXQvbm90aWZ5
+IiBwcm90bz0idWRwIiBwcmVmb3JrPTEKfQoKRVZFTlRTIHsKICAjIHRoaXMgaXMgcmVxdWlyZWQK
+ICBjaGVja3BvaW50CWNtZD0iL29wdC9jc3cvc2Jpbi9jdGxfY3lydXNkYiAtYyIgcGVyaW9kPTMw
+CgogICMgdGhpcyBpcyBvbmx5IG5lY2Vzc2FyeSBpZiB1c2luZyBkdXBsaWNhdGUgZGVsaXZlcnkg
+c3VwcHJlc3Npb24sCiAgIyBTaWV2ZSBvciBOTlRQCiAgZGVscHJ1bmUJY21kPSIvb3B0L2Nzdy9z
+YmluL2N5cl9leHBpcmUgLUUgMyIgYXQ9MDQwMAoKICAjIHRoaXMgaXMgb25seSBuZWNlc3Nhcnkg
+aWYgY2FjaGluZyBUTFMgc2Vzc2lvbnMKICB0bHNwcnVuZQljbWQ9Ii9vcHQvY3N3L3NiaW4vdGxz
+X3BydW5lIiBhdD0wNDAwCn0K
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1405</attachid>
+            <date>2011-08-02 15:52 EDT</date>
+            <desc>imapd.conf</desc>
+            <filename>imapd.conf</filename>
+            <type>application/octet-stream</type>
+            <size>2394</size>
+            <attacher>yann@pleiades.fr.eu.org</attacher>
+            
+              <data encoding="base64">IyBUaGUgcGF0aCB3aGVyZSBjeXJ1cyBzdG9yZSBpdHMgZGF0YWJhc2UgZmlsZXMgZm9yCiMgbWFp
+bGJveGVzIGxpc3QsIHNlZW4gc3RhdGVzLCBmb2xkZXIgc3Vic2NyaXB0aW9uIGxpc3RzLCAuLi4K
+Y29uZmlnZGlyZWN0b3J5OiAvb3B0L2Nzdy92YXIvY3lydXMvY29uZmlnCgojIFRoZSBwYXRoIHdo
+ZXJlIGN5cnVzIHdpbGwgc3RvcmUgaW5ib3hlcyBhbmQgZm9sZGVycwpwYXJ0aXRpb24tZGVmYXVs
+dDogL29wdC9jc3cvdmFyL2N5cnVzL21haWwKCiMgVGhlIHBhdGggd2hlcmUgY3lydXMgc3RvcmUg
+c2lldmUgZmlsdGVycwpzaWV2ZWRpcjogL29wdC9jc3cvdmFyL2N5cnVzL3NpZXZlCgojIE5hbWVz
+IG9mIGFkbWlucyB1c2VyIHdobyB3aWxsIGhhdmUgcmlnaHQgdG8gZGVsZXRlIGFuZCAKIyBjaGFu
+Z2UgYWNscyBvZiBhbnkgbWFpbGJveGVzCmFkbWluczogY3lydXMKCiMgUHV0ICJ5ZXMiIGlmIHlv
+dSBwcmVmZXIgdG8gdXNlICIvIiBhcyB0aGUgZm9sZGVyIHNlcGFyYXRvcgojIHVzZWZ1bCBpZiB5
+b3UgbmVlZCB0byB1c2UgIi4iIGluIGZvbGRlciBuYW1lcyAKdW5peGhpZXJhcmNoeXNlcDogbm8K
+CiMgUHV0ICJ5ZXMiIGhlcmUgaWYgeW91IHByZWZlciB1c2VyIGZvbGRlcnMgdG8gYmUgb24gdGhl
+IHNhbWUKIyBsZXZlbCB3aXRoIElOQk9YIGluc3RlYWQgb2YgYmVpbmcgc3ViZm9sZGVycyBvZiBJ
+TkJPWC4KIyB1c2VmdWwgaWYgeW91IG1pZ3JhdGUgZnJvbSB1dyBpbWFwICAKYWx0bmFtZXNwYWNl
+OiBubwoKIyBDeXJ1cyByZXNwZWN0IFJGQyA4MjIgd2hpY2ggcHJvaGliaXRzIDggYml0cyBjaGFy
+YWN0ZXJzIGluIGhlYWRlcnMuCiMgQnkgZGVmYXVsdCBjeXJ1cyB3aWxsIHJlcGxhY2UgdGhlbSB3
+aXRoIHRoZSAiWCIgY2hhcmFjdGVyLgojIEFzIG1hbnkgYmFkIE1VQSBzZW5kIHRoaXMga2luZCBv
+ZiBtZXNzYWdlcywgeW91IGNhbnQgcHV0ICJubyIgaGVyZSAKIyBpZiB5b3Ugd2FudCBDeXJ1cyB0
+byBsZWF2ZSB0aGVzZSBjaGFyYWN0ZXJzIHVudG91Y2hlZC4KIyBOb3RlIHRoaXMgd2lsbCBtYWtl
+IElNQVAgU0VBUkNIIG5vdCB3b3JrIGZvciB0aGVzZSBtZXNzYWdlcy4KbXVuZ2U4Yml0OiB5ZXMK
+CiMgVGhlIHNhc2wgbWVjaGFuaXNtIHRvIHVzZSB0byBhdXRoZW50aWNhdGUgdXNlci4KIyBUaGUg
+cG9zc2libGUgdmFsdWVzIGFyZTogc2FzbGF1dGhkLCBwd2NoZWNrIGFuZCBhdXhwcm9wCnNhc2xf
+cHdjaGVja19tZXRob2Q6IHNhc2xhdXRoZAoKIyBBdXRoZW50aWNhdGlvbiBtZWNoYW5pc20gdG8g
+dXNlLCBpZiB5b3UgdXNlIHNhc2xhdXRoZCB3aXRoIAojIGxvY2FsIHVzZXIsIHlvdSB3aWxsIGhh
+dmUgdG8gZW5hYmxlIHBsYWludGV4dCBvbmx5IG1lY2hhbmlzbQojIGkuZSBQTEFJTiBhbmQgTE9H
+SU4KIyBzYXNsX21lY2hfbGlzdDogUExBSU4gTE9HSU4KCiMgZ3JvdXAgY2hlY2tpbmcgY2FuIGNh
+dXNlIHBlcmZvcm1hbmNlIHByb2JsZW1zOyB1bmNvbW1lbnQgdG8gZGlzYWJsZSBpZiBncm91cHMg
+YXJlIG5vdCBuZWVkZWQKIyB1bml4X2dyb3VwX2VuYWJsZTowCgojIElmIHRoaXMgZmllbGQgaXMg
+bm9uemVybywgaW5ib3ggZm9sZGVyIGlzIGF1dG9tYXRpY2FsbHkgY3JlYXRlZAojIHdoZW4gYSB1
+c2VyIHN1Y2Nlc3NmdWxseSBhdXRoZW50aWNhdGUuCiMgSXRzIHF1b3RhIHdpbGwgYmUgaW5pdGlh
+bGl6ZWQgd2l0aCB0aGlzIHZhbHVlLCBwdXQgLTEgaGVyZQojIGlmIHlvdSB3YW50IGF1dG9tYXRp
+YyBpbmJveCBjcmVhdGlvbiB3aXRoIHVubGltbGl0ZWQgcXVvdGEKYXV0b2NyZWF0ZXF1b3RhOiAt
+MQoKIyBQdXQgInllcyIgaGVyZSBhbmQgc2V0IGF1dG9jcmVhdGVxdW90YSB0byBhIG5vbnplcm8g
+dmFsdWUKIyBpZiB5b3Ugd2FudCBJTkJPWCB0byBiZSBhdXRvbWF0aWNhbGx5IGNyZWF0ZWQgd2hl
+biBhbiBlbWFpbAojIGlzIHJlY2VpdmVkCmNyZWF0ZW9ucG9zdDogeWVzCgojIENlcnRpZmljYXRl
+IHRvIHVzZSBmb3IgVExTL1NTTCB3aXRoIGFsbCBzZXJ2aWNlcwojIFlvdSBjYW4gdXNlIGltYXBz
+X3Rsc19jZXJ0X2ZpbGUsIHBvcDNfdGxzX2NlcnRfZmlsZSwgaW1hcHNfdGxzX2NlcnRfZmlsZSAu
+Li4gaWYgeW91IG5lZWQKIyB0byB1c2UgYSBkaWZmZXJlbnQgY2VydGlmaWNhdGUgZmlsZSBmb3Ig
+ZWFjaCBzZXJ2aWNlLgojIHRsc19jZXJ0X2ZpbGU6IGRpc2FibGVkCgojIFByaXZhdGUga2V5IGJl
+bG9uZ2luZyB0byB0aGUgY2VydGlmaWNhdGUgdG8gdXNlIGZvciBUTFMvU1NMIHdpdGggYWxsIHNl
+cnZpY2VzCiMgWW91IGNhbiB1c2UgaW1hcHNfdGxzX2tleV9maWxlLCBwb3AzX3Rsc19rZXlfZmls
+ZSwgaW1hcHNfdGxzX2tleV9maWxlIC4uLiBpZiB5b3UgbmVlZAojIHRvIHVzZSBhIGRpZmZlcmVu
+dCBrZXkgZmlsZSBmb3IgZWFjaCBzZXJ2aWNlLgojIHRsc19rZXlfZmlsZTogZGlzYWJsZWQKIwoK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

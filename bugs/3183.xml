@@ -1,0 +1,386 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3183</bug_id>
+          
+          <creation_ts>2009-12-12 04:29 EDT</creation_ts>
+          <short_desc>ptloader LDAP regression?</short_desc>
+          <delta_ts>2010-10-25 18:46:48 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Macintosh</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>WORKSFORME</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="kjikaqawej">simon.raven@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>simon.raven@gmail.com</cc>
+    
+    <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="kjikaqawej">simon.raven@gmail.com</who>
+            <bug_when>2009-12-12 04:29:48 EDT</bug_when>
+            <thetext>Created an attachment (id=1244)
+diff of ldap.c between versions 2.3.8 and 2.3.15
+
+Hi,
+
+I&apos;ve been using cyrus-imap 2.3.8 for a while, and it worked fine. I&apos;ve recently updated it to 2.3.15, and now ptloader LDAP *logins* don&apos;t work anymore. ltrace and strace point to an assertion being made in ldap_get_values starting on line 920 in ptclient/ldap.c , and the log say stuff like this:
+
+(i&apos;m going to trim some stuff to make it clearer)
+
+===== START =====
+cyrus 16650 - -  ptload(): connected
+cyrus 16650 - -  timeout_select: sock = 20, rp = 0x0, wp = 0xbfa16950, sec = 30
+16650 - -  timeout_select exiting. r = 1; errno = 0
+16650 - -  ptload sent data
+16650 - -  timeout_select: sock = 20, rp = 0xbfa168d0, wp = 0x0, sec = 30
+25388 - -  accepted connection
+25388 - -  telling master 4
+16492 - -  service ptloaderunix pid 25388 in READY state: serving one more multi-threaded connection
+16492 - -  service ptloaderunix now has 1 ready workers
+16492 - -  process 16651 exited, status 0
+16492 - -  service imap now has 2 ready workers
+16650 - -  timeout_select exiting. r = 1; errno = 0
+16650 - -  ptload read data back
+16650 - -  ptload(): empty response from ptloader server
+16650 - -  No data available at all from ptload()
+16650 - -  ptload failed for XXXX@YYYY.ZZZ
+16650 - -  creating empty auth_state for XXXX@YYYY.ZZZ
+16492 - -  process 25388 exited, signaled to death by 6
+16492 - -  service ptloaderunix pid 25388 in READY state: terminated abnormally
+16492 - -  service ptloaderunix now has 0 ready workers
+===== FINISH =====
+
+According to man kill signal 6 is ABRT (abort). I imagine that&apos;s from the assertion error.
+
+Partial ltrace, only tracing the system libldap.so:
+
+===== START =====
+&lt;... ldap_simple_bind_s resumed&gt; )                                                            = 0
+ldap_search_st(0x10660970, 0x1068db18, 2, 0x1068dba8, 0xbfab32f4)                             = 0
+ldap_count_entries(0x10660970, 0x10661728, 0, 0, 0x10660a44 &lt;unfinished ...&gt;
+ldap_whoami_s(0x10660970, 0x10661728, 0, 0, 0x10660a44)                                       = 1
+ldap_first_entry(0x10660970, 0x10661728, 0, 0, 0x10660a44)                                    = 0x10661728
+ldap_get_dn(0x10660970, 0x10661728, 0, 0, 0x10660a44)                                         = 0x1068d478
+ldap_msgfree(0x10661728, 0x10695300, 0, 0, 8)                                                 = 101
+ldap_search_st(0x10660970, 0x1068d478, 0, 0x100591a0, 0xbfab3358)                             = 0
+ldap_first_entry(0x10660970, 0x1068d458, 0, 0, 0x10660a44)                                    = 0x1068d458
+ldap_get_values(0x10660970, 0x1068d458, 0, 0, 0x10660a44 &lt;unfinished ...&gt;
+--- SIGABRT (Aborted) ---
++++ killed by SIGABRT +++
+===== FINISH =====
+
+A 3-way diff between 2.3.8, 2.3.14, and 2.3.15 shows some large differences between 2.3.8 and 2.3.14, and pretty much the same between 2.3.14 and 2.3.15.
+
+The attachment is just so people can see it here without having to go do it themselves.
+
+I don&apos;t know, but it seems to me there&apos;s some sort of regression... the earlier version was able to fetch the data with the same settings I have now in imapd.conf, but users cannot login *at all*. The only one able to login is pre-authed users, and there&apos;s only one (itself).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="kjikaqawej">simon.raven@gmail.com</who>
+            <bug_when>2009-12-12 15:33:17 EDT</bug_when>
+            <thetext>Well, I&apos;m actually able to log in here... my suspicion is that there&apos;s
+an added part that&apos;s in 2.3.15 causing the failed logins.
+Diff out ldap.c from 2.3.11 and 2.3.15 (.11 seems to be the last one
+without the changes to make it go &apos;die die die die aah!&apos;).
+
+This hunk here:
+
+=====
+@@ -859,8 +859,14 @@
+             return PTSM_FAIL;
+         }
+
++ /*
++  * We don&apos;t want to return the *first* entry found, we want to return
++  * the *only* entry found.
++  */
++ if ( ldap_count_entries(ptsm-&gt;ld, res) == 1 ) {
+         if ( (entry = ldap_first_entry(ptsm-&gt;ld, res)) != NULL )
+             *ret = ldap_get_dn(ptsm-&gt;ld, entry);
++ }
+         ldap_msgfree(res);
+         res = NULL;
+=====
+
+might be causing the later bits to get an assertion failure.
+
+If I understand this correctly, it counts the number of entries found, if any, and it isn&apos;t NULL, it returns it.
+
+I&apos;ll be testing this theory out today, and progressively include code from 2.3.15 until I get the assert failure.
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="kjikaqawej">simon.raven@gmail.com</who>
+            <bug_when>2009-12-12 22:23:36 EDT</bug_when>
+            <thetext>Created an attachment (id=1245)
+proposed patch
+
+Fixes issue with logins not working in ptclient/ldap.c - no assertion failures etc.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-05-19 15:29:01 EDT</bug_when>
+            <thetext>You seem to propose simply backing out the patch.  How about output from gdb?  That way, we can debug the problem.  FWIW, I can&apos;t reproduce the problem you&apos;re reporting.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-08-06 14:08:05 EDT</bug_when>
+            <thetext>I&apos;m closing this report due to lack of response from the reporter.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1244</attachid>
+            <date>2009-12-12 04:29 EDT</date>
+            <desc>diff of ldap.c between versions 2.3.8 and 2.3.15</desc>
+            <filename>ptclient_ldap_dot_c_2.3.8-2.3.15.patch</filename>
+            <type>text/plain</type>
+            <size>8340</size>
+            <attacher>simon.raven@gmail.com</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMy44L3B0Y2xpZW50L2xkYXAuYwkyMDA2LTExLTMwIDEyOjExOjI0
+LjAwMDAwMDAwMCAtMDUwMAorKysgY3lydXMtaW1hcGQtMi4zXzIuMy4xNS9wdGNsaWVudC9sZGFw
+LmMJMjAwOS0wMy0zMSAwMDoxMToyMy4wMDAwMDAwMDAgLTA0MDAKQEAgLTEsMTMgKzEsMTMgQEAK
+LS8qIGxkYXAuYyAtIExEQVAgQmFja2VuZCB0byBwdGxvYWRlciAqLwotLyoKLSAqIENvcHlyaWdo
+dCAoYykgMTk5OC0yMDAzIENhcm5lZ2llIE1lbGxvbiBVbml2ZXJzaXR5LiAgQWxsIHJpZ2h0cyBy
+ZXNlcnZlZC4KKy8qIGxkYXAuYyAtIExEQVAgQmFja2VuZCB0byBwdGxvYWRlcgorICoKKyAqIENv
+cHlyaWdodCAoYykgMTk5NC0yMDA4IENhcm5lZ2llIE1lbGxvbiBVbml2ZXJzaXR5LiAgQWxsIHJp
+Z2h0cyByZXNlcnZlZC4KICAqCiAgKiBSZWRpc3RyaWJ1dGlvbiBhbmQgdXNlIGluIHNvdXJjZSBh
+bmQgYmluYXJ5IGZvcm1zLCB3aXRoIG9yIHdpdGhvdXQKICAqIG1vZGlmaWNhdGlvbiwgYXJlIHBl
+cm1pdHRlZCBwcm92aWRlZCB0aGF0IHRoZSBmb2xsb3dpbmcgY29uZGl0aW9ucwogICogYXJlIG1l
+dDoKICAqCiAgKiAxLiBSZWRpc3RyaWJ1dGlvbnMgb2Ygc291cmNlIGNvZGUgbXVzdCByZXRhaW4g
+dGhlIGFib3ZlIGNvcHlyaWdodAotICogICAgbm90aWNlLCB0aGlzIGxpc3Qgb2YgY29uZGl0aW9u
+cyBhbmQgdGhlIGZvbGxvd2luZyBkaXNjbGFpbWVyLiAKKyAqICAgIG5vdGljZSwgdGhpcyBsaXN0
+IG9mIGNvbmRpdGlvbnMgYW5kIHRoZSBmb2xsb3dpbmcgZGlzY2xhaW1lci4KICAqCiAgKiAyLiBS
+ZWRpc3RyaWJ1dGlvbnMgaW4gYmluYXJ5IGZvcm0gbXVzdCByZXByb2R1Y2UgdGhlIGFib3ZlIGNv
+cHlyaWdodAogICogICAgbm90aWNlLCB0aGlzIGxpc3Qgb2YgY29uZGl0aW9ucyBhbmQgdGhlIGZv
+bGxvd2luZyBkaXNjbGFpbWVyIGluCkBAIC0xNiwxNCArMTYsMTUgQEAKICAqCiAgKiAzLiBUaGUg
+bmFtZSAiQ2FybmVnaWUgTWVsbG9uIFVuaXZlcnNpdHkiIG11c3Qgbm90IGJlIHVzZWQgdG8KICAq
+ICAgIGVuZG9yc2Ugb3IgcHJvbW90ZSBwcm9kdWN0cyBkZXJpdmVkIGZyb20gdGhpcyBzb2Z0d2Fy
+ZSB3aXRob3V0Ci0gKiAgICBwcmlvciB3cml0dGVuIHBlcm1pc3Npb24uIEZvciBwZXJtaXNzaW9u
+IG9yIGFueSBvdGhlciBsZWdhbAotICogICAgZGV0YWlscywgcGxlYXNlIGNvbnRhY3QgIAotICog
+ICAgICBPZmZpY2Ugb2YgVGVjaG5vbG9neSBUcmFuc2ZlcgorICogICAgcHJpb3Igd3JpdHRlbiBw
+ZXJtaXNzaW9uLiBGb3IgcGVybWlzc2lvbiBvciBhbnkgbGVnYWwKKyAqICAgIGRldGFpbHMsIHBs
+ZWFzZSBjb250YWN0CiAgKiAgICAgIENhcm5lZ2llIE1lbGxvbiBVbml2ZXJzaXR5Ci0gKiAgICAg
+IDUwMDAgRm9yYmVzIEF2ZW51ZQotICogICAgICBQaXR0c2J1cmdoLCBQQSAgMTUyMTMtMzg5MAot
+ICogICAgICAoNDEyKSAyNjgtNDM4NywgZmF4OiAoNDEyKSAyNjgtNzM5NQotICogICAgICB0ZWNo
+LXRyYW5zZmVyQGFuZHJldy5jbXUuZWR1CisgKiAgICAgIENlbnRlciBmb3IgVGVjaG5vbG9neSBU
+cmFuc2ZlciBhbmQgRW50ZXJwcmlzZSBDcmVhdGlvbgorICogICAgICA0NjE1IEZvcmJlcyBBdmVu
+dWUKKyAqICAgICAgU3VpdGUgMzAyCisgKiAgICAgIFBpdHRzYnVyZ2gsIFBBICAxNTIxMworICog
+ICAgICAoNDEyKSAyNjgtNzM5MywgZmF4OiAoNDEyKSAyNjgtNzM5NQorICogICAgICBpbm5vdmF0
+aW9uQGFuZHJldy5jbXUuZWR1CiAgKgogICogNC4gUmVkaXN0cmlidXRpb25zIG9mIGFueSBmb3Jt
+IHdoYXRzb2V2ZXIgbXVzdCByZXRhaW4gdGhlIGZvbGxvd2luZwogICogICAgYWNrbm93bGVkZ21l
+bnQ6CkBAIC0zOCwxNCArMzksMTMgQEAKICAqIEFOIEFDVElPTiBPRiBDT05UUkFDVCwgTkVHTElH
+RU5DRSBPUiBPVEhFUiBUT1JUSU9VUyBBQ1RJT04sIEFSSVNJTkcKICAqIE9VVCBPRiBPUiBJTiBD
+T05ORUNUSU9OIFdJVEggVEhFIFVTRSBPUiBQRVJGT1JNQU5DRSBPRiBUSElTIFNPRlRXQVJFLgog
+ICoKKyAqICRJZDogbGRhcC5jLHYgMS4xNiAyMDA5LzAzLzMxIDA0OjExOjIzIGJyb25nIEV4cCAk
+CiAgKi8KIAotc3RhdGljIGNoYXIgcmNzaWRbXSA9Ci0gICAgICAiJElkOiBsZGFwLmMsdiAxLjEw
+IDIwMDYvMTEvMzAgMTc6MTE6MjQgbXVyY2ggRXhwICQiOwotCiAjaW5jbHVkZSA8Y29uZmlnLmg+
+CiAjaW5jbHVkZSAicHRsb2FkZXIuaCIKICNpbmNsdWRlICJleGl0Y29kZXMuaCIKKyNpbmNsdWRl
+ICJ1dGlsLmgiCiAKICNpZmRlZiBIQVZFX0xEQVAKIApAQCAtNjEsNiArNjEsOSBAQAogI2luY2x1
+ZGUgPHN5cy91bi5oPgogI2luY2x1ZGUgPHN5cy91aW8uaD4KIAorLyogRnVuY3Rpb25zIGxpa2Ug
+bGRhcF9iaW5kKCkgaGF2ZSBiZWVuIGRlcHJlY2F0ZWQgaW4gT3BlbkxEQVAgMi4zICovCisjZGVm
+aW5lIExEQVBfREVQUkVDQVRFRCAxCisKICNpbmNsdWRlIDxsZGFwLmg+CiAjaW5jbHVkZSA8bGJl
+ci5oPgogCkBAIC0yNTAsNyArMjUzLDcgQEAKICAgICB1c2VybmFtZV90b2xvd2VyID0gY29uZmln
+X2dldHN3aXRjaChJTUFQT1BUX1VTRVJOQU1FX1RPTE9XRVIpOwogICAgIHNhd2FscGhhID0gMDsK
+ICAgICBmb3IocCA9IHJldGJ1ZitpOyAqcDsgcCsrKSB7Ci0gICAgICAgIGlmICh1c2VybmFtZV90
+b2xvd2VyICYmIGlzdXBwZXIoKHVuc2lnbmVkIGNoYXIpKnApKQorICAgICAgICBpZiAodXNlcm5h
+bWVfdG9sb3dlciAmJiBVaXN1cHBlcigqcCkpCiAgICAgICAgICAgICAqcCA9IHRvbG93ZXIoKHVu
+c2lnbmVkIGNoYXIpKnApOwogCiAgICAgICAgIHN3aXRjaCAoYWxsb3dlZGNoYXJzWyoodW5zaWdu
+ZWQgY2hhciopIHBdKSB7CkBAIC04NTYsOCArODU5LDE0IEBACiAgICAgICAgICAgICByZXR1cm4g
+UFRTTV9GQUlMOwogICAgICAgICB9CiAKLSAgICAgICAgaWYgKCAoZW50cnkgPSBsZGFwX2ZpcnN0
+X2VudHJ5KHB0c20tPmxkLCByZXMpKSAhPSBOVUxMICkKLSAgICAgICAgICAgICpyZXQgPSBsZGFw
+X2dldF9kbihwdHNtLT5sZCwgZW50cnkpOworCS8qCisJICogV2UgZG9uJ3Qgd2FudCB0byByZXR1
+cm4gdGhlICpmaXJzdCogZW50cnkgZm91bmQsIHdlIHdhbnQgdG8gcmV0dXJuCisJICogdGhlICpv
+bmx5KiBlbnRyeSBmb3VuZC4KKwkgKi8KKwlpZiAoIGxkYXBfY291bnRfZW50cmllcyhwdHNtLT5s
+ZCwgcmVzKSA9PSAxICkgeworCSAgICBpZiAoIChlbnRyeSA9IGxkYXBfZmlyc3RfZW50cnkocHRz
+bS0+bGQsIHJlcykpICE9IE5VTEwgKQorCQkqcmV0ID0gbGRhcF9nZXRfZG4ocHRzbS0+bGQsIGVu
+dHJ5KTsKKwl9CiAKICAgICAgICAgbGRhcF9tc2dmcmVlKHJlcyk7CiAgICAgICAgIHJlcyA9IE5V
+TEw7CkBAIC04NzcsOCArODg2LDcgQEAKICAgICBjaGFyICpkbiA9IE5VTEw7CiAgICAgTERBUE1l
+c3NhZ2UgKnJlcyA9IE5VTEw7CiAgICAgTERBUE1lc3NhZ2UgKmVudHJ5ID0gTlVMTDsKLSAgICBj
+aGFyICphdHRyID0gTlVMTCwgKip2YWxzID0gTlVMTDsKLSAgICBCZXJFbGVtZW50ICpiZXIgPSBO
+VUxMOworICAgIGNoYXIgKip2YWxzID0gTlVMTDsKICAgICBpbnQgcmM7CiAgICAgY2hhciAqYXR0
+cnNbXSA9IHsoY2hhciAqKXB0c20tPm1lbWJlcl9hdHRyaWJ1dGUsTlVMTH07CiAKQEAgLTkwNyw0
+NSArOTE1LDM3IEBACiAgICAgfQogCiAgICAgaWYgKChlbnRyeSA9IGxkYXBfZmlyc3RfZW50cnko
+cHRzbS0+bGQsIHJlcykpICE9IE5VTEwpIHsKLSAgICAgICAgZm9yIChhdHRyID0gbGRhcF9maXJz
+dF9hdHRyaWJ1dGUocHRzbS0+bGQsIGVudHJ5LCAmYmVyKTsgYXR0ciAhPSBOVUxMOyAKLSAgICAg
+ICAgICAgIGF0dHIgPSBsZGFwX25leHRfYXR0cmlidXRlKHB0c20tPmxkLCBlbnRyeSwgYmVyKSkg
+ewotICAgICAgICAgICAgaW50IGksIG51bXZhbHM7Ci0KLSAgICAgICAgICAgIHZhbHMgPSBsZGFw
+X2dldF92YWx1ZXMocHRzbS0+bGQsIGVudHJ5LCBhdHRyKTsKLSAgICAgICAgICAgIGlmICh2YWxz
+ID09IE5VTEwpCi0gICAgICAgICAgICAgICAgY29udGludWU7Ci0KLSAgICAgICAgICAgIGZvciAo
+aSA9IDA7IHZhbHNbaV0gIT0gTlVMTDsgaSsrKQotICAgICAgICAgICAgICAgIG51bXZhbHMgPSBp
+OwotICAgICAgICAgICAgbnVtdmFscysrOwotCi0gICAgICAgICAgICAqZHNpemUgPSBzaXplb2Yo
+c3RydWN0IGF1dGhfc3RhdGUpICsKLSAgICAgICAgICAgICAgICAgICAgIChudW12YWxzICogc2l6
+ZW9mKHN0cnVjdCBhdXRoX2lkZW50KSk7Ci0gICAgICAgICAgICAqbmV3c3RhdGUgPSB4bWFsbG9j
+KCpkc2l6ZSk7Ci0gICAgICAgICAgICBpZiAoKm5ld3N0YXRlID09IE5VTEwpIHsKLSAgICAgICAg
+ICAgICAgICAqcmVwbHkgPSAibm8gbWVtb3J5IjsKLSAgICAgICAgICAgICAgICByYyA9IFBUU01f
+RkFJTDsKLSAgICAgICAgICAgICAgICBnb3RvIGRvbmU7Ci0gICAgICAgICAgICB9Ci0gICAgICAg
+ICAgICAoKm5ld3N0YXRlKS0+bmdyb3VwcyA9IG51bXZhbHM7CisJaW50IGksIG51bXZhbHM7CisK
+Kwl2YWxzID0gbGRhcF9nZXRfdmFsdWVzKHB0c20tPmxkLCBlbnRyeSwgKGNoYXIgKilwdHNtLT5t
+ZW1iZXJfYXR0cmlidXRlKTsKKwlpZiAodmFscyAhPSBOVUxMKSB7CisJICAgIG51bXZhbHMgPSBs
+ZGFwX2NvdW50X3ZhbHVlcyggdmFscyApOworCisJICAgICpkc2l6ZSA9IHNpemVvZihzdHJ1Y3Qg
+YXV0aF9zdGF0ZSkgKworCQkgICAgIChudW12YWxzICogc2l6ZW9mKHN0cnVjdCBhdXRoX2lkZW50
+KSk7CisJICAgICpuZXdzdGF0ZSA9IHhtYWxsb2MoKmRzaXplKTsKKwkgICAgaWYgKCpuZXdzdGF0
+ZSA9PSBOVUxMKSB7CisJCSpyZXBseSA9ICJubyBtZW1vcnkiOworCQlyYyA9IFBUU01fRkFJTDsK
+KwkJZ290byBkb25lOworCSAgICB9CisJICAgICgqbmV3c3RhdGUpLT5uZ3JvdXBzID0gbnVtdmFs
+czsKIAotICAgICAgICAgICAgZm9yIChpID0gMDsgdmFsc1tpXSAhPSBOVUxMOyBpKyspIHsKKwkg
+ICAgZm9yIChpID0gMDsgaSA8IG51bXZhbHM7IGkrKykgewogCQlpbnQgajsKLSAgICAgICAgICAg
+ICAgICBzdHJjcHkoKCpuZXdzdGF0ZSktPmdyb3Vwc1tpXS5pZCwgImdyb3VwOiIpOworCQlzdHJj
+cHkoKCpuZXdzdGF0ZSktPmdyb3Vwc1tpXS5pZCwgImdyb3VwOiIpOwogCQlmb3IoaiA9MDsgaiA8
+IHN0cmxlbih2YWxzW2ldKTsgaisrKSB7Ci0JCSAgaWYoaXN1cHBlcih2YWxzW2ldW2pdKSkKKwkJ
+ICBpZihVaXN1cHBlcih2YWxzW2ldW2pdKSkKIAkJICAgIHZhbHNbaV1bal09dG9sb3dlcih2YWxz
+W2ldW2pdKTsKIAkJfQotICAgICAgICAgICAgICAgIHN0cmxjYXQoKCpuZXdzdGF0ZSktPmdyb3Vw
+c1tpXS5pZCwgdmFsc1tpXSwgCi0gICAgICAgICAgICAgICAgICAgIHNpemVvZigoKm5ld3N0YXRl
+KS0+Z3JvdXBzW2ldLmlkKSk7Ci0gICAgICAgICAgICAgICAgKCpuZXdzdGF0ZSktPmdyb3Vwc1tp
+XS5oYXNoID0gc3RyaGFzaCgoKm5ld3N0YXRlKS0+Z3JvdXBzW2ldLmlkKTsKLSAgICAgICAgICAg
+IH0KKwkJc3RybGNhdCgoKm5ld3N0YXRlKS0+Z3JvdXBzW2ldLmlkLCB2YWxzW2ldLCAKKwkJICAg
+IHNpemVvZigoKm5ld3N0YXRlKS0+Z3JvdXBzW2ldLmlkKSk7CisJCSgqbmV3c3RhdGUpLT5ncm91
+cHNbaV0uaGFzaCA9IHN0cmhhc2goKCpuZXdzdGF0ZSktPmdyb3Vwc1tpXS5pZCk7CisJICAgIH0K
+IAotICAgICAgICAgICAgbGRhcF92YWx1ZV9mcmVlKHZhbHMpOwotICAgICAgICAgICAgdmFscyA9
+IE5VTEw7Ci0gICAgICAgICAgICBsZGFwX21lbWZyZWUoYXR0cik7Ci0gICAgICAgICAgICBhdHRy
+ID0gTlVMTDsKLSAgICAgICAgfQorCSAgICBsZGFwX3ZhbHVlX2ZyZWUodmFscyk7CisJICAgIHZh
+bHMgPSBOVUxMOworCX0KICAgICB9CiAKICAgICBpZighKm5ld3N0YXRlKSB7CkBAIC05NzIsMTAg
+Kzk3Miw2IEBACiAgICAgICAgIGxkYXBfbXNnZnJlZShyZXMpOwogICAgIGlmICh2YWxzKQogICAg
+ICAgICBsZGFwX3ZhbHVlX2ZyZWUodmFscyk7Ci0gICAgaWYgKGF0dHIpCi0gICAgICAgIGxkYXBf
+bWVtZnJlZShhdHRyKTsKLSAgICBpZiAoYmVyKQotICAgICAgICBiZXJfZnJlZShiZXIsIDApOwog
+ICAgIGlmIChkbikKICAgICAgICAgZnJlZShkbik7CiAKQEAgLTk5NCw4ICs5OTAsNyBAQAogICAg
+IGludCBpOyBpbnQgbjsKICAgICBMREFQTWVzc2FnZSAqcmVzID0gTlVMTDsKICAgICBMREFQTWVz
+c2FnZSAqZW50cnkgPSBOVUxMOwotICAgIGNoYXIgKmF0dHIgPSBOVUxMLCAqKnZhbHMgPSBOVUxM
+OwotICAgIEJlckVsZW1lbnQgKmJlciA9IE5VTEw7CisgICAgY2hhciAqKnZhbHMgPSBOVUxMOwog
+ICAgIGNoYXIgKmF0dHJzW10gPSB7KGNoYXIgKilwdHNtLT5tZW1iZXJfYXR0cmlidXRlLE5VTEx9
+OwogICAgIGNoYXIgKmRuID0gTlVMTDsKIApAQCAtMTA1NywyOSArMTA1MiwzMyBAQAogCiAgICAg
+Zm9yIChpID0gMCwgZW50cnkgPSBsZGFwX2ZpcnN0X2VudHJ5KHB0c20tPmxkLCByZXMpOyBlbnRy
+eSAhPSBOVUxMOwogICAgICAgICAgaSsrLCBlbnRyeSA9IGxkYXBfbmV4dF9lbnRyeShwdHNtLT5s
+ZCwgZW50cnkpKSB7Ci0gICAgICAgIGZvciAoYXR0ciA9IGxkYXBfZmlyc3RfYXR0cmlidXRlKHB0
+c20tPmxkLCBlbnRyeSwgJmJlcik7IGF0dHIgIT0gTlVMTDsgCi0gICAgICAgICAgICBhdHRyID0g
+bGRhcF9uZXh0X2F0dHJpYnV0ZShwdHNtLT5sZCwgZW50cnksIGJlcikpIHsKIAotICAgICAgICAg
+ICAgdmFscyA9IGxkYXBfZ2V0X3ZhbHVlcyhwdHNtLT5sZCwgZW50cnksIGF0dHIpOwotICAgICAg
+ICAgICAgaWYgKHZhbHMgPT0gTlVMTCkKLSAgICAgICAgICAgICAgICBjb250aW51ZTsKLQotCSAg
+ICBpbnQgajsKLQkgICAgc3RyY3B5KCgqbmV3c3RhdGUpLT5ncm91cHNbaV0uaWQsICJncm91cDoi
+KTsKLQkgICAgZm9yKGogPTA7IGogPCBzdHJsZW4odmFsc1tpXSk7IGorKykgewotCSAgICAgIGlm
+KGlzdXBwZXIodmFsc1tpXVtqXSkpCi0JCXZhbHNbaV1bal09dG9sb3dlcih2YWxzW2ldW2pdKTsK
+LQkgICAgfQorCXZhbHMgPSBsZGFwX2dldF92YWx1ZXMocHRzbS0+bGQsIGVudHJ5LCAoY2hhciAq
+KXB0c20tPm1lbWJlcl9hdHRyaWJ1dGUpOworCWlmICh2YWxzID09IE5VTEwpCisJICAgIGNvbnRp
+bnVlOwogCi0gICAgICAgICAgICBzdHJsY2F0KCgqbmV3c3RhdGUpLT5ncm91cHNbaV0uaWQsIHZh
+bHNbMF0sIAotICAgICAgICAgICAgICAgIHNpemVvZigoKm5ld3N0YXRlKS0+Z3JvdXBzW2ldLmlk
+KSk7Ci0gICAgICAgICAgICAoKm5ld3N0YXRlKS0+Z3JvdXBzW2ldLmhhc2ggPSBzdHJoYXNoKCgq
+bmV3c3RhdGUpLT5ncm91cHNbaV0uaWQpOwotCi0gICAgICAgICAgICBsZGFwX3ZhbHVlX2ZyZWUo
+dmFscyk7Ci0gICAgICAgICAgICB2YWxzID0gTlVMTDsKLSAgICAgICAgICAgIGxkYXBfbWVtZnJl
+ZShhdHRyKTsKLSAgICAgICAgICAgIGF0dHIgPSBOVUxMOwotICAgICAgICB9CisJaWYgKCBsZGFw
+X2NvdW50X3ZhbHVlcyggdmFscyApICE9IDEgKSB7CisJICAgICpyZXBseSA9ICJ0b28gbWFueSB2
+YWx1ZXMiOworCSAgICByYyA9IFBUU01fRkFJTDsKKwkgICAgbGRhcF92YWx1ZV9mcmVlKHZhbHMp
+OworCSAgICB2YWxzID0gTlVMTDsKKwkgICAgZ290byBkb25lOworCX0KKworCXN0cmNweSgoKm5l
+d3N0YXRlKS0+Z3JvdXBzW2ldLmlkLCAiZ3JvdXA6Iik7CisKKwlpbnQgajsKKwlmb3IoaiA9MDsg
+aiA8IHN0cmxlbih2YWxzWzBdKTsgaisrKSB7CisJICBpZihVaXN1cHBlcih2YWxzWzBdW2pdKSkK
+KwkgICAgdmFsc1swXVtqXT10b2xvd2VyKHZhbHNbMF1bal0pOworCX0KKworCXN0cmxjYXQoKCpu
+ZXdzdGF0ZSktPmdyb3Vwc1tpXS5pZCwgdmFsc1swXSwgCisJICAgIHNpemVvZigoKm5ld3N0YXRl
+KS0+Z3JvdXBzW2ldLmlkKSk7CisJKCpuZXdzdGF0ZSktPmdyb3Vwc1tpXS5oYXNoID0gc3RyaGFz
+aCgoKm5ld3N0YXRlKS0+Z3JvdXBzW2ldLmlkKTsKKworCWxkYXBfdmFsdWVfZnJlZSh2YWxzKTsK
+Kwl2YWxzID0gTlVMTDsKICAgICB9CiAKICAgICByYyA9IFBUU01fT0s7CkBAIC0xMDg4LDkgKzEw
+ODcsNiBAQAogCiAgICAgaWYgKHJlcykKICAgICAgICAgbGRhcF9tc2dmcmVlKHJlcyk7Ci0gICAg
+aWYgKGJlcikKLSAgICAgICAgYmVyX2ZyZWUoYmVyLCAwKTsKLSAgICBiZXIgPSBOVUxMOwogICAg
+IGlmIChkbikKICAgICAgICAgZnJlZShkbik7CiAgICAgaWYgKGZpbHRlcikKQEAgLTExMTMsNyAr
+MTEwOSw3IEBACiAgICAgaW50IGk7IGludCBuOwogICAgIExEQVBNZXNzYWdlICpyZXMgPSBOVUxM
+OwogICAgIExEQVBNZXNzYWdlICplbnRyeSA9IE5VTEw7Ci0gICAgY2hhciAqYXR0ciA9IE5VTEws
+ICoqdmFscyA9IE5VTEw7CisgICAgY2hhciAqKnZhbHMgPSBOVUxMOwogICAgIGNoYXIgKmF0dHJz
+W10gPSB7TlVMTH07CiAKICAgICBpZiAoc3RybmNtcChjYW5vbl9pZCwgImdyb3VwOiIsIDYpKSAg
+eyAvLyBTYW5pdHkgY2hlY2sK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1245</attachid>
+            <date>2009-12-12 22:23 EDT</date>
+            <desc>proposed patch</desc>
+            <filename>120-ptclient_ldap-dot-c_fix_pts.patch</filename>
+            <type>text/plain</type>
+            <size>2239</size>
+            <attacher>simon.raven@gmail.com</attacher>
+            
+              <data encoding="base64">IyMgQXV0aG9yOiBTaW1vbiBLamlrw6BxYXdlaiA8c2ltb24ucmF2ZW5AZ21haWwuY29tPgojIyBT
+dWJqZWN0OiBmaXhlcyBpc3N1ZSAjMzE4MwojIyBEZXNjcmlwdGlvbjogaXN1ZSB3aGVyZSBsb2dp
+bnMgZmFpbHMgKHBvc3NpYmx5IGFyY2gtZGVwZW5kZW50KQojIyBTb3VyY2U6IGh0dHBzOi8vYnVn
+emlsbGEuYW5kcmV3LmNtdS5lZHUvc2hvd19idWcuY2dpP2lkPTMxODMKIyMKCkluZGV4OiBjeXJ1
+cy1pbWFwZC0yLjNfMi4zLjE1L3B0Y2xpZW50L2xkYXAuYwo9PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09Ci0tLSBjeXJ1cy1p
+bWFwZC0yLjNfMi4zLjE1Lm9yaWcvcHRjbGllbnQvbGRhcC5jCTIwMDktMTItMTIgMjI6MTM6NDMu
+MDAwMDAwMDAwIC0wNTAwCisrKyBjeXJ1cy1pbWFwZC0yLjNfMi4zLjE1L3B0Y2xpZW50L2xkYXAu
+YwkyMDA5LTEyLTEyIDIyOjEzOjQ2LjAwMDAwMDAwMCAtMDUwMApAQCAtNzkzLDggKzc5Myw2IEBA
+CiAgICAgY2hhciAqYXR0cnNbXSA9IHtOVUxMfTsKICAgICBMREFQTWVzc2FnZSAqcmVzOwogICAg
+IExEQVBNZXNzYWdlICplbnRyeTsKLSAgICBjaGFyICphdHRyLCAqKnZhbHM7Ci0gICAgQmVyRWxl
+bWVudCAqYmVyOwogCiAgICAgKnJldCA9IE5VTEw7CiAKQEAgLTg4Niw3ICs4ODQsOCBAQAogICAg
+IGNoYXIgKmRuID0gTlVMTDsKICAgICBMREFQTWVzc2FnZSAqcmVzID0gTlVMTDsKICAgICBMREFQ
+TWVzc2FnZSAqZW50cnkgPSBOVUxMOwotICAgIGNoYXIgKip2YWxzID0gTlVMTDsKKyAgICBjaGFy
+ICphdHRyID0gTlVMTCwgKip2YWxzID0gTlVMTDsKKyAgICBCZXJFbGVtZW50ICpiZXIgPSBOVUxM
+OwogICAgIGludCByYzsKICAgICBjaGFyICphdHRyc1tdID0geyhjaGFyICopcHRzbS0+bWVtYmVy
+X2F0dHJpYnV0ZSxOVUxMfTsKIApAQCAtOTE1LDExICs5MTQsMTcgQEAKICAgICB9CiAKICAgICBp
+ZiAoKGVudHJ5ID0gbGRhcF9maXJzdF9lbnRyeShwdHNtLT5sZCwgcmVzKSkgIT0gTlVMTCkgewor
+ICAgICAgICBmb3IgKGF0dHIgPSBsZGFwX2ZpcnN0X2F0dHJpYnV0ZShwdHNtLT5sZCwgZW50cnks
+ICZiZXIpOyBhdHRyICE9IE5VTEw7CisgICAgICAgICAgICBhdHRyID0gbGRhcF9uZXh0X2F0dHJp
+YnV0ZShwdHNtLT5sZCwgZW50cnksIGJlcikpIHsKIAlpbnQgaSwgbnVtdmFsczsKIAotCXZhbHMg
+PSBsZGFwX2dldF92YWx1ZXMocHRzbS0+bGQsIGVudHJ5LCAoY2hhciAqKXB0c20tPm1lbWJlcl9h
+dHRyaWJ1dGUpOwotCWlmICh2YWxzICE9IE5VTEwpIHsKLQkgICAgbnVtdmFscyA9IGxkYXBfY291
+bnRfdmFsdWVzKCB2YWxzICk7CisJdmFscyA9IGxkYXBfZ2V0X3ZhbHVlcyhwdHNtLT5sZCwgZW50
+cnksIGF0dHIpOworCWlmICh2YWxzID09IE5VTEwpCisJCWNvbnRpbnVlOworCisJZm9yIChpID0g
+MDsgdmFsc1tpXSAhPSBOVUxMOyBpKyspCisJCW51bXZhbHMgPSBpOworCQludW12YWxzKys7CiAK
+IAkgICAgKmRzaXplID0gc2l6ZW9mKHN0cnVjdCBhdXRoX3N0YXRlKSArCiAJCSAgICAgKG51bXZh
+bHMgKiBzaXplb2Yoc3RydWN0IGF1dGhfaWRlbnQpKTsKQEAgLTk3Miw2ICs5NzcsOCBAQAogICAg
+ICAgICBsZGFwX21zZ2ZyZWUocmVzKTsKICAgICBpZiAodmFscykKICAgICAgICAgbGRhcF92YWx1
+ZV9mcmVlKHZhbHMpOworICAgIGlmIChiZXIpCisgICAgICAgIGJlcl9mcmVlKGJlciwgMCk7CiAg
+ICAgaWYgKGRuKQogICAgICAgICBmcmVlKGRuKTsKIApAQCAtOTkwLDcgKzk5Nyw4IEBACiAgICAg
+aW50IGk7IGludCBuOwogICAgIExEQVBNZXNzYWdlICpyZXMgPSBOVUxMOwogICAgIExEQVBNZXNz
+YWdlICplbnRyeSA9IE5VTEw7Ci0gICAgY2hhciAqKnZhbHMgPSBOVUxMOworICAgIGNoYXIgKmF0
+dHIgPSBOVUxMLCAqKnZhbHMgPSBOVUxMOworICAgIEJlckVsZW1lbnQgKmJlciA9IE5VTEw7CiAg
+ICAgY2hhciAqYXR0cnNbXSA9IHsoY2hhciAqKXB0c20tPm1lbWJlcl9hdHRyaWJ1dGUsTlVMTH07
+CiAgICAgY2hhciAqZG4gPSBOVUxMOwogCkBAIC0xMTA5LDcgKzExMTcsNiBAQAogICAgIGludCBp
+OyBpbnQgbjsKICAgICBMREFQTWVzc2FnZSAqcmVzID0gTlVMTDsKICAgICBMREFQTWVzc2FnZSAq
+ZW50cnkgPSBOVUxMOwotICAgIGNoYXIgKip2YWxzID0gTlVMTDsKICAgICBjaGFyICphdHRyc1td
+ID0ge05VTEx9OwogCiAgICAgaWYgKHN0cm5jbXAoY2Fub25faWQsICJncm91cDoiLCA2KSkgIHsg
+Ly8gU2FuaXR5IGNoZWNrCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

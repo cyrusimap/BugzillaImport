@@ -1,0 +1,97 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2359</bug_id>
+          
+          <creation_ts>2004-02-02 17:41 EDT</creation_ts>
+          <short_desc>Closing file descriptors 0,1,2 sometimes lead to bugs</short_desc>
+          <delta_ts>2010-10-18 12:43:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>FreeBSD</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>2422</dup_id>
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dmitrij Tejblum">tejblum@yandex-team.ru</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Dmitrij Tejblum">tejblum@yandex-team.ru</who>
+            <bug_when>2004-02-02 17:41:41 EDT</bug_when>
+            <thetext>lmtpd (and perhaps other programs) dup2() the client socket to descriptors 0,1
+and then, after client finish, close() them with cyrus_close_sock(). Thus, the
+descriptors 0,1,2 are closed during some time period.
+
+Somtimes during this period the syslog() function is called, and it reestablish
+the connection to the syslogd daemon, probably due to some transmission problem.
+The socket connected to syslogd goes to fd 1, since it is the lower available
+file descriptor. Then the LMTP client socket is dup2()&apos;ed to fd 1, but the
+syslog() function doesn&apos;t know about it. Then, next log message go to the LMTP
+client instead of syslogd. Sendmail is confused and leave the mail in queue
+until next run. (But this lmtpd process does not exit and continues to confuse
+sendmail.)
+
+I suggest to not close the file descriptor 0,1,2. They will be closed by dup2().
+
+--- lib/util.c       Mon Feb  2 20:04:05 2004
++++ lib/util.c  Mon Feb  2 20:04:38 2004
+@@ -266,5 +266,5 @@
+ int cyrus_close_sock(int fd) 
+ {
+     shutdown(fd, SHUT_RD);
+-    return close(fd);
++    return (fd &lt;= 2) ? 0 : close(fd);
+ }</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-02-03 09:42:04 EDT</bug_when>
+            <thetext>this patch isn&apos;t right, since cyrus_close_sock is only called on those file
+descriptors.
+
+There may be a better way to do this though (by noticing that we have closed
+those file descriptors already).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2004-09-14 18:24:18 EDT</bug_when>
+            <thetext>A fix for this was committed earlier. A patch in included in the bug I just
+marked this duplicate of.
+
+*** This bug has been marked as a duplicate of 2422 ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

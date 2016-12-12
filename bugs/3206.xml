@@ -1,0 +1,293 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3206</bug_id>
+          
+          <creation_ts>2010-04-12 16:31 EDT</creation_ts>
+          <short_desc>IOERROR: opening /var/lib/imap/user_deny.db</short_desc>
+          <delta_ts>2011-09-25 15:44:25 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DEFERRED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>2.3-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Richard Bos">ml@radoeka.nl</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>heisterkamp@rrzn.uni-hannover.de</cc>
+    
+    <cc>mhlavink@redhat.com</cc>
+    
+    <cc>rhafer@suse.de</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Richard Bos">ml@radoeka.nl</who>
+            <bug_when>2010-04-12 16:31:44 EDT</bug_when>
+            <thetext>I see this message in /var/log/messages:
+
+Mar 26 07:55:55:19 kolab2 imaps[21436]: IOERROR: opening /var/lib/imap/user_deny.db: No such file or directory
+Mar 26 07:55:19 kolab2 imaps[21436]: IOERROR: opening /var/lib/imap/user_deny.db: No such file or directory
+Mar 26 07:55:19 kolab2 imaps[21436]: IOERROR: opening /var/lib/imap/user_deny.db: No such file or directory
+Mar 26 07:55:29 kolab2 imaps[21436]: IOERROR: opening /var/lib/imap/user_deny.db: No such file or directory
+
+After I created the file (&gt; /var/lib/imap/user_deny.db; chmod cyrus:mail /var/lib/imap/user_deny.db)
+The message becomes:
+Mar 26 07:56:29 kolab2 imaps[21436]: fetching user_deny.db entry for &apos;login@domain.tld&apos;
+Mar 26 07:57:29 kolab2 imaps[21436]: fetching user_deny.db entry for &apos;login@domain.tld&apos;
+Mar 26 07:57:33 kolab2 imaps[21502]: fetching user_deny.db entry for &apos;login@domain.tld&apos;
+Mar 26 07:57:33 kolab2 imaps[21502]: fetching user_deny.db entry for &apos;login@domain.tld&apos;
+
+The problem is that the messages never stop, it is one big continues stream.  It results in huge /var/log/messages file.  This makes the message not usefull for any other report.
+
+There are many people encountering this problem: see those urls:
+http://lists.andrew.cmu.edu/pipermail/info-cyrus/2010-April/032846.html
+http://lists.andrew.cmu.edu/pipermail/info-cyrus/2010-April/032852.html
+http://www.mail-archive.com/info-cyrus@lists.andrew.cmu.edu/msg38755.html
+
+Snippet from an email exchange:
+BTW, I am getting more and more feedback regarding the annoying &quot;denydb&quot;
+logging. Do you know if this got reported in the upstream bugzilla 
+already, I only saw the discussion on the info-cyrus list a few weeks
+ago. Otherwise I&apos;d suggest we report an upstream bug (referring to
+available patches) and probably rethink our decision regarding probably
+patching it away. The patch that Fedora has seems to be the best
+approach currently (IMO):
+
+http://cvs.fedoraproject.org/viewvc/rpms/cyrus-imapd/devel/cyrus-imapd-2.3.16-nodenny.patch?revision=1.1&amp;amp;view=markup
+
+here&apos;s the related fedora bug report:
+
+https://bugzilla.redhat.com/show_bug.cgi?id=553011
+
+
+A package change request:
+two minor mods:
+ - shout up the silly messages related to user_deny.db by:
+   creating a dummy file
+   commenting out the constantly recurring (aka silly) syslog message
+   on open
+
+Please make the logging normal again.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Mark Heisterkamp">heisterkamp@rrzn.uni-hannover.de</who>
+            <bug_when>2010-04-13 02:16:04 EDT</bug_when>
+            <thetext>Same here, one user has about 5.000.000 &apos;fetching ...&apos;-entries in the logs. Our server has a load average from over 200 (16 cores) whenever this user logs in. The user is on Mac OS X and thunderbird 2. First I thought it&apos;s a Spotlight-issue, but turning off Spotlight-search on e-mails doesn&apos;t change the behaviour.
+
+Why should it make sense to deny a user at this point?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ralf Haferkamp">rhafer@suse.de</who>
+            <bug_when>2010-04-13 06:08:28 EDT</bug_when>
+            <thetext>Yeah, I agree it is pretty annoying and additionally wastes some CPU cycles (probably not too much, though), as I assume most people are using other mechanisms to deny user&apos;s access the the IMAP server.
+
+Additionally to the already mentioned patches, I think being able to enable/disable user_deny.db through an imapd.conf might be the best options. Would such a patch have a change of being accepted here? If yes, I think I can put something together.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-04-13 08:29:02 EDT</bug_when>
+            <thetext>If you don&apos;t want to see the messages, don&apos;t log at the DEBUG level.
+
+If somebody wants to create a patch the disables the user access database, I will certainly look at it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michal Hlavinka">mhlavink@redhat.com</who>
+            <bug_when>2010-04-13 10:40:36 EDT</bug_when>
+            <thetext>We&apos;re using mentioned patch in Fedora mainly as workaround so there is no change for admins and cyrus-imad works the same as before update.
+
+Patch is in Fedora packages since 2010-01-14 so it&apos;s three months now and it works fine.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ralf Haferkamp">rhafer@suse.de</who>
+            <bug_when>2010-04-13 11:17:17 EDT</bug_when>
+            <thetext>Created an attachment (id=1263)
+proposed patch for deny db runtime configuration
+
+This patch introduces the new config keyword &quot;userdeny_db_enable&quot; to enable/disable the use of the user_deny.db.
+I choose to disable it per default, but that is of course just my preference. Please review/comment and consider for inclusion. </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-04-26 08:54:19 EDT</bug_when>
+            <thetext>I rewrote the user deny code so that it only open the database when the service starts up.  If it doesn&apos;t exist, we don&apos;t check it at all .</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-08-07 20:40:32 EDT</bug_when>
+            <thetext>Created an attachment (id=1296)
+Patch to ignore a missing user_deny.db
+
+Less is more. Instead of adding another configuration setting, we can safely &quot;ignore&quot; the fact user_deny.db does not exist and allow everyone access.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-08-07 20:44:24 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; Created an attachment (id=1296) [details]
+&gt; Patch to ignore a missing user_deny.db
+&gt; 
+
+FWIW, this one applies to 2.3.16.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-09-03 16:20:00 EDT</bug_when>
+            <thetext>Ping, could we have a ACK/NACK please?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-15 06:11:32 EDT</bug_when>
+            <thetext>Bron, Ken, can I safely cherry-pick these to cyrus-imapd-2.3?
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=e82c657e2f6a3d304d19d737104cec4782da15c0
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=3a755fac0d4b43071774af2a646ac4fa51aba8f3</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-15 06:54:35 EDT</bug_when>
+            <thetext>set the target milestone as well now that there is an apparent fix</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-10-15 07:21:01 EDT</bug_when>
+            <thetext>Change merged in with cyrus-imapd-2.3 would look like:
+
+http://git.cyrusimap.org/cyrus-imapd/log/?h=ticket/3206/userdeny-cherry-from-2.4
+
+Turns out it also builds, but;
+
+- is mutually exclusive with autocreate/autosieve which will need to be updated
+
+You can find a nice pack of sources at:
+
+http://hosted.kolabsys.com/~vanmeeuwen/cyrus-imapd-2.3.17-git20101015.tar.gz</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-09-25 15:44:25 EDT</bug_when>
+            <thetext>This bug is being closed as part of a cleanup exercise.
+
+This bug was associated with milestone 2.3-next, but only security fixes and serious bug-fixes are eligible for inclusion in 2.3.
+
+Should the problem need to be resolved nonetheless, please reopen this bug and set the version to the appropriate 2.4 or 2.5-next version in which you can verify the problem still exists.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1263</attachid>
+            <date>2010-04-13 11:17 EDT</date>
+            <desc>proposed patch for deny db runtime configuration</desc>
+            <filename>config_userdeny_db.dif</filename>
+            <type>text/plain</type>
+            <size>1468</size>
+            <attacher>rhafer@suse.de</attacher>
+            
+              <data encoding="base64">LS0tIGxpYi9pbWFwb3B0aW9ucwkyMDEwLzA0LzEzIDE0OjM4OjMyCTEuMQorKysgbGliL2ltYXBv
+cHRpb25zCTIwMTAvMDQvMTMgMTU6MTA6MzkKQEAgLTExODMsNiArMTE4Myw5IEBACiB7ICJ1c2Vy
+ZGVueV9kYiIsICJmbGF0IiwgU1RSSU5HTElTVCgiZmxhdCIsICJiZXJrZWxleSIsICJiZXJrZWxl
+eS1oYXNoIiwgInNraXBsaXN0IiwgInNxbCIpfQogLyogVGhlIGN5cnVzZGIgYmFja2VuZCB0byB1
+c2UgZm9yIHRoZSB1c2VyIGFjY2VzcyBsaXN0LiAqLwogCit7ICJ1c2VyZGVueV9kYl9lbmFibGUi
+LCAwLCBTV0lUQ0ggfQorLyogRW5hYmxlL2Rpc2FibGUgdGhlIHVzZXIgYWNjZXNzIGxpc3QgKHVz
+ZXJfZGVueS5kYikgY2hlY2tzLiAqLworCiB7ICJ1c2VyX2ZvbGRlcl9saW1pdCIsIDAsIElOVCB9
+CiAvKiBMaW1pdCB0aGUgbnVtYmVyIG9mIGZvbGRlcnMgYSB1c2VyIGNhbiBjcmVhdGUgaW4gdGhl
+aXIgSU5CT1guICAKICAgIFNldCB0byAwIChkZWZhdWx0KSBmb3Igbm8gbGltaXQuICBPbmx5IGFm
+ZmVjdHMgZm9sZGVycyBpbiB1c2VyLiAqLwotLS0gaW1hcC9nbG9iYWwuYwkyMDEwLzA0LzEzIDEz
+OjIyOjU4CTEuMQorKysgaW1hcC9nbG9iYWwuYwkyMDEwLzA0LzEzIDE1OjEyOjQ1CkBAIC04OCw2
+ICs4OCw3IEBACiAKIGludCBjb25maWdfZnVsbGRpcmhhc2g7CQkJCS8qIDAgKi8KIGludCBjb25m
+aWdfaW1wbGljaXRyaWdodHM7CQkJLyogImxreGEiICovCitpbnQgY29uZmlnX3VzZXJkZW55X2Ri
+X2VuYWJsZTsgICAgICAgICAgICAgICAgICAvKiAwICovCiB1bnNpZ25lZCBsb25nIGNvbmZpZ19t
+ZXRhcGFydGl0aW9uX2ZpbGVzOwkvKiAwICovCiBzdHJ1Y3QgY3lydXNkYl9iYWNrZW5kICpjb25m
+aWdfbWJveGxpc3RfZGI7CiBzdHJ1Y3QgY3lydXNkYl9iYWNrZW5kICpjb25maWdfcXVvdGFfZGI7
+CkBAIC0xNzUsNiArMTc2LDggQEAKIAogICAgIGNvbmZpZ19tZXRhcGFydGl0aW9uX2ZpbGVzID0g
+Y29uZmlnX2dldGJpdGZpZWxkKElNQVBPUFRfTUVUQVBBUlRJVElPTl9GSUxFUyk7CiAKKyAgICBj
+b25maWdfdXNlcmRlbnlfZGJfZW5hYmxlID0gY29uZmlnX2dldHN3aXRjaChJTUFQT1BUX1VTRVJE
+RU5ZX0RCX0VOQUJMRSk7CisKICAgICBpZiAoIWN5cnVzX2luaXRfbm9kYikgewogCS8qIGxvb2t1
+cCB0aGUgZGF0YWJhc2UgYmFja2VuZHMgKi8KIAljb25maWdfbWJveGxpc3RfZGIgPQpAQCAtNTUy
+LDYgKzU1NSw3IEBACiAJc3RyY2F0KGZuYW1lLCBGTkFNRV9VU0VSREVOWURCKTsKICAgICB9CiAK
+KyAgICBpZiAoIGNvbmZpZ191c2VyZGVueV9kYl9lbmFibGUgKSB7CiAgICAgLyogdHJ5IHRvIG9w
+ZW4gZGF0YWJhc2UgKi8KICAgICByID0gREVOWURCLT5vcGVuKGZuYW1lLCAwLCAmZGIpOwogICAg
+IGlmIChyKSB7CkBAIC02NDUsNyArNjQ5LDcgQEAKIAkJICAgY3lydXNkYl9zdHJlcnJvcihyKSk7
+CiAJfQogICAgIH0KLQorICAgIH0KICAgICByZXR1cm4gcmV0OwogfQogCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1296</attachid>
+            <date>2010-08-07 20:40 EDT</date>
+            <desc>Patch to ignore a missing user_deny.db</desc>
+            <filename>cyrus-imapd-2.3.16-003-workaround-for-missing-user_deny.db.patch</filename>
+            <type>text/plain</type>
+            <size>1270</size>
+            <attacher>vanmeeuwen@kolabsys.com</attacher>
+            
+              <data encoding="base64">RnJvbSAxYmZkYTc2MWM2N2U2MmViY2U3NTY4YzY3ZDVmZWZlNmExYWNlMDI1IE1vbiBTZXAgMTcg
+MDA6MDA6MDAgMjAwMQpGcm9tOiBKZXJvZW4gdmFuIE1lZXV3ZW4gKEtvbGFiIFN5c3RlbXMpIDx2
+YW5tZWV1d2VuQGtvbGFic3lzLmNvbT4KRGF0ZTogVHVlLCAzIEF1ZyAyMDEwIDEwOjM4OjU1ICsw
+MjAwClN1YmplY3Q6IFtQQVRDSCAxMi8xM10gV29ya2Fyb3VuZCBmb3IgbWlzc2luZyB1c2VyX2Rl
+bnkuZGIKCklmIHRoZXJlIGlzIG5vIHVzZXJfZGVueS5kYiwgdGhlbiBhbGwgdXNlcnMgYXJlIGRl
+bmllZCBieSBkZWZhdWx0CmluIDIuMy4xNi4gVGhpcyBwYXRjaCBjaXJjdW12ZW50cyB0aGF0IGJ5
+IHJldHVybmluZyBPSyB3aGVuIG5vCnVzZXJfZGVueS5kYiBleGlzdHMuCi0tLQogaW1hcC9nbG9i
+YWwuYyB8ICAgIDggKysrKysrKysKIDEgZmlsZXMgY2hhbmdlZCwgOCBpbnNlcnRpb25zKCspLCAw
+IGRlbGV0aW9ucygtKQoKZGlmZiAtLWdpdCBhL2ltYXAvZ2xvYmFsLmMgYi9pbWFwL2dsb2JhbC5j
+CmluZGV4IDVkNjQ4OTUuLmRhYzNkMWMgMTAwNjQ0Ci0tLSBhL2ltYXAvZ2xvYmFsLmMKKysrIGIv
+aW1hcC9nbG9iYWwuYwpAQCAtNTQyLDE0ICs1NDIsMjIgQEAgc3RhdGljIGludCBhY2xfb2soY29u
+c3QgY2hhciAqdXNlciwgc3RydWN0IGF1dGhfc3RhdGUgKmF1dGhzdGF0ZSkKIGludCBhY2Nlc3Nf
+b2soY29uc3QgY2hhciAqdXNlciwgY29uc3QgY2hhciAqc2VydmljZSwgY2hhciAqbXNnYnVmLCBp
+bnQgc2l6ZSkKIHsKICAgICBzdGF0aWMgY2hhciAqZm5hbWUgPSBOVUxMOworICAgIHN0YXRpYyBp
+bnQgbm9kYiA9IDA7CiAgICAgc3RydWN0IGRiICpkYiA9IE5VTEw7CiAgICAgaW50IHIsIHJldCA9
+IDE7ICAvKiBhY2Nlc3MgYWx3YXlzIGdyYW50ZWQgYnkgZGVmYXVsdCAqLwogCisgICAgaWYgKG5v
+ZGIpIHJldHVybiByZXQ7CisKICAgICBpZiAoIWZuYW1lKSB7CisJc3RydWN0IHN0YXQgczsKIAkv
+KiBjcmVhdGUgcGF0aCB0byBkYXRhYmFzZSAqLwogCWZuYW1lID0geG1hbGxvYyhzdHJsZW4oY29u
+ZmlnX2RpcikgKyBzaXplb2YoRk5BTUVfVVNFUkRFTllEQikgKyAxKTsKIAlzdHJjcHkoZm5hbWUs
+IGNvbmZpZ19kaXIpOwogCXN0cmNhdChmbmFtZSwgRk5BTUVfVVNFUkRFTllEQik7CisJaWYgKHN0
+YXQoZm5hbWUsICZzKSA9PSAtMSAmJiBlcnJubz09RU5PRU5UKSB7CisJICAgIG5vZGIgPSAxOwor
+CSAgICByZXR1cm4gcmV0OworCX0KICAgICB9CiAKICAgICAvKiB0cnkgdG8gb3BlbiBkYXRhYmFz
+ZSAqLwotLSAKMS43LjIKCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

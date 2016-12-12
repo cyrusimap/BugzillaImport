@@ -1,0 +1,110 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2428</bug_id>
+          
+          <creation_ts>2004-05-18 06:02 EDT</creation_ts>
+          <short_desc>master coredump in freeaddrinfo</short_desc>
+          <delta_ts>2013-02-21 22:24:07 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Robert Weber">rweber@easy-surf.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+    
+    <cc>rweber@easy-surf.net</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Robert Weber">rweber@easy-surf.net</who>
+            <bug_when>2004-05-18 06:02:12 EDT</bug_when>
+            <thetext>On Solaris 9 master crashed on startup in master.c, when freeaddrinfo ist called:
+
+(process id 10274)
+signal BUS (invalid address alignment) in _free_unlocked at 0xef243cb4
+0xef243cb4: _free_unlocked+0x0040:      ld      [%i0 - 0x8], %o0
+Current function is service_create
+  502           freeaddrinfo(res0);
+(dbx)
+
+
+I did some debugging and found the following Problem:
+
+
+When creating a UNIX-Socket like lmtpunix, no getaddrinfo is called on res0.
+The problem occurs later, when calling freeaddrinfo:
+
+if ( res0) {
+   freeaddrinfo(res0);
+}
+
+At this time, res0 does not valid data, since getaddrinfo was not called.
+Unfortunatly the &quot;if(res0)&quot; does not it&apos;s job, because res0 ist NOT a NULL
+pointer. At lines 347 and later, res0-&gt;ai_flags and other are set manually,
+so that res0 never ca be a NULL pointer, and the if(res0) freeaddinfo(res0)
+is always executed.
+
+I suggest to change the if-expression to look like:
+
+if ( res0 &amp;&amp; res0-&gt;ai_family != PF_UNIX )
+
+
+best regards,
+robert</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2004-09-14 15:42:35 EDT</bug_when>
+            <thetext>The versions of master.c I&apos;m looking at (current in both cyrus 2.2 and cyrus
+2.3) have a fix for this which use the status flag res0_is_local; The fix was
+applied in February 2004, and should be in 2.2.4 and later. What version do you
+have?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Robert Weber">rweber@easy-surf.net</who>
+            <bug_when>2004-09-15 02:32:24 EDT</bug_when>
+            <thetext>The problem was in version 2.2.3. After an upgrade to 2.2.4 everything workes 
+fine. </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2013-02-21 22:24:07 EDT</bug_when>
+            <thetext>This bug was clearly fixed some years ago.  Looking in today&apos;s source, it&apos;s still fixed.  So RESOLVEing this bug.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

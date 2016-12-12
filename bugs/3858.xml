@@ -1,0 +1,115 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3858</bug_id>
+          
+          <creation_ts>2014-07-16 09:16 EDT</creation_ts>
+          <short_desc>rimap waits for more data when reading the banner and login response, even when terminated with a CRLF</short_desc>
+          <delta_ts>2014-07-16 10:42:11 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.25</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jonathan Bastien-Filiatrault">jbf@zerospam.ca</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>jbf@zerospam.ca</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jonathan Bastien-Filiatrault">jbf@zerospam.ca</who>
+            <bug_when>2014-07-16 09:16:08 EDT</bug_when>
+            <thetext>This is related to Bug 3209.
+
+rimap currently takes at least 2 seconds to authentify a user. One second is used waiting for the rest of the banner, the other second is spent waiting for the rest of the LOGIN response.
+
+I understand this kludge was put in place to support buggy IMAP servers that send non-terminated responses. However, rimap should not wait if it already has a complete response.
+
+strace:
+
+08:49:35.981289 alarm(30)               = 0
+08:49:35.981892 read(9, &quot;* OK [CAPABILITY IMAP4rev1 IDLE &quot;..., 1000) = 68
+08:49:35.982450 alarm(0)                = 30
+08:49:35.982853 select(10, [9], NULL, NULL, {1, 0}) = 0 (Timeout)
+08:49:36.984920 alarm(30)               = 0
+08:49:36.985820 writev(9, [{&quot;saslauthd LOGIN &quot;, 16}, {&quot;\&quot;joe\&quot;&quot;, 5}, {&quot; &quot;, 1}, {&quot;\&quot;aoeu\&quot;&quot;, 6}, {&quot;\r\n&quot;, 2}], 5) = 30
+08:49:36.986447 alarm(0)                = 30
+08:49:36.986543 alarm(30)               = 0
+08:49:36.986624 read(9, &quot;saslauthd OK LOGIN succeeded\r\n&quot;, 1000) = 30
+08:49:36.988017 alarm(0)                = 30
+08:49:36.988891 select(10, [9], NULL, NULL, {1, 0}) = 0 (Timeout)
+08:49:37.992926 close(9)                = 0</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jonathan Bastien-Filiatrault">jbf@zerospam.ca</who>
+            <bug_when>2014-07-16 09:19:12 EDT</bug_when>
+            <thetext>More complete trace, to show that the responses are CRLF terminated and the delay in the actual saslauthd response to the SASL client.
+
+09:17:23.161939 accept(5, {sa_family=AF_FILE, NULL}, [2]) = 8
+09:17:29.497286 fcntl(7, F_SETLKW, {type=F_UNLCK, whence=SEEK_SET, start=0, len=1}) = 0
+09:17:29.497608 read(8, &quot;\0\3&quot;, 2)      = 2
+09:17:29.497779 read(8, &quot;bob&quot;, 3)       = 3
+09:17:29.497874 read(8, &quot;\0\4&quot;, 2)      = 2
+09:17:29.498069 read(8, &quot;aoeu&quot;, 4)      = 4
+09:17:29.498141 read(8, &quot;\0\4&quot;, 2)      = 2
+09:17:29.498216 read(8, &quot;smtp&quot;, 4)      = 4
+09:17:29.498307 read(8, &quot;\0\0&quot;, 2)      = 2
+09:17:29.498401 fcntl(6, F_SETLKW, {type=F_RDLCK, whence=SEEK_SET, start=227, len=1}) = 0
+09:17:29.498533 fcntl(6, F_SETLKW, {type=F_UNLCK, whence=SEEK_SET, start=227, len=1}) = 0
+09:17:29.498606 socket(PF_INET, SOCK_STREAM, IPPROTO_TCP) = 9
+09:17:29.498723 connect(9, {sa_family=AF_INET, sin_port=htons(1143), sin_addr=inet_addr(&quot;127.0.0.1&quot;)}, 16) = 0
+09:17:29.499020 rt_sigaction(SIGALRM, {0x7fcbb5d23610, [ALRM], SA_RESTORER|SA_RESTART, 0x7fcbb44af4a0}, {0x7fcbb5d23610, [ALRM], SA_RESTORER|SA_RESTART, 0x7fcbb44af4a0}, 8) = 0
+09:17:29.499106 rt_sigaction(SIGPIPE, {0x7fcbb5d23610, [PIPE], SA_RESTORER|SA_RESTART, 0x7fcbb44af4a0}, {0x7fcbb5d23610, [PIPE], SA_RESTORER|SA_RESTART, 0x7fcbb44af4a0}, 8) = 0
+09:17:29.499182 alarm(30)               = 0
+09:17:29.499254 read(9, &quot;* OK [CAPABILITY IMAP4rev1 IDLE NAMESPACE] Twisted IMAP4rev1 Ready\r\n&quot;, 1000) = 68
+09:17:29.499709 alarm(0)                = 30
+09:17:29.499856 select(10, [9], NULL, NULL, {1, 0}) = 0 (Timeout)
+09:17:30.501416 alarm(30)               = 0
+09:17:30.501544 writev(9, [{&quot;saslauthd LOGIN &quot;, 16}, {&quot;\&quot;bob\&quot;&quot;, 5}, {&quot; &quot;, 1}, {&quot;\&quot;aoeu\&quot;&quot;, 6}, {&quot;\r\n&quot;, 2}], 5) = 30
+09:17:30.501843 alarm(0)                = 30
+09:17:30.501914 alarm(30)               = 0
+09:17:30.501985 read(9, &quot;saslauthd OK LOGIN succeeded\r\n&quot;, 1000) = 30
+09:17:30.502829 alarm(0)                = 30
+09:17:30.503078 select(10, [9], NULL, NULL, {1, 0}) = 0 (Timeout)
+09:17:31.504645 close(9)                = 0
+09:17:31.504869 fcntl(6, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=227, len=1}) = 0
+09:17:31.504979 fcntl(6, F_SETLKW, {type=F_UNLCK, whence=SEEK_SET, start=227, len=1}) = 0
+09:17:31.505060 write(8, &quot;\0#&quot;, 2)      = 2
+09:17:31.505149 write(8, &quot;OK remote authentication successful&quot;, 35) = 35
+09:17:31.505309 close(8)                = 0
+09:17:31.505432 fcntl(7, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=0, len=1}) = 0</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

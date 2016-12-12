@@ -1,0 +1,228 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2682</bug_id>
+          
+          <creation_ts>2005-06-22 16:34 EDT</creation_ts>
+          <short_desc>proxyd crashes while processing a APPEND command</short_desc>
+          <delta_ts>2010-10-18 12:43:08 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="paul r turgyan">pturgyan@umich.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="paul r turgyan">pturgyan@umich.edu</who>
+            <bug_when>2005-06-22 16:34:37 EDT</bug_when>
+            <thetext>proxyd is segfaulting while processing
+an APPEND command.
+
+We are running:
+       Cyrus IMAP4 Murder v2.2.12
+       Linux  2.4.31
+
+Here is a backtrace from one of the proxyd core files
+
+(gdb) bt
+#0  prot_write (s=0x0,
+    buf=0xbfffb3a0
+&quot;msmx1RtCuWjZFMZPyr1rqdG1ZNURc/Kp5Hy1DTjGzRLlocneImm6kUmGY3PQ
+9Oegqv4p+Gmn6zpc\r\njoiozjdxXUeM9NtprRsqu7HXpu9K87u/iQdEd7K4LM2PkI4DfXtWU6vLT2ug
+jWdvd3MPw58Ov7Jv\r\nynm/Lngj357Vra34h/4QzTZLecq8LcDPXnmvOdV+K9zo&quot;...,
+len=2048)
+    at prot.c:835
+#1  0x0804eaea in pipe_command (s=0x8152f30, optimistic_literal=16384)
+    at proxyd.c:632
+#2  0x08054cf7 in cmd_append (tag=0x8167ce8 &quot;3&quot;,
+    name=0x8167788 &quot;Sent Messages&quot;) at proxyd.c:2889
+#3  0x08050afd in cmdloop () at proxyd.c:1577
+#4  0x080503df in service_main (argc=2, argv=0x813ce68, envp=0xbffff060)
+    at proxyd.c:1370
+#5  0x0804cf5e in main (argc=2, argv=0x808e, envp=0xbffff060) at
+service.c:530
+#6  0x402658be in __libc_start_main (main=0x804c7c0 &lt;main&gt;, argc=2,
+    ubp_av=0x808e, init=0x809daf0 &lt;__libc_csu_init&gt;,
+    fini=0x809db20 &lt;__libc_csu_fini&gt;, rtld_fini=0x9, stack_end=0x8152f30)
+    at ../sysdeps/generic/libc-start.c:152
+(gdb)
+
+(gdb) up
+#1  0x0804eaea in pipe_command (s=0x8152f30, optimistic_literal=16384)
+    at proxyd.c:632
+632     proxyd.c: No such file or directory.
+        in proxyd.c
+(gdb) p s
+$1 = (struct backend *) 0x8152f30
+(gdb) p *s
+$2 = {hostname = &quot;jackiebrown.mail.umich.edu&quot;, &apos;\0&apos; &lt;repeats 37 times&gt;,
+  addr = {ss_family = 2, __ss_align = 1896797069,
+    __ss_padding = &apos;\0&apos; &lt;repeats 119 times&gt;}, sock = -1, context = 0x0,
+  timeout = 0x0, saslconn = 0x0, tlsconn = 0x0, tlssess = 0x0,
+  capability = 31, last_result = &apos;\0&apos; &lt;repeats 1023 times&gt;, in = 0x0,
+  out = 0x0}
+
+(gdb) p eol
+$3 = &quot;(\\Seen) \&quot;16-Jun-2005 08:30:25 -0700\&quot; {13045655}\r\n\0?\004\0\0\0XK?lt\0
+04\b\b9\025\b3?\0\004\0\0\b9\025\b8Y\026\b\0\0\0\0(3?\ra\a\b\bA\024\b\002\0\0\0
+\b9\025\b@\0\0\0\004\0\0\0\001\0\0\0\211a\n\b\0\0\0&quot;
+(gdb)
+
+This is how I reproduced it:
+
+Use imtest to open a connection to a proxyd,
+and issue an APPEND command w/ a BIG message
+like:
+110 append Sent (\Seen) {8000197+}
+From: proxytest@whocares.com
+Date: Tue, 14 Jun 2005 16:56:00 -0400 (EST)
+Subject: Die you beast
+To: xpaul@openbsd.staff.itd.umich.edu
+Message-Id: &lt;B27397-01000000@whocares.com&gt;
+
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+45678901234567890123456
+
+then wait about 6 minutes, and then enter somemore text.
+
+Wait another 30 minutes or whatever your timeout value is in imapd.conf,
+and look around on the frontend for your proxyd core file.
+
+Here is what I think is happening.
+
+proxyd opens a connection to the client.
+proxyd opens a connection to the backend.
+
+proxyd starts reading from client,  writing to backend.
+(this loop is in the function &quot;pipe_command&quot;)
+
+client sends some data
+
+client stalls/stops sending data for a while.
+
+5 minutes later proxyd detects no incoming data from the
+client and the read operation timesout.
+
+Timeout processing consists of: proxyd.c:892 function backend_timeout.
+
+    Proxyd sends &quot;LOGOUT&quot; to backend.
+            and waits on reply from backend.
+
+    This is dumb,  because the backend is waiting to read the
+    rest of the &quot;APPEND&quot; command above.
+
+    Eventually (30 minutes later),  imapd on the backend gets tired
+    of waiting for proxyd,  and closes connection.
+
+    Proxyd wakes up from read above,  and proceeds to
+    close down the backend connection,  and all the data
+    structures associated w/ the backend (tls, sasl, ...).
+
+    NOTE:   All of this timeout processing is handled in a &quot;callback&quot;
+
+
+Upon completion of the timeout processing,  if the original
+client had spit anything at proxyd during the 30 minute timeout,
+the I/O funtions prot_fill and prot_read detect and return the
+data to to the funtion pipe_command.
+
+pipe_command tries to write the returned data to the backend,
+and blows up because the connection has been closed down, and
+the connection data is NULL.
+
+Possible Fixes:
+Initial idea is to store/note the &quot;timeout&quot; condition in the protstream
+structure, or the &quot;backend&quot; structure and let upper level functions
+decide how they want to process the condition.  The pipe_command
+function would check that the backend connection is still up before
+writing to the socket, by checking that the protstream pointers are not
+NULL in the backend structure.
+
+Another idea is to close the client stream before/after closing the
+backend stream.   This could be done in proxyd,  but it would affect
+the prot routines.  The prot_fill routine would have to check to see if
+the fd had been closed before issuing the select on line prot.c:423 If
+the fd was closed,  then prot_fill would return EOF, and the upper
+level routines could process the EOF however they like.  This is a much
+bigger change,  because it affects all callers of the prot library.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="paul r turgyan">pturgyan@umich.edu</who>
+            <bug_when>2005-07-28 11:21:54 EDT</bug_when>
+            <thetext>Created an attachment (id=366)
+Sets &quot;backend_current&quot; if none set
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-02-07 15:57:43 EDT</bug_when>
+            <thetext>Fixed in CVS.  We no longer timeout &quot;active&quot; backends.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>366</attachid>
+            <date>2005-07-28 11:21 EDT</date>
+            <desc>Sets &quot;backend_current&quot; if none set</desc>
+            <filename>proxyd.diff</filename>
+            <type>text/plain</type>
+            <size>399</size>
+            <attacher>pturgyan@umich.edu</attacher>
+            
+              <data encoding="base64">KioqIHByb3h5ZC5jLQlUaHUgSnVuIDIzIDExOjM1OjEzIDIwMDUKLS0tIHByb3h5ZC5jCVRodSBK
+dW4gMjMgMTA6Mzk6MTUgMjAwNQoqKioqKioqKioqKioqKioKKioqIDI4ODYsMjg5MSAqKioqCi0t
+LSAyODg2LDI4OTQgLS0tLQogIAlpZiAoIXMpIHIgPSBJTUFQX1NFUlZFUl9VTkFWQUlMQUJMRTsK
+ICAgICAgfQogICAgICBpZiAoIXIpIHsKKyAJaWYgKCEgYmFja2VuZF9jdXJyZW50KSB7CisgCSAg
+ICBiYWNrZW5kX2N1cnJlbnQgPSBzOworIAl9CiAgCXByb3RfcHJpbnRmKHMtPm91dCwgIiVzIEFw
+cGVuZCB7JWQrfVxyXG4lcyAiLCB0YWcsIHN0cmxlbihuYW1lKSwgbmFtZSk7CiAgCWlmICghcGlw
+ZV9jb21tYW5kKHMsIDE2Mzg0KSkgewogIAkgICAgcGlwZV91bnRpbF90YWcocywgdGFnLCAwKTsK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

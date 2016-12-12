@@ -1,0 +1,147 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3048</bug_id>
+          
+          <creation_ts>2008-03-26 13:09 EDT</creation_ts>
+          <short_desc>timsieved responds to AUTHENTICATE command with CAPABILITY banner</short_desc>
+          <delta_ts>2010-10-25 18:46:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>WORKSFORME</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>s.e.grier@qmul.ac.uk</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>forrie@forrie.com</cc>
+    
+    <cc>s.e.grier@qmul.ac.uk</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">s.e.grier@qmul.ac.uk</who>
+            <bug_when>2008-03-26 13:09:27 EDT</bug_when>
+            <thetext>In Cyrus 2.3.11, timsieved sends a CAPABILITY response in response to an AUTHENTICATE command when following a STARTTLS. This is in addition to the CAPABILITY response sent following the STARTTLS command. This does not happen when STARTTLS is not used.
+
+This appears to have been introduced by the change made in revision 1.45 of timsieved/parser.c on Dec 10 2007. The log entry for that change seems to suggest the intention was to issue a CAPABILITY response following a STARTTLS command, but AFAICT this has always been the case, and the effect has been to issue a CAPABILITY response after an AUTHENTICATE command, which breaks some sieve clients.
+
+To replicate:
+
+Authenticate using sivtest inside starttls.
+
+Expected result:
+
+$ sivtest -t &quot;&quot; -m plain -u user -a user myhost
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved v2.3.11-Invoca-RPM-2.3.11-5&quot;
+S: &quot;SASL&quot; &quot;PLAIN&quot;
+S: &quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope relational regex subaddress copy&quot;
+S: &quot;STARTTLS&quot;
+S: OK
+C: STARTTLS
+S: OK &quot;Begin TLS negotiation now&quot;
+verify error:num=18:self signed certificate
+TLS connection established: TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits)
+C: CAPABILITY
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved v2.3.11-Invoca-RPM-2.3.11-5&quot;
+S: &quot;SASL&quot; &quot;PLAIN&quot;
+S: &quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope relational regex subaddress copy&quot;
+S: OK
+Please enter your password: 
+C: AUTHENTICATE &quot;PLAIN&quot; {32+}
+dfgrshrshsrhrtshrht==
+S: OK
+
+Actual result:
+
+$ sivtest -t &quot;&quot; -m plain -u user -a user myhost
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved v2.3.11-Invoca-RPM-2.3.11-5&quot;
+S: &quot;SASL&quot; &quot;PLAIN&quot;
+S: &quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope relational regex subaddress copy&quot;
+S: &quot;STARTTLS&quot;
+S: OK
+C: STARTTLS
+S: OK &quot;Begin TLS negotiation now&quot;
+verify error:num=18:self signed certificate
+TLS connection established: TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits)
+C: CAPABILITY
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved v2.3.11-Invoca-RPM-2.3.11-5&quot;
+S: &quot;SASL&quot; &quot;PLAIN&quot;
+S: &quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope relational regex subaddress copy&quot;
+S: OK
+Please enter your password: 
+C: AUTHENTICATE &quot;PLAIN&quot; {32+}
+gsegdtgrdsgsdhgdsfhrh==
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved v2.3.11-Invoca-RPM-2.3.11-5&quot;
+S: &quot;SASL&quot; &quot;PLAIN&quot;
+Security strength factor: 256
+&quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope relational regex subaddress copy&quot;
+OK
+OK
+
+Note the last CAPABILITY response and the double &quot;OK&quot;.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-04-04 11:24:07 EDT</bug_when>
+            <thetext>It looks to me like you&apos;re using a old version of sivtest which doesn&apos;t know that timsieved will automatically send the CAPABILITIES after STARTTLS.  sivtest from 2.3.11 shouldn&apos;t have to send a CAPABILITIES command.  Here is what I get:
+
+$ sivtest -t &apos;&apos; -m plain localhost
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved (Murder) v2.3.11&quot;
+S: &quot;SASL&quot; &quot;CRAM-MD5 PLAIN DIGEST-MD5&quot;
+S: &quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope body relational regex subaddress copy&quot;
+S: &quot;STARTTLS&quot;
+S: OK
+C: STARTTLS
+S: OK &quot;Begin TLS negotiation now&quot;
+verify error:num=19:self signed certificate in certificate chain
+verify error:num=10:certificate has expired
+cert has expired
+cert has expired
+TLS connection established: TLSv1 with cipher EDH-RSA-DES-CBC3-SHA (168/168 bits)
+S: &quot;IMPLEMENTATION&quot; &quot;Cyrus timsieved (Murder) v2.3.11&quot;
+S: &quot;SASL&quot; &quot;CRAM-MD5 PLAIN DIGEST-MD5&quot;
+S: &quot;SIEVE&quot; &quot;comparator-i;ascii-numeric fileinto reject vacation imapflags notify envelope body relational regex subaddress copy&quot;
+S: OK
+C: AUTHENTICATE &quot;PLAIN&quot; {16+}
+&lt;removed&gt;
+S: OK
+Authenticated.
+Security strength factor: 168
+C: LOGOUT
+Connection closed.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,186 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2116</bug_id>
+          
+          <creation_ts>2003-07-23 08:53 EDT</creation_ts>
+          <short_desc>getaddrinfo() detection fails on Tru64</short_desc>
+          <delta_ts>2010-10-18 12:43:02 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>adkinss@ohio.edu</cc>
+    
+    <cc>torkel@pdc.kth.se</cc>
+    
+    <cc>ume@mahoroba.org</cc>
+    
+    <cc>urban@UNIX-Beratung.de</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-23 08:53:45 EDT</bug_when>
+            <thetext>1) The configure process appears to pick up on the fact that Tru64 does
+    have getnameinfo(), but not getaddrinfo().  The problem is that if one
+    is found and the other is not, the definitions for both are included
+    in lib/gai.h.  Well, getnameinfo() on Tru64 has a slightly different
+    definition and produces a conflict that the compiler can&apos;t resolve.
+    The solution was to modify gai.h and wrap the getaddrinfo() related
+    routines with &quot;#ifndef HAVE_GETADDRINFO/#endif&quot; macros, and wrap the
+    getnameinfo() with similar HAVE_GETNAMEINFO macros.
+
+---
+
+According to Robert Urban, the following is necessary to fix this:
+
+&gt; &gt; Tru64 does indeed have a getaddrinfo, it even has two.  You must
+&gt; &gt;
+&gt; &gt;     #include &lt;netdb.h&gt;
+&gt; &gt;
+&gt; &gt; in order to pull in the appropriate definition. The designers
+&gt; &gt; of Tru64 bent over backwards trying to be as standards-compatible as
+&gt; &gt; humanly possible.  Because the standards (4.4/4.3 BSD) define
+&gt; &gt; contradictory behaviour for getaddrinfo, you must say what you want.  By
+&gt; &gt; default you get 4.3BSD behaviour.  If you want 4.4BSD, you must
+&gt; &gt; define
+&gt; &gt;
+&gt; &gt;     _XOPEN_SOURCE_EXTENDED
+&gt; &gt;
+&gt; &gt; before you #include &lt;netdb.h&gt;.  See standards(5) for more information
+&gt; &gt; on these things...
+
+
+in this case it should be enough to include &lt;netdb.h&gt; before
+configure runs its test program and to include &lt;netdb.h&gt; in source
+files that use getaddrinfo().
+
+----
+
+However, we currently just use AC_CHECK_FUNC (well, an expanded version of
+AC_CHECK_FUNC) to detect the presence of a function.  This is of course just a
+linkage test so I&apos;m unclear how to force it to include another header file
+without reimplementing it ourselves.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Hajimu UMEMOTO">ume@mahoroba.org</who>
+            <bug_when>2003-07-23 10:47:20 EDT</bug_when>
+            <thetext>It seems same problem with 1269.
+
+    http://bugzilla.andrew.cmu.edu/show_bug.cgi?id=1269
+
+There is candidate fix to this problem.  Please try the patch
+attached in it.
+
+    http://bugzilla.andrew.cmu.edu/attachment.cgi?id=194&amp;action=view</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-23 10:55:20 EDT</bug_when>
+            <thetext>*** Bug 1269 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Scott Adkins">adkinss@ohio.edu</who>
+            <bug_when>2003-07-24 14:36:04 EDT</bug_when>
+            <thetext>The patch works as expected and getaddrinfo() is now detected properly by 
+configure.  
+
+I don&apos;t know if we should have a seperate bugzilla request for it or not, but 
+there is still a problem in gai.h, which provides prototypes for both 
+getaddrinfo() and getnameinfo().  On Tru64, the getnameinfo() passes one of the 
+parameters by address instead of by value.  This conflicts with the prototype in 
+gai.h and causes a fatal error when compiling.  I will provide a patch to fix 
+it, which is applicable to getaddrinfo() to for portability reasons.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-24 14:36:58 EDT</bug_when>
+            <thetext>patch applied</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-07-24 14:37:23 EDT</bug_when>
+            <thetext>patch applied -- please open a new bug for the getnameinfo issue</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Scott Adkins">adkinss@ohio.edu</who>
+            <bug_when>2003-07-24 14:40:52 EDT</bug_when>
+            <thetext>Created an attachment (id=206)
+portability enhancement to prototypes in gai.h
+
+The getnameinfo() prototype is wrapped with #ifndef HAVE_GETNAMEINFO/#endif and
+the getaddrinfo() prototype is wrapped with #ifndef HAVE_GETADDRINFO/#endif. 
+This prevents prototype conflicts from popping up, such as in Tru64 where
+getnameinfo() doesn&apos;t have the same prototype definition as listed in gai.h.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>206</attachid>
+            <date>2003-07-24 14:40 EDT</date>
+            <desc>portability enhancement to prototypes in gai.h</desc>
+            <filename>gai.h-patch</filename>
+            <type>text/plain</type>
+            <size>934</size>
+            <attacher>adkinss@ohio.edu</attacher>
+            
+              <data encoding="base64">ZGlmZiAtY3IgY3lydXMtaW1hcGQtMi4yLjEtQkVUQS1vcmlnL2xpYi9nYWkuaCBjeXJ1cy1pbWFw
+ZC0yLjIuMS1CRVRBLW5ldy9saWIvZ2FpLmgKKioqIGN5cnVzLWltYXBkLTIuMi4xLUJFVEEtb3Jp
+Zy9saWIvZ2FpLmgJVGh1IEZlYiAxMyAxNTozMzoxMiAyMDAzCi0tLSBjeXJ1cy1pbWFwZC0yLjIu
+MS1CRVRBLW5ldy9saWIvZ2FpLmgJVGh1IEp1bCAyNCAxNDoxNzowNiAyMDAzCioqKioqKioqKioq
+KioqKgoqKiogODksOTkgKioqKgogIH07CiAgI2VuZGlmCiAgCiEgaW50CWdldGFkZHJpbmZvKGNv
+bnN0IGNoYXIgKiwgY29uc3QgY2hhciAqLAohIAkJICAgIGNvbnN0IHN0cnVjdCBhZGRyaW5mbyAq
+LCBzdHJ1Y3QgYWRkcmluZm8gKiopOwogIGludAlnZXRuYW1laW5mbyhjb25zdCBzdHJ1Y3Qgc29j
+a2FkZHIgKiwgc29ja2xlbl90LCBjaGFyICosCiAgCQkgICAgc2l6ZV90LCBjaGFyICosIHNpemVf
+dCwgaW50KTsKICB2b2lkCWZyZWVhZGRyaW5mbyhzdHJ1Y3QgYWRkcmluZm8gKik7CiAgY2hhcgkq
+Z2FpX3N0cmVycm9yKGludCk7CiAgCiAgI2VuZGlmCi0tLSA4OSwxMDUgLS0tLQogIH07CiAgI2Vu
+ZGlmCiAgCiEgI2lmbmRlZiBIQVZFX0dFVE5BTUVJTkZPCiAgaW50CWdldG5hbWVpbmZvKGNvbnN0
+IHN0cnVjdCBzb2NrYWRkciAqLCBzb2NrbGVuX3QsIGNoYXIgKiwKICAJCSAgICBzaXplX3QsIGNo
+YXIgKiwgc2l6ZV90LCBpbnQpOworICNlbmRpZgorIAorICNpZm5kZWYgSEFWRV9HRVRBRERSSU5G
+TworIGludAlnZXRhZGRyaW5mbyhjb25zdCBjaGFyICosIGNvbnN0IGNoYXIgKiwKKyAJCSAgICBj
+b25zdCBzdHJ1Y3QgYWRkcmluZm8gKiwgc3RydWN0IGFkZHJpbmZvICoqKTsKICB2b2lkCWZyZWVh
+ZGRyaW5mbyhzdHJ1Y3QgYWRkcmluZm8gKik7CisgI2VuZGlmCisgCiAgY2hhcgkqZ2FpX3N0cmVy
+cm9yKGludCk7CiAgCiAgI2VuZGlmCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

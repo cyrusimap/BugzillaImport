@@ -1,0 +1,301 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3499</bug_id>
+          
+          <creation_ts>2011-07-27 07:44 EDT</creation_ts>
+          <short_desc>Hide namespaces (in the command namespace)</short_desc>
+          <delta_ts>2011-09-26 13:39:35 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.10</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <bug_file_loc>http://asg.andrew.cmu.edu/archive/message.php?mailbox=archive.info-cyrus&amp;msg=52984</bug_file_loc>
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>2.4.11</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Olivier ROLAND">cyrus-dev@edla.org</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>murch@andrew.cmu.edu</cc>
+    
+    <cc>sebastien.michel@atos.net</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-07-27 07:44:22 EDT</bug_when>
+            <thetext></thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-07-27 07:46:19 EDT</bug_when>
+            <thetext>to avoid issues with cpu usage with very large mailbox databases.
+
+I will update the ticket with a patch in a few days.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-07-29 12:05:48 EDT</bug_when>
+            <thetext>You could find a git branch with the code here :
+https://github.com/worldline-messaging/cyrus-imapd/tree/ticket/3499
+
+Original code from Christophe Zbierski (AtoS)
+
+The branch is a fork of master but the code could be backported without modifications to Cyrus 2.3 or 2.4
+
+Nota : 
+- Original Cyrus code seem over complicated. I don&apos;t see the purpose of sawone outside namespace structure.
+- A #ifdef would be more appropriate (than a if) for SLEEZY_NAMESPACE
+- Cyrus indent convention (mixed tab &amp; space) make git diff difficult to read</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-08-08 19:24:47 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; You could find a git branch with the code here :
+&gt; https://github.com/worldline-messaging/cyrus-imapd/tree/ticket/3499
+&gt; 
+
+I&apos;m tempted to set the milestone for this to be integrated to 2.5-next, so that it is 1) available in the 2.5 series and 2) documented proper.
+
+Concerning 2), are we dead set on the settings being named list_on_user_space / list_on_shared_space? I recon the original problem as stated on the mailing list was about the shared namespace(?) Is not a disable_shared_namespace or hide_shared_namespace_on_list a more appropriate configuration setting name? I&apos;m just wondering how we can make settings both as descriptive as well as indicative of their actual purpose / consequences as much as possible.
+
+Thoughts? Much appreciated!
+
+&gt; Nota : 
+&gt; - Original Cyrus code seem over complicated. I don&apos;t see the purpose of sawone
+&gt; outside namespace structure.
+&gt; - A #ifdef would be more appropriate (than a if) for SLEEZY_NAMESPACE
+
+/me has to leave the aforementioned comments to the more technically savvy developers ;-)
+
+&gt; - Cyrus indent convention (mixed tab &amp; space) make git diff difficult to read
+
+Agreed, the indentation convention has proven and will continue to prove a royal pain in the as^H^H tukhus.
+
+Perhaps we need to plan for an overall conversion of (the indentation for) all currently supported branches over to a 4-spaces-per-tab type of convention, something which should be easy enough to do if it weren&apos;t for the planning involved...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2011-08-09 04:31:51 EDT</bug_when>
+            <thetext>As documented in imapd.conf(5), &apos;sharedprefix&apos; and &apos;userprefix&apos; options apply only if altnamespace is enabled. 
+However RFC 2342 doesn&apos;t define any restriction on that. It may be possible to change prefix for shared and user namespace independently of the altnamespace setting.
+Thus, I propose to extend these options to disable too a namespace. As defined in the RFC, the &apos;NIL&apos; setting value disable a namespace.
+
+ie. sharedprefix = NIL</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-08-09 12:03:27 EDT</bug_when>
+            <thetext>Yes, that seem the better solution but I will take only half part ;-)
+Just one modification to do to the initial patch
+
+--- a/imap/mboxname.c
++++ b/imap/mboxname.c
+@@ -649,8 +649,8 @@ int mboxname_init_namespace(struct namespace *namespace, int
+     namespace-&gt;isalt = !isadmin &amp;&amp; config_getswitch(IMAPOPT_ALTNAMESPACE);
+
+-    namespace-&gt;accessible[NAMESPACE_USER] = config_getswitch(IMAPOPT_LIST_ON_USER_SPACE);
+-    namespace-&gt;accessible[NAMESPACE_SHARED] = config_getswitch(IMAPOPT_LIST_ON_SHARED_SPACE);
++    namespace-&gt;accessible[NAMESPACE_USER] = strcmp(config_getstring(IMAPOPT_USERPREFIX),&quot;NIL&quot;) ? 1 : 0; 
++    namespace-&gt;accessible[NAMESPACE_SHARED] =  strcmp(config_getstring(IMAPOPT_SHAREDPREFIX),&quot;NIL&quot;) ? 1 : 0;
+
+We also need to document the new feature of sharedprefix and userprefix option
+... use &apos;NIL&apos; setting value to disable a namespace ...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-10 04:47:38 EDT</bug_when>
+            <thetext>I&apos;m not sold on this double-purposing syntax or using the raw string &quot;NIL&quot;.  I&apos;d prefer disable_shared_namespace (boolean) and disable_user_namespace (boolean).
+
+The whole point with not being in altnamespace is that there&apos;s no transformation (except heirarchysep, joy) being applied to the internal names.  Repurposing the prefix names seems confusing to me, both for the a person reading the configuration file, and for a person reading the code.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2011-08-10 05:46:31 EDT</bug_when>
+            <thetext>agree that my suggestion is confusing for someone who get used of cyrus configuration. Your setting is more understable.
+
+however this part of code is a poor implementation of the NAMESPACE RFC. I think it makes more sense to have a third setting &quot;personalprefix&quot; with the default  value &quot;user&quot; and the ability to set an empty string instead of altnamespace. It would be more conform to the RFC. It that way the raw string &quot;NIL&quot; is also conform to the RFC. But It&apos;s a big change, and it won&apos;t be backwards compatible :(</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-10 05:57:43 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; agree that my suggestion is confusing for someone who get used of cyrus
+&gt; configuration. Your setting is more understable.
+&gt; 
+&gt; however this part of code is a poor implementation of the NAMESPACE RFC. I
+&gt; think it makes more sense to have a third setting &quot;personalprefix&quot; with the
+&gt; default  value &quot;user&quot; and the ability to set an empty string instead of
+&gt; altnamespace. It would be more conform to the RFC. It that way the raw string
+&gt; &quot;NIL&quot; is also conform to the RFC. But It&apos;s a big change, and it won&apos;t be
+&gt; backwards compatible :(
+
+The whole SLEEZY_NAMESPACE thing is pretty awful.
+
+Ok - there are two issues here.
+
+1) make 2.4 not suck if you have zillions of mailboxes
+
+2) make NAMESPACE handling really nice for the future
+
+So let&apos;s solve (1) and have it in 2.4.11, and then we can look at (2).  Sound good?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sébastien Michel">sebastien.michel@atos.net</who>
+            <bug_when>2011-08-10 06:15:30 EDT</bug_when>
+            <thetext>good compromise.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-08-10 08:00:44 EDT</bug_when>
+            <thetext>OK, I have modified 
+https://github.com/worldline-messaging/cyrus-imapd/tree/ticket/3499 accordingly.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-10 10:41:16 EDT</bug_when>
+            <thetext>Ok - I&apos;ve taken those patches and done a couple of things - alphabetical positioning in lib/imapoptions and extra comments about the options, plus fixed up the NAMESPACE initializer.
+
+I&apos;ve also backported it to stable for 2.4.11 as a single patch.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-08-12 11:04:04 EDT</bug_when>
+            <thetext>&gt; I&apos;ve also backported it to stable for 2.4.11 as a single patch.
+
+Thanks and OK for master but you don&apos;t git pushed it (yet) to 2.4 branch.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-08-13 08:09:06 EDT</bug_when>
+            <thetext>Yikes, sorry about that.  I found it in my reflog on my work machine - must have forgotten to push before I went home that day, then blatted over it with my changes from home the next morning!
+
+Pushed it just now.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-08-15 15:21:50 EDT</bug_when>
+            <thetext>Thanks Bron ;)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-08-24 05:21:11 EDT</bug_when>
+            <thetext>We&apos;ve got this patch on production for years but I realised that it is buggy for both altnamespace and standard namespace.
+Sorry for that.
+Here is a fix for altnamespace : https://github.com/worldline-messaging/cyrus-imapd/commit/e18a43d2fcfdfe7680e1f04d37d1b849b3b8fb78
+
+Note for myself : for each patch provide a cassandane suite test to avoid this.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-09-01 11:58:02 EDT</bug_when>
+            <thetext>(In reply to comment #15)
+&gt; We&apos;ve got this patch on production for years but I realised that it is buggy
+&gt; for both altnamespace and standard namespace.
+&gt; Sorry for that.
+&gt; Here is a fix for altnamespace :
+&gt; https://github.com/worldline-messaging/cyrus-imapd/commit/e18a43d2fcfdfe7680e1f04d37d1b849b3b8fb78
+&gt; 
+&gt; Note for myself : for each patch provide a cassandane suite test to avoid this.
+
+Cherry-picked to master and cyrus-imapd-2.4. Will be in 2.4.11</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-09-07 18:53:16 EDT</bug_when>
+            <thetext>The patches that were applied to master assume that mboxlist_findall() is always called with a non-NULL namespace, otherwise the user and shared namespaces are hidden implicitly.  There are several mboxlist_findall() calls in the code which in fact pass NULL as the namespace, and the logic in the patch can break things.  In particular, it breaks listing newsgroups in nntpd.  
+
+One may argue that we shouldn&apos;t be passing NULL namespaces, but we need to keep in mind that the mboxlist_find*() code is delicate/shitty/far-reaching and we need to do extensive testing on more than just imapd before we assume that everything is happy.
+
+I&apos;m a little grumpy because this bug caused me to waste 2 hours while tracking down bug #3150  :(</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-09-07 19:39:47 EDT</bug_when>
+            <thetext>The fix *might* be as simple as changing the checks to something like the following.  I haven&apos;t tested it, or thought it through.
+
+if(!r &amp;&amp; (isadmin || !namespace || namespace-&gt;accessible[NAMESPACE_USER]) )</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-09-26 06:02:52 EDT</bug_when>
+            <thetext>Setting milestone to a future milestone</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-09-26 09:23:08 EDT</bug_when>
+            <thetext>This bug seem to have been fixed by Bron before the release of 2.4.11 
+http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.4&amp;id=8a5661d5bf64d81b3489169a39e48f1072e8a6dd</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-09-26 09:34:29 EDT</bug_when>
+            <thetext>(In reply to comment #20)
+&gt; This bug seem to have been fixed by Bron before the release of 2.4.11 
+&gt; http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.4&amp;id=8a5661d5bf64d81b3489169a39e48f1072e8a6dd
+
+Hi Roland,
+
+please see comment #18 from Ken Murchison, it seems it is not resolved completely.
+
+Perhaps we need to take the cleanup / proper patch to a separate ticket, as to mark the original bug resolved indeed...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Olivier ROLAND">cyrus-dev@edla.org</who>
+            <bug_when>2011-09-26 10:17:40 EDT</bug_when>
+            <thetext>&gt; Perhaps we need to take the cleanup / proper patch to a separate ticket, as to
+&gt; mark the original bug resolved indeed...
+
+Sure.
+The bad side effect of hide namespace on nntpd is fixed.
+#3499 should be closed.
+
+Not passing NULL namespace is another story/trap and is not directly related with #3499. You could open a ticket for that but it is likely nobody going to fix that anytime soon ...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-09-26 13:38:30 EDT</bug_when>
+            <thetext>Actually, I made the code that uses namespaces always use a static &quot;default namespace&quot; struct if NULL is passed.  I&apos;d actually like to change all the
+namespace code to be significantly less verbose everywhere anyway, and NULL safety would fall out of those changes, but that&apos;s not this bug.
+
+From memory, Ken&apos;s response was from before I actually pushed the patch.  I&apos;m pretty sure this is solved.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-09-26 13:39:35 EDT</bug_when>
+            <thetext>IIRC, Bron&apos;s fix did look satifactory</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

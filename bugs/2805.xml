@@ -1,0 +1,202 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2805</bug_id>
+          
+          <creation_ts>2006-02-28 16:23 EDT</creation_ts>
+          <short_desc>Build warning `struct et_list&apos; declared inside parameter list</short_desc>
+          <delta_ts>2010-10-25 18:46:37 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Rosenbaum">lmr@ornl.gov</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Larry Rosenbaum">lmr@ornl.gov</who>
+            <bug_when>2006-02-28 16:23:49 EDT</bug_when>
+            <thetext>When building Cyrus IMAP 2.3.3 (and older 2.3.x) I get warnings like this:
+
+gcc -c -I.. -I./../lib -I../et -I/usr/local/BerkeleyDB.4.4/include 
+-I/usr/local/ssl/include -I/usr/local
+/include -DHAVE_CONFIG_H -g -O2 \
+sieve.c
+In file included from sieve_interface.h:37,
+                 from interp.h:31,
+                 from sieve.y:39:
+sieve_err.h:19: warning: `struct et_list&apos; declared inside parameter list
+sieve_err.h:19: warning: its scope is only this definition or declaration, which
+is probably not what you want.
+
+I get similar errors for imap_err.h, nntp_err.h, and mupdate_err.h.
+
+This is on Solaris 8 and Solaris 9.  The product still builds and works fine,
+but the warning is a concern.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-02-28 17:03:37 EDT</bug_when>
+            <thetext>Are you building with Kerberos?  I think this is only a compat issue if build
+with MIT (or possibly any) Kerberos.  It might also depend on which compile_et
+(and associated tools) are used.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Rosenbaum">lmr@ornl.gov</who>
+            <bug_when>2006-07-18 10:45:09 EDT</bug_when>
+            <thetext>Created an attachment (id=446)
+Patch (for v2.3.7) to fix this and other compiler warnings
+
+This patch (applied to Cyrus IMAP v2.3.7) eliminates all the compiler warnings
+that I have been getting on Solaris 9 with gcc 3.4.2.  (Note these have nothing
+to do with Kerberos.)  Here are the warnings that I fixed:
+
+In file included from imapd.c:75:
+imap_err.h:67: warning: &quot;struct et_list&quot; declared inside parameter list
+imap_err.h:67: warning: its scope is only this definition or declaration, which
+is probably not what you want
+
+This appears in many modules, not just imapd.c.  It occurs because the various
+*_err.h files have a function prototype that mentions &quot;struct et_list&quot;, but
+they don&apos;t #include error_table.h, which defines the structure.  Adding the
+#include to com_err.h fixes the problem.
+
+init_et.c:52: warning: conflicting types for built-in function &apos;malloc&apos;
+
+This warning occurs because of the statement
+  extern char *malloc(), *realloc();
+Changing &quot;char&quot; to &quot;void&quot; eliminates the warning.  I don&apos;t know why the
+statement is there in the first place.
+
+tls.c: In function `get_session_cb&apos;:
+tls.c:526: warning: passing arg 2 of `d2i_SSL_SESSION&apos; from incompatible
+pointer type
+
+This is because d2i_SSL_SESSION is expecting the second argument to be &quot;const&quot;.
+ Adding &quot;const&quot; to the declaration &quot;unsigned char *asn;&quot; eliminates the
+warning.
+
+bc_eval.c: In function `sieve_eval_bc&apos;:
+bc_eval.c:1332: warning: assignment discards qualifiers from pointer target
+type
+
+This is caused by inconsistencies in whether the variable &quot;handle&quot; has the
+&quot;const&quot; attribute. To eliminate the warning, I added &quot;const&quot; in three different
+files in the sieve directory; 
+bc_eval.c, message.c, and message.h.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-05 15:08:15 EDT</bug_when>
+            <thetext>I&apos;m still not sure that this is the correct fix for the et issues, but the other fixes were applied back in 2.3.8</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-10-10 17:24:57 EDT</bug_when>
+            <thetext>I added your two et fixes.  We&apos;ll see how it goes.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>446</attachid>
+            <date>2006-07-18 10:45 EDT</date>
+            <desc>Patch (for v2.3.7) to fix this and other compiler warnings</desc>
+            <filename>patch.txt</filename>
+            <type>text/plain</type>
+            <size>2913</size>
+            <attacher>lmr@ornl.gov</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdSBldC9jb21fZXJyLmgub3JpZyBldC9jb21fZXJyLmgNCi0tLSBldC9jb21fZXJyLmgu
+b3JpZwlUaHUgRmViIDEzIDE1OjE1OjIxIDIwMDMNCisrKyBldC9jb21fZXJyLmgJRnJpIEp1bCAx
+NCAxMzo1OTozMCAyMDA2DQpAQCAtNjUsNiArNjUsOCBAQA0KICNpbmNsdWRlIDx2YXJhcmdzLmg+
+DQogI2VuZGlmDQogDQorI2luY2x1ZGUgImVycm9yX3RhYmxlLmgiDQorDQogLyogVGhpcyBzaG91
+bGQgYmUgcGFydCBvZiBrNS1jb25maWcuaCBidXQgbWFueSBhcHBsaWNhdGlvbg0KICAqIHByb2dy
+YW1zIGFyZSBub3QgaW5jbHVkaW5nIHRoYXQgZmlsZS4gV2UgcHJvYmFibHkgd2FudCB0bw0KICAq
+IGNvbWUgdXAgd2l0aCBhIGJldHRlciB3YXkgb2YgaGFuZGxpbmcgdGhpcyBwcm9ibGVtLg0KZGlm
+ZiAtdSBldC9pbml0X2V0LmMub3JpZyBldC9pbml0X2V0LmMNCi0tLSBldC9pbml0X2V0LmMub3Jp
+ZwlUaHUgRmViIDEzIDE1OjE1OjIxIDIwMDMNCisrKyBldC9pbml0X2V0LmMJRnJpIEp1bCAxNCAx
+NDoyNTowOCAyMDA2DQpAQCAtNDksNyArNDksNyBAQA0KICNpbmNsdWRlICJlcnJvcl90YWJsZS5o
+Ig0KICNpbmNsdWRlICJtaXQtc2lwYi1jb3B5cmlnaHQuaCINCiANCi1leHRlcm4gY2hhciAqbWFs
+bG9jKCksICpyZWFsbG9jKCk7DQorZXh0ZXJuIHZvaWQgKm1hbGxvYygpLCAqcmVhbGxvYygpOw0K
+IA0KIHN0cnVjdCBmb29iYXIgew0KICAgICBzdHJ1Y3QgZXRfbGlzdCBldGw7DQpkaWZmIC11IGlt
+YXAvdGxzLmMub3JpZyBpbWFwL3Rscy5jDQotLS0gaW1hcC90bHMuYy5vcmlnCUZyaSBPY3QgMjgg
+MTA6NTE6MTggMjAwNQ0KKysrIGltYXAvdGxzLmMJRnJpIEp1bCAxNCAxNDo0NzoxNiAyMDA2DQpA
+QCAtNDk1LDcgKzQ5NSw3IEBADQogew0KICAgICBpbnQgcmV0Ow0KICAgICBjb25zdCBjaGFyICpk
+YXRhID0gTlVMTDsNCi0gICAgdW5zaWduZWQgY2hhciAqYXNuOw0KKyAgICBjb25zdCB1bnNpZ25l
+ZCBjaGFyICphc247DQogICAgIGludCBsZW4gPSAwOw0KICAgICB0aW1lX3QgZXhwaXJlID0gMCwg
+bm93ID0gdGltZSgwKTsNCiAgICAgU1NMX1NFU1NJT04gKnNlc3MgPSBOVUxMOw0KQEAgLTUyMiw3
+ICs1MjIsNyBAQA0KIAllbHNlIHsNCiAJICAgIC8qIHRyYW5zZm9ybSB0aGUgQVNOMSByZXByZXNl
+bnRhdGlvbiBvZiB0aGUgc2Vzc2lvbg0KIAkgICAgICAgaW50byBhbiBTU0xfU0VTU0lPTiBvYmpl
+Y3QgKi8NCi0JICAgIGFzbiA9ICh1bnNpZ25lZCBjaGFyKikgZGF0YSArIHNpemVvZih0aW1lX3Qp
+Ow0KKwkgICAgYXNuID0gKGNvbnN0IHVuc2lnbmVkIGNoYXIqKSBkYXRhICsgc2l6ZW9mKHRpbWVf
+dCk7DQogCSAgICBzZXNzID0gZDJpX1NTTF9TRVNTSU9OKE5VTEwsICZhc24sIGxlbiAtIHNpemVv
+Zih0aW1lX3QpKTsNCiAJICAgIGlmICghc2Vzcykgc3lzbG9nKExPR19FUlIsICJkMmlfU1NMX1NF
+U1NJT04gZmFpbGVkOiAlbSIpOw0KIAl9DQpkaWZmIC11IHNpZXZlL2JjX2V2YWwuYy5vcmlnIHNp
+ZXZlL2JjX2V2YWwuYw0KLS0tIHNpZXZlL2JjX2V2YWwuYy5vcmlnCVRodSBEZWMgIDEgMTk6MDY6
+MDAgMjAwNQ0KKysrIHNpZXZlL2JjX2V2YWwuYwlGcmkgSnVsIDE0IDE0OjMyOjU3IDIwMDYNCkBA
+IC0xMjcxLDcgKzEyNzEsNyBAQA0KIAkgICAgaW50IHJlc3BvbmQ7DQogCSAgICBjaGFyICpmcm9t
+YWRkciA9IE5VTEw7IC8qIHJlbGF0aXZlIHRvIG1lc3NhZ2Ugd2Ugc2VuZCAqLw0KIAkgICAgY2hh
+ciAqdG9hZGRyID0gTlVMTDsgLyogcmVsYXRpdmUgdG8gbWVzc2FnZSB3ZSBzZW5kICovDQotCSAg
+ICBjaGFyICpoYW5kbGUgPSBOVUxMOw0KKwkgICAgY29uc3QgY2hhciAqaGFuZGxlID0gTlVMTDsN
+CiAJICAgIGNvbnN0IGNoYXIgKm1lc3NhZ2UgPSBOVUxMOw0KIAkgICAgaW50IGRheXMsIG1pbWU7
+DQogCSAgICBjaGFyIGJ1ZlsxMjhdOw0KZGlmZiAtdSBzaWV2ZS9tZXNzYWdlLmMub3JpZyBzaWV2
+ZS9tZXNzYWdlLmMNCi0tLSBzaWV2ZS9tZXNzYWdlLmMub3JpZwlXZWQgT2N0ICA1IDExOjU2OjIz
+IDIwMDUNCisrKyBzaWV2ZS9tZXNzYWdlLmMJRnJpIEp1bCAxNCAxNDozNzozNiAyMDA2DQpAQCAt
+MjE4LDcgKzIxOCw3IEBADQogDQogaW50IGRvX3ZhY2F0aW9uKGFjdGlvbl9saXN0X3QgKmEsIGNo
+YXIgKmFkZHIsIGNoYXIgKmZyb21hZGRyLA0KIAkJY2hhciAqc3ViaiwgY29uc3QgY2hhciAqbXNn
+LCBpbnQgZGF5cywNCi0JCWludCBtaW1lLCBjaGFyICpoYW5kbGUpDQorCQlpbnQgbWltZSwgY29u
+c3QgY2hhciAqaGFuZGxlKQ0KIHsNCiAgICAgYWN0aW9uX2xpc3RfdCAqYiA9IE5VTEw7DQogDQpk
+aWZmIC11IHNpZXZlL21lc3NhZ2UuaC5vcmlnIHNpZXZlL21lc3NhZ2UuaA0KLS0tIHNpZXZlL21l
+c3NhZ2UuaC5vcmlnCVdlZCBPY3QgIDUgMTE6NTY6MjMgMjAwNQ0KKysrIHNpZXZlL21lc3NhZ2Uu
+aAlGcmkgSnVsIDE0IDE0OjM3OjI2IDIwMDYNCkBAIC0xMTksNyArMTE5LDcgQEANCiBpbnQgZG9f
+a2VlcChhY3Rpb25fbGlzdF90ICptLCBzaWV2ZV9pbWFwZmxhZ3NfdCAqaW1hcGZsYWdzKTsNCiBp
+bnQgZG9fZGlzY2FyZChhY3Rpb25fbGlzdF90ICptKTsNCiBpbnQgZG9fdmFjYXRpb24oYWN0aW9u
+X2xpc3RfdCAqbSwgY2hhciAqYWRkciwgY2hhciAqZnJvbWFkZHIsDQotCQljaGFyICpzdWJqLCBj
+b25zdCBjaGFyICptc2csIGludCBkYXlzLCBpbnQgbWltZSwgY2hhciAqaGFuZGxlKTsNCisJCWNo
+YXIgKnN1YmosIGNvbnN0IGNoYXIgKm1zZywgaW50IGRheXMsIGludCBtaW1lLCBjb25zdCBjaGFy
+ICpoYW5kbGUpOw0KIGludCBkb19zZXRmbGFnKGFjdGlvbl9saXN0X3QgKm0sIGNvbnN0IGNoYXIg
+KmZsYWcpOw0KIGludCBkb19hZGRmbGFnKGFjdGlvbl9saXN0X3QgKm0sIGNvbnN0IGNoYXIgKmZs
+YWcpOw0KIGludCBkb19yZW1vdmVmbGFnKGFjdGlvbl9saXN0X3QgKm0sIGNvbnN0IGNoYXIgKmZs
+YWcpOw0K
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

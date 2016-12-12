@@ -1,0 +1,164 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3903</bug_id>
+          
+          <creation_ts>2015-08-03 08:32 EDT</creation_ts>
+          <short_desc>2.5.4 autocreate_quota value produces generous user rights to create mailboxes</short_desc>
+          <delta_ts>2015-10-12 21:03:17 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Konrad Mauz">kmauz@htwg-konstanz.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Konrad Mauz">kmauz@htwg-konstanz.de</who>
+            <bug_when>2015-08-03 08:32:02 EDT</bug_when>
+            <thetext>Enviroment: cyrus-imap 2.5.4 on ubuntu 14.04 self compiled
+
+in my imapd.conf I had the parameter:
+
+autocreate_quota: 101200
+
+I testet the server with outlook 2013, and a normal user ( not in the admins: list ) was able to create the special use folders on the toplevel of the mailbox hierarchy ( instead of underneath INBOX. ).
+
+I have done some test with cyradm a 2.5.4 system: user1 and user2 are normal
+users not in the admins list of /etc/imapd.conf:
+
+root@cyr25:u# /usr/cyrus/bin/cyradm -u user1 localhost
+localhost&gt; cm user.user2.Test4
+localhost&gt; quit
+root@cyr25:# /usr/cyrus/bin/cyradm -u $CYRUSADMINUSER localhost
+Password:
+localhost&gt; lm user.user2.*
+user.user2.Bla (\HasChildren)
+user.user2.Bla.Blub (\HasNoChildren)  
+user.user2.Drafts (\HasNoChildren)  
+user.user2.Gesendet (\HasNoChildren)  
+user.user2.Sent (\HasNoChildren)  
+user.user2.Templates (\HasNoChildren)  
+user.user2.Test3 (\HasNoChildren)  
+user.user2.Test4 (\HasNoChildren)  
+user.user2.Trash (\HasNoChildren)  
+user.user2.sent-mail (\HasNoChildren)  
+user.user2.trash  
+localhost&gt; lam user.user2.Test4
+user2 lrswipkxtecda
+
+... so user1 was able to create the folder Test4 in user2&apos;s inbox....
+
+root@cyr25:# /usr/cyrus/bin/cyradm -u user1 localhost
+Password: 
+localhost&gt; cm shared.bla
+localhost&gt; cm TopLevelFolder
+localhost&gt; lm 
+Gesendete Elemente (\HasNoChildren)                                   
+INBOX (\Subscribed \HasChildren) (CHILDINFO (&quot;SUBSCRIBED&quot;))           
+INBOX.Trash (\Subscribed \HasNoChildren)                              
+INBOX.cyrus (\Subscribed \HasNoChildren)                              
+INBOX.sent-mail (\HasChildren)                                        
+....
+....
+INBOX.web (\HasNoChildren)                                            
+TopLevelFolder (\HasNoChildren)                                       
+shared.bla (\HasNoChildren)                                           
+shared.ml (\HasChildren)                                              
+shared.ml.test (\HasNoChildren)
+shared.ml.test2 (\HasNoChildren)
+localhost&gt; lam shared.bla
+Permission denied
+localhost&gt; lam TopLevelFolder
+Permission denied
+localhost&gt;quit
+root@cyr25:# /usr/cyrus/bin/cyradm -u $CYRUSADMINUSER localhost
+Password:
+localhost&gt; lam shared.bla
+anyone lrs
+localhost&gt; lam TopLevelFolder
+anyone lrs
+localhost&gt;
+
+user1 was also able to create folders in the toplevel and in the shared folder hiearchy.
+
+If I remove the autocreate_quota parameter from /etc/imapd.conf then I get a permission denied as expected:
+
+root@cyr25:# /usr/cyrus/bin/cyradm -u user1 localhost
+Password:
+localhost&gt; cm Blubb
+createmailbox: Permission denied
+localhost&gt; cm shared.ml.test4
+createmailbox: Permission denied
+localhost&gt; cm user.user2.Test5
+createmailbox: Permission denied</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2015-08-03 23:17:40 EDT</bug_when>
+            <thetext>Hi,
+
+Can you please upload your entire imapd.conf?  We are unable to recreate this in testing.
+
+Thanks,
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2015-08-03 23:22:15 EDT</bug_when>
+            <thetext>Scratch that - we were testing wrong.  It&apos;s a simple logic bug - instead of denying creation of anything OTHER than INBOX, it was denying creation of INBOX itself.  *sigh*.
+
+There will be a 2.5.5 soon with a fix for this.
+
+Regards,
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Konrad Mauz">kmauz@htwg-konstanz.de</who>
+            <bug_when>2015-08-04 01:38:03 EDT</bug_when>
+            <thetext>ok... so you don&apos;t the me imapd.conf?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2015-10-12 21:03:17 EDT</bug_when>
+            <thetext>Fixed in 2.5.5 -- closing old bugzilla entry</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

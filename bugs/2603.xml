@@ -1,0 +1,128 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2603</bug_id>
+          
+          <creation_ts>2005-01-04 00:30 EDT</creation_ts>
+          <short_desc>sasl v2.1.20 linking to multiple bdb versions when EXTERN bdb v 4.3 is spec&apos;d</short_desc>
+          <delta_ts>2010-10-25 18:46:35 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.x</version>
+          <rep_platform>Macintosh</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P4</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="OpenMacNews">openmacnews@gmail.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="OpenMacNews">openmacnews@gmail.com</who>
+            <bug_when>2005-01-04 00:30:25 EDT</bug_when>
+            <thetext>hi all,
+
+cyrus-sasl-2.1.20 builds fine against berkeley db-4.2.25, as advertised
+
+bdb is now in 4.3.x release (currently @ 4.3.27)
+
+just fyi, in order to get sasl to build against 4.3 correctly on OSX 10.3.x, config&apos;ing sasl, per 
+instructions, with:
+
+  --with-dblib=berkeley 
+  --with-bdb-libdir=/usr/local/berkeley-db-4.3/lib
+  --with-bdb-incdir=/usr/local/berkeley-db-4.3/include
+
+is NOT sufficient.  such a build will pick up &amp; link instances of BOTH the &apos;new&apos; db-4.3 libs AND OSX&apos;s 
+&apos;native&apos; db-4.2 libs.
+
+if you look --
+% grep &quot;db\-4\.2&quot; `grep -rln &quot;db\-4\.2&quot; .`
+
+	./aclocal.m4:        for dbname in db-4.2 db4.2 db42 (...)
+	./autom4te.cache/output.1:        for dbname in db-4.2 db4.2 db42 (...)
+	./autom4te.cache/output.1:        for dbname in db-4.2 db4.2 db42 (...)
+	./cmulocal/berkdb.m4:        for dbname in db-4.2 db4.2 db42 (...)
+	./configure:        for dbname in db-4.2 db4.2 db42 (...)
+	./configure:        for dbname in db-4.2 db4.2 db42 (...)
+	./saslauthd/aclocal.m4:        for dbname in db-4.2 db4.2 db42 (...)
+	./saslauthd/autom4te.cache/output.0:        for dbname in db-4.2 db4.2 db42 (...)
+	./saslauthd/autom4te.cache/output.0:        for dbname in db-4.2 db4.2 db42 (...)
+	./saslauthd/configure:        for dbname in db-4.2 db4.2 db42 (...)
+	./saslauthd/configure:        for dbname in db-4.2 db4.2 db42 (...)
+
+these for loops cause linking against (at least) &quot;-ldb-4.2 -ldb-4 -ldb&quot;.
+
+which normally would be fine, falling back to ldb-4 when ldb-4.2 is not found.
+
+however, since an external bdb43 build does NOT remove the native bdb42 libs etc. in /usr, the build 
+grabs
+
+	ldb-4.2 from /usr
+
+and
+
+	ldb-4, ldb, etc from the /usr/local/berkeley-db/...
+
+&apos;otool -L&apos; on, e.g., saslauthd shows both lib ver&apos;s being linked in ... which, of course causes trouble 
+down the road.
+
+to workaround, the references to ldb should
+(a) be changed to include 4.3
+(b) should look ONLY in the spec&apos;d external bdb dir, then fire an error if not found rather than falling 
+back to another &apos;native&apos; dir
+
+as the extent of these changes was unlcear to me, i undertook a simpler &apos;kludge&apos;.  specifically, creating 
+vdb-4.2 links in my v4.3 lib dir.  i.e.,
+
+
+cd /usr/local/berkeley-db-4.3/lib/
+
+	ln -s libdb-4.3.a libdb-4.2.a ;\
+	ln -s libdb-4.3.dylib libdb-4.2.dylib ;\
+	ln -s libdb-4.3.la libdb-4.2.la
+
+a subsequent build of sasl now ends up with JUST the v4.3 libs linked in, as intended.
+
+cheers,
+
+richard</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-11 02:50:21 EDT</bug_when>
+            <thetext>Fixed in the configure test</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

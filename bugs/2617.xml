@@ -1,0 +1,952 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2617</bug_id>
+          
+          <creation_ts>2005-01-26 08:32 EDT</creation_ts>
+          <short_desc>imapd signaled to death + corrupt inbox on Solaris</short_desc>
+          <delta_ts>2010-10-18 12:43:07 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bernd Nies">bnies@bluewin.ch</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bernd Nies">bnies@bluewin.ch</who>
+            <bug_when>2005-01-26 08:32:30 EDT</bug_when>
+            <thetext>Hi,
+
+We are running Cyrus 2.2.10 on Solaris 8 using saslauthd and LDAP authentication.
+
+Since we upgraded from Cyrus 2.1.x to Cyrus 2.2.10 it happens frequently that
+users inboxes get corrupted and clients cannot connect.
+
+
+
+The entry in the logfile is: 
+
+Jan 26 12:46:13 mailsrv master[5565]: [ID 392559 local6.debug] about to exec
+/opt/adnmail/cyrus/bin/imapd
+Jan 26 12:46:13 mailsrv imap[5565]: [ID 518349 local6.debug] executed
+Jan 26 12:46:13 mailsrv imap[5565]: [ID 921384 local6.debug] accepted connection
+Jan 26 12:46:14 mailsrv imap[5565]: [ID 277583 local6.notice] login:
+hostname.domain.tld [192.168.5.186] kauf plaintext User logged in
+Jan 26 12:46:14 mailsrv imap[5565]: [ID 677757 local6.debug] seen_db: user kauf
+opened /var/spool/adnmail/cyrus/imap/user/k/kauf.seen
+Jan 26 12:46:14 mailsrv imap[5565]: [ID 736213 local6.debug] open: user kauf
+opened INBOX
+Jan 26 12:46:18 mailsrv master[26161]: [ID 970914 local6.error] process 5565
+exited, signaled to death by 11
+Jan 26 12:46:18 mailsrv master[26161]: [ID 621917 local6.debug] service imap pid
+5565 in BUSY state: terminated abnormally
+
+
+
+A pstack on the imapd core file gives (maybe one can get more information but
+I&apos;m not a debugger guru):
+
+root@mailsrv:~&gt; pstack imapd-kauf-core
+core &apos;imapd-kauf-core&apos; of 5565: imapd
+ 0003beb8 mailbox_expunge (10ec8c, 0, 0, 118a20, 20, 538fc) + 47c
+ 00022d74 cmd_expunge (11f800, 0, 11f800, 1ff, 10ec8c, 6e676500) + 60
+ 0001ba18 cmdloop  (11d430, a, eb800, 11d430, 108d04, 118b71) + c18
+ 0001aa80 service_main (108c00, 1c2, 1e0, 108c00, 108c00, eb400) + 320
+ 000190e0 main     (0, 0, 1, 1, 6, 108ce8) + 924
+ 00018438 _start   (0, 0, 0, 0, 0, 0) + 108
+
+
+The Cyrus IMAP server runs on a Enterprise 450, 1GB RAM, 2x300 MHz CPU with
+about 100 IMAP Users. Operating system is Solaris 8.
+
+# uname -a
+SunOS mailsrv 5.8 Generic_117350-02 sun4u sparc SUNW,Ultra-4
+
+
+
+Compilation
+-----------
+
+PATH=/opt/studio/8/bin:$PATH
+CC=cc
+CFLAGS=-O
+CXX=CC
+CXXFLAGS=-O2
+CPPFLAGS=&quot;-I/opt/adnmail/db/include -I/opt/adnmail/openssl/include
+-I/opt/adnmail/cyrus/include -I/opt/adnmail/openldap/include&quot;
+LDFLAGS=&quot;-R/opt/adnmail/db/lib -R/opt/adnmail/openssl/lib
+-R/opt/adnmail/cyrus/lib -R/opt/adnmail/openldap/lib -R/opt/adnmail/perl/lib
+-L/opt/adnmail/db/lib -L/opt/adnmail/openssl/lib -L/opt/adnmail/cyrus/lib
+-L/opt/adnmail/openldap/lib&quot;
+ 
+unset LD_LIBRARY_PATH
+ 
+export PATH CC CFLAGS CXX CXXFLAGS LDFLAGS CPPFLAGS
+
+gtar -xvpzf cyrus-sasl-2.1.20.tar.gz
+cd cyrus-sasl-2.1.20
+./configure --prefix=/opt/adnmail/cyrus \
+            --with-dbpath=/var/spool/adnmail/cyrus/etc/sasldb2 \
+            --sysconfdir=/var/spool/adnmail/cyrus/etc \
+            --with-dblib=berkeley \
+            --with-bdb-libdir=/opt/adnmail/db/lib \
+            --with-bdb-incdir=/opt/adnmail/db/include \
+            --with-openssl=/opt/adnmail/openssl \
+            --with-ldap=/opt/adnmail/openldap \
+            --with-plugindir=/opt/adnmail/cyrus/lib/sasl2 \
+            --with-saslauthd=/var/spool/adnmail/cyrus/imap/socket \
+            --with-des=/opt/adnmail/openssl \
+            --with-ldap=/opt/adnmail/openldap \
+            --with-pam \
+            --enable-anon \
+            --enable-login \
+            --enable-shared \
+            --enable-static \
+            --disable-gssapi \
+            --disable-kerb5
+/share/app/gnu/bin/make
+/share/app/gnu/bin/make install
+cd ..
+
+cd cyrus-imapd-2.2.10
+./configure --prefix=/opt/adnmail/cyrus \
+            --with-auth=unix \
+            --with-cyrus-prefix=/opt/adnmail/cyrus \
+            --with-dbdir=/opt/adnmail/db \
+            --with-openssl=/opt/adnmail/openssl \
+            --with-sasl=/opt/adnmail/cyrus \
+            --with-perl=/opt/adnmail/perl/bin/perl \
+            --sysconfdir=/var/spool/adnmail/cyrus/etc \
+            --with-statedir=/var/spool/adnmail/cyrus/socket \
+            --disable-krb4 \
+            --disable-cram \
+            --disable-gssapi \
+            --without-krb
+                                                                               
+                                         
+/share/app/gnu/bin/make
+/share/app/gnu/bin/make install
+
+
+Configuration: cyrus.conf
+-------------------------
+
+START {
+  recover       cmd=&quot;ctl_cyrusdb -r&quot;                                           
+                                                                               
+                                                                               
+                                        
+}
+                                                                               
+                                                                               
+                                                                                   
+SERVICES {
+listen=&quot;mailsrv.domain.tld:imap&quot;  prefork=0
+  imaps         cmd=&quot;imapd -s&quot;  listen=&quot;mailsrv.domain.tld:imaps&quot; prefork=0
+  sieve         cmd=&quot;timsieved&quot; listen=&quot;mailsrv.domain.tld:sieve&quot; prefork=0    
+                                                                               
+                                                                               
+                                                                               
+  lmtp          cmd=&quot;lmtpd&quot; listen=&quot;mailsrv.domain.tld:lmtp&quot; prefork=0
+  lmtpunix      cmd=&quot;lmtpd&quot; listen=&quot;/var/spool/adnmail/cyrus/imap/socket/lmtp&quot;
+prefork=0                                                                      
+                                                                               
+                                                                               
+             
+listen=&quot;/var/spool/adnmail/cyrus/imap/socket/notify&quot; proto=&quot;udp&quot; prefork=1
+}                                                                              
+                                                                               
+                                                                               
+     
+EVENTS {
+  checkpoint    cmd=&quot;ctl_cyrusdb -c&quot; period=30
+                                                                               
+                                                                               
+                                                                               
+     delprune    cmd=&quot;ctl_deliver -E 3&quot; at=0400
+                                                                               
+                                           tlsprune      cmd=&quot;tls_prune&quot; at=0400
+}
+
+
+
+Configuration: imapd.conf
+-------------------------
+
+configdirectory: /var/spool/adnmail/cyrus/imap
+sievedir:        /var/spool/adnmail/cyrus/sieve
+lmtpsocket:      /var/spool/adnmail/cyrus/imap/socket/lmtp
+  
+tls_cert_file: /var/spool/adnmail/cyrus/certs/imap.pem
+tls_key_file:  /var/spool/adnmail/cyrus/certs/imap.key
+tls_ca_file:        /var/spool/adnmail/cyrus/certs/ca-cert.pem
+  
+defaultpartition: default
+partition-default: /data/mail1
+partition-share: /var/spool/adnmail/cyrus/mail
+  
+servername: mailsrv.domain.tld
+admins: cyrus
+unixhierarchysep: yes
+altnamespace: yes
+sendmail: /opt/adnmail/postfix/sbin/sendmail
+logtimestamps: yes
+defaultacl: anyone lrsp
+duplicatesuppression: yes
+  
+allowplaintext: yes
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN
+sasl_sasldb_path: /var/spool/adnmail/cyrus/etc/sasldb2
+
+
+
+Configuration: saslauthd.conf
+-----------------------------
+
+ldap_servers: ldap://192.168.5.216/ ldap://192.168.1.216/ ldap://192.168.4.216/
+ldap://192.168.6.216/
+ldap_search_base: ou=people,o=domain,c=ch
+ldap_bind_dn: cn=proxyagent,ou=special_users,o=domain,c=ch
+ldap_password: myPassWord
+ldap_scope: one
+ldap_uidattr: uid
+ldap_filter_mode:  yes
+ldap_filter: uid=%u
+
+
+
+Server startup
+--------------
+
+/opt/adnmail/cyrus/sbin/saslauthd -a ldap
+/opt/adnmail/cyrus/bin/master</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bernd Nies">bnies@bluewin.ch</who>
+            <bug_when>2005-02-18 10:22:47 EDT</bug_when>
+            <thetext>These crashes are caused because cyrus runs out of file descriptors:
+
+
+Feb 18 14:37:51 mailsrv lmtpunix[25178]: [ID 136705 local6.error]
+IOERROR: opening /var/spool/adnmail/cyrus/mail/dev/a2k-dev/cyrus.cache:
+Too many open files
+Feb 18 14:37:51 mailsrv lmtpunix[25178]: [ID 860734 local6.debug]
+verify_user(dev.a2k-dev) failed: System I/O error
+Feb 18 14:38:03 mailsrv imap[546]: [ID 299345 local6.debug] SQUAT failed
+to open index file
+Feb 18 14:38:03 mailsrv imap[546]: [ID 418793 local6.debug] SQUAT failed
+Feb 18 14:38:30 mailsrv master[19603]: [ID 970914 local6.error] process
+6771 exited, signaled to death by 11
+Feb 18 14:38:30 mailsv master[19603]: [ID 621917 local6.debug] service
+imaps pid 6771 in BUSY state: terminated abnormally
+Feb 18 14:38:43 mailsrv master[19603]: [ID 970914 local6.error] process
+1326 exited, signaled to death by 11
+
+A couple of days ago I increased the default file descriptor settings in
+/etc/system from default
+
+set rlim_fd_cur=1024
+set rlim_fd_max=4096
+
+to
+
+set rlim_fd_cur=32768
+set rlim_fd_max=65536
+
+But recently Cyrus ran out again of file descriptors.
+
+Tuning guides tell that it is dangerous to increase these default values:
+
+http://docs.sun.com/source/817-6255/SystemTuning.html
+http://www.princeton.edu/~psg/unix/solaris/troubleshoot/filedesc.html
+
+We have about 100 concurrent imap users and some of them have more than
+10000 mails in a folder. Postfix runs on the same host and delivers the
+mails through a lmtp socket.
+
+Could it possibly be that Cyrus may not close correctly every file after
+accessing it and therefore runs out of file descriptors? Or what is the
+recommended setting? </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-11 01:44:00 EDT</bug_when>
+            <thetext>If you can still reproduce this, use of lsof should show you what&apos;s leaking file descriptors. There may be a 
+bug, I fixed one in the last few days, but unless you&apos;re using nntpd for posting it wouldn&apos;t have affected 
+you. I&apos;d bet there are others.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bernd Nies">bnies@bluewin.ch</who>
+            <bug_when>2005-04-11 04:36:22 EDT</bug_when>
+            <thetext>While a process produced &quot;too many open files&quot; warnings I did a lsof of that
+process. Strange ... the number of open files seems to be far below the limit.
+Also other processes at that time did not have suspicious many open files.
+
+Mar  3 11:01:04 ducati lmtpunix[5738]: IOERROR: opening
+/var/spool/adnmail/cyrus/mail/dev/sauber-dev/cyrus.cache: Too many open files
+Mar  3 11:01:05 ducati lmtpunix[5738]: IOERROR: opening
+/data/mail1/user/hacke/cyrus.cache: Too many open files
+Mar  3 11:04:24 ducati master[8559]: process 7050 exited, signaled to death by 11
+
+root@ducati:~&gt; lsof -p 5738 |wc -l
+   288
+
+See full list of open files by process lmtpd with PID 5738 in the attachment.
+
+root@ducati:~&gt; lsof |grep ldap_cache_door |wc -l
+    1093
+
+root@ducati:~&gt; lsof |wc -l
+   17466
+
+root@ducati:~&gt; cat /etc/system
+set rlim_fd_max=4096
+set rlim_fd_cur=1024
+
+In the cyrus startup script I set
+
+ulimit -n 65536
+
+So it isn&apos;t really the file descriptor limit that caused this error. I decreased
+the values in /etc/system vrom 231 to the default value because the system
+became unstable.
+
+Regards,
+Bernd
+
+
+
+
+COMMAND  PID  USER   FD   TYPE        DEVICE SIZE/OFF    NODE NAME
+lmtpd   5738 cyrus  cwd   VDIR          85,1     1024       2 /
+lmtpd   5738 cyrus  txt   VREG          85,1  1137804  501006 / -- cyrus/bin/lmtpd
+lmtpd   5738 cyrus  txt   VREG          85,1  1387400   73685
+/usr/lib/sldaputil.so.5
+lmtpd   5738 cyrus  txt   VREG          85,1  1111596  398237 / --
+db/lib/libdb-4.1.so
+lmtpd   5738 cyrus  txt   VREG          85,1    11804   71700 /usr/lib/libmd5.so.1
+lmtpd   5738 cyrus  txt   VREG         85,40 20561920 1495683
+/var/spool/adnmail/cyrus/imap/db/__db.004
+lmtpd   5738 cyrus  txt   VREG          85,1    44836   72604
+/usr/lib/nss_files.so.1
+lmtpd   5738 cyrus  txt   VREG         85,40   258888 1447042
+/var/spool/adnmail/cyrus/imap/mailboxes.db
+lmtpd   5738 cyrus  txt   VREG          85,1    37324  231237 / --
+cyrus/lib/sasl2/libsasldb.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG          85,1    26572  231232 / --
+cyrus/lib/sasl2/libplain.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG          85,1    91644  231227 / --
+cyrus/lib/sasl2/libotp.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG          85,1    27116  231222 / --
+cyrus/lib/sasl2/liblogin.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG          85,1    66280  231217 / --
+cyrus/lib/sasl2/libdigestmd5.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG          85,1    29564  231212 / --
+cyrus/lib/sasl2/libcrammd5.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG         85,40   663552 1495681
+/var/spool/adnmail/cyrus/imap/db/__db.002
+lmtpd   5738 cyrus  txt   VREG          85,1    26068  231207 / --
+cyrus/lib/sasl2/libanonymous.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG         85,40    32768 1495687
+/var/spool/adnmail/cyrus/imap/db/__db.005
+lmtpd   5738 cyrus  txt   VREG          85,1  1158072   72099 /usr/lib/libc.so.1
+lmtpd   5738 cyrus  txt   VREG         85,40    98304 1495682
+/var/spool/adnmail/cyrus/imap/db/__db.003
+lmtpd   5738 cyrus  txt   VREG          85,1    17096  134916
+/usr/platform/sun4u/lib/libc_psr.so.1
+lmtpd   5738 cyrus  txt   VREG          85,1  2225288  342717 / --
+openssl/lib/libcrypto.so.0.9.7
+lmtpd   5738 cyrus  txt   VREG          85,1    46936   71875 /usr/lib/libaio.so.1
+lmtpd   5738 cyrus  txt   VREG          85,1    24968   71703 /usr/lib/libmp.so.2
+lmtpd   5738 cyrus  txt   VREG          85,1   324248  342721 / --
+openssl/lib/libssl.so.0.9.7
+lmtpd   5738 cyrus  txt   VREG          85,1  1202880  398240 / --
+db/lib/libdb-4.2.so
+lmtpd   5738 cyrus  txt   VREG          85,1   911328   73675 /usr/lib/libnsl.so.1
+lmtpd   5738 cyrus  txt   VREG          85,1    41116   71560 /usr/lib/librt.so.1
+lmtpd   5738 cyrus  txt   VREG          85,1    70864   72063
+/usr/lib/libsocket.so.1
+lmtpd   5738 cyrus  txt   VREG          85,1   382848   71839
+/usr/lib/libresolv.so.2
+lmtpd   5738 cyrus  txt   VREG         85,40     8192 1495684
+/var/spool/adnmail/cyrus/imap/db/__db.001
+lmtpd   5738 cyrus  txt   VREG          85,1   150696  159453 / --
+cyrus/lib/libsasl2.so.2.0.20
+lmtpd   5738 cyrus  txt   VREG          85,1     5292   71571 /usr/lib/libdl.so.1
+lmtpd   5738 cyrus  txt   VREG          85,1   238608   72579 /usr/lib/ld.so.1
+lmtpd   5738 cyrus    0u  unix        105,89  0t11731   55665
+/devices/pseudo/tl@0:ticots-&gt;/var/spool/adnmail/cyrus/imap/socket/lmtp
+(0x30002b56bd8)
+lmtpd   5738 cyrus    1u  unix        105,89  0t11731   55665
+/devices/pseudo/tl@0:ticots-&gt;/var/spool/adnmail/cyrus/imap/socket/lmtp
+(0x30002b56bd8)
+lmtpd   5738 cyrus    2u  unix        105,89  0t11731   55665
+/devices/pseudo/tl@0:ticots-&gt;/var/spool/adnmail/cyrus/imap/socket/lmtp
+(0x30002b56bd8)
+lmtpd   5738 cyrus    3u  FIFO 0x30005fbef08      0t8   43514 (fifofs)
+PIPE-&gt;0x30005fbee20
+lmtpd   5738 cyrus    4u  unix        105,41      0t0   55665
+/devices/pseudo/tl@0:ticots-&gt;/var/spool/adnmail/cyrus/imap/socket/lmtp
+(0x30008ae92b8) (Vnode=0x300032b1e20)
+lmtpd   5738 cyrus    5w  VCHR          21,0      0t0   55653
+/devices/pseudo/log@0:conslog-&gt;LOG
+lmtpd   5738 cyrus    6u  VREG         85,40 10035200 1447043
+/var/spool/adnmail/cyrus/imap/deliver.db
+lmtpd   5738 cyrus    7u  VREG         85,40   258888 1447042
+/var/spool/adnmail/cyrus/imap/mailboxes.db
+lmtpd   5738 cyrus    8u  VREG         85,40        0 2255692
+/var/spool/adnmail/cyrus/imap/socket/lmtpunix-0.lock
+lmtpd   5738 cyrus   10r  DOOR         300,0      0t0   21711
+/etc/.name_service_door (door to nscd[520])
+lmtpd   5738 cyrus   11r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   12r  VREG          85,7   204800   16929 /var/ldap/cert7.db
+lmtpd   5738 cyrus   13r  VREG          85,7    32768   17002 /var/ldap/key3.db
+lmtpd   5738 cyrus   14r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   15r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   16r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   17r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   18r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   19r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   20r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   21r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   22r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   23r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   24r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   25r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   26r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   27r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   28r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   29r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   30r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   31r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   32r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   33r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   34r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   35r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   36r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   37r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   38r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   39r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   40r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   41r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   42r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   43r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   44r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   45r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   46r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   47r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   48r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   49r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   50r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   51r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   52r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   53r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   54r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   55r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   56r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   57r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   58r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   59r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   60r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   61r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   62r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   63r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   64r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   65r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   66r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   67r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   68r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   69r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   70r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   71r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   72r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   73r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   74r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   75r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   76r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   77r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   78r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   79r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   80r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   81r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   82r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   83r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   84r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   85r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   86r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   87r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   88r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   89r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   90r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   91r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   92r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   93r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   94r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   95r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   96r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   97r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   98r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus   99r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  100r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  101r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  102r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  103r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  104r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  105r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  106r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  107r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  108r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  109r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  110r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  111r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  112r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  113r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  114r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  115r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  116r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  117r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  118r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  119r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  120r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  121r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  122r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  123r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  124r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  125r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  126r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  127r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  128r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  129r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  130r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  131r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  132r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  133r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  134r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  135r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  136r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  137r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  138r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  139r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  140r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  141r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  142r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  143r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  144r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  145r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  146r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  147r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  148r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  149r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  150r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  151r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  152r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  153r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  154r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  155r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  156r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  157r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  158r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  159r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  160r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  161r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  162r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  163r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  164r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  165r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  166r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  167r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  168r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  169r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  170r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  171r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  172r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  173r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  174r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  175r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  176r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  177r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  178r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  179r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  180r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  181r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  182r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  183r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  184r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  185r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  186r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  187r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  188r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  189r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  190r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  191r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  192r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  193r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  194r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  195r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  196r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  197r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  198r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  199r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  200r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  201r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  202r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  203r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  204r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  205r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  206r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  207r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  208r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  209r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  210r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  211r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  212r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  213r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  214u  VREG         85,40  2459187 1495686
+/var/spool/adnmail/cyrus/imap/db/log.0000000046
+lmtpd   5738 cyrus  215r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  216r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  217r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  218r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  219r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  220r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  221r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  222r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  223r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  224r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  225r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  226r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  227r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  228r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  229r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  230r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  231r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  232r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  233r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  234r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  235r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  236r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  237r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  238r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  239r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  240r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  241r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  242r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  243r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  244r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  245r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  246r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  247r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  248r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  249r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  250r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  251r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  252r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  253r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+lmtpd   5738 cyrus  254r  DOOR         300,0      0t0   13731
+/etc/.ldap_cache_door (door to ldap_cachemgr[434])
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-11 11:26:39 EDT</bug_when>
+            <thetext>the ldap cache door fds are clearly being leaked. However, this isn&apos;t something we provide, so if it&apos;s being 
+leaked either it&apos;s a system problem, or some API which expects us to init and finalize it is being inited 
+repeatedly but not finalized. Do you have the ability to attach with gdb and get a backtrace from when 
+ldap_cache_door is opened? (You may need to break in open, and check each one until you get one 
+opening the door, then get a backtrace)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bernd Nies">bnies@bluewin.ch</who>
+            <bug_when>2005-04-29 10:05:15 EDT</bug_when>
+            <thetext>I installed the latest recommended patch cluster and waited again. Did not help.
+There are zillions of /etc/.ldap_cache_door open in a lmtpd process. Will open
+case at Sun.
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2008-10-06 15:11:32 EDT</bug_when>
+            <thetext>Looks like a Sun problem.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,154 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3120</bug_id>
+          
+          <creation_ts>2008-11-26 03:57 EDT</creation_ts>
+          <short_desc>no recursive IMAP RENAME of subfolders with &quot;long&quot; (@) loginnames</short_desc>
+          <delta_ts>2009-01-22 02:33:11 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Noèl Köthe">noel@debian.org</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>marc.brockschmidt@credativ.de</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Noèl Köthe">noel@debian.org</who>
+            <bug_when>2008-11-26 03:57:49 EDT</bug_when>
+            <thetext>Hello.
+
+I&apos;m using cyrus 2.2.13 on Debian lenny and my test client is thunderbird 2.0.0.17.
+
+When I&apos;m using &quot;long&quot; UID for example 1-2-3@domain.tld with the imapd.conf options:
+
+unixhierarchysep: yes
+loginrealms domain.tld
+
+The users are authorized via saslauthd (-a pam)
+
+I get a problem with recursive renaming of imap subfolder.
+
+With normal/short UIDs the IMAP log of a rename looks like this (I move the folder &quot;1&quot; from &quot;folder&quot; to &quot;newfolder&quot;:
+
+&lt;1227625997&lt;18 rename &quot;folder/1&quot; &quot;newfolder/1&quot;^M
+&gt;1227625997&gt;* OK rename folder/1 newfolder/1^M
+&gt;1227625997&gt;* OK rename folder/1/1.1 newfolder/1/1.1^M
+&gt;1227625997&gt;* OK rename folder/1/1.2 newfolder/1/1.2^M
+&gt;1227625997&gt;18 OK Completed^M
+...
+
+But when I have long UIDs like 1-2-3@domain.tld the IMAP log looks like this :
+
+&lt;1227625129&lt;10 rename &quot;folder/1.1/alt&quot; &quot;newfolder/alt&quot;^M
+&gt;1227625129&gt;* OK rename folder/1.1/alt newfolder/alt^M
+&gt;1227625129&gt;10 OK Completed^M
+&lt;1227625129&lt;11 subscribe &quot;newfolder/alt&quot;^M
+&gt;1227625129&gt;11 OK Completed^M
+&lt;1227625129&lt;12 unsubscribe &quot;folder/1.1/alt&quot;^M
+&gt;1227625129&gt;12 OK Completed^M
+&lt;1227625129&lt;13 subscribe &quot;newfolder/alt/&amp;AOQ-lter&quot;^M
+&gt;1227625129&gt;13 NO Subscribe: Mailbox does not exist^M
+&lt;1227625129&lt;14 unsubscribe &quot;folder/1.1/alt/&amp;AOQ-lter&quot;^M
+&gt;1227625129&gt;14 OK Completed^M
+&lt;1227625129&lt;15 subscribe &quot;newfolder/alt/ganz alt&quot;^M
+&gt;1227625129&gt;15 NO Subscribe: Mailbox does not exist^M
+&lt;1227625129&lt;16 unsubscribe &quot;folder/1.1/alt/ganz alt&quot;^M
+
+The client sends the rename command of the folder but the server only replies the rename of the folder and not of the subfolders.
+The following unsubscribe and subscribe commands are failing because the subfolders are not moved/renamed. Looking at the mailbox list confirm that the subfolders are not renamed.
+
+In imapd/imapd.c in the function
+
+/*
+ * Perform a RENAME command
+ */
+void cmd_rename(const char *tag,
+                char *oldname, char *newname, char *partition)
+
+there are there cases when folders are not renamed recursivly.
+I&apos;m not sure if one of them sets &quot;recursive_rename = 0;&quot; in my case.
+
+Any idea why subfolder renaming with &quot;long&quot; UID is not working?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Marc Brockschmidt">marc.brockschmidt@credativ.de</who>
+            <bug_when>2009-01-22 02:33:11 EDT</bug_when>
+            <thetext>&gt; Any idea why subfolder renaming with &quot;long&quot; UID is not working?
+
+I have been looking into this and found the source of the problem in 
+imap/mboxlist.c::mboxlist_findall, which is used for the recursive renames (while the top-level rename is handled seperatly).
+There is some magic going on checking if the pattern that is used for the search contains wildcards or &apos;@&apos;. The comment indicates this search to be used to find a fixed prefix of the pattern, which is then used to check if folder in the user mailbox can match at all:
+
+    /* Find fixed-string pattern prefix */
+    for (p = pat; *p; p++) {
+        if (*p == &apos;*&apos; || *p == &apos;%&apos; || *p == &apos;?&apos; || *p == &apos;@&apos;) break;
+    }
+    prefixlen = p - pattern;
+    *p = &apos;\0&apos;;
+
+    /*
+     * If user.X.* or INBOX.* can match pattern,
+     * search for those mailboxes next
+     */
+    if (userid &amp;&amp;
+        (!strncmp(usermboxname+domainlen, pattern, usermboxnamelen-domainlen-1) ||
+        !strncasecmp(&quot;inbox.&quot;, pattern, prefixlen &lt; 6 ? prefixlen : 6))) {
+
+For a long UID, pattern is terminated at the position of the first @, thus a patter like &apos;user.1-2-3@example^com.folder.1.*&apos; is shortened to &apos;user.1-2-3&apos;. This is then compared with the user mbox name (and obviously found to not match).
+
+I was able to fix this specific problem with this patch:
+--- imap/mboxlist.c	2009-01-21 22:33:18.000000000 +0100
++++ imap/mboxlist.c.new	2009-01-21 22:36:29.000000000 +0100
+@@ -1996,7 +1996,7 @@
+ 
+     /* Find fixed-string pattern prefix */
+     for (p = pat; *p; p++) {
+-	if (*p == &apos;*&apos; || *p == &apos;%&apos; || *p == &apos;?&apos; || *p == &apos;@&apos;) break;
++	if (*p == &apos;*&apos; || *p == &apos;%&apos;) break;
+     }
+     prefixlen = p - pattern;
+     *p = &apos;\0&apos;;
+
+I&apos;m not sure, though, why this code was there in the first place, thus I wouldn&apos;t actually call it a fix. It solved our problems with long uids and didn&apos;t lead to (obvious) new problems.
+
+Marc
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

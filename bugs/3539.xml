@@ -1,0 +1,94 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3539</bug_id>
+          
+          <creation_ts>2011-08-28 23:49 EDT</creation_ts>
+          <short_desc>CID 426: UNINIT in mboxlist_createmailbox_full</short_desc>
+          <delta_ts>2011-08-28 23:49:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-08-28 23:49:45 EDT</bug_when>
+            <thetext>Found by Coverity.  There is a combination of inputs and a codepath through mboxlist_createmailbox_full() which can result in an uninitialised value of the &apos;r&apos; variable being checked for an error code.  Given the parameters passed at the function&apos;s callsites there is actually no way to trigger that combination, but it makes sense to just initialise the &apos;r&apos; variable to zero.
+
+Event var_decl: Declaring variable &quot;r&quot; without initializer.
+671  	    int r;
+At conditional (2): &quot;copyacl&quot; taking true path
+690  	    if (copyacl) {
+691  		newpartition = xstrdup(partition);
+692  		acl = xstrdup(copyacl);
+693  	    }
+694  	    else {
+695  		/* 2. verify ACL&apos;s to best of ability (CRASH: abort) */
+696  		r = mboxlist_mycreatemailboxcheck(name, mbtype, partition, isadmin, 
+697  						  userid, auth_state, 
+698  						  &amp;acl, &amp;newpartition, 1, localonly,
+699  						  forceuser, NULL);
+700  		if (r) goto done;
+701  	    }
+702  	
+At conditional (3): &quot;!newpartition&quot; taking false path
+703  	    if (!newpartition) {
+704  		r = IMAP_IOERROR;
+705  		goto done;
+706  	    }
+707  	
+At conditional (4): &quot;!dbonly&quot; taking true path
+At conditional (5): &quot;!isremote&quot; taking false path
+708  	    if (!dbonly &amp;&amp; !isremote) {
+709  	
+710  		/* Filesystem Operations */
+711  		r = mailbox_create(name, newpartition, acl, uniqueid,
+712  				   useptr, options, uidvalidity, &amp;newmailbox);
+713  	    }
+714  	
+Event uninit_use: Using uninitialized value &quot;r&quot;.
+715  	    if (r) goto done; /* CREATE failed */ 
+716  	
+
+Also, the check for (!newpartition) should be hoisted up into the else case at lines 695-700, as xstrdup() doesn&apos;t return NULL.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

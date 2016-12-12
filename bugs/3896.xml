@@ -1,0 +1,94 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3896</bug_id>
+          
+          <creation_ts>2015-06-08 07:09 EDT</creation_ts>
+          <short_desc>buffer overflow in do_referral()</short_desc>
+          <delta_ts>2015-06-08 10:07:42 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>perl</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Enrico Scholz">enrico.scholz@sigma-chemnitz.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Enrico Scholz">enrico.scholz@sigma-chemnitz.de</who>
+            <bug_when>2015-06-08 07:09:43 EDT</bug_when>
+            <thetext>perl/sieve/lib/isieve.c contains
+
+---
+static int do_referral(isieve_t *obj, char *refer_to)
+{
+        ...
+	if(mtried) {
+	    char *newlist = (char*) xmalloc(strlen(mechlist)+1);
+            ...
+	    if (tmp) {       // &lt;&lt;&lt;&lt;&lt;
+		strcpy(newlist, mechlist);
+                ...
+		    strcat(newlist,tmp);
+                ...
+            }
+            ...
+	    mechlist = newlist;  // !!!!!!!
+---
+
+This will overflow &apos;newlist&apos; because both the original &apos;mechlist&apos; and trailing parts of it will be copied into this string.
+
+Perhaps &quot;*tmp = &apos;\0&apos;;&quot; should be added to the place marked with &apos;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&apos;?
+
+Behaviour when &apos;tmp&apos; is NULL at &lt;&lt;&lt;&lt;&lt;&lt; seems to be undefined too; the new &apos;mechlist&apos; (at !!!!!!!) will point to uninitialized data.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Enrico Scholz">enrico.scholz@sigma-chemnitz.de</who>
+            <bug_when>2015-06-08 08:33:04 EDT</bug_when>
+            <thetext>code seems to have some more problems:
+
+* do &apos;do { ... } while&apos; loop can/should probably abort when auth_sasl() succeeds because there is no need to remove &apos;mtried&apos; from the mechlist
+
+* altering &apos;mechlist&apos; will trigger the &apos;detect_mitm()&apos; check some lines below (which seems to be also broken in other ways because capabilities might change after a successful authentication)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2015-06-08 10:07:42 EDT</bug_when>
+            <thetext>This code is all awful :(  I&apos;d love to have patches to fix it.  At least it looks like this can only happen if you connect your client to a malicious server.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

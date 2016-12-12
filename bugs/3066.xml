@@ -1,0 +1,142 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3066</bug_id>
+          
+          <creation_ts>2008-06-24 12:06 EDT</creation_ts>
+          <short_desc>bug in proxy module</short_desc>
+          <delta_ts>2010-10-25 18:46:45 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="valery brasseur">valery.brasseur@atosorigin.com</reporter>
+          <assigned_to name="Wes Craig">wes@umich.edu</assigned_to>
+          <cc>murch@andrew.cmu.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="valery brasseur">valery.brasseur@atosorigin.com</who>
+            <bug_when>2008-06-24 12:06:59 EDT</bug_when>
+            <thetext>I am using cyrus 2.3.11 in a murder setup... from time to time have got an hang from the pop3 proxyd ...
+
+I nail it donw to the following portion of code in imap/proxy.c near line 266 :
+&lt;quote&gt;
+        if (pout) {
+                 const char *err;
+                 char buf[4096];
+                 int c;
+
+                 do {
+                     c = prot_read(pin, buf, sizeof(buf));
+
+                     if (c == 0 || c &lt; 0) break;
+                     prot_write(pout, buf, c);
+                 } while (c == sizeof(buf));
+
+                 if ((err = prot_error(pin)) != NULL) { 
+&lt;/quote&gt;
+
+from time to time, the prot_read return exactly 4096 bytes, but it&apos;s the end of the message... so backend seat and wait for next command, and proxy seat and wait for the next buffer ... forever !
+
+For me it&apos;s seems that the condition &quot; c == sizeof(buf)&quot; is not enough in that case.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2008-09-18 20:39:29 EDT</bug_when>
+            <thetext>Created an attachment (id=1014)
+back out full buffer check, add a return to favor server output
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-09-26 08:43:48 EDT</bug_when>
+            <thetext>I think this patch reverts back to a previous problem:
+
+&quot;make sure we send all available data, not just one buffer full.
+this solves a pipelining problem where a response to a command run on a proxy
+could be output in the middle of a response to a command run on a backend&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2008-09-26 09:15:17 EDT</bug_when>
+            <thetext>In addition to backing out the bad change to proxy_check_input(), it causes proxy_check_input() to not check for client input if there&apos;s server input.  That&apos;s probably the best solution possible for &quot;a response to a command run on a proxy could be output in the middle of a response to a command run on a backend.&quot;
+
+Read here:
+
+http://cyrusimap.web.cmu.edu/archive/message.php?mailbox=archive.cyrus-devel&amp;msg=1981
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-09-26 09:30:36 EDT</bug_when>
+            <thetext>Ahh, OK. I didn&apos;t notice the added return.  Looks sane to me.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="valery brasseur">valery.brasseur@atosorigin.com</who>
+            <bug_when>2008-09-30 05:46:14 EDT</bug_when>
+            <thetext>seems good to me too !
+</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1014</attachid>
+            <date>2008-09-18 20:39 EDT</date>
+            <desc>back out full buffer check, add a return to favor server output</desc>
+            <filename>cyrus-imapd-imap-proxy.diff</filename>
+            <type>text/plain</type>
+            <size>487</size>
+            <attacher>wes@umich.edu</attacher>
+            
+              <data encoding="base64">LS0tIGltYXAvcHJveHkuYwkyNCBNYXIgMjAwOCAxNzowOToxOCAtMDAwMAkxLjcKKysrIGltYXAv
+cHJveHkuYwkxIFNlcCAyMDA4IDAyOjQyOjU2IC0wMDAwCkBAIC0yNjgsNyArMjY4LDcgQEAKIAog
+CQkgICAgaWYgKGMgPT0gMCB8fCBjIDwgMCkgYnJlYWs7CiAJCSAgICBwcm90X3dyaXRlKHBvdXQs
+IGJ1ZiwgYyk7Ci0JCX0gd2hpbGUgKGMgPT0gc2l6ZW9mKGJ1ZikpOworCQl9IHdoaWxlIChwaW4t
+PmNudCA+IDApOwogCiAJCWlmICgoZXJyID0gcHJvdF9lcnJvcihwaW4pKSAhPSBOVUxMKSB7CiAJ
+CSAgICBpZiAoc2VydmVyb3V0ICYmICFzdHJjbXAoZXJyLCBQUk9UX0VPRl9TVFJJTkcpKSB7CkBA
+IC0yODAsNiArMjgwLDggQEAKIAkJCWZhdGFsKCJMb3N0IGNvbm5lY3Rpb24gdG8gaW5wdXQgc3Ry
+ZWFtIiwKIAkJCSAgICAgIEVDX1VOQVZBSUxBQkxFKTsKIAkJICAgIH0KKwkJfSBlbHNlIHsKKwkJ
+ICAgIHJldHVybiAwOwogCQl9CiAJICAgIH0KIAl9Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

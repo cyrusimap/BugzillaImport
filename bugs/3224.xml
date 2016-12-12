@@ -1,0 +1,125 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3224</bug_id>
+          
+          <creation_ts>2010-05-20 15:36 EDT</creation_ts>
+          <short_desc>prevent occasional imapd segfault</short_desc>
+          <delta_ts>2010-10-25 18:46:48 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>3174</dup_id>
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Brian Awood">bawood@umich.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Brian Awood">bawood@umich.edu</who>
+            <bug_when>2010-05-20 15:36:23 EDT</bug_when>
+            <thetext>Created an attachment (id=1277)
+prevent segfault from a null mechlist in backend_connect()
+
+Occasionally, if the timing is just right(wrong?) a proxy imapd will segfault when a backend is shutdown.  This bug may be a side effect of other local changes, I&apos;m not sure, but this seems like a reasonable change anyway.  If the timing happens such that a connection is being established, but then ends, backend_connect() in backend.c would come up with an null mechlist and then try to strdup it.  This patch just adds a check to make sure we have a mechlist.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-05-20 15:54:25 EDT</bug_when>
+            <thetext>Rather than fall through, a better solution to this problem would be to check mechlist when we know that we&apos;ll need a mechlist to proceed (just before backend_authenticate() is called) and give an intelligible error.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Brian Awood">bawood@umich.edu</who>
+            <bug_when>2010-05-20 16:41:43 EDT</bug_when>
+            <thetext>hmmm, looking back at the code, I&apos;m not sure.  Do we not need to fall through for the lmtp/csync to work on unix sockets?  We can put the check right before backend_authenticate, but we would still need to prevent the xstrdup is mechlist is null. </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-05-24 15:09:41 EDT</bug_when>
+            <thetext>Really, backend_authenticate() needs to allow NULL mechlists.  Otherwise, we can&apos;t authenticate to services that allow plain text but only under SSL.  The correct sequence of events is that backend_authenticate() is called with a NULL mechlist, it observes that there are no mechanisms in common, but that SSL is available.  It negotiates SSL on the connect and asks again.  PLAIN is now available, so authentication proceeds.
+
+Bailing out any earlier or skipping backend_authenticate() is a problem.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-05-24 17:17:59 EDT</bug_when>
+            <thetext>This is a dup of 3174.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Brian Awood">bawood@umich.edu</who>
+            <bug_when>2010-05-24 17:45:17 EDT</bug_when>
+            <thetext>Thanks Wes,  marking as a duplicate
+
+*** This bug has been marked as a duplicate of bug 3174 ***</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1277</attachid>
+            <date>2010-05-20 15:36 EDT</date>
+            <desc>prevent segfault from a null mechlist in backend_connect()</desc>
+            <filename>0001-Prevent-imapd-segfault-on-proxies.patch</filename>
+            <type>text/plain</type>
+            <size>1102</size>
+            <attacher>bawood@umich.edu</attacher>
+            
+              <data encoding="base64">RnJvbSAwYjZmMmY1YWJkYjI4MTViMGEyYTA5ZWMxOWIwNTVhNDBkZjQ5YjQ1IE1vbiBTZXAgMTcg
+MDA6MDA6MDAgMjAwMQpGcm9tOiBCcmlhbiBBd29vZCA8YmF3b29kQHVtaWNoLmVkdT4KRGF0ZTog
+RnJpLCAxMSBEZWMgMjAwOSAyMTo0NToxMCAtMDUwMApTdWJqZWN0OiBbUEFUQ0hdIFByZXZlbnQg
+aW1hcGQgc2VnZmF1bHQgb24gcHJveGllcwoKU29tZSBpbWFwZCBwcm9jZXNzIHdpbGwgc2VnZmF1
+bHQgb24gcHJveGllcyB3aGVuCmEgYmFja2VuZCBtYWNoaW5lIGlzIHNodXRkb3duIGFuZCBtZWNo
+bGlzdCBlbmRzIHVwCm51bGwgaW4gYmFja2VuZF9jb25uZWN0LgotLS0KIGltYXAvYmFja2VuZC5j
+IHwgICAgNCArKy0tCiAxIGZpbGVzIGNoYW5nZWQsIDIgaW5zZXJ0aW9ucygrKSwgMiBkZWxldGlv
+bnMoLSkKCmRpZmYgLS1naXQgYS9pbWFwL2JhY2tlbmQuYyBiL2ltYXAvYmFja2VuZC5jCmluZGV4
+IGEwY2I2YzcuLmM1YjI0MzMgMTAwNjQ0Ci0tLSBhL2ltYXAvYmFja2VuZC5jCisrKyBiL2ltYXAv
+YmFja2VuZC5jCkBAIC00NDYsOSArNDQ2LDkgQEAgc3RydWN0IGJhY2tlbmQgKmJhY2tlbmRfY29u
+bmVjdChzdHJ1Y3QgYmFja2VuZCAqcmV0X2JhY2tlbmQsIGNvbnN0IGNoYXIgKnNlcnZlciwKIAog
+ICAgIC8qIG5vdyBuZWVkIHRvIGF1dGhlbnRpY2F0ZSB0byBiYWNrZW5kIHNlcnZlciwKICAgICAg
+ICB1bmxlc3Mgd2UncmUgZG9pbmcgTE1UUC9DU1lOQyBvbiBhIFVOSVggc29ja2V0IChkZWxpdmVy
+L3N5bmNfY2xpZW50KSAqLwotICAgIGlmICgoc2VydmVyWzBdICE9ICcvJykgfHwKKyAgICBpZiAo
+bWVjaGxpc3QgJiYgKChzZXJ2ZXJbMF0gIT0gJy8nKSB8fAogCShzdHJjbXAocHJvdC0+c2FzbF9z
+ZXJ2aWNlLCAibG10cCIpICYmCi0JIHN0cmNtcChwcm90LT5zYXNsX3NlcnZpY2UsICJjc3luYyIp
+KSkgeworCSBzdHJjbXAocHJvdC0+c2FzbF9zZXJ2aWNlLCAiY3N5bmMiKSkpKSB7CiAJY2hhciAq
+bWxpc3QgPSB4c3RyZHVwKG1lY2hsaXN0KTsgLyogYmFja2VuZF9hdXRoIGlzIGRlc3RydWN0aXZl
+ICovCiAKIAlpZiAoKHIgPSBiYWNrZW5kX2F1dGhlbnRpY2F0ZShyZXQsIHByb3QsICZtbGlzdCwg
+dXNlcmlkLAotLSAKMS43LjEKCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

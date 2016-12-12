@@ -1,0 +1,114 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3715</bug_id>
+          
+          <creation_ts>2012-07-03 05:10 EDT</creation_ts>
+          <short_desc>DBERROR db4: Transaction not specified for a transactional database</short_desc>
+          <delta_ts>2013-02-13 05:25:30 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.16</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>FreeBSD</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.17</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andreas Longwitz">longwitz@incore.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Andreas Longwitz">longwitz@incore.de</who>
+            <bug_when>2012-07-03 05:10:24 EDT</bug_when>
+            <thetext>In cyrus-imapd 2.4.x the commands cm and dm (and may be some others) do not work, when mailboxes.db is of type berkeley. The reason is in the source mboslist.c the missing pointer to struct txn, when mboxlist_createmailbox_full calls the function mboxlist_mycreatemailboxcheck. In a transactional database every read has to be transactional, therefore the error message of berkeley-db is correct.
+
+The source mboxlist.c in 2.3.x has a correct interface to the berkelex-db.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-10-22 04:29:29 EDT</bug_when>
+            <thetext>Berkeley itself is not recommended in 2.4.x, but this should be fixed.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-11-29 18:12:14 EDT</bug_when>
+            <thetext>DBERROR db5: BDB0097 Transaction not specified for a transactional database
+
+This is not googleable at all.  I&apos;m tempted to say &quot;if you want supported Berkeley, go hit Oracle with a rusty cluebat, because non-searchable error messages are not my idea of a good time.
+
+That said, our cyrusdb API, as I understand it, is that you can pass a NULL tidptr to any function if you&apos;re not in the middle of a transaction, and it will be run with a custom &quot;just for this command&quot; transaction.  So the question becomes &quot;is there already a transaction on the mailboxes.db?&quot;.  If so, then skiplist should be bailing on on writes already!
+
+This also works in master, which has significantly changed code for the mailbox creation path.  So it&apos;s a 2.4 only bug.  I&apos;m going to do the expedient thing rather than refectoring and just strip the RMW as was done in 2.5 with more significant changes.
+
+And done - one character change!  Will be in 2.4.17.
+
+Bron.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andreas Longwitz">longwitz@incore.de</who>
+            <bug_when>2013-02-13 05:25:30 EDT</bug_when>
+            <thetext>The patch for bug 3715 works only for createmailbox not for deletemailbox or renamemailbox. The following patch against 2.4.16 does the job:
+
+--- imap/mboxlist.c.orig        2012-04-19 11:39:51.000000000 +0200
++++ imap/mboxlist.c     2013-02-06 15:42:32.000000000 +0100
+@@ -582,7 +582,7 @@
+        /* 2. verify ACL&apos;s to best of ability (CRASH: abort) */
+        r = mboxlist_mycreatemailboxcheck(name, mbtype, partition, isadmin,
+                                          userid, auth_state,
+-                                         &amp;acl, &amp;newpartition, 1, localonly,
++                                         &amp;acl, &amp;newpartition, 0, localonly,
+                                          forceuser, NULL);
+        if (r) goto done;
+     }
+@@ -903,7 +903,7 @@
+        if (!isadmin) { r = IMAP_PERMISSION_DENIED; goto done; }
+     }
+
+-    r = mboxlist_mylookup(name, &amp;mbentry, NULL, 1);
++    r = mboxlist_mylookup(name, &amp;mbentry, NULL, 0);
+     if (r) goto done;
+
+     isremote = mbentry.mbtype &amp; MBTYPE_REMOTE;
+@@ -1097,7 +1097,7 @@
+
+     r = mboxlist_mycreatemailboxcheck(newname, 0, partition, isadmin,
+                                      userid, auth_state, NULL,
+-                                     &amp;newpartition, 1, 0, forceuser, NULL);
++                                     &amp;newpartition, 0, 0, forceuser, NULL);
+     if (r) goto done;
+
+     if (!newpartition) newpartition = xstrdup(config_defpartition);</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

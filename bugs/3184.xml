@@ -1,0 +1,468 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3184</bug_id>
+          
+          <creation_ts>2009-12-12 21:38 EDT</creation_ts>
+          <short_desc>Configuration should have option of marking QoS on traffic</short_desc>
+          <delta_ts>2010-10-14 05:34:57 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Philip Prindeville">philipp@redfish-solutions.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>mhlavink@redhat.com</cc>
+    
+    <cc>philipp@redfish-solutions.com</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2009-12-12 21:38:07 EDT</bug_when>
+            <thetext>As an increasing amount of real-time, streaming video and audio shares the
+Internet, it becomes essential to be able to differentiate time-sensitive
+traffic from all others.
+
+This is most easily achieved by having applications mark their traffic with the
+appropriate DSCP tag in the IP tos field.
+
+To achieve this:
+
+* A configuration option is needed to allow specifying a QoS value (cs0...cs7, af11..af43, ef, or &quot;none&quot; (same as &quot;cs0&quot;)).
+
+* A setsockopt(..., SOL_IP, IP_TOS, ...) will then need to be done on the socket before it does a listen().
+
+* Potentially a reasonable default value (like AF11 or AF12) could be set when the configuration doesn&apos;t explicitly set a value.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2009-12-14 03:13:17 EDT</bug_when>
+            <thetext>Created an attachment (id=1247)
+Add QoS marking to traffic
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-12-14 10:15:00 EDT</bug_when>
+            <thetext>This seems like a reasonable addition.  However, imapopts.[ch] are automatically generated from imapoptions, so any new option shoul dbe added there.  Also, I&apos;m wondering if this functionality might make more sense as a service option in the cyrus.conf file.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2009-12-14 17:16:48 EDT</bug_when>
+            <thetext>(In reply to comment #2)
+&gt; This seems like a reasonable addition.  However, imapopts.[ch] are
+&gt; automatically generated from imapoptions, so any new option shoul dbe added
+&gt; there.  Also, I&apos;m wondering if this functionality might make more sense as a
+&gt; service option in the cyrus.conf file.
+
+I&apos;m attaching a new patch now that addresses the first issue.  I missed the part about that being machine generated... (i.e. the &quot;DO NOT EDIT&quot; comment).  That happens when you do:
+
+% vi +/IMAPOPT_QUOTA_DB lib/imapopts.c
+
+I guess.  Sigh.
+
+How does the cyrus vs. imap option stuff differ?  Can you point me at a recent bugfix that added a cyrus.conf option?
+
+And an incidental: how would one add a debug message to lib/libconfig.c?
+
+It looks like syslog() isn&apos;t available at that time, and I&apos;m going to guess that stderr and stdout have also been closed by then...
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2009-12-14 17:45:32 EDT</bug_when>
+            <thetext>Created an attachment (id=1248)
+Add QoS marking to traffic
+
+As per comment #2, rely on auto-generation of lib/imapopts.[hc] from imapoptions file.
+
+Note that as of Linux 2.6.30.9 the call to:
+
+setsockopt(sock, SOL_IP, IP_TOS, &amp;int_eq_0x28, sizeof(int))
+
+may return EOPNOTSUPP and yet the traffic will be appropriately marked.
+
+This will result in a harmless message being logged:
+
+Dec 14 15:29:48 mail master[22698]: unable to setsocketopt(IP_TOS): Operation not supported
+
+which can be ignored (at least until this issue is fixed in the linux kernel).
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2009-12-14 18:02:37 EDT</bug_when>
+            <thetext>The patches below look like the latest addition of a cyrus.conf option for services.  We may want to take a poll on the cyrus-devel list to see what people think about imapd.conf vs. cyrus.conf for QoS tagging
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/master/master.c.diff?r1=1.78;r2=1.80
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/master/master.h.diff?r1=1.6;r2=1.7;hideattic=0;f=h;hideattic=0;f=h</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2009-12-14 18:43:26 EDT</bug_when>
+            <thetext>(In reply to comment #5)
+&gt; The patches below look like the latest addition of a cyrus.conf option for
+&gt; services.  We may want to take a poll on the cyrus-devel list to see what
+&gt; people think about imapd.conf vs. cyrus.conf for QoS tagging
+&gt; 
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/master/master.c.diff?r1=1.78;r2=1.80
+&gt; 
+&gt; https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/master/master.h.diff?r1=1.6;r2=1.7;hideattic=0;f=h;hideattic=0;f=h
+
+
+I&apos;m fine with a vote, though I do have to say that the options processing (parsing, validation, etc) done by the masterconf_getXXX() stuff isn&apos;t nearly as rich as the config_getXXX() stuff.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2009-12-14 18:50:33 EDT</bug_when>
+            <thetext>(In reply to comment #6)
+&gt; I&apos;m fine with a vote, though I do have to say that the options processing
+&gt; (parsing, validation, etc) done by the masterconf_getXXX() stuff isn&apos;t nearly
+&gt; as rich as the config_getXXX() stuff.
+
+That said, I should add that QoS tagging generically applies to POP3, IMAP, and LMTP over TCP... though I can&apos;t think for now of a reason why you would want different values for each.
+
+Perhaps having a global value would be good?
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2010-01-08 13:47:30 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; (In reply to comment #6)
+&gt; &gt; I&apos;m fine with a vote, though I do have to say that the options processing
+&gt; &gt; (parsing, validation, etc) done by the masterconf_getXXX() stuff isn&apos;t nearly
+&gt; &gt; as rich as the config_getXXX() stuff.
+&gt; 
+&gt; That said, I should add that QoS tagging generically applies to POP3, IMAP, and
+&gt; LMTP over TCP... though I can&apos;t think for now of a reason why you would want
+&gt; different values for each.
+&gt; 
+&gt; Perhaps having a global value would be good?
+
+Ken: what else do we need for closure at this point?
+
+Thanks.
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michal Hlavinka">mhlavink@redhat.com</who>
+            <bug_when>2010-04-15 11:00:15 EDT</bug_when>
+            <thetext>ping, any progress? (when) will it be include in the repository?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-04-15 11:02:26 EDT</bug_when>
+            <thetext>I will look at it by the end of the week</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2010-04-18 19:27:13 EDT</bug_when>
+            <thetext>(In reply to comment #10)
+&gt; I will look at it by the end of the week
+
+And... How&apos;s it looking?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-04-19 12:12:52 EDT</bug_when>
+            <thetext>Should we avoid the setsockopt() call completely if QoS == 0?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2010-04-19 14:03:37 EDT</bug_when>
+            <thetext>(In reply to comment #12)
+&gt; Should we avoid the setsockopt() call completely if QoS == 0?
+
+I think the correct answer is, &quot;it depends&quot;.
+
+Can we see a future environment where the OS predefines your QoS bits based on your socket()/bind()/connect() values, yet you might want to allow the application to override them?
+
+Unlikely, but not impossible.  In those cases, you&apos;d want to explicitly be able to set IPTOS_DSCP_CLASS_CS0.
+
+As it is now, however, that&apos;s the default, and setting it explicitly to the same value is a no-op.
+
+So what&apos;s the downside of calling setsockopt() with a value of 0?  The cost of an unnecessary lightweight system call... that&apos;s done once at startup.
+
+Is it worth optimizing out?
+
+I&apos;m inclined to say &quot;no&quot;, but I&apos;m not going to dig my heels in either.
+
+There are arguments either way.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-04-19 15:54:58 EDT</bug_when>
+            <thetext>Committed patch to CVS (which is now the 2.4 codebase)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2010-08-06 11:02:11 EDT</bug_when>
+            <thetext>A CentOS 5.5 x86_64 build for 2.3.16 with this patch included, lists the operation as not supported:
+
+Aug  6 14:45:38 test90-4 master[10259]: unable to setsocketopt(IP_TOS): Operation not supported
+
+Could anyone please give me some insight on how to get this going for testing? It might be valuable as an item in documentation with the qosmarking option as well maybe?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Philip Prindeville">philipp@redfish-solutions.com</who>
+            <bug_when>2010-08-06 14:44:09 EDT</bug_when>
+            <thetext>(In reply to comment #15)
+&gt; A CentOS 5.5 x86_64 build for 2.3.16 with this patch included, lists the
+&gt; operation as not supported:
+&gt; 
+&gt; Aug  6 14:45:38 test90-4 master[10259]: unable to setsocketopt(IP_TOS):
+&gt; Operation not supported
+&gt; 
+&gt; Could anyone please give me some insight on how to get this going for testing?
+&gt; It might be valuable as an item in documentation with the qosmarking option as
+&gt; well maybe?
+
+
+Can you capture this in either strace or gdb and see what is being passed to the system call?  Also, what is the kernel version that you are running?
+
+
+
+</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1247</attachid>
+            <date>2009-12-14 03:13 EDT</date>
+            <desc>Add QoS marking to traffic</desc>
+            <filename>cyrus-qos.patch</filename>
+            <type>text/plain</type>
+            <size>5866</size>
+            <attacher>philipp@redfish-solutions.com</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMy4xNS9saWIvaW1hcG9wdHMuYy5vcmlnCTIwMDktMDktMDkgMDY6
+MTk6NDguMDAwMDAwMDAwIC0wNzAwCisrKyBjeXJ1cy1pbWFwZC0yLjMuMTUvbGliL2ltYXBvcHRz
+LmMJMjAwOS0xMi0xMyAyMzo1MzowNC4wMDAwMDAwMDAgLTA4MDAKQEAgLTE3Niw2ICsxNzYsNyBA
+QCBzdHJ1Y3QgaW1hcG9wdF9zIGltYXBvcHRzW10gPQogICB7IElNQVBPUFRfUFRTQ0FDSEVfVElN
+RU9VVCwgInB0c2NhY2hlX3RpbWVvdXQiLCAwLCB7KHZvaWQqKTEwODAwfSwgT1BUX0lOVCwgeyAg
+eyBOVUxMLCBJTUFQX0VOVU1fWkVSTyB9IH0gfSwKICAgeyBJTUFQT1BUX1BUU0tSQjVfQ09OVkVS
+VDUyNCwgInB0c2tyYjVfY29udmVydDUyNCIsIDAsIHsodm9pZCopMX0sIE9QVF9TV0lUQ0gsIHsg
+IHsgTlVMTCwgSU1BUF9FTlVNX1pFUk8gfSB9IH0sCiAgIHsgSU1BUE9QVF9QVFNLUkI1X1NUUklQ
+X0RFRkFVTFRfUkVBTE0sICJwdHNrcmI1X3N0cmlwX2RlZmF1bHRfcmVhbG0iLCAwLCB7KHZvaWQq
+KTF9LCBPUFRfU1dJVENILCB7ICB7IE5VTEwsIElNQVBfRU5VTV9aRVJPIH0gfSB9LAorICB7IElN
+QVBPUFRfUU9TTUFSS0lORywgInFvc21hcmtpbmciLCAwLCB7KHZvaWQqKUlNQVBfRU5VTV9RT1NN
+QVJLSU5HX0NTMH0sIE9QVF9FTlVNLCB7IHsgImNzMCIgLCBJTUFQX0VOVU1fUU9TTUFSS0lOR19D
+UzAgfSwgeyAiY3MxIiAsIElNQVBfRU5VTV9RT1NNQVJLSU5HX0NTMSB9LCB7ICJjczIiICwgSU1B
+UF9FTlVNX1FPU01BUktJTkdfQ1MyIH0sIHsgImNzMyIgLCBJTUFQX0VOVU1fUU9TTUFSS0lOR19D
+UzMgfSwgeyAiY3M0IiAsIElNQVBfRU5VTV9RT1NNQVJLSU5HX0NTNCB9LCB7ICJjczUiICwgSU1B
+UF9FTlVNX1FPU01BUktJTkdfQ1M1IH0sIHsgImNzNiIgLCBJTUFQX0VOVU1fUU9TTUFSS0lOR19D
+UzYgfSwgeyAiY3M3IiAsIElNQVBfRU5VTV9RT1NNQVJLSU5HX0NTNyB9LCB7ICJhZjExIiAsIElN
+QVBfRU5VTV9RT1NNQVJLSU5HX0FGMTEgfSwgeyAiYWYxMiIgLCBJTUFQX0VOVU1fUU9TTUFSS0lO
+R19BRjEyIH0sIHsgImFmMTMiICwgSU1BUF9FTlVNX1FPU01BUktJTkdfQUYxMyB9LCB7ICJhZjIx
+IiAsIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMjEgfSwgeyAiYWYyMiIgLCBJTUFQX0VOVU1fUU9T
+TUFSS0lOR19BRjIyIH0sIHsgImFmMjMiICwgSU1BUF9FTlVNX1FPU01BUktJTkdfQUYyMyB9LCB7
+ICJhZjMxIiAsIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMzEgfSwgeyAiYWYzMiIgLCBJTUFQX0VO
+VU1fUU9TTUFSS0lOR19BRjMyIH0sICB7ICJhZjMzIiAsIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FG
+MzMgfSwgeyAiYWY0MSIgLCBJTUFQX0VOVU1fUU9TTUFSS0lOR19BRjQxIH0sIHsgImFmNDIiICwg
+SU1BUF9FTlVNX1FPU01BUktJTkdfQUY0MiB9LCB7ICJhZjQzIiAsIElNQVBfRU5VTV9RT1NNQVJL
+SU5HX0FGNDMgfSwgeyAiZWYiICwgSU1BUF9FTlVNX1FPU01BUktJTkdfRUYgfSwgIHsgTlVMTCwg
+SU1BUF9FTlVNX1pFUk8gfSB9IH0sCiAgIHsgSU1BUE9QVF9RVU9UQV9EQiwgInF1b3RhX2RiIiwg
+MCwgeyh2b2lkKikoInF1b3RhbGVnYWN5Iil9LCBPUFRfU1RSSU5HTElTVCwgeyB7ICJmbGF0IiAs
+IElNQVBfRU5VTV9aRVJPIH0sIHsgImJlcmtlbGV5IiAsIElNQVBfRU5VTV9aRVJPIH0sIHsgImJl
+cmtlbGV5LWhhc2giICwgSU1BUF9FTlVNX1pFUk8gfSwgeyAic2tpcGxpc3QiICwgSU1BUF9FTlVN
+X1pFUk8gfSwgeyAic3FsIiAsIElNQVBfRU5VTV9aRVJPIH0sIHsgInF1b3RhbGVnYWN5IiAsIElN
+QVBfRU5VTV9aRVJPIH0sICB7IE5VTEwsIElNQVBfRU5VTV9aRVJPIH0gfSB9LAogICB7IElNQVBP
+UFRfUVVPVEFXQVJOLCAicXVvdGF3YXJuIiwgMCwgeyh2b2lkKik5MH0sIE9QVF9JTlQsIHsgIHsg
+TlVMTCwgSU1BUF9FTlVNX1pFUk8gfSB9IH0sCiAgIHsgSU1BUE9QVF9RVU9UQVdBUk5LQiwgInF1
+b3Rhd2FybmtiIiwgMCwgeyh2b2lkKikwfSwgT1BUX0lOVCwgeyAgeyBOVUxMLCBJTUFQX0VOVU1f
+WkVSTyB9IH0gfSwKLS0tIGN5cnVzLWltYXBkLTIuMy4xNS9saWIvbGliY29uZmlnLmMub3JpZwky
+MDA5LTA4LTIwIDA4OjI2OjE1LjAwMDAwMDAwMCAtMDcwMAorKysgY3lydXMtaW1hcGQtMi4zLjE1
+L2xpYi9saWJjb25maWcuYwkyMDA5LTEyLTEzIDIzOjM3OjIwLjAwMDAwMDAwMCAtMDgwMApAQCAt
+ODIsNiArODIsNyBAQCBlbnVtIGVudW1fdmFsdWUgY29uZmlnX3ZpcnRkb21haW5zOwkgICAgCiBl
+bnVtIGVudW1fdmFsdWUgY29uZmlnX211cGRhdGVfY29uZmlnOwkvKiBJTUFQX0VOVU1fTVVQREFU
+RV9DT05GSUdfU1RBTkRBUkQgKi8KIGludCBjb25maWdfbWF4d29yZDsKIGludCBjb25maWdfbWF4
+cXVvdGVkOworaW50IGNvbmZpZ19xb3NtYXJraW5nOwogCiAvKiBkZWNsYXJlZCBpbiBlYWNoIGJp
+bmFyeSB0aGF0IHVzZXMgbGliY29uZmlnICovCiBleHRlcm4gY29uc3QgaW50IGNvbmZpZ19uZWVk
+X2RhdGE7CkBAIC0yMTAsMTEgKzIxMSwyMSBAQCBzdGF0aWMgdm9pZCBjb25maWdfaXNwYXJ0aXRp
+b24oY29uc3QgY2hhCiAgICAgaWYgKCFzdHJuY21wKCJwYXJ0aXRpb24tIiwga2V5LCAxMCkpICpm
+b3VuZCA9IDE7CiB9CiAKK3N0YXRpYyBjb25zdCB1bnNpZ25lZCBjaGFyIHFvc1tdID0geworLyog
+Y3MwLi5jczcgKi8JCTB4MDAsIDB4MjAsIDB4NDAsIDB4NjAsIDB4ODAsIDB4YTAsIDB4YzAsIDB4
+ZTAsCisvKiBhZjExLi5hZjEzICovCTB4MjgsIDB4MzAsIDB4MzgsCisvKiBhZjIxLi5hZjIzICov
+CTB4NDgsIDB4NTAsIDB4NTgsCisvKiBhZjMxLi5hZjMzICovCTB4NjgsIDB4NzAsIDB4NzgsCisv
+KiBhZjQxLi5hZjQzICovCTB4ODgsIDB4OTAsIDB4OTgsCisvKiBlZiAqLwkJMHhiOAorfTsKKwog
+dm9pZCBjb25maWdfcmVhZChjb25zdCBjaGFyICphbHRfY29uZmlnKQogewogICAgIGVudW0gaW1h
+cG9wdCBvcHQgPSBJTUFQT1BUX1pFUk87CiAgICAgY2hhciBidWZbNDA5Nl07CiAgICAgY2hhciAq
+cDsKKyAgICBpbnQgaXZhbDsKIAogICAgIC8qIHh4eCB0aGlzIGlzIGxlYWtlZCwgdGhpcyBtYXkg
+YmUgYWJsZSB0byBiZSBiZXR0ZXIgaW4gMi4yIChjeXJ1c19kb25lKSAqLwogICAgIGlmKGFsdF9j
+b25maWcpIGNvbmZpZ19maWxlbmFtZSA9IHhzdHJkdXAoYWx0X2NvbmZpZyk7CkBAIC0zMjgsNiAr
+MzM5LDkgQEAgdm9pZCBjb25maWdfcmVhZChjb25zdCBjaGFyICphbHRfY29uZmlnKQogICAgIC8q
+IHNldCBzb21lIGxpbWl0cyAqLwogICAgIGNvbmZpZ19tYXhxdW90ZWQgPSBjb25maWdfZ2V0aW50
+KElNQVBPUFRfTUFYUVVPVEVEKTsKICAgICBjb25maWdfbWF4d29yZCA9IGNvbmZpZ19nZXRpbnQo
+SU1BUE9QVF9NQVhXT1JEKTsKKworICAgIGl2YWwgPSBjb25maWdfZ2V0ZW51bShJTUFQT1BUX1FP
+U01BUktJTkcpOworICAgIGNvbmZpZ19xb3NtYXJraW5nID0gcW9zW2l2YWxdOwogfQogCiAjZGVm
+aW5lIEdST1dTSVpFIDQwOTYKLS0tIGN5cnVzLWltYXBkLTIuMy4xNS9saWIvaW1hcG9wdHMuaC5v
+cmlnCTIwMDktMDktMDkgMDY6MTk6NDguMDAwMDAwMDAwIC0wNzAwCisrKyBjeXJ1cy1pbWFwZC0y
+LjMuMTUvbGliL2ltYXBvcHRzLmgJMjAwOS0xMi0xMyAyMzo0NTozNC4wMDAwMDAwMDAgLTA4MDAK
+QEAgLTE2Myw2ICsxNjMsNyBAQCBlbnVtIGltYXBvcHQgewogICBJTUFQT1BUX1BUU0NBQ0hFX1RJ
+TUVPVVQsCiAgIElNQVBPUFRfUFRTS1JCNV9DT05WRVJUNTI0LAogICBJTUFQT1BUX1BUU0tSQjVf
+U1RSSVBfREVGQVVMVF9SRUFMTSwKKyAgSU1BUE9QVF9RT1NNQVJLSU5HLAogICBJTUFQT1BUX1FV
+T1RBX0RCLAogICBJTUFQT1BUX1FVT1RBV0FSTiwKICAgSU1BUE9QVF9RVU9UQVdBUk5LQiwKQEAg
+LTI1Miw2ICsyNTMsMjcgQEAgZW51bSBlbnVtX3ZhbHVlIHsKICAgSU1BUF9FTlVNX01VUERBVEVf
+Q09ORklHX1NUQU5EQVJEID0gMCwKICAgSU1BUF9FTlVNX01VUERBVEVfQ09ORklHX1VOSUZJRUQs
+CiAgIElNQVBfRU5VTV9NVVBEQVRFX0NPTkZJR19SRVBMSUNBVEVELAorICBJTUFQX0VOVU1fUU9T
+TUFSS0lOR19DUzAgPSAwLAorICBJTUFQX0VOVU1fUU9TTUFSS0lOR19DUzEsCisgIElNQVBfRU5V
+TV9RT1NNQVJLSU5HX0NTMiwKKyAgSU1BUF9FTlVNX1FPU01BUktJTkdfQ1MzLAorICBJTUFQX0VO
+VU1fUU9TTUFSS0lOR19DUzQsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0NTNSwKKyAgSU1BUF9F
+TlVNX1FPU01BUktJTkdfQ1M2LAorICBJTUFQX0VOVU1fUU9TTUFSS0lOR19DUzcsCisgIElNQVBf
+RU5VTV9RT1NNQVJLSU5HX0FGMTEsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMTIsCisgIElN
+QVBfRU5VTV9RT1NNQVJLSU5HX0FGMTMsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMjEsCisg
+IElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMjIsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMjMs
+CisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMzEsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FG
+MzIsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGMzMsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5H
+X0FGNDEsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0FGNDIsCisgIElNQVBfRU5VTV9RT1NNQVJL
+SU5HX0FGNDMsCisgIElNQVBfRU5VTV9RT1NNQVJLSU5HX0VGLAogICBJTUFQX0VOVU1fU0VSVkVS
+SU5GT19PRkYgPSAwLAogICBJTUFQX0VOVU1fU0VSVkVSSU5GT19NSU4sCiAgIElNQVBfRU5VTV9T
+RVJWRVJJTkZPX09OLApAQCAtMzAzLDcgKzMyNSw3IEBAIHN0cnVjdCBlbnVtX29wdGlvbl9zIHsK
+IAogCiAKLSNkZWZpbmUgTUFYX0VOVU1fT1BUUyAxMgorI2RlZmluZSBNQVhfRU5VTV9PUFRTIDI0
+CiAKIHN0cnVjdCBpbWFwb3B0X3MgewogCi0tLSBjeXJ1cy1pbWFwZC0yLjMuMTUvbGliL2xpYmNv
+bmZpZy5oLm9yaWcJMjAwOC0wOS0yMyAxMDozNDozOC4wMDAwMDAwMDAgLTA3MDAKKysrIGN5cnVz
+LWltYXBkLTIuMy4xNS9saWIvbGliY29uZmlnLmgJMjAwOS0xMi0xMyAyMzoxOTo0MC4wMDAwMDAw
+MDAgLTA4MDAKQEAgLTgwLDYgKzgwLDcgQEAgZXh0ZXJuIGVudW0gZW51bV92YWx1ZSBjb25maWdf
+dmlydGRvbWFpbgogZXh0ZXJuIGVudW0gZW51bV92YWx1ZSBjb25maWdfbXVwZGF0ZV9jb25maWc7
+CiBleHRlcm4gaW50IGNvbmZpZ19tYXhxdW90ZWQ7CiBleHRlcm4gaW50IGNvbmZpZ19tYXh3b3Jk
+OworZXh0ZXJuIGludCBjb25maWdfcW9zbWFya2luZzsKIAogLyogY29uZmlnIHJlcXVpcmVtZW50
+IGZsYWdzICovCiAjZGVmaW5lIENPTkZJR19ORUVEX1BBUlRJVElPTl9EQVRBICgxPDwwKQotLS0g
+Y3lydXMtaW1hcGQtMi4zLjE1L21hc3Rlci9tYXN0ZXIuYy5vcmlnCTIwMDktMDMtMzAgMjE6MTE6
+MjMuMDAwMDAwMDAwIC0wNzAwCisrKyBjeXJ1cy1pbWFwZC0yLjMuMTUvbWFzdGVyL21hc3Rlci5j
+CTIwMDktMTItMTMgMjM6Mzg6NTguMDAwMDAwMDAwIC0wODAwCkBAIC00MzksNiArNDM5LDE1IEBA
+IHZvaWQgc2VydmljZV9jcmVhdGUoc3RydWN0IHNlcnZpY2UgKnMpCiAJfQogI2VuZGlmCiAKKwkv
+KiBzZXQgSVAgVG9TIGlmIHN1cHBvcnRlZCAqLworI2lmIGRlZmluZWQoU09MX0lQKSAmJiBkZWZp
+bmVkKElQX1RPUykKKwlyID0gc2V0c29ja29wdChzLT5zb2NrZXQsIFNPTF9JUCwgSVBfVE9TLAor
+CQkgICAgICAgKHZvaWQgKikgJmNvbmZpZ19xb3NtYXJraW5nLCBzaXplb2YoY29uZmlnX3Fvc21h
+cmtpbmcpKTsKKwlpZiAociA8IDApIHsKKwkgICAgc3lzbG9nKExPR19XQVJOSU5HLCAidW5hYmxl
+IHRvIHNldHNvY2tldG9wKElQX1RPUyk6ICVtIik7CisJfQorI2VuZGlmCisKIAlvbGR1bWFzayA9
+IHVtYXNrKChtb2RlX3QpIDApOyAvKiBmb3IgbGludXggKi8KIAlyID0gYmluZChzLT5zb2NrZXQs
+IHJlcy0+YWlfYWRkciwgcmVzLT5haV9hZGRybGVuKTsKIAl1bWFzayhvbGR1bWFzayk7Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1248</attachid>
+            <date>2009-12-14 17:45 EDT</date>
+            <desc>Add QoS marking to traffic</desc>
+            <filename>cyrus-qos.patch</filename>
+            <type>text/plain</type>
+            <size>3313</size>
+            <attacher>philipp@redfish-solutions.com</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMy4xNS9saWIvaW1hcG9wdGlvbnMub3JpZwkyMDA5LTA2LTI5IDEw
+OjIxOjA2LjAwMDAwMDAwMCAtMDcwMAorKysgY3lydXMtaW1hcGQtMi4zLjE1L2xpYi9pbWFwb3B0
+aW9ucwkyMDA5LTEyLTE0IDEzOjQwOjU2LjAwMDAwMDAwMCAtMDgwMApAQCAtODU0LDYgKzg1NCwx
+MCBAQCBhcmUgbGlzdGVkIHdpdGggYGA8bm9uZT4nJy4KICAgIHN0cmlwIHRoZSBkZWZhdWx0IHJl
+YWxtIGZyb20gdGhlIHVzZXJpZCAodGhpcyBkb2VzIG5vdCBhZmZlY3QgdGhlIHN0cmlwcGluZwog
+ICAgb2YgcmVhbG1zIHNwZWNpZmllZCBieSB0aGUgYWZzcHRzX2xvY2FscmVhbG1zIG9wdGlvbikg
+Ki8KIAoreyAicW9zbWFya2luZyIsICJjczAiLCBFTlVNKCJjczAiLCAiY3MxIiwgImNzMiIsICJj
+czMiLCAiY3M0IiwgImNzNSIsICJjczYiLCAiY3M3IiwgImFmMTEiLCAiYWYxMiIsICJhZjEzIiwg
+ImFmMjEiLCAiYWYyMiIsICJhZjIzIiwgImFmMzEiLCAiYWYzMiIsICJhZjMzIiwgImFmNDEiLCAi
+YWY0MiIsICJhZjQzIiwgImVmIikgfQorLyogVGhpcyBzcGVjaWZpZXMgdGhlIENsYXNzIFNlbGVj
+dG9yIG9yIERpZmZlcmVudGlhdGVkIFNlcnZpY2VzIENvZGUgUG9pbnQKKyAgIGRlc2lnbmF0aW9u
+IG9uIElQIGhlYWRlcnMgKGluIHRoZSBUb1MgZmllbGQpLiAqLworCiB7ICJxdW90YV9kYiIsICJx
+dW90YWxlZ2FjeSIsIFNUUklOR0xJU1QoImZsYXQiLCAiYmVya2VsZXkiLCAiYmVya2VsZXktaGFz
+aCIsICJza2lwbGlzdCIsICJzcWwiLCAicXVvdGFsZWdhY3kiKX0KIC8qIFRoZSBjeXJ1c2RiIGJh
+Y2tlbmQgdG8gdXNlIGZvciBxdW90YXMuICovCiAKLS0tIGN5cnVzLWltYXBkLTIuMy4xNS9saWIv
+bGliY29uZmlnLmMub3JpZwkyMDA5LTA4LTIwIDA4OjI2OjE1LjAwMDAwMDAwMCAtMDcwMAorKysg
+Y3lydXMtaW1hcGQtMi4zLjE1L2xpYi9saWJjb25maWcuYwkyMDA5LTEyLTEzIDIzOjM3OjIwLjAw
+MDAwMDAwMCAtMDgwMApAQCAtODIsNiArODIsNyBAQCBlbnVtIGVudW1fdmFsdWUgY29uZmlnX3Zp
+cnRkb21haW5zOwkgICAgCiBlbnVtIGVudW1fdmFsdWUgY29uZmlnX211cGRhdGVfY29uZmlnOwkv
+KiBJTUFQX0VOVU1fTVVQREFURV9DT05GSUdfU1RBTkRBUkQgKi8KIGludCBjb25maWdfbWF4d29y
+ZDsKIGludCBjb25maWdfbWF4cXVvdGVkOworaW50IGNvbmZpZ19xb3NtYXJraW5nOwogCiAvKiBk
+ZWNsYXJlZCBpbiBlYWNoIGJpbmFyeSB0aGF0IHVzZXMgbGliY29uZmlnICovCiBleHRlcm4gY29u
+c3QgaW50IGNvbmZpZ19uZWVkX2RhdGE7CkBAIC0yMTAsMTEgKzIxMSwyMSBAQCBzdGF0aWMgdm9p
+ZCBjb25maWdfaXNwYXJ0aXRpb24oY29uc3QgY2hhCiAgICAgaWYgKCFzdHJuY21wKCJwYXJ0aXRp
+b24tIiwga2V5LCAxMCkpICpmb3VuZCA9IDE7CiB9CiAKK3N0YXRpYyBjb25zdCB1bnNpZ25lZCBj
+aGFyIHFvc1tdID0geworLyogY3MwLi5jczcgKi8JCTB4MDAsIDB4MjAsIDB4NDAsIDB4NjAsIDB4
+ODAsIDB4YTAsIDB4YzAsIDB4ZTAsCisvKiBhZjExLi5hZjEzICovCTB4MjgsIDB4MzAsIDB4Mzgs
+CisvKiBhZjIxLi5hZjIzICovCTB4NDgsIDB4NTAsIDB4NTgsCisvKiBhZjMxLi5hZjMzICovCTB4
+NjgsIDB4NzAsIDB4NzgsCisvKiBhZjQxLi5hZjQzICovCTB4ODgsIDB4OTAsIDB4OTgsCisvKiBl
+ZiAqLwkJMHhiOAorfTsKKwogdm9pZCBjb25maWdfcmVhZChjb25zdCBjaGFyICphbHRfY29uZmln
+KQogewogICAgIGVudW0gaW1hcG9wdCBvcHQgPSBJTUFQT1BUX1pFUk87CiAgICAgY2hhciBidWZb
+NDA5Nl07CiAgICAgY2hhciAqcDsKKyAgICBpbnQgaXZhbDsKIAogICAgIC8qIHh4eCB0aGlzIGlz
+IGxlYWtlZCwgdGhpcyBtYXkgYmUgYWJsZSB0byBiZSBiZXR0ZXIgaW4gMi4yIChjeXJ1c19kb25l
+KSAqLwogICAgIGlmKGFsdF9jb25maWcpIGNvbmZpZ19maWxlbmFtZSA9IHhzdHJkdXAoYWx0X2Nv
+bmZpZyk7CkBAIC0zMjgsNiArMzM5LDkgQEAgdm9pZCBjb25maWdfcmVhZChjb25zdCBjaGFyICph
+bHRfY29uZmlnKQogICAgIC8qIHNldCBzb21lIGxpbWl0cyAqLwogICAgIGNvbmZpZ19tYXhxdW90
+ZWQgPSBjb25maWdfZ2V0aW50KElNQVBPUFRfTUFYUVVPVEVEKTsKICAgICBjb25maWdfbWF4d29y
+ZCA9IGNvbmZpZ19nZXRpbnQoSU1BUE9QVF9NQVhXT1JEKTsKKworICAgIGl2YWwgPSBjb25maWdf
+Z2V0ZW51bShJTUFQT1BUX1FPU01BUktJTkcpOworICAgIGNvbmZpZ19xb3NtYXJraW5nID0gcW9z
+W2l2YWxdOwogfQogCiAjZGVmaW5lIEdST1dTSVpFIDQwOTYKLS0tIGN5cnVzLWltYXBkLTIuMy4x
+NS9saWIvbGliY29uZmlnLmgub3JpZwkyMDA4LTA5LTIzIDEwOjM0OjM4LjAwMDAwMDAwMCAtMDcw
+MAorKysgY3lydXMtaW1hcGQtMi4zLjE1L2xpYi9saWJjb25maWcuaAkyMDA5LTEyLTEzIDIzOjE5
+OjQwLjAwMDAwMDAwMCAtMDgwMApAQCAtODAsNiArODAsNyBAQCBleHRlcm4gZW51bSBlbnVtX3Zh
+bHVlIGNvbmZpZ192aXJ0ZG9tYWluCiBleHRlcm4gZW51bSBlbnVtX3ZhbHVlIGNvbmZpZ19tdXBk
+YXRlX2NvbmZpZzsKIGV4dGVybiBpbnQgY29uZmlnX21heHF1b3RlZDsKIGV4dGVybiBpbnQgY29u
+ZmlnX21heHdvcmQ7CitleHRlcm4gaW50IGNvbmZpZ19xb3NtYXJraW5nOwogCiAvKiBjb25maWcg
+cmVxdWlyZW1lbnQgZmxhZ3MgKi8KICNkZWZpbmUgQ09ORklHX05FRURfUEFSVElUSU9OX0RBVEEg
+KDE8PDApCi0tLSBjeXJ1cy1pbWFwZC0yLjMuMTUvbWFzdGVyL21hc3Rlci5jLm9yaWcJMjAwOS0w
+My0zMCAyMToxMToyMy4wMDAwMDAwMDAgLTA3MDAKKysrIGN5cnVzLWltYXBkLTIuMy4xNS9tYXN0
+ZXIvbWFzdGVyLmMJMjAwOS0xMi0xNCAxNDoxODoyNC4wMDAwMDAwMDAgLTA4MDAKQEAgLTQzOSw2
+ICs0MzksMTUgQEAgdm9pZCBzZXJ2aWNlX2NyZWF0ZShzdHJ1Y3Qgc2VydmljZSAqcykKIAl9CiAj
+ZW5kaWYKIAorCS8qIHNldCBJUCBUb1MgaWYgc3VwcG9ydGVkICovCisjaWYgZGVmaW5lZChTT0xf
+SVApICYmIGRlZmluZWQoSVBfVE9TKQorCXIgPSBzZXRzb2Nrb3B0KHMtPnNvY2tldCwgU09MX0lQ
+LCBJUF9UT1MsCisJCSAgICAgICAodm9pZCAqKSAmY29uZmlnX3Fvc21hcmtpbmcsIHNpemVvZihj
+b25maWdfcW9zbWFya2luZykpOworCWlmIChyIDwgMCkgeworCSAgICBzeXNsb2coTE9HX1dBUk5J
+TkcsICJ1bmFibGUgdG8gc2V0c29ja2V0b3B0KElQX1RPUyk6ICVtIik7CisJfQorI2VuZGlmCisK
+IAlvbGR1bWFzayA9IHVtYXNrKChtb2RlX3QpIDApOyAvKiBmb3IgbGludXggKi8KIAlyID0gYmlu
+ZChzLT5zb2NrZXQsIHJlcy0+YWlfYWRkciwgcmVzLT5haV9hZGRybGVuKTsKIAl1bWFzayhvbGR1
+bWFzayk7Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

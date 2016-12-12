@@ -1,0 +1,230 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2654</bug_id>
+          
+          <creation_ts>2005-04-27 14:06 EDT</creation_ts>
+          <short_desc>_sasl_ipfromstring crashes Apache child</short_desc>
+          <delta_ts>2010-10-25 18:46:36 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jeremy Hilton">jeremy.cyrus@mindcomet.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jeremy Hilton">jeremy.cyrus@mindcomet.com</who>
+            <bug_when>2005-04-27 14:06:42 EDT</bug_when>
+            <thetext>Apache/2.0.47
+PHP 5.0.4 loaded into Apache as DSO
+libsasl cyrus-sasl-2.1.10
+OpenLDAP: libldap.la 2.0.27-Release
+
+Trying to use the ldap_sasl_bind() function in PHP segfaults the Apache child
+process.
+
+Even running from php CLI, crashes
+
+(gdb) run ldaptest.php
+Starting program: /usr/local/bin/php5 ldaptest.php
+[New Thread 1078238592 (LWP 11003)]
+
+Program received signal SIGSEGV, Segmentation fault.
+[Switching to Thread 1078238592 (LWP 11003)]
+0x400cfc44 in _sasl_ipfromstring () from /usr/lib/libsasl2.so.2
+
+(gdb) where
+#0  0x400cfc44 in _sasl_ipfromstring () from /usr/lib/libsasl2.so.2
+#1  0x400cead6 in sasl_setprop () from /usr/lib/libsasl2.so.2
+#2  0x400ce05f in _sasl_conn_init () from /usr/lib/libsasl2.so.2
+#3  0x400cccc5 in sasl_client_new () from /usr/lib/libsasl2.so.2
+#4  0x400e819c in ldap_int_sasl_open () from /usr/lib/libldap.so.2
+#5  0x400e24dc in ldap_int_open_connection () from /usr/lib/libldap.so.2
+#6  0x400f247b in ldap_new_connection () from /usr/lib/libldap.so.2
+#7  0x400e1f51 in ldap_open_defconn () from /usr/lib/libldap.so.2
+#8  0x400f20ae in ldap_send_initial_request () from /usr/lib/libldap.so.2
+#9  0x400e4ea8 in ldap_search () from /usr/lib/libldap.so.2
+#10 0x400e5e3b in ldap_search_s () from /usr/lib/libldap.so.2
+#11 0x400eb7d5 in ldap_pvt_sasl_getmechs () from /usr/lib/libldap.so.2
+#12 0x400eb90c in ldap_sasl_interactive_bind_s () from /usr/lib/libldap.so.2
+#13 0x08093663 in zif_ldap_sasl_bind (ht=1, return_value=0x401047ac,
+this_ptr=0x0, return_value_used=0)
+    at /usr/local/src/php-5.0.4/ext/ldap/ldap.c:511
+#14 0x081c16fa in zend_do_fcall_common_helper (execute_data=0x8415cc0,
+opline=0x84190a0, op_array=0x8414b8c)
+    at /usr/local/src/php-5.0.4/Zend/zend_execute.c:2727
+#15 0x081becf6 in execute (op_array=0x8414b8c) at
+/usr/local/src/php-5.0.4/Zend/zend_execute.c:1406
+#16 0x081a4bcb in zend_execute_scripts (type=8, retval=0x0, file_count=3) at
+/usr/local/src/php-5.0.4/Zend/zend.c:1069
+#17 0x08177a43 in php_execute_script (primary_file=0xbfffdf50) at
+/usr/local/src/php-5.0.4/main/main.c:1632
+#18 0x081c8014 in main (argc=2, argv=0xbfffdfd4) at
+/usr/local/src/php-5.0.4/sapi/cli/php_cli.c:946
+#19 0x42015574 in __libc_start_main () from /lib/tls/libc.so.6
+
+#------------ Below is the relevant strace information showing the Apache crash
+------#
+
+192.168.1.1 is my internal nameserver. 192.168.1.7 is my webserver. The process
+receives from the name server then crashes.
+
+[pid 11033] connect(9, {sa_family=AF_INET, sin_port=htons(389),
+sin_addr=inet_addr(&quot;192.168.1.7&quot;)}, 16) = -1 EINPROGRESS (Operatio
+n now in progress)
+[pid 11033] select(1024, NULL, [9], NULL, NULL) = 1 (out [9])
+[pid 11033] getpeername(9, {sa_family=AF_INET, sin_port=htons(389),
+sin_addr=inet_addr(&quot;192.168.1.7&quot;)}, [16]) = 0
+[pid 11033] fcntl64(9, F_GETFL)         = 0x802 (flags O_RDWR|O_NONBLOCK)
+[pid 11033] fcntl64(9, F_SETFL, O_RDWR) = 0
+[pid 11033] getpeername(9, {sa_family=AF_INET, sin_port=htons(389),
+sin_addr=inet_addr(&quot;192.168.1.7&quot;)}, [16]) = 0
+[pid 11033] socket(PF_UNIX, SOCK_STREAM, 0) = 10
+[pid 11033] connect(10, {sa_family=AF_UNIX, path=&quot;/var/run/.nscd_socket&quot;}, 110)
+= -1 ENOENT (No such file or directory)
+[pid 11033] close(10)                   = 0
+[pid 11033] open(&quot;/etc/hosts&quot;, O_RDONLY) = 10
+[pid 11033] fcntl64(10, F_GETFD)        = 0
+[pid 11033] fcntl64(10, F_SETFD, FD_CLOEXEC) = 0
+[pid 11033] fstat64(10, {st_mode=S_IFREG|0644, st_size=147, ...}) = 0
+[pid 11033] mmap2(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS,
+-1, 0) = 0x401ae000
+[pid 11033] read(10, &quot;# Do not remove the following li&quot;..., 4096) = 147
+[pid 11033] read(10, &quot;&quot;, 4096)          = 0
+[pid 11033] close(10)                   = 0
+[pid 11033] munmap(0x401ae000, 4096)    = 0
+[pid 11033] socket(PF_INET, SOCK_DGRAM, IPPROTO_IP) = 10
+[pid 11033] connect(10, {sa_family=AF_INET, sin_port=htons(53),
+sin_addr=inet_addr(&quot;192.168.1.1&quot;)}, 28) = 0
+[pid 11033] send(10,
+&quot;\204\33\1\0\0\1\0\0\0\0\0\0\0017\0011\003168\003192\7i&quot;..., 42, 0) = 42
+[pid 11033] gettimeofday({1114624829, 438020}, NULL) = 0
+[pid 11033] poll([{fd=10, events=POLLIN, revents=POLLIN}], 1, 5000) = 1
+[pid 11033] ioctl(10, FIONREAD, [119])  = 0
+[pid 11033] recvfrom(10,
+&quot;\204\33\205\200\0\1\0\1\0\1\0\0\0017\0011\003168\00319&quot;..., 1024, 0,
+{sa_family=AF_INET, sin_port=htons(
+53), sin_addr=inet_addr(&quot;192.168.1.1&quot;)}, [16]) = 119
+[pid 11033] close(10)                   = 0
+[pid 11033] brk(0)                      = 0x821a000
+[pid 11033] brk(0x821e000)              = 0x821e000
+[pid 11033] --- SIGSEGV (Segmentation fault) @ 0 (0) ---</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-27 14:44:39 EDT</bug_when>
+            <thetext>2 things: 
+1) SASL 2.1.10 isn&apos;t even close to current.
+2) more importantly this looks like it was probably caused by the overlying ldap function which called 
+sasl passing in a bad pointer (not a null pointer, as that is explicitly allowed and will work fine) for one 
+of the ipremoteport or iplocalport arguments to sasl_client_new
+
+Ideal would be if you could tell me what the arguments given to sasl_client_init were. </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeremy Hilton">jeremy.cyrus@mindcomet.com</who>
+            <bug_when>2005-04-27 15:27:36 EDT</bug_when>
+            <thetext>cyrus-sasl-2.1.20 is now installed and has debug symbol output
+
+#0  0x400d0308 in _sasl_ipfromstring (addr=0x185 &lt;Address 0x185 out of bounds&gt;,
+out=0x0, outlen=0) at common.c:1703
+#1  0x400cf00f in sasl_setprop (conn=0x84172d0, propnum=389, value=0x1) at
+common.c:754
+#2  0x400ce848 in _sasl_conn_init (conn=0x84172d0, service=0x40100c4b &quot;ldap&quot;,
+flags=4294967289, type=4294967289, idle_hook=0xfffffff9,
+    serverFQDN=0x84154e8 &quot;&amp;#65533;A\b168.1.7.in.mindcomet.net&quot;, iplocalport=0x0,
+ipremoteport=0x1 &lt;Address 0x1 out of bounds&gt;, callbacks=0xfffffff9,
+    global_callbacks=0xfffffff9) at common.c:382
+#3  0x400cd5e3 in sasl_client_new (service=0x40100c4b &quot;ldap&quot;,
+serverFQDN=0x84154e8 &quot;&amp;#65533;A\b168.1.7.in.mindcomet.net&quot;, iplocalport=0x0,
+    ipremoteport=0x1 &lt;Address 0x1 out of bounds&gt;, prompt_supp=0xbfffc494,
+flags=1074808748, pconn=0x84154e8) at client.c:333
+#4  0x400e819c in ldap_int_sasl_open () from /usr/lib/libldap.so.2
+#5  0x400e24dc in ldap_int_open_connection () from /usr/lib/libldap.so.2
+#6  0x400f247b in ldap_new_connection () from /usr/lib/libldap.so.2
+#7  0x400e1f51 in ldap_open_defconn () from /usr/lib/libldap.so.2
+#8  0x400f20ae in ldap_send_initial_request () from /usr/lib/libldap.so.2
+#9  0x400e4ea8 in ldap_search () from /usr/lib/libldap.so.2
+#10 0x400e5e3b in ldap_search_s () from /usr/lib/libldap.so.2
+#11 0x400eb7d5 in ldap_pvt_sasl_getmechs () from /usr/lib/libldap.so.2
+#12 0x400eb90c in ldap_sasl_interactive_bind_s () from /usr/lib/libldap.so.2
+#13 0x08093663 in zif_ldap_sasl_bind (ht=1, return_value=0x401047ac,
+this_ptr=0x0, return_value_used=0)
+    at /usr/local/src/php-5.0.4/ext/ldap/ldap.c:511
+#14 0x081c16fa in zend_do_fcall_common_helper (execute_data=0x8414c88,
+opline=0x84190ac, op_array=0x8414b4c)
+    at /usr/local/src/php-5.0.4/Zend/zend_execute.c:2727
+#15 0x081becf6 in execute (op_array=0x8414b4c) at
+/usr/local/src/php-5.0.4/Zend/zend_execute.c:1406
+#16 0x081a4bcb in zend_execute_scripts (type=8, retval=0x0, file_count=3) at
+/usr/local/src/php-5.0.4/Zend/zend.c:1069
+#17 0x08177a43 in php_execute_script (primary_file=0xbfffeb60) at
+/usr/local/src/php-5.0.4/main/main.c:1632
+#18 0x081c8014 in main (argc=2, argv=0xbfffebe4) at
+/usr/local/src/php-5.0.4/sapi/cli/php_cli.c:946
+#19 0x42015574 in __libc_start_main () from /lib/tls/libc.so.6
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-27 15:31:29 EDT</bug_when>
+            <thetext>Here&apos;s the problem:
+#3  0x400cd5e3 in sasl_client_new (service=0x40100c4b &quot;ldap&quot;,
+serverFQDN=0x84154e8 &quot;&amp;#65533;A\b168.1.7.in.mindcomet.net&quot;, iplocalport=0x0,
+    ipremoteport=0x1 &lt;Address 0x1 out of bounds&gt;, prompt_supp=0xbfffc494,
+flags=1074808748, pconn=0x84154e8) at client.c:333
+
+ipremoteport=0x1
+
+0x1 is not a valid string pointer:
+int sasl_client_new(const char *service,
+                    const char *serverFQDN,
+                    const char *iplocalport,
+                    const char *ipremoteport,
+                    const sasl_callback_t *prompt_supp,
+                    unsigned flags,
+                    sasl_conn_t **pconn)
+
+
+ldap_int_sasl_open is passing in something which doesn&apos;t match this prototype.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,122 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3732</bug_id>
+          
+          <creation_ts>2012-08-17 19:40 EDT</creation_ts>
+          <short_desc>A bug in sasl_gss_encode can cause SEGV crash</short_desc>
+          <delta_ts>2012-10-12 06:36:00 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>gssapi</component>
+          <version>2.1.25</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>3445</dup_id>
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Geoff Adams">gadams+cyrus-bugzilla@avernus.com</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Geoff Adams">gadams+cyrus-bugzilla@avernus.com</who>
+            <bug_when>2012-08-17 19:40:16 EDT</bug_when>
+            <thetext>The order of initialization of a variable in sasl_gss_encode is responsible for a SASL-using server application (Cyrus imapd, in this case) crashing when it sends errors back to the client. In particular, unsigned char pointer p is initialized to the value of text-&gt;encode_buf before the latter is initialized by calling _plug_buf_alloc(). So p ends up being a null pointer, with obvious results when it&apos;s dereferenced.
+
+Here is a simple fix:
+
+===================================================================
+RCS file: plugins/gssapi.c,v
+retrieving revision 1.112
+diff -u -r1.112 plugins/gssapi.c
+--- plugins/gssapi.c	2011/04/19 09:19:18	1.112
++++ plugins/gssapi.c	2012/08/17 21:13:06
+@@ -370,8 +370,6 @@
+     }
+     
+     if (output_token-&gt;value &amp;&amp; output) {
+-	unsigned char * p = (unsigned char *) text-&gt;encode_buf;
+-	
+ 	ret = _plug_buf_alloc(text-&gt;utils,
+ 			      &amp;(text-&gt;encode_buf),
+ 			      &amp;(text-&gt;encode_buf_len),
+@@ -384,6 +382,8 @@
+ 	    return ret;
+ 	}
+ 	
++	unsigned char * p = (unsigned char *) text-&gt;encode_buf;
++	
+ 	p[0] = (output_token-&gt;length&gt;&gt;24) &amp; 0xFF;
+ 	p[1] = (output_token-&gt;length&gt;&gt;16) &amp; 0xFF;
+ 	p[2] = (output_token-&gt;length&gt;&gt;8) &amp; 0xFF;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Geoff Adams">gadams+cyrus-bugzilla@avernus.com</who>
+            <bug_when>2012-08-17 19:43:57 EDT</bug_when>
+            <thetext>I suppose this would be more portable, though:
+
+
+===================================================================
+RCS file: plugins/gssapi.c,v
+retrieving revision 1.112
+diff -u -r1.112 plugins/gssapi.c
+--- plugins/gssapi.c	2011/04/19 09:19:18	1.112
++++ plugins/gssapi.c	2012/08/17 23:42:31
+@@ -370,7 +370,7 @@
+     }
+     
+     if (output_token-&gt;value &amp;&amp; output) {
+-	unsigned char * p = (unsigned char *) text-&gt;encode_buf;
++	unsigned char * p;
+ 	
+ 	ret = _plug_buf_alloc(text-&gt;utils,
+ 			      &amp;(text-&gt;encode_buf),
+@@ -384,6 +384,8 @@
+ 	    return ret;
+ 	}
+ 	
++	p = (unsigned char *) text-&gt;encode_buf;
++	
+ 	p[0] = (output_token-&gt;length&gt;&gt;24) &amp; 0xFF;
+ 	p[1] = (output_token-&gt;length&gt;&gt;16) &amp; 0xFF;
+ 	p[2] = (output_token-&gt;length&gt;&gt;8) &amp; 0xFF;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-10-12 06:36:00 EDT</bug_when>
+            <thetext>
+
+*** This bug has been marked as a duplicate of bug 3445 ***</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,171 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2326</bug_id>
+          
+          <creation_ts>2003-12-16 18:11 EDT</creation_ts>
+          <short_desc>Splitting authzid at an &apos;@&apos; sign to get realm may be incorrect</short_desc>
+          <delta_ts>2010-10-25 18:46:33 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>plugins</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Howard Chu">hyc@openldap.org</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Howard Chu">hyc@openldap.org</who>
+            <bug_when>2003-12-16 18:11:27 EDT</bug_when>
+            <thetext>Currently the otp, sasldb, sql, and srp plugins all call _plug_parseuser. This 
+function takes a provided username, looks for an &apos;@&apos;, and splits this into 
+userID and realm if the &apos;@&apos; is found.
+
+This behavior is particularly bad in sasldb, since it may be invoked by most 
+of the other mechanisms. For one thing, most of the SASL mechanisms are not 
+actually defined to support the notion of &quot;realm.&quot; For a mech like DIGEST-MD5, 
+where the realm value is defined to be a quoted string containing any 
+character except the quote character (&quot;), this is a real problem because a 
+DIGEST-MD5 realm can legitimately contain an embedded &apos;@&apos;. (In fact, the 
+example on page 3 of RFC2831 shows a realm with an embedded &apos;@&apos;.)
+
+For example, if I create a user:
+    saslpasswd2 -u realm joe@sub.domain
+
+I cannot authenticate with this account, because sasldb turns any 
+authentication request for &quot;joe@sub.domain&quot; into a request for user &quot;joe&quot; in 
+the realm &quot;sub.domain&quot;.
+
+I believe the _plug_parseuser function is a bad idea in general, and should be 
+removed.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Igor Brezac">igor@ipass.net</who>
+            <bug_when>2003-12-16 22:41:26 EDT</bug_when>
+            <thetext>I wonder if the same should be done in saslauthd_verify_password.  Perhaps the 
+old behaviour was the correct one.  None of the plaintext mechs know the 
+concept of &quot;realm.&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2003-12-17 07:44:23 EDT</bug_when>
+            <thetext>Actually, now that it was introduced, some people may have started using REALMs
+in these mechs.
+
+I believe the correct way is to have a global SASL config option for the APP
+(defaults to false) which enables processing the *LAST* &quot;@&quot; as a realm
+separator.
+
+IMHO that would be a nice addition to SASL.  BTW, are all mechs using
+the last @ as the realm separator (instead of the first)?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Howard Chu">hyc@openldap.org</who>
+            <bug_when>2003-12-17 08:07:33 EDT</bug_when>
+            <thetext>(Replying to Henrique)
+
+If the spec for a mechanism doesn&apos;t define realm support for that mech, then 
+something is broken. Either the spec must be fixed to allow realms, or the 
+code must be fixed to adhere to the spec.
+
+Please re-read RFC2831 page 3, you cannot use &apos;@&apos; as a realm 
+separator. &quot;foo@bar&quot; is a valid DIGEST-MD5 realm name. 
+Likewise, &quot;postmaster@mailhost&quot; is a valid username. 
+When &quot;postmaster@mailhost@foo@bar&quot; tries to authenticate, this attempt will 
+fail no matter if you choose the first or the last &apos;@&apos; as a realm delimiter. 
+You simply cannot handle realms this way, period.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-12-17 15:28:30 EDT</bug_when>
+            <thetext>I don&apos;t agree that the spec not allowing for realms means that the spec is broken.  
+
+I do believe that user identifiers may be processed by the server however the
+server sees fit.  If the server chooses an @ sign in the authorization ID to be
+a realm delimiter, sobeit.  This is definately a choice an implementation is
+free to make.
+
+The problem is that DIGEST-MD5 has its own internal concept of how realm
+handling should be done.
+
+In our case, the server implementation of DIGEST-MD5 will advertise (in the
+digest-challenge) either the user realm (as passed to sasl_server_new) or the
+serverFQDN.  It will NOT advertise multiple realms in the digest-challenge.
+
+This basicly leaves the client one choice of &quot;DIGEST-MD5 realm&quot; (for lack of a
+better term -- and yes, a client is free to choose another realm, but then
+authentication is also free to fail [and, I believe in our implementation it
+does]).  Then, the authorization identifier can be in whatever realm you want
+(separated by the @ sign).  Indeed, this is *better* than the traditional
+DIGEST-MD5 system, since you can have an authcid and authzid in different realms.
+
+Thus, in the world view of the Cyrus SASL DIGEST-MD5, there is only one
+DIGEST-MD5 realm, and any &quot;realm&quot; that is passed back to the application is one
+which is derived from splitting the authorization (or authententicaiton)
+identifier.  If a client responds with a different realm in the digest-response,
+authentication fails.
+
+I believe this is compliant with the specification, even if it means that the
+realm= parameter ot the digest-response (and digest-challenge) is basicly
+useless.  This makes DIGEST-MD5 consistant with every other mechanism (yes,
+KERBEROS_V4 and GSSAPI have a slightly different concept, but the execution in
+this case is the same -- split at the @ sign).  It also allows *all* mechanims
+to support realms.
+
+I certainly do NOT agree that we should change how realms are handled in the
+mechanisms that do not internally support realms.  And I don&apos;t agree that we
+should handle DIGEST differently from the rest (someone else is free to write a
+3rd party plugin to do that).
+
+Now, I *could* understand an argument that we shouldn&apos;t be doing *anything*
+about realms in the processing of the identifier, and instead just passing the
+identifier back to the calling application wholesale (and, again, in
+DIGEST-MD5&apos;s case, advertising and accepting only one realm).  I don&apos;t see this
+behavior changing outside of a minor version bump though (and I&apos;m not really in
+love with it anyway).
+
+I can also understand an argument that we should be disallowing user_realm
+values with an &apos;@&apos; sign.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-02-24 17:01:17 EDT</bug_when>
+            <thetext>closing this bug.  if someone wants to discuss further any of the points in my
+previous post, please open a new bug.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,180 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3187</bug_id>
+          
+          <creation_ts>2010-01-11 10:09 EDT</creation_ts>
+          <short_desc>Client idle timeout for slow server commands</short_desc>
+          <delta_ts>2010-01-13 10:07:14 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-01-11 10:09:00 EDT</bug_when>
+            <thetext>Created an attachment (id=1252)
+patch to reset client timeout mark before next command
+
+There is a problem with the way client timeout is handled in cyrus 2.3 (observed on version 2.3.13): the timeout mark is, most of the time, only updated each time server received data from the client, and not when the server just sent a response to this client.
+This is an issue when the client sent a command and the server takes more time than the timeout to process this command: client is waiting for the server response to send the next command, but once the server sent its response it considers the timeout reached (reason: &quot;idle for too long&quot;).
+
+With the increasing amount of data there can be in mailboxes, it could happen in various situations like (IMAP examples): DUMPing a huge mailbox, SEARCHing some text in the body of all emails, FETCHing/COPYing a whole directory.
+
+A solution would be to also reset the timeout mark each time the server sent a command response.
+The attached patch (against version 2.3.16) resets the timeout at the beginning of services command loops, and also when output stream is flushed just before waiting for input stream. The idea is that the command response is sent right before performing the next iteration of the loop for most of the commands (if not all), although there may be a better solution to this problem.
+
+
+Note: for imap/sync_server.c, the code is present but deactivated to mimic the timeout setting code (also deactivated).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2010-01-11 12:11:39 EDT</bug_when>
+            <thetext>I agree that this is a problem that needs to be fixed, but I don&apos;t believe your fix works properly in the case of a Cyrus Murder (proxying from client to backend server).  This will take some more work to get correct.  I also think that resetting the input timeout after sending output, should be an application decision, and not done blindly in prot.c</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-01-13 10:07:14 EDT</bug_when>
+            <thetext>Indeed some more work would be needed for Murder: some quick tests show that in proxy mode the patch would work for IMAP (which parses incoming commands) but not for POP (which behaves as a bit pipe, as well as timsieved).
+
+I admit that always resetting the timeout in prot.c is quite overkill, but I needed a quick patch for our usage.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1252</attachid>
+            <date>2010-01-11 10:09 EDT</date>
+            <desc>patch to reset client timeout mark before next command</desc>
+            <filename>cyrus-client_idle_timeout-2.3.16.patch</filename>
+            <type>text/plain</type>
+            <size>4676</size>
+            <attacher>julien.coloos@atos.net</attacher>
+            
+              <data encoding="base64">ZGlmZiAtciAtdSBjeXJ1cy1pbWFwZC0yLjMuMTYub3JpZy9pbWFwL2ltYXBkLmMgY3lydXMtaW1h
+cGQtMi4zLjE2L2ltYXAvaW1hcGQuYwotLS0gY3lydXMtaW1hcGQtMi4zLjE2Lm9yaWcvaW1hcC9p
+bWFwZC5jCTIwMDktMTItMTYgMDM6NTE6MzkuMDAwMDAwMDAwICswMTAwCisrKyBjeXJ1cy1pbWFw
+ZC0yLjMuMTYvaW1hcC9pbWFwZC5jCTIwMTAtMDEtMTEgMTM6NDM6NTcuMDAwMDAwMDAwICswMTAw
+CkBAIC0xMDIxLDYgKzEwMjEsOCBAQAogICAgIGZvciAoOzspIHsKIAkvKiBGbHVzaCBhbnkgYnVm
+ZmVyZWQgb3V0cHV0ICovCiAJcHJvdF9mbHVzaChpbWFwZF9vdXQpOworCS8qIHJlc2V0IGNsaWVu
+dCB0aW1lb3V0IGZvciBuZXh0IGNvbW1hbmQgKi8KKwlwcm90X3Jlc2V0dGltZW91dChpbWFwZF9p
+bik7CiAJaWYgKGJhY2tlbmRfY3VycmVudCkgcHJvdF9mbHVzaChiYWNrZW5kX2N1cnJlbnQtPm91
+dCk7CiAKIAkvKiBDaGVjayBmb3Igc2h1dGRvd24gZmlsZSAqLwpkaWZmIC1yIC11IGN5cnVzLWlt
+YXBkLTIuMy4xNi5vcmlnL2ltYXAvbG10cGVuZ2luZS5jIGN5cnVzLWltYXBkLTIuMy4xNi9pbWFw
+L2xtdHBlbmdpbmUuYwotLS0gY3lydXMtaW1hcGQtMi4zLjE2Lm9yaWcvaW1hcC9sbXRwZW5naW5l
+LmMJMjAwOS0wNC0yMyAwMzozMDozMi4wMDAwMDAwMDAgKzAyMDAKKysrIGN5cnVzLWltYXBkLTIu
+My4xNi9pbWFwL2xtdHBlbmdpbmUuYwkyMDEwLTAxLTExIDEzOjQ1OjEyLjAwMDAwMDAwMCArMDEw
+MApAQCAtMTEyNSw2ICsxMTI1LDkgQEAKIAogICAgIGZvciAoOzspIHsKICAgICBuZXh0Y21kOgor
+ICAgICAgLyogcmVzZXQgY2xpZW50IHRpbWVvdXQgZm9yIG5leHQgY29tbWFuZCAqLworICAgICAg
+cHJvdF9yZXNldHRpbWVvdXQocGluKTsKKwogICAgICAgc2lnbmFsc19wb2xsKCk7CiAKICAgICAg
+IGlmICghcHJvdF9mZ2V0cyhidWYsIHNpemVvZihidWYpLCBwaW4pKSB7CmRpZmYgLXIgLXUgY3ly
+dXMtaW1hcGQtMi4zLjE2Lm9yaWcvaW1hcC9ubnRwZC5jIGN5cnVzLWltYXBkLTIuMy4xNi9pbWFw
+L25udHBkLmMKLS0tIGN5cnVzLWltYXBkLTIuMy4xNi5vcmlnL2ltYXAvbm50cGQuYwkyMDA5LTEy
+LTE2IDAzOjUxOjQyLjAwMDAwMDAwMCArMDEwMAorKysgY3lydXMtaW1hcGQtMi4zLjE2L2ltYXAv
+bm50cGQuYwkyMDEwLTAxLTExIDEzOjQ2OjQ4LjAwMDAwMDAwMCArMDEwMApAQCAtODEwLDYgKzgx
+MCw4IEBACiAgICAgZm9yICg7OykgewogCS8qIEZsdXNoIGFueSBidWZmZXJlZCBvdXRwdXQgKi8K
+IAlwcm90X2ZsdXNoKG5udHBfb3V0KTsKKwkvKiByZXNldCBjbGllbnQgdGltZW91dCBmb3IgbmV4
+dCBjb21tYW5kICovCisJcHJvdF9yZXNldHRpbWVvdXQobm50cF9pbik7CiAJaWYgKGJhY2tlbmRf
+Y3VycmVudCkgcHJvdF9mbHVzaChiYWNrZW5kX2N1cnJlbnQtPm91dCk7CiAKIAkvKiBDaGVjayBm
+b3Igc2h1dGRvd24gZmlsZSAqLwpAQCAtMjAwNSwxMCArMjAwNyw2IEBACiAJaWYgKGJ1ZltzdHJs
+ZW4oYnVmKS0xXSAhPSAnXG4nKSBwcm90X3ByaW50ZihubnRwX291dCwgIlxyXG4iKTsKIAogCXBy
+b3RfcHJpbnRmKG5udHBfb3V0LCAiLlxyXG4iKTsKLQotCS8qIFJlc2V0IGluYWN0aXZpdHkgdGlt
+ZXIgaW4gY2FzZSB3ZSBzcGVuZCBhIGxvbmcgdGltZQotCSAgIHB1c2hpbmcgZGF0YSB0byB0aGUg
+Y2xpZW50IG92ZXIgYSBzbG93IGxpbmsuICovCi0JcHJvdF9yZXNldHRpbWVvdXQobm50cF9pbik7
+CiAgICAgfQogCiAgICAgaWYgKCFieV9tc2dpZCkgZnJlZShtc2dpZCk7CmRpZmYgLXIgLXUgY3ly
+dXMtaW1hcGQtMi4zLjE2Lm9yaWcvaW1hcC9wb3AzZC5jIGN5cnVzLWltYXBkLTIuMy4xNi9pbWFw
+L3BvcDNkLmMKLS0tIGN5cnVzLWltYXBkLTIuMy4xNi5vcmlnL2ltYXAvcG9wM2QuYwkyMDA5LTEy
+LTE3IDE2OjMyOjMyLjAwMDAwMDAwMCArMDEwMAorKysgY3lydXMtaW1hcGQtMi4zLjE2L2ltYXAv
+cG9wM2QuYwkyMDEwLTAxLTExIDEzOjQ3OjQyLjAwMDAwMDAwMCArMDEwMApAQCAtNzc5LDYgKzc3
+OSw5IEBACiAgICAgdW5zaWduZWQgbXNnID0gMDsKIAogICAgIGZvciAoOzspIHsKKwkvKiByZXNl
+dCBjbGllbnQgdGltZW91dCBmb3IgbmV4dCBjb21tYW5kICovCisJcHJvdF9yZXNldHRpbWVvdXQo
+cG9wZF9pbik7CisKIAlzaWduYWxzX3BvbGwoKTsKIAogCWlmIChiYWNrZW5kKSB7CkBAIC0xODQz
+LDEwICsxODQ2LDYgQEAKIAogICAgIHByb3RfcHJpbnRmKHBvcGRfb3V0LCAiLlxyXG4iKTsKIAot
+ICAgIC8qIFJlc2V0IGluYWN0aXZpdHkgdGltZXIgaW4gY2FzZSB3ZSBzcGVuZCBhIGxvbmcgdGlt
+ZQotICAgICAgIHB1c2hpbmcgZGF0YSB0byB0aGUgY2xpZW50IG92ZXIgYSBzbG93IGxpbmsuICov
+Ci0gICAgcHJvdF9yZXNldHRpbWVvdXQocG9wZF9pbik7Ci0KICAgICByZXR1cm4gMDsKIH0KIApk
+aWZmIC1yIC11IGN5cnVzLWltYXBkLTIuMy4xNi5vcmlnL2ltYXAvc21tYXBkLmMgY3lydXMtaW1h
+cGQtMi4zLjE2L2ltYXAvc21tYXBkLmMKLS0tIGN5cnVzLWltYXBkLTIuMy4xNi5vcmlnL2ltYXAv
+c21tYXBkLmMJMjAwOS0wMi0wOSAwNjowMTo1OS4wMDAwMDAwMDAgKzAxMDAKKysrIGN5cnVzLWlt
+YXBkLTIuMy4xNi9pbWFwL3NtbWFwZC5jCTIwMTAtMDEtMTEgMTM6NDk6MjMuMDAwMDAwMDAwICsw
+MTAwCkBAIC0zOTAsMTMgKzM5MCwxOCBAQAogewogICAgIGludCBjOwogCi0gICAgd2hpbGUgKChj
+ID0gcHJvdF9nZXRjKG1hcF9pbikpICE9IEVPRikgeworICAgIGZvciAoOzspIHsKIAlpbnQgciA9
+IDAsIHNhd2RpZ2l0ID0gMCwgbGVuID0gMCwgc2l6ZSA9IDA7CiAJc3RydWN0IGF1dGhfc3RhdGUg
+KmF1dGhzdGF0ZSA9IE5VTEw7CiAJY2hhciByZXF1ZXN0W01BWFJFUVVFU1QrMV07CiAJY2hhciAq
+bWFwbmFtZSA9IE5VTEwsICprZXkgPSBOVUxMOwogCWNvbnN0IGNoYXIgKmVycnN0cmluZyA9IE5V
+TEw7CiAKKwkvKiByZXNldCBjbGllbnQgdGltZW91dCBmb3IgbmV4dCBjb21tYW5kICovCisJcHJv
+dF9yZXNldHRpbWVvdXQobWFwX2luKTsKKwlpZigoYyA9IHByb3RfZ2V0YyhtYXBfaW4pKSA9PSBF
+T0YpCisJICAgIGJyZWFrOworCiAJaWYgKHNpZ25hbHNfcG9sbCgpID09IFNJR0hVUCkgewogCSAg
+ICAvKiBjYXVnaHQgYSBTSUdIVVAsIHJldHVybiAqLwogCSAgICByZXR1cm4gMTsKZGlmZiAtciAt
+dSBjeXJ1cy1pbWFwZC0yLjMuMTYub3JpZy9pbWFwL3N5bmNfc2VydmVyLmMgY3lydXMtaW1hcGQt
+Mi4zLjE2L2ltYXAvc3luY19zZXJ2ZXIuYwotLS0gY3lydXMtaW1hcGQtMi4zLjE2Lm9yaWcvaW1h
+cC9zeW5jX3NlcnZlci5jCTIwMDktMTItMTYgMDM6NTQ6MTQuMDAwMDAwMDAwICswMTAwCisrKyBj
+eXJ1cy1pbWFwZC0yLjMuMTYvaW1hcC9zeW5jX3NlcnZlci5jCTIwMTAtMDEtMTEgMTM6NTA6MjUu
+MDAwMDAwMDAwICswMTAwCkBAIC02MjgsNiArNjI4LDEwIEBACiAKICAgICBmb3IgKDs7KSB7CiAg
+ICAgICAgIHByb3RfZmx1c2goc3luY19vdXQpOworI2lmIDAKKwkvKiByZXNldCBjbGllbnQgdGlt
+ZW91dCBmb3IgbmV4dCBjb21tYW5kICovCisJcHJvdF9yZXNldHRpbWVvdXQoc3luY19pbik7Cisj
+ZW5kaWYKIAogCS8qIFBhcnNlIGNvbW1hbmQgbmFtZSAqLwogCWlmICgoYyA9IGdldHdvcmQoc3lu
+Y19pbiwgJmNtZCkpID09IEVPRikKZGlmZiAtciAtdSBjeXJ1cy1pbWFwZC0yLjMuMTYub3JpZy9s
+aWIvcHJvdC5jIGN5cnVzLWltYXBkLTIuMy4xNi9saWIvcHJvdC5jCi0tLSBjeXJ1cy1pbWFwZC0y
+LjMuMTYub3JpZy9saWIvcHJvdC5jCTIwMDktMTEtMDUgMDE6MTk6MTkuMDAwMDAwMDAwICswMTAw
+CisrKyBjeXJ1cy1pbWFwZC0yLjMuMTYvbGliL3Byb3QuYwkyMDEwLTAxLTExIDEzOjUxOjU5LjAw
+MDAwMDAwMCArMDEwMApAQCAtNTk5LDggKzU5OSwxMSBAQAogCQl9CiAJCS8qIFJlcXVlc3QgYSBm
+bHVzaCBvZiB0aGUgYnVmZmVyLiAgSWYgd2UgYXJlIGEgYmxvY2tpbmcKIAkJICAgcmVhZCBzdHJl
+YW0sIGZvcmNlIHRoZSBmbHVzaCAqLwotCQlpZiAocy0+Zmx1c2hvbnJlYWQpCisJCWlmIChzLT5m
+bHVzaG9ucmVhZCkgewogCQkgICAgcHJvdF9mbHVzaF9pbnRlcm5hbChzLT5mbHVzaG9ucmVhZCwg
+IXMtPmRvbnRibG9jayk7CisJCSAgICAvKiByZXNldCBjbGllbnQgdGltZW91dCBzaW5jZSB3ZSBq
+dXN0IHNlbnQgZGF0YSAqLworCQkgICAgcHJvdF9yZXNldHRpbWVvdXQocyk7CisJCX0KIAkgICAg
+fQogCSAgICBlbHNlIHsKIAkJaGF2ZWlucHV0ID0gMTsKZGlmZiAtciAtdSBjeXJ1cy1pbWFwZC0y
+LjMuMTYub3JpZy90aW1zaWV2ZWQvdGltc2lldmVkLmMgY3lydXMtaW1hcGQtMi4zLjE2L3RpbXNp
+ZXZlZC90aW1zaWV2ZWQuYwotLS0gY3lydXMtaW1hcGQtMi4zLjE2Lm9yaWcvdGltc2lldmVkL3Rp
+bXNpZXZlZC5jCTIwMDktMTItMTYgMDM6NTE6NDUuMDAwMDAwMDAwICswMTAwCisrKyBjeXJ1cy1p
+bWFwZC0yLjMuMTYvdGltc2lldmVkL3RpbXNpZXZlZC5jCTIwMTAtMDEtMTEgMTM6NTM6MTUuMDAw
+MDAwMDAwICswMTAwCkBAIC0xODksNiArMTg5LDkgQEAKIAogICAgIHdoaWxlIChyZXQgIT0gVFJV
+RSkKICAgICB7CisJLyogcmVzZXQgY2xpZW50IHRpbWVvdXQgZm9yIG5leHQgY29tbWFuZCAqLwor
+CXByb3RfcmVzZXR0aW1lb3V0KHNpZXZlZF9pbik7CisKIAlpZiAoYmFja2VuZCkgewogCSAgICAv
+KiBjcmVhdGUgYSBwaXBlIGZyb20gY2xpZW50IHRvIGJhY2tlbmQgKi8KIAkgICAgYml0cGlwZSgp
+Owo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

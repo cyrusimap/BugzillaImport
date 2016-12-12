@@ -1,0 +1,199 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2976</bug_id>
+          
+          <creation_ts>2007-07-18 07:21 EDT</creation_ts>
+          <short_desc>Unified murder copy from remote to local backend fails</short_desc>
+          <delta_ts>2010-06-10 01:31:03 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Janne Peltonen">janne.peltonen@helsinki.fi</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>developer@opus.co.nz</cc>
+    
+    <cc>janne.peltonen@helsinki.fi</cc>
+    
+    <cc>Lesley.Longhurst@opus.co.nz</cc>
+    
+    <cc>wes@umich.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Janne Peltonen">janne.peltonen@helsinki.fi</who>
+            <bug_when>2007-07-18 07:21:49 EDT</bug_when>
+            <thetext>In a unified murder config, if I connect directly to a backend that contains mailbox foo and try to copy a message from a mailbox that resides on a remote server to mailbox foo, the copy fails with &quot;Server(s) unavailable to complete operation.&quot; Copying from a remote mailbox to another remote mailbox works fine, as does copying from a local mailbox to another local mailbox. If I try to copy from a local mailbox to a remote mailbox, I get &quot;+ go ahead&quot; as an error message, but the copy succeeds.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dave Mason">dave.mason@opus.co.nz</who>
+            <bug_when>2009-03-08 23:28:28 EDT</bug_when>
+            <thetext>I have come across this issue too with my unified murder config (Cyrus 2.3.12p2 on a Debian Etch platform). Whenever I try to perform a transfer of email between a remote mailbox and one on the &apos;local&apos; server the client (we use a mixture of Thunderbird &amp; Outlook) produces an error (From Outlook: &quot;Cannot move the items. The server responded: Server(s) unavailable to complete operation&quot;). Such failures give rise to a line in the cyrus-imapd.log on the &apos;local&apos; server:
+&apos;getaddrinfo(default) failed: Name or service not known&apos;.
+Is it possible I have misconfigured something so under some circumstances it cannot locate the name of the &apos;local&apos; or default server ??
+Here is a copy of my imapd.conf file:
+
+
+configdirectory: /var/local/cyrus-imapd
+partition-default: /home/cyrus-spool
+sievedir: /var/local/cyrus-imapd/sieve
+admins: grtecz cyrus_murder
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: plain login
+
+# Neil asked for this to be turned off at the Lana&apos;s request
+duplicatesuppression: 0
+
+allowallsubscribe: 1
+#altnamespace: 1
+fulldirhash: 1
+improved_mboxlist_sort: 1
+postuser: cyrus_postuser
+
+tls_ca_file: /etc/opus/certificates/OpusCA_chain_certs.pem
+tls_cert_file: /etc/opus/certificates/server_cert.pem
+tls_key_file: /var/local/cyrus-imapd/server_key.pem
+allowplaintext: 1
+#tls_cert_file: disabled
+
+com_mechs: login
+
+proxyservers: cyrus_proxy
+proxy_authname: cyrus_proxy
+proxy_password: ********
+
+mupdate_server: com.opus.co.nz
+mupdate_config: unified
+mupdate_username: cyrus_murder
+mupdate_authname: cyrus_murder
+mupdate_password: ********
+force_sasl_client_mech: tls+plain
+
+Dave Mason</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dave Mason">dave.mason@opus.co.nz</who>
+            <bug_when>2009-03-09 17:18:39 EDT</bug_when>
+            <thetext>I omitted to mention that in my configuration each of the (100 or so) backend servers also contain the frontend services. I have included my standard server &apos;cyrus.conf&apos; below. User mail clients will always be connecting to the frontend server that also contains the backend with that user&apos;s personal folders. Mail clients can quite happily copy between their internal mail folders just as copy/moves between 2 remote (data actually on 2 different backends) folders work fine. The only situation that consistently fails is a copy/move involving a remote folder and a &apos;local&apos; one.
+
+
+# standard standalone server implementation
+START {
+  # do not delete this entry!
+  recover       cmd=&quot;ctl_cyrusdb -r&quot;
+
+  # need this for murder
+  mupdatepush   cmd=&quot;ctl_mboxlist -m&quot;
+
+  # this is only necessary if using idled for IMAP IDLE
+  idled         cmd=&quot;idled&quot;
+}
+# UNIX sockets start with a slash and are put into /var/imap/sockets
+SERVICES {
+  # add or remove based on preferences
+  imap          cmd=&quot;imapd&quot; listen=&quot;imap&quot; prefork=3
+  imaps         cmd=&quot;imapd -s&quot; listen=&quot;imaps&quot; prefork=3
+  pop3          cmd=&quot;pop3d&quot; listen=&quot;pop3&quot; prefork=3
+  sieve         cmd=&quot;timsieved&quot; listen=&quot;sieve&quot; prefork=0
+
+  # LMTP is required for delivery
+  lmtpunix      cmd=&quot;lmtpd&quot; listen=&quot;/var/local/cyrus-imapd/socket/lmtp&quot; prefork=0
+  lmtp          cmd=&quot;lmtpd -a&quot; listen=&quot;localhost:lmtp&quot;
+  mupdate       cmd=&quot;mupdate&quot; listen=3905 prefork=1
+  # this is only necessary if using notifications
+#  notify       cmd=&quot;notifyd&quot; listen=&quot;/var/imap/socket/notify&quot; proto=&quot;udp&quot; prefork=1
+}
+EVENTS {
+  # this is required
+  checkpoint    cmd=&quot;ctl_cyrusdb -c&quot; period=30
+
+  # this is only necessary if using duplicate delivery suppression
+  delprune      cmd=&quot;ctl_deliver -E 3&quot; at=0400
+
+  # this is only necessary if caching TLS sessions
+  tlsprune      cmd=&quot;tls_prune&quot; at=0400
+}
+cyrus.conf (END) 
+
+
+Here also are my Murder Master Configs:
+Cyrus.conf:
+
+START {
+  # do not delete this entry!
+  recover       cmd=&quot;ctl_cyrusdb -r&quot;
+}
+# UNIX sockets start with a slash and are put into /var/imap/sockets
+SERVICES {
+  mupdate       cmd=&quot;mupdate -m&quot; listen=3905 prefork=1 maxfds=1024
+}
+EVENTS {
+  # this is required
+  checkpoint    cmd=&quot;ctl_cyrusdb -c&quot; period=30
+  # this is only necessary if using duplicate delivery suppression
+  delprune      cmd=&quot;ctl_deliver -E 3&quot; at=0400
+  # this is only necessary if caching TLS sessions
+  tlsprune      cmd=&quot;tls_prune&quot; at=0400
+}
+
+Imapd.conf:
+
+configdirectory: /var/local/cyrus-imapd
+partition-default: /tmp
+admins: grtecz cyrus_murder cyrus_proxy
+sasl_pwcheck_method: saslauthd
+tls_ca_file: /etc/opus/certificates/OpusCA_chain_certs.pem
+tls_cert_file: /etc/opus/certificates/server_cert.pem
+tls_key_file: /var/local/cyrus-imapd/server_key.pem
+allowplaintext: 1
+mupdate_connections_max: 1024
+mupdate_config: unified
+force_sasl_client_mech: login
+
+
+I would be really grateful for any thoughts or suggestions you can offer for this issue. Although I am clearly not the only person to have come across the problem it is not clear to me whether it is a bug of a mis-configuration. Also I have no idea whether my config is oddball or standard (Having 1 Murder master and all other servers identically configured as backend/frontends). I would have thought it was quite logical and apart from this issue (and slightly slow Murder operations) it works well.
+Regards
+Dave Mason
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Opus International Consultants">developer@opus.co.nz</who>
+            <bug_when>2009-09-16 21:48:08 EDT</bug_when>
+            <thetext>Dave Mason is no longer at Opus but we still care about this bug. Have removed Dave as a CC and added this address instead.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

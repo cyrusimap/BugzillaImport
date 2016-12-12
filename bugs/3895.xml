@@ -1,0 +1,227 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3895</bug_id>
+          
+          <creation_ts>2015-06-01 05:47 EDT</creation_ts>
+          <short_desc>Compliance problem with RFC-4314</short_desc>
+          <delta_ts>2015-06-01 05:47:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Benoit Tellier">btellier@linagora.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Benoit Tellier">btellier@linagora.com</who>
+            <bug_when>2015-06-01 05:47:09 EDT</bug_when>
+            <thetext>I am using a line oriented protocol tester ( Apache James MPT ) on Cyrus to have a test suite for RFC-4314, and was basing my work on Cyrus 2.4.17
+
+I found this page announcing that &quot;Access rights in Cyrus IMAP are -or should be- fully compatible with RFC 4314.&quot; : http://www.cyrusimap.org/~vanmeeuwen/imap/admin/administration-acl-rights.html
+
+While doing these tests, I noticed some non RFC-4314 compliant behaviour.
+
+Here are the commands (RFC-4314 quote are based on section 4 commands details) :
+
+# 1 : STORE command of \Seen without &quot;s&quot; right
+
+C: a000 LOGIN imapuser password
+S: * OK IMAP4rev1 Server ready
+S: a000 OK .*
+
+C: a001 MYRIGHTS user.Boby
+S: * MYRIGHTS user.Boby lrwipkxtecda
+S: a001 OK Completed
+
+C: a002 SELECT user.Boby
+S: * 4 EXISTS
+S: * 4 RECENT
+S: * FLAGS \(\Answered \Flagged \Draft \Deleted \Seen)
+S: * OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \*)] Ok
+S: * OK [UNSEEN 1] Ok
+S: * OK [UIDVALIDITY .*] Ok
+S: * OK [UIDNEXT 5] Ok
+S: * OK [HIGHESTMODSEQ 7] Ok
+S: * OK [URLMECH INTERNAL] Ok
+S: a002 OK [READ-WRITE] Completed
+
+C: a003 FETCH 1:4 (FLAGS)
+S: * 1 FETCH (FLAGS (\Recent))
+S: * 2 FETCH (FLAGS (\Recent))
+S: * 3 FETCH (FLAGS (\Recent \Flagged))
+S: * 4 FETCH (FLAGS (\Recent \Deleted))
+S: a003 OK Completed.*
+
+# Not RFC compliant : we have &quot;t&quot; and &quot;w&quot; rights
+C: a004 STORE 1:2 +FLAGS (\Seen)
+S: a004 NO Permission denied
+
+C: a005 STORE 1:1 -FLAGS (\Seen)
+S: a005 NO Permission denied
+
+C: a006 STORE 1:1 FLAGS (\Seen)
+S: a006 NO Permission denied
+
+C: a007 STORE 1:1 FLAGS ()
+S: a007 OK Completed
+
+C: a008 CLOSE
+S: a008 OK Completed
+
+Rfc specifies : &quot;STORE operation SHOULD NOT fail if the user has rights to modify at least one flag specified in the STORE, as the tagged NO response to a STORE command is not handled very well by deployed clients.&quot;
+
+I found exact same problem with flag &quot;t&quot; and &quot;w&quot;.
+
+
+
+
+
+
+
+
+
+
+# 2 : Right &quot;s&quot; is not needed to append a message to a mailbox.
+
+Here is the test scenario I had :
+
+C: a000 LOGIN imapuser password
+S: * OK IMAP4rev1 Server ready
+S: a000 OK .*
+
+C: a001 MYRIGHTS user.Boby
+S: * MYRIGHTS user.Boby ri
+S: a001 OK Completed
+
+C: a002 SELECT user.Boby
+S: * 0 EXISTS
+S: * 0 RECENT
+S: * FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+S: * OK [PERMANENTFLAGS ()] Ok
+S: * OK [UIDVALIDITY .*] Ok
+S: * OK [UIDNEXT 1] Ok
+S: * OK [HIGHESTMODSEQ 2] Ok
+S: * OK [URLMECH INTERNAL] Ok
+S: a002 OK [READ-WRITE] Completed
+
+C: a003 APPEND user.Boby {310}
+S: + go ahead
+C: Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)
+C: From: Fred Foobar &lt;foobar@Blurdybloop.COM&gt;
+C: Subject: afternoon meeting 2
+C: To: mooch@owatagu.siam.edu
+C: Message-Id: &lt;B27397-0100000@Blurdybloop.COM&gt;
+C: MIME-Version: 1.0
+C: Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+C:
+C: Hello Joe, could we change that to 4:00pm tomorrow?
+C:
+S: * 1 EXISTS
+S: * 1 RECENT
+S: a003 OK [APPENDUID .* 1] Completed
+
+C: a004 APPEND user.Boby (\Seen) {310}
+S: + go ahead
+C: Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)
+C: From: Fred Foobar &lt;foobar@Blurdybloop.COM&gt;
+C: Subject: afternoon meeting 2
+C: To: mooch@owatagu.siam.edu
+C: Message-Id: &lt;B27397-0100000@Blurdybloop.COM&gt;
+C: MIME-Version: 1.0
+C: Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+C:
+C: Hello Joe, could we change that to 4:00pm tomorrow?
+C:
+S: * 2 EXISTS
+S: * 2 RECENT
+S: a004 OK [APPENDUID .* 2] Completed
+
+C: a005 APPEND user.Boby (\Flagged) {310}
+S: + go ahead
+C: Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)
+C: From: Fred Foobar &lt;foobar@Blurdybloop.COM&gt;
+C: Subject: afternoon meeting 2
+C: To: mooch@owatagu.siam.edu
+C: Message-Id: &lt;B27397-0100000@Blurdybloop.COM&gt;
+C: MIME-Version: 1.0
+C: Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+C:
+C: Hello Joe, could we change that to 4:00pm tomorrow?
+C:
+S: * 3 EXISTS
+S: * 3 RECENT
+S: a005 OK [APPENDUID .* 3] Completed
+
+C: a006 APPEND user.Boby (\Deleted) {310}
+S: + go ahead
+C: Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)
+C: From: Fred Foobar &lt;foobar@Blurdybloop.COM&gt;
+C: Subject: afternoon meeting 2
+C: To: mooch@owatagu.siam.edu
+C: Message-Id: &lt;B27397-0100000@Blurdybloop.COM&gt;
+C: MIME-Version: 1.0
+C: Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+C:
+C: Hello Joe, could we change that to 4:00pm tomorrow?
+C:
+S: * 4 EXISTS
+S: * 4 RECENT
+S: a006 OK [APPENDUID .* 4] Completed
+
+# Seen flag behaviour is not RFC compliant : message should have been appended without the \Seen flag as it was the case for other messages
+C: a007 FETCH 1:4 (FLAGS)
+S: * 1 FETCH (FLAGS (\Recent))
+S: * 2 FETCH (FLAGS (\Recent \Seen))
+S: * 3 FETCH (FLAGS (\Recent))
+S: * 4 FETCH (FLAGS (\Recent))
+S: a007 OK Completed.*
+
+C: a008 CLOSE
+S: a008 OK Completed
+
+And RFC specifies : &quot; Otherwise for each copied/appended message the server MUST check if the user has
+         &quot;t&quot; right - when the message has \Deleted flag set
+         &quot;s&quot; right - when the message has \Seen flag set
+         &quot;w&quot; right - for all other message flags.
+Only when the user has a particular right are the corresponding flags stored for the newly created message.&quot; ( what is done for other flags ).
+
+Similary, I am facing this issue with COPY command.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

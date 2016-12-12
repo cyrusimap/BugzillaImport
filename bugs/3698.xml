@@ -1,0 +1,139 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3698</bug_id>
+          
+          <creation_ts>2012-05-09 06:38 EDT</creation_ts>
+          <short_desc>timsieved interpreter remembers wrong state on error</short_desc>
+          <delta_ts>2013-08-12 20:47:38 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.4.14</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.17</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dilyan.palauzov@aegee.org</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2012-05-09 06:38:09 EDT</bug_when>
+            <thetext>uploading a file with sieveshell to timsieved with putscript with an open &quot; destroys the interpreter context.
+
+eg: I use the following script:
+----------
+require [&quot;fileinto&quot;, &quot;imapflags&quot;];
+
+if header :contains &quot;
+----------
+
+Uploading it the first time shows:
+&gt; put test.sieve test
+upload failed: put script: script errors:
+line 5: syntax error, unexpected $end
+...ok so far.
+
+But uploading it again shows:
+&gt; put test.sieve test
+upload failed: put script: script errors:
+line 2: syntax error, unexpected STRING
+...ups? These two errors toggle if I continue to upload the same script.
+
+But if I &quot;fix&quot; the script and try to upload it after I got
+line 5: syntax error, unexpected $end
+timsieved always errors out with
+line 2: syntax error, unexpected STRING
+as long as I do not upload a script with an open &quot; again.
+
+So it seems the interpreter keeps the state of open/closed &quot; from invocation to invocation.
+
+If already tried to search the cause, but didn&apos;t find it.
+
+I recoginzed this error while using the sieve extension for thunderbird. This extension uploads the script very often to check syntax. You easily reach a state where you can&apos;t get your script right again not knowing that it you have to set a &quot;wrong&quot; &quot; again to toggle the state of the interpreter.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-06-22 14:58:52 EDT</bug_when>
+            <thetext>Hi,
+
+sieve/sieve-lex.l does not handle the case, then the script ends within the QSTRING, ala case &lt;QSTRING&gt;&lt;&lt;EOF&gt;&gt;: it does not return to INITIAL and does not forget that the quotes were opened.
+
+Does this patch fix the problem on your system?
+
+--- old/sieve/sieve-lex.l    2012-06-22 18:35:12.860942308 +0000
++++ new/sieve/sieve-lex.l   2012-06-22 18:48:02.060934969 +0000
+@@ -93,6 +93,12 @@
+ &lt;QSTRING&gt;(.|\n)   { if (mlcur == mlbufsz)
+                        mlbuf = xrealloc(mlbuf, 1 + (mlbufsz+=1024));
+                    mlbuf[mlcur++] = yytext[0]; }
++&lt;QSTRING&gt;&lt;&lt;EOF&gt;&gt; {
++               yyerror(&quot;unexpected end of file in string&quot;);
++               BEGIN INITIAL;
++               yyterminate();
++               }
+ &lt;INITIAL&gt;text:{ws}?(#.*)?{CRLF}        { BEGIN MULTILINE;
+                          mlcur = 0; mlbufsz = 0; mlbuf = NULL; }
+ &lt;INITIAL&gt;\&quot;        { BEGIN QSTRING;
+
+
+On my system even the problem with the line numbers disappeared.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2012-06-22 15:55:03 EDT</bug_when>
+            <thetext>yes, great! Works for me with your patch. Thanks a lot.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-06-22 16:20:30 EDT</bug_when>
+            <thetext>Fixed on git git://git.cyrusimap.org/cyrus-imapd 
+in branch cyrus-imapd-2.4 commit d9b4574c823f1500e84b8d2361d4304091ef8ebd
+in branch master commit 3cc9909c0291387483154760c9de203558f6e4b4</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-06-22 18:10:51 EDT</bug_when>
+            <thetext>Thanks Dilyan!  I appreciate you taking care of it :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2013-08-12 20:47:38 EDT</bug_when>
+            <thetext>Actually included in 2.4.17 since quite some time - updating ticket parameters</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,114 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3169</bug_id>
+          
+          <creation_ts>2009-09-07 13:54 EDT</creation_ts>
+          <short_desc>GETQUOTA fails for domain quotaroots</short_desc>
+          <delta_ts>2011-06-21 17:20:11 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.9</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Martin Svec">martin.svec@inmail.cz</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Martin Svec">martin.svec@inmail.cz</who>
+            <bug_when>2009-09-07 13:54:14 EDT</bug_when>
+            <thetext>Hello,
+
+after upgrade from cyrus-imapd 2.2.13 to 2.3.x series, namely 2.3.14, IMAP GETQUOTA command no longer returns storage information for virtual domain quota roots. Instead, it returns &quot;Mailbox does not exist&quot;.
+
+Sample IMAP session:
+0 login cyrus-admin somepassword
+0 OK [.......] User logged in
+1 SETQUOTA @somedomain.com (STORAGE 10000)
+1 OK Completed
+2 GETQUOTAROOT user/test@somedomain.com
+* QUOTAROOT user/test@somedomain.com @somedomain.com
+* QUOTA @somedomain.com (STORAGE 0 10000)
+2 OK Completed
+3 GETQUOTA @somedomain.com
+3 NO Mailbox does not exist
+
+Apparently, @somedomain.com quota root was successfully set, as I checked by calling GETQUOTAROOT on a test mailbox. But GETQUOTA @somedomain.com failed. The following patch tries to fix it by ignoring IMAP_MAILBOX_NONEXISTENT in cmd_getquota():
+
+diff -urN cyrus-imapd-2.3.14/imap/imapd.c cyrus-imapd-2.3.14-new/imap/imapd.c 
+--- cyrus-imapd-2.3.14/imap/imapd.c     2009-03-16 01:17:14.000000000 +0100 
++++ cyrus-imapd-2.3.14-new/imap/imapd.c 2009-09-07 18:47:55.835973015 +0200 
+@@ -6449,7 +6449,7 @@ 
+     } 
+  
+     /* local mailbox */ 
+-    if (!r) { 
++    if (!r || (r == IMAP_MAILBOX_NONEXISTENT)) { 
+        quota.root = mailboxname; 
+        r = quota_read(&amp;quota, NULL, 0); 
+     }
+
+Since I have no in-depth knowledge of imapd internals, the patch only cares of IMAP_MAILBOX_NONEXISTENT error. Maybe there are more errors that should be ignored for domain quota roots.
+
+Another effect of the above patch is that for _nonexistent_ quota roots, GETQUOTA returns &quot;Quota root does not exist&quot; error which was originally returned in 2.2.x series.
+
+Cordially
+Martin Svec</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-18 09:49:42 EDT</bug_when>
+            <thetext>Taking over all quota-related tickets</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 10:11:47 EDT</bug_when>
+            <thetext>Huh?  Wow, that&apos;s totally bogus.  They should be the other way around.
+
+GETQUOTAROOT should return an error unless it&apos;s a mailbox name given
+
+GETQUOTA should succeed if given a quotaroot name.
+
+At least, that&apos;s my reading of RFC 2087.  Now they&apos;re shitty unclear names, but that&apos;s RFCs for you.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 10:21:09 EDT</bug_when>
+            <thetext>Ok, this is fixed for 2.4.9.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

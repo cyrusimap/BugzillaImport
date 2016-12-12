@@ -1,0 +1,113 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3716</bug_id>
+          
+          <creation_ts>2012-07-04 17:36 EDT</creation_ts>
+          <short_desc>Memory leak in the digest md5 plugin</short_desc>
+          <delta_ts>2012-07-06 06:28:46 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>digestmd5</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Michele Baldessari">michele@acksyn.org</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Michele Baldessari">michele@acksyn.org</who>
+            <bug_when>2012-07-04 17:36:14 EDT</bug_when>
+            <thetext>I&apos;ve observed a leak in the digest-md5 plugin.
+Here&apos;s a parts of the call sequence:
+
+1)  Breakpoint 1, sasl_client_start (conn=0xb7473e20, mechlist=0xb762c544 &quot;DIGEST-MD5&quot;, prompt_need=0x2345bf0, clientout=0x2345bec, clientoutlen=0x2345be4, mech=0x2345be8)
+2)  Breakpoint 2, sasl_client_step (conn=0xb7473e20, serverin=0x0, serverinlen=0, prompt_need=0x2345bf0, clientout=0x2345bec, clientoutlen=0x2345be4)
+3)  Breakpoint 3, digestmd5_client_mech_step (conn_context=0xb743c938, params=0xb743cab8, serverin=0x0, serverinlen=0, prompt_need=0x2345bf0, clientout=0x2345bec, clientoutlen=0x2345be4, oparams=0xb7474680) 
+4)  Breakpoint 4, make_client_response (text=0xb743c938, params=0xb743cab8, oparams=0xb7474680)
+5)  Breakpoint 2, sasl_client_step (conn=0xb7473e20, serverin=0x2345730 &quot;realm=\&quot;foo.com\&quot;,nonce=\&quot;12C7616C65D03FAF4E5C5C4CF5C165F2CD97BECB\&quot;,algorithm=\&quot;md5-sess\&quot;,qop=\&quot;auth\&quot;,   
+       serverinlen=113, prompt_need=0x2345bf0, clientout=0x2345bec, clientoutlen=0x2345be4)
+6)  Breakpoint 3, digestmd5_client_mech_step (conn_context=0xb743c938, params=0xb743cab8, serverin=0x2345730 &quot;realm=\&quot;foo.com&quot;,nonce=\&quot;12C7616C65D03FAF4E5C5C4CF5C165F2CD97BECB\&quot;,
+       algorithm=\&quot;md5-sess\&quot;,qop=\&quot;auth\&quot;, serverinlen=113, prompt_need=0x2345bf0, clientout=0x2345bec, clientoutlen=0x2345be4, oparams=0xb7474680)
+7)  Breakpoint 4, make_client_response (text=0xb743c938, params=0xb743cab8, oparams=0xb7474680)
+8)  Breakpoint 2, sasl_client_step (conn=0xb7473e20, serverin=0x2345730 &quot;rspauth=a038df9785a9cd4097e13801e323b0cb&quot;, serverinlen=40, prompt_need=0x2345bf0, clientout=0x2345bec, clientoutlen=0x2345be4)
+9)  Breakpoint 3, digestmd5_client_mech_step (conn_context=0xb743c938, params=0xb743cab8, serverin=0x2345730 &quot;rspauth=a038df9785a9cd4097e13801e323b0cb&quot;, serverinlen=40, prompt_need=0x2345bf0,
+       clientout=0x2345bec, clientoutlen=0x2345be4, oparams=0xb7474680) 
+10) Breakpoint 5, digestmd5_common_mech_dispose (conn_context=0xb743c938, utils=0xb7487268) 
+
+We call make_client_response twice. In make_client_response() we do:
+text-&gt;out_buf = NULL;        
+text-&gt;out_buf_len = 0;       
+if (add_to_challenge(params-&gt;utils,         
+                     &amp;text-&gt;out_buf, &amp;text-&gt;out_buf_len, &amp;resplen,
+                     &quot;username&quot;, (unsigned char *) oparams-&gt;authid,  
+                     TRUE) != SASL_OK) {    
+    result = SASL_FAIL;      
+    goto FreeAllocatedMem;        
+
+
+}                            
+...and other add_to_challenge() calls which in turn call _plug_buf_alloc()
+
+The only place we free text-&gt;out_buf is in digestmd5_common_mech_dispose()
+
+_plug_buf_alloc() does a malloc for new reallocations or a realloc() if size increase is necessary(). 
+Since we set it to NULL before, the first add_to_challenge() call we&apos;ll be a new malloc(). 
+We will leak it because we call make_client_request twice without freeing it.
+
+Note I noticed this on 2.1.22 but this bug seems to be present also in git head.
+
+thanks for all your work on cyrus-sasl and regards,
+Michele 
+
+--- cyrus-sasl-2.1.22/plugins/digestmd5.c.leak	2006-05-17 18:46:17.000000000 +0200
++++ cyrus-sasl-2.1.22/plugins/digestmd5.c	2012-06-19 20:55:13.000000000 +0200
+@@ -3011,6 +3024,7 @@ static int make_client_response(context_
+     
+     
+     resplen = 0;
++    if (text-&gt;out_buf) params-&gt;utils-&gt;free(text-&gt;out_buf);
+     text-&gt;out_buf = NULL;
+     text-&gt;out_buf_len = 0;
+     if (add_to_challenge(params-&gt;utils,</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-07-06 06:28:46 EDT</bug_when>
+            <thetext>Fixed by 5cc32707b800c11a70df4f9ee014733359ea57db post 2.1.25.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

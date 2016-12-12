@@ -1,0 +1,190 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2493</bug_id>
+          
+          <creation_ts>2004-08-27 03:51 EDT</creation_ts>
+          <short_desc>Renaming a folder does not preserve the quota.</short_desc>
+          <delta_ts>2015-03-03 04:04:50 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.6-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sean Jorden">sjorden@norada.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Sean Jorden">sjorden@norada.com</who>
+            <bug_when>2004-08-27 03:51:15 EDT</bug_when>
+            <thetext>Note: For all examples I am logged in as an administrator. 
+
+Renaming a user&apos;s root folder preserves the quota. Example:
+
+a create user/ab
+a OK Completed
+a setquota user/ab (STORAGE 1024)
+a OK Completed
+a getquota user/ab
+* QUOTA user/ab (STORAGE 0 1024)
+a OK Completed
+a rename user/ab user/abc
+* OK rename user/ab user/abc
+a OK Completed
+a getquota user/abc
+* QUOTA user/abc (STORAGE 0 1024)
+a OK Completed
+
+However, renaming a users&apos; subfolder does not preserve the quota. Example:
+
+a OK Completed
+a getquota user/abc/test
+a NO Quota root does not exist
+a setquota user/abc/test (STORAGE 1024)
+a OK Completed
+a getquota user/abc/test
+* QUOTA user/abc/test (STORAGE 0 1024)
+a OK Completed
+a rename user/abc/test user/abc/test1
+* OK rename user/abc/test user/abc/test1
+a OK Completed
+a getquota user/abc/test1
+a NO Quota root does not exist</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sean Jorden">sjorden@norada.com</who>
+            <bug_when>2004-08-27 15:02:54 EDT</bug_when>
+            <thetext>Also - when renaming this folder, it should be aware that there is a separate 
+quota and not check the space of this mailbox against the root quota. Example: 
+I had a user who was over quota, and I needed to rename their DELETED folder 
+to &apos;Deleted Items&apos; which had its own quota. Cyrus returned with an &apos;over quota&apos; 
+error.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-08-29 18:43:59 EDT</bug_when>
+            <thetext>As far as your first issue, I&apos;m not sure this is a bug, since a quota root is 
+a separate, independent entity from a folder.
+
+Of course, I don&apos;t think we always handle all situations of this properly, but 
+renaming a folder shouldn&apos;t move the quota root implicitly.
+
+I&apos;m not sure I fully understand the second issue.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sean Jorden">sjorden@norada.com</who>
+            <bug_when>2004-08-29 19:38:04 EDT</bug_when>
+            <thetext>&gt; As far as your first issue, I&apos;m not sure this is a bug, since a quota root is 
+&gt; a separate, independent entity from a folder.
+
+Then why is the quota migrated implicitly when renaming a user&apos;s root folder, 
+as in user.[some username]? This is inconsistent with a quota root being a 
+separate entity. Additionally, you cannot issue a SETQUOTA command to create a 
+quota root for a folder that does not exist, so I don&apos;t really think they 
+totally separate entities.
+
+&gt; I&apos;m not sure I fully understand the second issue.
+
+Its related to the first issue. If a user has a quota root on a subfolder, then 
+renaming the folder will count the folder in the quota for the user&apos;s root 
+folder and give back an error &apos;Over quota&apos;. Example
+
+user.user1 &lt;= 100MB quota, 99MB usage
+user.user1.DELETED &lt;= 50MB quota, 5MB usage.
+
+Trying to rename user.user1.DELETED to &quot;user.user1.Deleted Items&quot; gives back 
+an &apos;over quota&apos; message. The only way to get around this is to 
+1. give user.user1 a larger quota
+2. rename DELETED
+3. create quota root for user.user1.Deleted Items
+4. remove user.user1.DELETED quota root
+5. put user.user1 quota back to original value
+
+I think just renaming the DELETED folder should be sufficient. You could even 
+elminate steps 1 and 5 if you could create a quota root for &apos;Deleted Items&apos; 
+without the folder existing.
+
+
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-18 09:49:41 EDT</bug_when>
+            <thetext>Taking over all quota-related tickets</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-18 09:55:34 EDT</bug_when>
+            <thetext>Sean - I&apos;m going to back up your interpretation here - quotaroots should be renamed along with the folder they&apos;re attached to if the folder gets renamed.
+
+Either that or you should be able to create quotaroots without needing an associated folder, of course.  Which does make the special case of renaming users a bit ... special.
+
+Particularly since you need to rename the sub quotaroots at the same time.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-05-26 10:08:15 EDT</bug_when>
+            <thetext>Sadly not going to get this one done for 2.4.9 - pushing out.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2011-06-28 05:14:50 EDT</bug_when>
+            <thetext>Ok - implementation plan is to just change user_copyquotaroot to be mboxname_copyquotaroot instead, and use it any time we are rename a mailbox with a name exactly matching a quotaroot.
+
+(EXCEPT INBOX =&gt; INBOX.sub of course)
+
+Things to consider:
+
+* make sure all old quotaroots are removed only after the mailboxes in them have been removed.
+* make sure all mailboxes wind up with the correct new quotaroot at the end.
+
+Basically, we want a &apos;quota -f&apos; run after this has finished not to report any bogus things left behind.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-03-09 08:09:17 EDT</bug_when>
+            <thetext>Bumping to 2.5</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 09:56:02 EDT</bug_when>
+            <thetext>Batch moving bugs that won&apos;t be in 2.5</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

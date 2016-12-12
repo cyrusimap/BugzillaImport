@@ -1,0 +1,214 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3734</bug_id>
+          
+          <creation_ts>2012-08-30 09:30 EDT</creation_ts>
+          <short_desc>INBOX Rename gets replication stuck</short_desc>
+          <delta_ts>2013-02-15 09:52:54 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.4.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Janne Peltonen">janne.peltonen@helsinki.fi</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>janne.peltonen@helsinki.fi</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Janne Peltonen">janne.peltonen@helsinki.fi</who>
+            <bug_when>2012-08-30 09:30:53 EDT</bug_when>
+            <thetext>If a user renames their INBOX to INBOX.&lt;subfoldername&gt;, replication reports 
+that the operation is not supported on Mailbox and sync_client gets into a loop
+trying to do the &quot;USER &lt;username&gt;&quot; (or MAILBOX user.&lt;username&gt; and MAILBOX 
+user.&lt;username&gt;.&lt;subfoldername&gt; lines that get promoted to USER &lt;username&gt;)
+lines. If the user is removed from the replica mailboxlist, I can do a
+sync_client -u for the user /once/ - but the problem comes back on the next
+runs!
+
+
+Steps to replicate:
+
+1) Create a dummy user.
+
+2) Log in (to a Murder frontend) as that user.
+
+3) Rename INBOX to INBOX.foo
+
+4) See if you get lots of lines like this in your Murder backend&apos;s maillog:
+
+--clip--
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: RENAME received NO response: Operation is not supported on mailbox
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: do_folders(): failed to rename: user.atest001 -&gt; user.atest001.Saapuneet
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: RENAME received NO response: Operation is not supported on mailbox
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: do_folders(): failed to rename: user.atest001 -&gt; user.atest001.Saapuneet
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: IOERROR: The remote Server(s) denied the operation
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: Error in do_sync(): bailing out! The remote Server(s) denied the operation
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: Processing sync log file /var/lib/imap/m2v3t/sync/log-22380 failed: The remote Server(s) denied the operation
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: Reprocessing sync log file /var/lib/imap/m2v3t/sync/log-22380
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: RENAME received NO response: Operation is not supported on mailbox
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: do_folders(): failed to rename: user.atest001 -&gt; user.atest001.Saapuneet
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: RENAME received NO response: Operation is not supported on mailbox
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: do_folders(): failed to rename: user.atest001 -&gt; user.atest001.Saapuneet
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: IOERROR: The remote Server(s) denied the operation
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: Error in do_sync(): bailing out! The remote Server(s) denied the operation
+Aug 30 14:52:46 m2cn2t m2v3t/sync_client[22380]: Processing sync log file /var/lib/imap/m2v3t/sync/log-22380 failed: The remote Server(s) denied the operation
+--clip--
+
+(here, user is atest001 and foo is Saapuneet (&quot;incoming&quot; in Finnish)
+
+5) Stop replication from the Murder backend of the user (shut down sync_client
+and disable all periodic scripts that boot them up if you have such installed).
+
+6) Remove all lines beginning with user.&lt;youruser&gt; and DELETED.user.&lt;youruser&gt;
+from you /replica/ server that contains the replica of the Murder backend in
+question. (That is: shut down cyrus on the replica server; dump mailboxes list;
+remove mailboxes from the dump; undump mailboxes list; start up cyrus on the
+replica server.)
+
+7) Make sure that the user no longer exists on the replica server by dumping
+its mailboxes.db and grepping from there.
+
+8) On the Murder backend of the user (not the replica), do a sync_client -u
+&lt;user&gt;. It should return 0 and no problems should appear in log. You can also
+check that the user is back in the replica mailboxes.db. (Alternatively, you 
+could run a synclog file with /one/ USER &lt;user&gt; line in it.)
+
+9) On the Murder backend of the user, do a sync_client -u &lt;user&gt; /again/. See
+if it return 1 and if you get lines such as this in your maillog:
+
+--clip--
+Aug 30 14:33:43 pcn1 i14/sync_client[10504]: RENAME received NO response: Operation is not supported on mailbox
+Aug 30 14:33:43 pcn1 i14/sync_client[10504]: do_folders(): failed to rename: user.&lt;censored&gt; -&gt; user.&lt;censored&gt;.Saapuneet
+Aug 30 14:33:43 pcn1 i14/sync_client[10504]: IOERROR: The remote Server(s) denied the operation
+--clip--
+
+***
+
+I am aware that there was another INBOX renaming related bug in 2.4.12,
+reported by David Carter, that has been fixed in 2.4.13 (bug #3634). I never 
+saw that bug in my setup; this is something different.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-09-21 08:00:11 EDT</bug_when>
+            <thetext>Can you give some more details of your configuration and setup?  I can&apos;t recreate it with just replication (no murder) on with Cyrus 2.4, which makes me wonder if it&apos;s some interaction between mupdated and the replication system.
+
+I&apos;ve also tested just murder (no replication) and it was fine.
+
+I don&apos;t have a murder+replication setup, because I&apos;m really not clear how you do that!  Does the replica talk to mupdated as well?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-11-30 07:47:58 EDT</bug_when>
+            <thetext>I&apos;m going to look at trying ot recreate this and fixing it for 2.4.17.  Either with if falling out from #3742 fix, or separately if there are two different issues.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-11-30 11:18:24 EDT</bug_when>
+            <thetext>Ok - I can&apos;t recreate this one.  It MAY be the same bug we saw in #3742, in which case it was a race condition which is closed now.
+
+One thing we don&apos;t do (yet) is really clean up as much afterwards as would be nice - I did a script which renamed INBOX to lots of different things, and they all get all the flag names and all the expunged messages linked in... it probably should be a deeper clean of INBOX.  But that&apos;s academic, just a bit of backend noise.  It shouldn&apos;t affect users.
+
+So - I don&apos;t know what&apos;s going on here.  I can&apos;t recreate it.  Pushing back for later 2.4.x</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Janne Peltonen">janne.peltonen@helsinki.fi</who>
+            <bug_when>2013-02-15 09:51:44 EDT</bug_when>
+            <thetext>Hi.
+
+So the reason the I can do a replication once and then again not was that if the folder doesn&apos;t exist on the replica folder, do_folders() never checks if there is a need for a rename and simply copies the contents over. And after that, with the cyrus.header files still in place in replica, the next time it finds that the folder user.&lt;username&gt; in replica contains the UID of user.&lt;username&gt;.&lt;subfoldername&gt; in master and deems that a rename of user.&lt;username&gt; to user.&lt;username&gt;.&lt;subfoldername&gt; in replica is in order. And then that fails, since even an admin user can only rename user.sth to user.sthelse... I wonder why this bug doesn&apos;t show in all replication. It should, shouldn&apos;t it?
+
+And the root cause appears to be that the folder INBOX gets copied to inherits the UID of the original INBOX. And the original INBOX retains that UID, too:
+
+--clip--
+-bash-3.2$ cat cyrus.header 
+Cyrus mailbox header
+&quot;The best thing about this system was that it had lots of goals.&quot;
+        --Jim Morris on Andrew
+user.jmmpelto   58f0f25446960479
+Old NotJunk $forwarded $notjunk $junk 
+jmmpelto        lrswipkxtecda   anyone  p
+-bash-3.2$ pwd
+/var/spool/imap/jjjr/j/user/jmmpelto
+-bash-3.2$ cd acm/Inbox/
+-bash-3.2$ cat cyrus.header 
+Cyrus mailbox header
+&quot;The best thing about this system was that it had lots of goals.&quot;
+        --Jim Morris on Andrew
+user.jmmpelto   58f0f25446960479
+Old NotJunk $forwarded $notjunk $junk 
+jmmpelto        lrswipkxtecda   anyone  p
+-bash-3.2$
+--clip--
+
+(This is after renaming INBOX to INBOX.acm.Inbox as the user jmmpelto.)
+
+I did find a bug report from the year 2007, pertaining to the 2.2 series, of this kind of a problem. But it was reported as fixed in 2010.
+
+Moreover, I found that renaming any other folder than INBOX /does/ result in the new folder having a different UID from the original (what?! Should be no need...). So, after renaming INBOX.acm.Inbox to INBOX.acm.Inbox1:
+
+--clip--
+-bash-3.2$ cat Inbox1/cyrus.header 
+Cyrus mailbox header
+&quot;The best thing about this system was that it had lots of goals.&quot;
+        --Jim Morris on Andrew
+user.jmmpelto   7bad8711511e41b7
+Old NotJunk $forwarded $notjunk $junk 
+jmmpelto        lrswipkxtecda   anyone  p
+-bash-3.2$
+--clip--
+
+This does have the side effect that now replication rolls again, since there no longer is any folder (except INBOX) in the original that has the same UID as the INBOX in the replica. And I can even rename INBOX.acm.Inbox1 back to INBOX.acm.Inbox, of course:
+
+--clip--
+-bash-3.2$ cat Inbox/cyrus.header 
+Cyrus mailbox header
+&quot;The best thing about this system was that it had lots of goals.&quot;
+        --Jim Morris on Andrew
+user.jmmpelto   59bc5b51511e41f5
+Old NotJunk $forwarded $notjunk $junk 
+jmmpelto        lrswipkxtecda   anyone  p
+-bash-3.2$
+--clip--</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Janne Peltonen">janne.peltonen@helsinki.fi</who>
+            <bug_when>2013-02-15 09:52:54 EDT</bug_when>
+            <thetext>..oh yes, bug number #2727 was the number of the bug I mentioned.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

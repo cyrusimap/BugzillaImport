@@ -1,0 +1,101 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3736</bug_id>
+          
+          <creation_ts>2012-09-04 07:15 EDT</creation_ts>
+          <short_desc>Cache more headers</short_desc>
+          <delta_ts>2014-10-21 09:59:53 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.6-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bron Gondwana">brong@fastmail.fm</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>Leena.Heino@uta.fi</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-09-04 07:15:51 EDT</bug_when>
+            <thetext>The problem: many clients are expecting headers which we don&apos;t cache - and then EVERY fetch request hits the spool files.
+
+We should be caching every header except the known large+useless ones (i.e. domainkeys, received, ...)
+
+Either that or doing dynamic caching.  Dynamic caching could be achieved by rewriting the cache record each time a request is done for headers which aren&apos;t in the cache yet - and also keeping track of the requested headers per user or per mailbox so that new mailboxes and new records automatically get everything which is requested.
+
+Here&apos;s the discussion from IRC:
+
+&lt;brong_&gt; it shouldn&apos;t need to touch the spool files for anything much... but if it&apos;s asking for the FULL header, it might
+&lt;dbanschikov&gt; I have a debug log of macos mail.app, it issues a lot of commands like
+&lt;dbanschikov&gt; 248.2 UID FETCH 643293:643804 (INTERNALDATE UID RFC822.SIZE FLAGS BODY.PEEK[HEADER.FIELDS (date subject from to cc message-id in-repl        y-to references x-priority x-mail-rss-source-name x-uniform-type-identifier x-universally-unique-identifier x-apple-mail-todo-message        -id x-apple-mail-todo-id received-spf x-spam-status x-spam-flag)])^M
+&lt;brong_&gt; yeah, OK
+&lt;brong_&gt; those x-* headers won&apos;t be cached
+&lt;brong_&gt; dammit
+&lt;brong_&gt; ok, this affects FastMail too I guess
+&lt;brong_&gt; hmm
+&lt;brong_&gt; dbanschikov, I think we really should just cache every header except the known big and useless ones
+&lt;brong_&gt;     { &quot;dkim-signature&quot;, BIT32_MAX },
+&lt;brong_&gt;     { &quot;domainkey-signature&quot;, BIT32_MAX },
+&lt;brong_&gt;     { &quot;domainkey-x509&quot;, BIT32_MAX },
+&lt;brong_&gt;     { &quot;received&quot;, BIT32_MAX },
+&lt;brong_&gt;     { &quot;return-path&quot;, BIT32_MAX },
+&lt;brong_&gt; that sort of thing
+&lt;brong_&gt; in particular, this:
+&lt;brong_&gt;     /* Don&apos;t Cache X- headers unless explicitly configured to*/
+&lt;brong_&gt;     if ((hdr[0] == &apos;x&apos;) &amp;&amp; (hdr[1] == &apos;-&apos;)) return BIT32_MAX;
+&lt;brong_&gt; is a problem
+&lt;dbanschikov&gt; brong_, I am not sure that I understand problem correcly, but it seems, that if header we asks is not in our cache - then we read entire message from disk?
+&lt;brong_&gt; dbanschikov, not the entire message
+&lt;brong_&gt; just the header part
+&lt;brong_&gt; but it&apos;s still an IO hit
+&lt;dbanschikov&gt; ah, yes
+&lt;dbanschikov&gt; and is mail macos asks for it own headers (like x-apple-mail-todo-id) for each message - then we read everytime header part
+&lt;brong_&gt; indeed we do
+&lt;dbanschikov&gt; yes, it describes why only top managers in our company (who is able to buy apple production) constantly complains about slow mail
+&lt;brong_&gt; hmm
+&lt;brong_&gt; so
+&lt;brong_&gt; solution is to cache everything but known large items
+&lt;brong_&gt; I think
+&lt;brong_&gt; in particular, caching all X- headers is good</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 09:56:09 EDT</bug_when>
+            <thetext>Batch moving bugs that won&apos;t be in 2.5</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

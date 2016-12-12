@@ -1,0 +1,134 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2833</bug_id>
+          
+          <creation_ts>2006-05-19 17:40 EDT</creation_ts>
+          <short_desc>User actions are not run after promoting failures to user</short_desc>
+          <delta_ts>2010-10-25 18:46:38 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="John Capo">jc@irbs.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="John Capo">jc@irbs.com</who>
+            <bug_when>2006-05-19 17:40:03 EDT</bug_when>
+            <thetext>Line numbers are wrong.
+
+*** 2998,3004 ****
+            }
+        } while (r &amp;&amp; (++n &lt; SYNC_MAILBOX_RETRIES));
+  
+!       if (r) goto bail;
+      }
+  
+      for (action = meta_list-&gt;head ; action ; action = action-&gt;next) {
+--- 3007,3013 ----
+            }
+        } while (r &amp;&amp; (++n &lt; SYNC_MAILBOX_RETRIES));
+  
+! /*    if (r) goto bail; */
+      }
+  
+      for (action = meta_list-&gt;head ; action ; action = action-&gt;next) {
+***************
+Not bailing there allows the user action list to be run. This fixes a long standing problem I have
+had that I fixed in another way.  I finally had time to look at Ken&apos;s fixes which did not fix my
+problem.  Now I see why.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="John Capo">jc@irbs.com</who>
+            <bug_when>2006-05-19 19:03:59 EDT</bug_when>
+            <thetext>Now I understand the problem.  If there are two folders or less on the folder_list, the code works
+as written.  If the are more than two folders the loop exits when SYNC_MAILBOX_RETRIES is
+reached.  Setting the retry counter n to 0 when promoting to a user action allows the entire
+folder_list be be run.
+
+This issue is only a problem when software creates a user and folders generating a log like this.
+
+USER a_domain^com
+QUOTA user.a_domain^com
+MAILBOX user.a_domain^com.Drafts
+MAILBOX user.a_domain^com.Junkmail
+MAILBOX user.a_domain^com.Sent
+MAILBOX user.a_domain^com.Discard
+MAILBOX user.a_domain^com.Trash
+ACL user.a_domain^com
+ACL user.a_domain^com.Drafts
+ACL user.a_domain^com.Junkmail
+ACL user.a_domain^com.Sent
+ACL user.a_domain^com.Discard
+ACL user.a_domain^com.Trash
+MAILBOX user.a_domain^com.Auto-Train
+MAILBOX user.a_domain^com.Auto-Train.Ham
+MAILBOX user.a_domain^com.Auto-Train.Spam
+ACL user.a_domain^com.Auto-Train
+ACL user.a_domain^com.Auto-Train.Ham
+ACL user.a_domain^com.Auto-Train.Spam
+SUB a_domain^com user.a_domain^com.Drafts
+SUB a_domain^com user.a_domain^com.Junkmail
+SUB a_domain^com user.a_domain^com.Sent
+SUB a_domain^com user.a_domain^com.Discard
+SUB a_domain^com user.a_domain^com.Trash
+SUB a_domain^com user.a_domain^com.Auto-Train
+SUB a_domain^com user.a_domain^com.Auto-Train.Ham
+SUB a_domain^com user.a_domain^com.Auto-Train.Spam
+ANNOTATION user.a_domain^com
+
+The mailbox list runs first which fails because there is no user on the replica yet.
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-06-08 14:59:26 EDT</bug_when>
+            <thetext>Try this fix instead:
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/Attic/sync_client.c.diff?r1=1.1.2.30&amp;r2=1.1.2.31&amp;hideattic=0&amp;f=u</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-02 13:31:40 EDT</bug_when>
+            <thetext>No feedback.  Assuming its resolved.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

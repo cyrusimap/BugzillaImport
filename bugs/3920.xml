@@ -1,0 +1,129 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3920</bug_id>
+          
+          <creation_ts>2016-02-19 22:21 EDT</creation_ts>
+          <short_desc>auth_rimap infinite loop (hang) when IMAP server closes connection</short_desc>
+          <delta_ts>2016-03-24 12:41:59 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jered Floyd">jered@convivian.com</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>jered@convivian.com</cc>
+    
+    <cc>murch@andrew.cmu.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jered Floyd">jered@convivian.com</who>
+            <bug_when>2016-02-19 22:21:47 EDT</bug_when>
+            <thetext>Created an attachment (id=1564)
+Don&apos;t hang when IMAP server closes connection
+
+I run Zimbra Collaboration Server (ZCS 8.5.x) which send a BYE and closes the connection on failed authentication.  This causes auth_rimap to go into an infinite loop as its criteria for if data is available on the socket is incorrect.
+
+This bug was introduced by the patch for bug #3211, included in cyrus-sasl2 2.1.26.  The while() loop at auth_rimap.c:496 has incorrect exit criteria -- if the socket is closed and the fd is at EOF the loop will not exit.
+
+A patch is attached, which I have tested and confirmed resolves the issue.
+
+Sample IMAP exchange:
+  S:   * OK IMAP4 ready
+  C:   saslauthd LOGIN &quot;test&quot; &quot;test&quot;
+  S:   saslauthd NO LOGIN failed
+  S:   * BYE Zimbra IMAP server terminating connection
+Server closes connection
+
+Sample strace:
+  alarm(30)                               = 0
+  read(12, &quot;* OK IMAP4 ready\r\n&quot;, 1000)  = 18
+  alarm(0)                                = 30
+  select(13, [12], NULL, NULL, {1, 0})    = 0 (Timeout)
+  sendto(4, &quot;&lt;39&gt;Feb 19 21:20:24 saslauthd[55&quot;..., 100, MSG_NOSIGNAL, NULL, 0) = 100
+  alarm(30)                               = 0
+  writev(12, [{&quot;saslauthd LOGIN &quot;, 16}, {&quot;\&quot;test\&quot;&quot;, 6}, {&quot; &quot;, 1}, {&quot;\&quot;test\&quot;&quot;, 6}, {&quot;\r\n&quot;, 2}], 5) = 31
+  alarm(0)                                = 30
+  alarm(30)                               = 0
+  read(12, &quot;saslauthd NO LOGIN failed\r\n&quot;, 1000) = 27
+  alarm(0)                                = 20
+  select(13, [12], NULL, NULL, {1, 0})    = 1 (in [12], left {0, 999831})
+  read(12, &quot;* BYE Zimbra IMAP server termina&quot;..., 973) = 49
+  select(13, [12], NULL, NULL, {0, 999831}) = 1 (in [12], left {0, 999719})
+  read(12, &quot;&quot;, 924)                       = 0
+  select(13, [12], NULL, NULL, {0, 999719}) = 1 (in [12], left {0, 999717})
+  read(12, &quot;&quot;, 924)                       = 0
+  select(13, [12], NULL, NULL, {0, 999717}) = 1 (in [12], left {0, 999715})
+etc.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2016-03-24 12:41:59 EDT</bug_when>
+            <thetext>Committed patch to master branch</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1564</attachid>
+            <date>2016-02-19 22:21 EDT</date>
+            <desc>Don&apos;t hang when IMAP server closes connection</desc>
+            <filename>auth_rimap.patch</filename>
+            <type>text/plain</type>
+            <size>749</size>
+            <attacher>jered@convivian.com</attacher>
+            
+              <data encoding="base64">LS0tIGF1dGhfcmltYXAub3JpZwkyMDE2LTAyLTE5IDIxOjU1OjA3LjAwMDAwMDAwMCAtMDUwMAor
+KysgYXV0aF9yaW1hcC5jCTIwMTYtMDItMTkgMjE6NTU6MzYuMDAwMDAwMDAwIC0wNTAwCkBAIC0z
+ODMsNyArMzgzLDcgQEAKICAgICAgICAgd2hpbGUoIHNlbGVjdCAoZmRzLCAmcGVybSwgTlVMTCwg
+TlVMTCwgJnRpbWVvdXQgKSA+MCApIHsKICAgICAgICAgICAgaWYgKCBGRF9JU1NFVChzLCAmcGVy
+bSkgKSB7CiAgICAgICAgICAgICAgIHJldCA9IHJlYWQocywgcmJ1ZityYywgc2l6ZW9mKHJidWYp
+LXJjKTsKLSAgICAgICAgICAgICAgaWYgKCByZXQ8MCApIHsKKyAgICAgICAgICAgICAgaWYgKCBy
+ZXQ8PTAgKSB7CiAgICAgICAgICAgICAgICAgIHJjID0gcmV0OwogICAgICAgICAgICAgICAgICBi
+cmVhazsKICAgICAgICAgICAgICAgfSBlbHNlIHsKQEAgLTQ5Niw3ICs0OTYsNyBAQAogICAgICAg
+ICB3aGlsZSggc2VsZWN0IChmZHMsICZwZXJtLCBOVUxMLCBOVUxMLCAmdGltZW91dCApID4wICkg
+ewogICAgICAgICAgICBpZiAoIEZEX0lTU0VUKHMsICZwZXJtKSApIHsKICAgICAgICAgICAgICAg
+cmV0ID0gcmVhZChzLCByYnVmK3JjLCBzaXplb2YocmJ1ZiktcmMpOwotICAgICAgICAgICAgICBp
+ZiAoIHJldDwwICkgeworICAgICAgICAgICAgICBpZiAoIHJldDw9MCApIHsKICAgICAgICAgICAg
+ICAgICAgcmMgPSByZXQ7CiAgICAgICAgICAgICAgICAgIGJyZWFrOwogICAgICAgICAgICAgICB9
+IGVsc2Ugewo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

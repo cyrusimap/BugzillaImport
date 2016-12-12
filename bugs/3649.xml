@@ -1,0 +1,156 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3649</bug_id>
+          
+          <creation_ts>2012-02-27 11:43 EDT</creation_ts>
+          <short_desc>unable to remove mailbox</short_desc>
+          <delta_ts>2012-03-12 08:17:30 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.12</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4.14</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bob Mroczka">b@mroczka.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bob Mroczka">b@mroczka.com</who>
+            <bug_when>2012-02-27 11:43:18 EDT</bug_when>
+            <thetext>Created an attachment (id=1457)
+patch to mboxlist.c
+
+I found an issue when attempting to remove a mailbox named user/aaa1 when the administrative account performing the deletion was user/aaa.  When the admin account in question is a prefix of the account to be removed it prevents the mailbox from being removed.  I have applied the following patch to correct this issue.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bob Mroczka">b@mroczka.com</who>
+            <bug_when>2012-03-08 11:06:35 EDT</bug_when>
+            <thetext>I have learned after more testing this patch is not complete and does not resolve this issue completely.  With this patch applied removal of the user/aaa1 mailbox works only when there are no messages in the inbox.  I am attempting to troubleshoot this further and hope to provide a more complete fix in a few days.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-03-10 03:56:25 EDT</bug_when>
+            <thetext>How did you go with this?  I&apos;d like to get it into the next 2.4 release if it&apos;s good :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-12 04:25:42 EDT</bug_when>
+            <thetext>We&apos;re going to see if we can get this in 2.4.14</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-03-12 04:49:24 EDT</bug_when>
+            <thetext>Hi Bob - I think this bug report is incorrect.  I have just been testing, and I am unable to recreate it.  It looks like your user may have been missing the ACL for admin, which would have meant that you couldn&apos;t delete it.
+
+If you can create a reproducable testcase, with the admin user having full ACL permissions on the folder, feel free to re-open the bug.
+
+I&apos;ve tested both against the current 2.4 trunk (soon to be 2.4.14) and the 2.4.12 release.
+
+With admin user &apos;admin&apos;:
+
+. create user/admin1
+. OK Completed
+. delete user/admin1
+. NO Permission denied
+. getacl user/admin1
+* ACL user/admin1 admin1 lrswipkxtecda
+. OK Completed
+. setacl user/admin1 admin lrswipkxtecda
+. OK Completed
+. delete user/admin1
+. OK Completed</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-03-12 05:11:30 EDT</bug_when>
+            <thetext>Apologies, I&apos;m re-opening.  Jeroen showed me the errors of my testing!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-12 05:13:39 EDT</bug_when>
+            <thetext>FWIW; no error message reaches the interface used to remove the mailbox, but the mailbox deleted remains to exist.
+
+The mailbox (tree) equivalent in the DELETED namespace is created (delete_mode: delayed).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-03-12 06:52:38 EDT</bug_when>
+            <thetext>Ok - fixed in the 2.4 branch now.
+
+The problem was - it was detecting as an INBOX =&gt; INBOX.sub rename, and hence keeping the original mailbox around as well.
+
+I fixed it by using the APIs that I&apos;ve made for seeing if users own mailboxes rather than open-coded string checks.  Much nicer :)
+
+I also cleaned up the whole codepath there a bit - there were useless duplicated checks going on.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-03-12 08:17:30 EDT</bug_when>
+            <thetext>Closing ticket</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1457</attachid>
+            <date>2012-02-27 11:43 EDT</date>
+            <desc>patch to mboxlist.c</desc>
+            <filename>mboxlist.patch</filename>
+            <type>text/plain</type>
+            <size>790</size>
+            <attacher>b@mroczka.com</attacher>
+            
+              <data encoding="base64">LS0tIGltYXAvbWJveGxpc3QuYy5vcmlnCTIwMTEtMTAtMDQgMTQ6NTM6MDMuMDAwMDAwMDAwIC0w
+NTAwCisrKyBpbWFwL21ib3hsaXN0LmMJMjAxMi0wMi0yNyAwNzozMToyMy42MzgzMDc2MTUgLTA2
+MDAKQEAgLTk5Nyw2ICs5OTcsNyBAQAogICAgIGNoYXIgKm1ib3hlbnQgPSBOVUxMOwogICAgIGNo
+YXIgKnA7CiAgICAgbXVwZGF0ZV9oYW5kbGUgKm11cGRhdGVfaCA9IE5VTEw7CisgICAgaW50IGxl
+bjEsbGVuMjsKIAogICAgIC8qIDEuIG9wZW4gbWFpbGJveCAqLwogICAgIHIgPSBtYWlsYm94X29w
+ZW5faXdsKG9sZG5hbWUsICZvbGRtYWlsYm94KTsKQEAgLTEwMzUsOCArMTAzNiw5IEBACiAJICAg
+IGdvdG8gZG9uZTsKIAl9CiAgICAgfSBlbHNlIGlmICgocCA9IG1ib3huYW1lX2lzdXNlcm1haWxi
+b3gob2xkbmFtZSwgMSkpKSB7Ci0JaWYgKCFzdHJuY21wKHAsIHVzZXJpZCwgY29uZmlnX3ZpcnRk
+b21haW5zID8gc3RyY3Nwbih1c2VyaWQsICJAIikgOgotCQkgICAgIHN0cmxlbih1c2VyaWQpKSkg
+eworICAgICAgICBsZW4xID0gc3RybGVuKHApOworICAgICAgICBsZW4yID0gY29uZmlnX3ZpcnRk
+b21haW5zID8gc3RyY3Nwbih1c2VyaWQsICJAIikgOiBzdHJsZW4odXNlcmlkKTsKKyAgICAgICAg
+aWYgKGxlbjE9PWxlbjIgJiYgIXN0cm5jbXAocCwgdXNlcmlkLCBsZW4xKSkgewogCSAgICAvKiBT
+cGVjaWFsIGNhc2Ugb2YgcmVuYW1pbmcgaW5ib3ggKi8KIAkgICAgaWYgKCEobXlyaWdodHMgJiBB
+Q0xfREVMRVRFTUJPWCkpIHsKIAkJciA9IElNQVBfUEVSTUlTU0lPTl9ERU5JRUQ7Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

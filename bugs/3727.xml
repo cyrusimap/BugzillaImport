@@ -1,0 +1,118 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3727</bug_id>
+          
+          <creation_ts>2012-08-07 03:07 EDT</creation_ts>
+          <short_desc>Compile warning and runtime bug in twoskip on 64b Solaris</short_desc>
+          <delta_ts>2012-09-21 07:51:44 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          <blocked>3674</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>Leena.Heino@uta.fi</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-07 03:07:01 EDT</bug_when>
+            <thetext>(16:49:09) Liinu: lib/cyrusdb_twoskip.c:758: warning: passing arg 3 of `prepare_record&apos; from incompatible pointer type
+
+ 757     /* prepare the record once we know the crc32 of the tail */
+ 758     prepare_record(record, io[0].iov_base, &amp;io[0].iov_len);
+
+ 667 static void prepare_record(struct skiprecord *record, char *buf, size_t *sizep)
+
+
+On Solaris, struct iovec is documented as
+
+caddr_t   iov_base;
+int       iov_len;
+
+http://docs.oracle.com/cd/E18752_01/html/816-5167/readv-2.html
+
+whereas on Linux its documented as
+
+           struct iovec {
+               void  *iov_base;    /* Starting address */
+               size_t iov_len;     /* Number of bytes to transfer */
+           };
+
+int and size_t are different sizes on 64b.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2012-08-07 03:16:16 EDT</bug_when>
+            <thetext>On Solaris 10 it is like this, snippet from include file:
+#if     defined(_XPG4_2)
+typedef struct iovec {
+        void    *iov_base;
+        size_t  iov_len;
+} iovec_t;
+#else
+typedef struct iovec {
+        caddr_t iov_base;
+#if defined(_LP64)
+        size_t  iov_len;
+#else
+        long    iov_len;
+#endif
+} iovec_t;
+#endif  /* defined(_XPG4_2) */</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-09-21 07:43:05 EDT</bug_when>
+            <thetext>So WTF are we supposed to do here?
+
+size_t len = (size_t)io[0].iov_len;
+prepare_record(record, io[0].iov_base, &amp;len);
+
+Sounds like someone who worked on Solaris needs a good pants kicking.  This looks like exactly the kinda thing size_t was meant for.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-09-21 07:51:44 EDT</bug_when>
+            <thetext>OK - done.  Of course it&apos;s the other way around, reading into that value.
+
+
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=2703c62a004b9d521546be2e53462e734630d1b6</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

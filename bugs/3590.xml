@@ -1,0 +1,172 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3590</bug_id>
+          
+          <creation_ts>2011-10-21 15:52 EDT</creation_ts>
+          <short_desc>auxprop plugins check broke simple auth</short_desc>
+          <delta_ts>2012-07-06 06:35:35 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>2.1-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jan Rękorajski">baggins@pld-linux.org</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+    
+    <cc>arekm@maven.pl</cc>
+    
+    <cc>dwhite@olp.net</cc>
+    
+    <cc>lmr@ornl.gov</cc>
+    
+    <cc>quanah@zimbra.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jan Rękorajski">baggins@pld-linux.org</who>
+            <bug_when>2011-10-21 15:52:14 EDT</bug_when>
+            <thetext>Created an attachment (id=1437)
+Ignore the lack of auxprop plugin if none is set up
+
+Formerly (as of 2.1.23) SASL library did not care if there was no auxprop plugin set up/present, current (2.1.25) library _requires_ the presence of properly comfigured and working auxprop plugin, making SASL usesless as an auth provider in daily operations.
+
+The following configuration works with cyrus-sasl 2.1.23 and fails miserably with &quot;no mechs available&quot; with cyrus-sasl 2.1.25:
+
+- run saslauthd with pam as an auth mechanism
+- run postfix (or any other daemon) with pwcheck_method set to saslauthd
+
+The root cause is the call to _sasl_auxprop_lookup_user_props that has been added to _sasl_canon_user(_lookup) which causes authentication to fail if no auxprop plugin in configured.
+
+The proper and clean solution would be to add a generic NSS/getpwnam auxprop plugin that is loaded as a default exporp when nothing is configured.
+
+The short term workaround is to ignore the lack of auxprop plugin as in the old libs.
+
+Please see also:
+https://bugs.launchpad.net/ubuntu/+source/cyrus-sasl2/+bug/875440</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2012-01-11 16:14:27 EDT</bug_when>
+            <thetext>Additional details from Quanah Gibson-Mount &lt;quanah@zimbra.com&gt;:
+
+
+In summary:
+
+The reworking of _sasl_auxprop_lookup in 2.1.25 is completely broken.
+By creating a return status that defaults to SASL_NOMECH, if someone
+builds cyrus-sasl with no auxprop mechanisms, all authentications fail
+because this one function cannot load the auxprop modules, since they
+don&apos;t exist.
+
+This is even somewhat noted in one comment in the function itself:
+
+       /* TODO: Ideally, each auxprop plugin should be marked if its
+failure
+          should be ignored or treated as a fatal error of the whole
+lookup. */
+
+
+I was able to get 2.1.25 to correctly work when there are no auxprop
+plugins with the following patch:
+
+--- auxprop.c.orig      2012-01-11 12:34:03.948477379 -0800
++++ auxprop.c   2012-01-11 12:34:45.878474663 -0800
+@@ -917,7 +917,10 @@
+                        (sasl_callback_ft *)&amp;getopt,
+                        &amp;context) == SASL_OK) {
+       ret = getopt(context, NULL, &quot;auxprop_plugin&quot;, &amp;plist, NULL);
+-       if(ret != SASL_OK) plist = NULL;
++       if(ret != SASL_OK) {
++               plist = NULL;
++               result = SASL_OK;
++       }
+    }
+
+    if(!plist) {
+
+
+I.e., if we are not able to load the aux prop plugins when we call
+getopt, set plist to NULL and set the result to SASL_OK.
+
+This is probably not the best solution in the world, as I imagine
+there may be other reasons why the getopt call here may fail, but it
+does return the behavior of the function to matching 2.1.23, and
+allows builds w/o auxprop to function correctly.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-02-08 09:41:20 EDT</bug_when>
+            <thetext>*** Bug 3625 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-06-09 13:14:28 EDT</bug_when>
+            <thetext>A better fix was implemented and committed.
+
+Fixed by d1b57852247641be30decc480b0719d322f0bc5c post 2.1.25.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-07-06 06:35:35 EDT</bug_when>
+            <thetext>*** Bug 3173 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1437</attachid>
+            <date>2011-10-21 15:52 EDT</date>
+            <desc>Ignore the lack of auxprop plugin if none is set up</desc>
+            <filename>cyrus-sasl-auxprop.patch</filename>
+            <type>text/plain</type>
+            <size>452</size>
+            <attacher>baggins@pld-linux.org</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLXNhc2wtMi4xLjI1L2xpYi9hdXhwcm9wLmN+CTIwMTEtMTAtMjAgMTc6MzM6NDYu
+NDIzMDE1MzE4ICswMjAwCisrKyBjeXJ1cy1zYXNsLTIuMS4yNS9saWIvYXV4cHJvcC5jCTIwMTEt
+MTAtMjAgMTc6NDg6NDkuMzM2MzQ4NjU0ICswMjAwCkBAIC05NzEsNiArOTcxLDEwIEBACiAgICAg
+fQogCiAgICAgaWYoIWZvdW5kKSB7CisJLyogY29tcGF0aWJpbGl0eSB3aXRoIDw9IDIuMS4yMywg
+aWdub3JlIHRoZSBsYWNrIG9mIGF1eHJvcCBwbHVnaW4gKi8KKwlpZiAoIXBsaXN0KQorCSAgICBy
+ZXN1bHQgPSBTQVNMX09LOworCWVsc2UKIAlfc2FzbF9sb2coc3BhcmFtcy0+dXRpbHMtPmNvbm4s
+IFNBU0xfTE9HX0RFQlVHLAogCQkgICJjb3VsZCBub3QgZmluZCBhdXhwcm9wIHBsdWdpbiwgd2Fz
+IHNlYXJjaGluZyBmb3IgJyVzJyIsCiAJCSAgcGxpc3QgPyBwbGlzdCA6ICJbYWxsXSIpOwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

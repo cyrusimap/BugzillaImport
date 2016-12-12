@@ -1,0 +1,120 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3725</bug_id>
+          
+          <creation_ts>2012-08-02 11:19 EDT</creation_ts>
+          <short_desc>statuscache does not updated on &quot;STATUS&quot;</short_desc>
+          <delta_ts>2012-09-21 07:39:50 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Deniss Gaplevsky">slim@inbox.lv</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>murch@andrew.cmu.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-08-02 11:19:34 EDT</bug_when>
+            <thetext>imap command &quot;status INBOX (unseen)&quot; does not insert record to statuscache db</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-09-19 10:07:49 EDT</bug_when>
+            <thetext>i belive following code is missed:
+
+--- cyrus-imapd-2.4.16/imap/statuscache_db.c.orig       2012-09-19 17:04:19.000000000 +0300
++++ cyrus-imapd-2.4.16/imap/statuscache_db.c    2012-09-19 17:04:50.000000000 +0300
+@@ -254,6 +254,7 @@
+                     numrecent, numunseen);
+ 
+     /* cache the new value while unlocking */
++    mailbox-&gt;has_changed = 1;
+     mailbox_unlock_index(mailbox, sdata);
+ 
+   done:</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-09-19 10:37:22 EDT</bug_when>
+            <thetext>or that way:
+--- cyrus-imapd-2.4.16/imap/mailbox.c.orig      2012-09-19 17:29:49.000000000 +0300
++++ cyrus-imapd-2.4.16/imap/mailbox.c   2012-09-19 17:33:16.000000000 +0300
+@@ -1627,7 +1627,8 @@
+         sync_log_mailbox(mailbox-&gt;name);
+            if (config_getswitch(IMAPOPT_STATUSCACHE)) statuscache_invalidate(mailbox-&gt;name, sdata);
+            mailbox-&gt;has_changed = 0;
+-    }
++    } else if (sdata &amp;&amp; config_getswitch(IMAPOPT_STATUSCACHE)) 
++        statuscache_invalidate(mailbox-&gt;name, sdata);
+ 
+     if (mailbox-&gt;index_locktype) {
+        if (lock_unlock(mailbox-&gt;index_fd))</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2012-09-21 06:48:22 EDT</bug_when>
+            <thetext>Can you explain further why you think that a STATUS command should invalidate the cache?  I don&apos;t think that it should do anything other than report the current mailbox state.  Per RFC 3501:
+
+      The STATUS command requests the status of the indicated mailbox.
+      It does not change the currently selected mailbox, nor does it
+      affect the state of any messages in the queried mailbox (in
+      particular, STATUS MUST NOT cause messages to lose the \Recent
+      flag).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2012-09-21 07:12:23 EDT</bug_when>
+            <thetext>STATUS command should populate the cache. 
+in current code statuscache_db is updated when mailbox become changed only</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-09-21 07:39:50 EDT</bug_when>
+            <thetext>This was actually fixed on master a while back, but I didn&apos;t backport it to 2.4, sorry.
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=fa056f42b6645257a594d664b1a5aed81a6d2003
+
+I&apos;ve credited you in the comment for the commit on the 2.4 branch.
+
+Thanks,
+
+Bron.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,145 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3833</bug_id>
+          
+          <creation_ts>2014-01-06 13:15 EDT</creation_ts>
+          <short_desc>nntp not working after upgrade</short_desc>
+          <delta_ts>2014-01-06 18:56:39 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>NNTP</component>
+          <version>2.4.16</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ulrich Eckhardt">cy@uli-eckhardt.de</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>murch@andrew.cmu.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ulrich Eckhardt">cy@uli-eckhardt.de</who>
+            <bug_when>2014-01-06 13:15:48 EDT</bug_when>
+            <thetext>I have upgraded my server to from debian 6 (with cyrus 2.2) to debian 7 
+(with cyrus 2.4.16). After this upgrade it is not possible anymore to 
+feed news into my imap-spool.
+
+In the logs I get the following output from fetchnews:
+Jan  5 12:21:55 h1690828 cyrus/fetchnews[6474]: fetchnews: nntp.aioe.org 
+offered 4; localhost rejected 0, accepted 0, failed 4
+
+The nntpd logs the following:
+---------- 127.0.0.1 Sun Jan  5 13:28:06 2014
+
+ &gt;1388924886&gt;200 h1690828.stratoserver.net Cyrus NNTP 
+v2.4.16-Debian-2.4.16-4+deb7u1 server ready, posting allowed
+&lt;1388924886&lt;IHAVE &lt;dan-20131021-2247-01@moderators.dana.de&gt;
+ &gt;1388924886&gt;335 &lt;dan-20131021-2247-01@moderators.dana.de&gt; Send article
+&lt;1388924886&lt;Path: 
+aioe.org!news.mb-net.net!open-news-network.org!.POSTED!not-for-mail
+From: Henning Sponbiel xxxxxxx
+Newsgroups: de.alt.netdigest
+Subject: [de.rec.sport.fussball] Re: Es brennt der Baum...
+Followup-To: de.talk.jokes.d
+Date: Mon, 21 Oct 2013 20:48:43 +0000 (UTC)
+Organization: MB-NET.NET for Open-News-Network e.V.
+   ....
+ &gt;1388924886&gt;436 &lt;dan-20131021-2247-01@moderators.dana.de&gt; Failed 
+receiving article (Mailbox does not exist)
+&lt;1388924887&lt;IHAVE &lt;dan-20131021-2247-02@moderators.dana.de&gt;
+
+------------------------------------------------------------
+
+So it seems there is something wrong with my mailboxes. So I have 
+removed the mailboxes for news and recreated them as described in
+http://cyrusimap.web.cmu.edu/mediawiki/index.php/NNTP
+
+According cyradm the mailboxes exist and seems to have the correct 
+permissions:
+
+h1690828:/var/lib/cyrus/log/127.0.0.1#  cyradm localhost
+Password:
+localhost.localdomain&gt; lm
+INBOX (\HasNoChildren)
+Trash (\HasNoChildren)
+news.de.alt.netdigest (\HasNoChildren)
+news.de.alt.sysadmin.recovery (\HasNoChildren)
+user.uli (\HasChildren)
+..
+localhost.localdomain&gt; lam news.de.alt.netdigest
+anyone lrsp
+localhost.localdomain&gt; lam news.de.alt.sysadmin.recovery
+anyone lrsp
+
+In the imapd.conf file I have the following entries regarding news:
+# News setup
+partition-news: /var/spool/cyrus/news
+allownewnews: 0
+newsprefix: news
+
+# Alternate namespace
+# If enabled, activate the alternate namespace as documented in
+# /usr/share/doc/cyrus-doc-2.4/html/altnamespace.html, where an user&apos;s
+# subfolders are in the same level as the INBOX
+# See also userprefix and sharedprefix on imapd.conf(5)
+altnamespace: no
+
+# UNIX Hierarchy Convention
+# Set to yes, and cyrus will accept dots in names, and use the forward
+# slash &quot;/&quot; to delimit levels of the hierarchy. This is done by
+unixhierarchysep: no</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-06 15:12:38 EDT</bug_when>
+            <thetext>As I feared, it looks like the &quot;fix&quot; for bug #3415 broke delivery
+
+https://bugzilla.cyrusimap.org/show_bug.cgi?id=3415
+
+
+I will revert the the commit for 3415 and actually fix it correctly.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2014-01-06 18:56:39 EDT</bug_when>
+            <thetext>The following commits fix this issue:
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.4&amp;id=5631334b6f33b734cc2d0d4e8acde558188b53bb
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?h=cyrus-imapd-2.4&amp;id=b1bbc9a744b76645c9d7c15ffb237023cc53807e
+
+These will appear in an upcoming 2.4.18 release</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

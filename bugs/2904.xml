@@ -1,0 +1,162 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2904</bug_id>
+          
+          <creation_ts>2007-01-22 10:23 EDT</creation_ts>
+          <short_desc>imapd segfaults when a account is deleted while a connection is opened</short_desc>
+          <delta_ts>2010-10-18 12:43:10 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Yann Rouillard">yann@pleiades.fr.eu.org</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2007-01-22 10:23:24 EDT</bug_when>
+            <thetext>This segmentation fault can be triggered with the following case:
+
+- open a connection to an imap account and select some folder so seen files are
+opened
+- open a second connection and delete the imap account
+- close the first connection
+
+Now if the imapd process used in the first connection is reused, it will
+segfaults when a folder is selected.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2007-01-22 10:36:05 EDT</bug_when>
+            <thetext>The reason of that bug is that the function seen_close is called twice in a row
+with the same seendb argument.
+
+Here is what happens:
+
+- the first connection opens the user&apos;s seendb file 
+- the second connection delete the account, so it destroys the seendb file
+- the first connection is then closed, so the index_closemailbox function is
+called, it then calls index_checkseen:
+
+    202 void index_closemailbox(struct mailbox *mailbox)
+    203 {
+    204     if (seendb) {
+    205         index_checkseen(mailbox, 1, 0, imapd_exists);
+    206         seen_close(seendb);
+    207         seendb = 0;
+
+ index_checkseen can&apos;t open the seen file, so it calls seen_close:
+
+    468     /* Lock \Seen database and read current values */
+    469     r = seen_lockread(seendb, &amp;last_read, &amp;last_uid, &amp;seen_last_change,
+    470                       &amp;newseenuids);
+    471     if (r) {
+    472         prot_printf(imapd_out, &quot;* OK %s: %s\r\n&quot;,
+    473                error_message(IMAP_NO_CHECKSEEN), error_message(r));
+    474         seen_close(seendb);
+    475         return;
+    476     }
+
+seen_close is called again because index_closemailbox doesn&apos;t know that
+something went wrong in the checkseen function.
+
+seen_close frees the lastseen variable if not null (why ? shouldn&apos;t lastseen be
+always NULL at this point ?) and replaces it with the given seendb variable.
+
+So, first seen_close call:
+lastseen == NULL so it&apos;s not freed
+lasteen = seendb
+
+second seen_close call:
+lastseen == seendb so it&apos;s freed
+lastseen = seendb
+
+hence after the second call, lastseen contains a pointer to freed memory.
+
+So next time the imapd process is reused and lastseen is accessed, imapd will crash.
+
+Hope I am clear.
+
+
+ </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-02-06 09:53:09 EDT</bug_when>
+            <thetext>I can&apos;t seem to reproduce this problem.  Can you test this patch to see if it
+solves it for you?
+
+Index: index.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/index.c,v
+retrieving revision 1.223
+diff -u -r1.223 index.c
+--- index.c     5 Feb 2007 18:41:46 -0000       1.223
++++ index.c     6 Feb 2007 14:44:30 -0000
+@@ -509,6 +509,7 @@
+        prot_printf(imapd_out, &quot;* OK %s: %s\r\n&quot;,
+               error_message(IMAP_NO_CHECKSEEN), error_message(r));
+        seen_close(seendb);
++       seendb = 0;
+        return;
+     }
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Yann Rouillard">yann@pleiades.fr.eu.org</who>
+            <bug_when>2007-02-06 18:08:37 EDT</bug_when>
+            <thetext>Did you try to reproduce the bug with 2.2.12 ?
+The first imapd process must be reused for the bug to happen.
+
+Anyway, I didn&apos;t yet check if your patch solves the bug, but I am not sure.
+if you set seendb to null, the second seen_close will be called with a null
+argument and the function in seen_db.c doesn&apos;t seem to be handle this case.
+
+Shouldn&apos;t you use also add the following test in the index_closemailbox function ?
+if (seendb) {
+ seen_close(seendb); 
+}</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2008-10-07 16:20:13 EDT</bug_when>
+            <thetext>If this bug hasn&apos;t been fixed, please open a new report with a current version of cyrus imapd, or reopen this one.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

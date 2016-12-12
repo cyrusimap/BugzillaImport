@@ -1,0 +1,169 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1211</bug_id>
+          
+          <creation_ts>2002-03-20 20:30 EDT</creation_ts>
+          <short_desc>Reusing UIDs will break Outlook&apos;s POP3 client</short_desc>
+          <delta_ts>2010-10-18 12:42:55 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>POP</component>
+          <version>2.0.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ken Murchison">ken@oceana.com</reporter>
+          <assigned_to name="Ken Murchison">ken@oceana.com</assigned_to>
+          <cc>leg@andrew.cmu.edu</cc>
+    
+    <cc>tjs@mirapoint.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-03-20 20:30:11 EDT</bug_when>
+            <thetext>Excerpts from several emails with TJS.
+
+Tim Showalter wrote:
+&gt; The problem we ran into is this:
+&gt; 
+&gt; Outlook saves every UIDL it has ever seen on a POP server, so having
+&gt; downloaded a message called &quot;1&quot; it will never download a message called
+&gt; &quot;1&quot; again.  If you follow the general advice of the POP3 spec this is
+&gt; not a problem because UIDLs are MD5s of messages, and those are unique,
+&gt; per-message, for all time.
+&gt; 
+&gt; One of our customers transparently migrated users to a new box and users
+&gt; couldn&apos;t download messages: as they had new mailboxes, they also had new
+&gt; UIDs, and we started numbering messages from &quot;1&quot; again.
+&gt; 
+&gt; The same thing can happen if you delete and re-create a mailbox.
+
+[...]
+
+&gt; What I send is &lt;UIDVALIDITY&gt;.&lt;UID&gt;, i.e.,
+&gt; dot-seperated, since there&apos;s no requirement that UIDs be any kind of
+&gt; number at all.  That way I can get some meaning out of the POP UIDs
+&gt; without having to resort to a calculator.
+&gt; 
+&gt; Of course I also had to introduce a bit for backwards compatibility (I
+&gt; never switch to new UIDLs until a mailbox has no UIDLs to screw up).
+
+[...]
+
+&gt; New mailbox / empty mailbox =&gt; set the bit, use wacky new UIDLs.
+&gt; 
+&gt; Otherwise, bit is unset =&gt; use old UIDLs.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-03-20 20:35:26 EDT</bug_when>
+            <thetext>Tim&apos;s &lt;UIDVALIDITY&gt;.&lt;UID&gt; fix is trivial to implement.  We can trigger this by 
+checking to see the the mailbox is empty in openinbox().  The question is, how 
+do we make this new UIDL state persistent persistent?  Do we put something in 
+cyrus.header?  This might be another good example ofa read-only mailbox 
+annotation.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-03-20 20:51:47 EDT</bug_when>
+            <thetext>moving to the POP component
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-03-20 20:54:12 EDT</bug_when>
+            <thetext>probably something in cyrus.header is the right thing.
+i agree that this is a worthy change to make.
+
+i agree we could do this in annotations but i&apos;m not sure it makes more sense
+than in cyrus.header; of course, the problem with cyrus.header is that it isn&apos;t
+easily structured and extended.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-03-21 12:37:28 EDT</bug_when>
+            <thetext>Yeah, extending cyrus.header looks crappy, especially since we already have on 
+optional uniqueid.
+
+How about using a special user flag?  Something like $newUIDL or .newUIDL or 
+\newUIDL.  Making it look like a system flag will protect us from any potential 
+keyword conflicts.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-03-21 16:59:55 EDT</bug_when>
+            <thetext>TJS suggests bumping the minor version number (in cyrus.index I&apos;m guessing).  
+Would this be satisfactory, or too messy?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-03-22 13:44:04 EDT</bug_when>
+            <thetext>since cyrus.index seems to be more structured and has been extended in the 
+past, i&apos;m thinking of adding a &apos;pop3_use_uidvalidity&apos; field and bumping the 
+minor version to 4.  does this sounds reasonable?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2002-03-26 16:41:42 EDT</bug_when>
+            <thetext>yes, bumping the minor version number of cyrus.index sounds like a good idea to me.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-03-26 16:45:34 EDT</bug_when>
+            <thetext>thoughts on the logic which triggers this bit on?  whenever we open cyrus.index 
+check to see if exists==0?  this would catch either a new/empty mailbox 
+whenever pop3d/lmtpd open it, right?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2002-03-30 14:55:12 EDT</bug_when>
+            <thetext>Fixed:
+
+- added pop3_new_uidl field to index header
+- set this field when creating a new mailbox, or a mailbox is empty
+- when reconstructing a mailbox, set this field if we can&apos;t read the index
+  or if we recover a message file (so stupid clients will retrieve the
+  message(s) -- may result in duplicate retrieval but we can&apos;t help it
+- if this field is set, UIDL is &lt;uidvalidity&gt;.&lt;uid&gt;
+
+
+Could someone please check the file locking in mailbox_upgrade_index() and 
+mailbox_calculate_flagcounts()?  Namely, is mailbox_lock_pop() necessary for 
+upgrade and is mailbox_lock_header/index() necessary for flagcounts?</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

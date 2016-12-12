@@ -1,0 +1,225 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2439</bug_id>
+          
+          <creation_ts>2004-06-03 04:56 EDT</creation_ts>
+          <short_desc>Hang condition on POP3 usage</short_desc>
+          <delta_ts>2010-10-18 12:43:05 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>POP</component>
+          <version>2.2.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Mike">szii@sziisoft.com</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Mike">szii@sziisoft.com</who>
+            <bug_when>2004-06-03 04:56:27 EDT</bug_when>
+            <thetext>SuSE 9.1 distribution
+cyrus-sasl-2.1.18-29
+cyrus-imapd-2.2.3-79
+
+NOTE: IMAP -works- POP does not.
+
+Postfix pure virtual setup, no local unix accounts using auxprops and sasldb2.
+--begin snip of telnet session
+core:/etc # /etc/init.d/cyrus restart
+Shutting down IMAP/POP3 service (cyrus-
+imapd)                                                                          
+  done
+Starting IMAP/POP3 service (cyrus-
+imapd)                                                                          
+       done
+core:/etc # telnet 192.168.50.222 110
+Trying 192.168.50.222...
+Connected to 192.168.50.222.
+Escape character is &apos;^]&apos;.
+user foo
+hello?
+hang time...
+
+
+
+
+^]
+telnet&gt; close
+Connection closed.
+core:/etc # 
+--end telnet snip
+
+CPU usages are all low, nothing appears to be spinning.
+I&apos;ve ripped my .conf file all the way down, to no change.
+--snip imapd.conf
+ore:/etc # cat imapd.conf
+configdirectory: /home/servers/cyrus
+partition-default: /home/client_email
+sievedir: /var/lib/sieve
+admins: cyrus
+allowanonymouslogin: no
+#autocreatequota: 10000
+reject8bit: no
+quotawarn: 90
+timeout: 30
+poptimeout: 10
+dracinterval: 0
+drachost: localhost
+lmtp_overquota_perm_failure: no
+
+default_domain:         thegravitywellcorporation.com
+#sasl_pwcheck_method: saslauthd
+sasl_pwcheck_method: auxprop
+sasl_auto_transition:   0
+sasl_minimum_layer:     1
+#fulldirhash:           1
+autocreatequota:        0
+#hashimapspool:         1
+imapidresponse:         0
+popminpoll:             0
+
+singleinstancestore:    1
+unixhierarchysep:       1
+virtdomains:            yes
+altnamespace:           yes
+normalizeuid:           1
+username_tolower:       1
+user_group_enable:      0
+temp_path:              /home/cyrus/tmp
+
+#loginrealms:
+#
+# if you want TLS, you have to generate certificates and keys
+#
+#tls_cert_file: /usr/ssl/certs/cert.pem
+#tls_key_file: /usr/ssl/certs/skey.pem
+#tls_ca_file: /usr/ssl/CA/CAcert.pem
+#tls_ca_path: /usr/ssl/CA
+core:/etc # 
+--end snip imapd.conf
+
+szii@sziisoft.com, or AIM:sziisoft
+
+-Mike</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Mike">szii@sziisoft.com</who>
+            <bug_when>2004-06-03 05:10:17 EDT</bug_when>
+            <thetext>Looks like it&apos;s not an indefinate hang.  I came back about 10 minutes later and 
+it finally showed the banner.  
+
+IMAP doesn&apos;t have this issue, only the POP3D.
+
+-Mike</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Mike">szii@sziisoft.com</who>
+            <bug_when>2004-06-03 05:27:21 EDT</bug_when>
+            <thetext>Subsequent update:
+I can still dump data out of /dev/random and /dev/urandom.  
+
+core:/etc # ls -slaF /dev/urandom 
+0 crw-r--r--  1 root root 1, 9 Jun  2 10:45 /dev/urandom
+core:/etc # ls -slaF /dev/random  
+0 crw-rw-rw-  1 root root 1, 8 Apr  6 06:27 /dev/random
+
+
+However, a gdb backtrace off my &quot;hung&quot; telnet session..
+
+(gdb) bt
+#0  0xffffe410 in ?? ()
+#1  0xbfffd838 in ?? ()
+#2  0x00000006 in ?? ()
+#3  0x08111450 in ?? ()
+#4  0x40300f63 in __read_nocancel () from /lib/tls/libc.so.6
+#5  0x40029676 in getranddata () from /usr/lib/libsasl2.so.2
+#6  0x40029768 in randinit () from /usr/lib/libsasl2.so.2
+#7  0x40029859 in sasl_rand () from /usr/lib/libsasl2.so.2
+#8  0x40029924 in sasl_mkchal () from /usr/lib/libsasl2.so.2
+#9  0xbfffd8a4 in ?? ()
+#10 0x00000004 in ?? ()
+#11 0x08049ef4 in ?? ()
+#12 0x4001e32c in ?? () from /usr/lib/libsasl2.so.2
+#13 0x080f9a10 in __JCR_LIST__ ()
+#14 0x080fa2a0 in popd_namespace ()
+#15 0xbfffd8a8 in ?? ()
+#16 0xbfffdd88 in ?? ()
+#17 0x4000ca40 in _dl_runtime_resolve () from /lib/ld-linux.so.2
+#18 0x0804eee1 in service_main ()
+Previous frame inner to this frame (corrupt stack?)
+(gdb) 
+
+But then, why in POP3D and not in the IMAP module...?
+
+-Mike</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Mike">szii@sziisoft.com</who>
+            <bug_when>2004-06-03 05:35:25 EDT</bug_when>
+            <thetext>Looks like /dev/random WAS out of entropy. =/  I&apos;m able to work around it by 
+coming in via telnet, and watching from across the room by typing.  
+cat /dev/random showed that there were values there, yup...and promptly drained 
+it.  I&apos;ll have to look into this, as network traffic doesn&apos;t seem to be 
+generating entropy - just keyboard.
+
+I suppose this should be marked as &quot;user error&quot; but there is no such category 
+so I&apos;ll put it to INVALID.
+
+Apologies for the hassle.
+
+-Mike</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2004-06-03 08:27:12 EDT</bug_when>
+            <thetext>pop3d needs entropy to generate the apop banner.  You may want to set allowapop: 0</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Vivian Zingelmann">image@virtual-image.de</who>
+            <bug_when>2005-05-08 10:52:22 EDT</bug_when>
+            <thetext>At my box too: I use Debian 3.1 - I experienced that the Bug only appears when
+Cyrus runs on Kernel 2.6.xx - when I boot Kernel 2.4.30 on these box, Cyrus runs
+perfect!!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2005-05-09 23:08:54 EDT</bug_when>
+            <thetext>Configure your POP server to use a better source of entropy (see the rest of the
+bug log).  Re-closing.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

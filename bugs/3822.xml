@@ -1,0 +1,94 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3822</bug_id>
+          
+          <creation_ts>2013-11-14 05:51 EDT</creation_ts>
+          <short_desc>activate elliptic curve support for TLS</short_desc>
+          <delta_ts>2014-10-16 05:15:36 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.4-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Wolfgang Breyha">wbreyha@gmx.net</reporter>
+          <assigned_to name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</assigned_to>
+          <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2013-11-14 05:51:51 EDT</bug_when>
+            <thetext>tls.c:747 says
+/* FIXME: Load ECDH params for ECDHE suites when 0.9.9 is released */
+
+As a first step this patch loads the NIST Suite B prime256v1 curve
+
+--- tls.c.orig	2012-12-01 20:57:54.000000000 +0100
++++ tls.c	2013-11-14 11:49:35.000000000 +0100
+@@ -632,6 +632,9 @@
+     const char   *s_key_file;
+     int    requirecert;
+     int    timeout;
++#if !defined(OPENSSL_NO_ECDH) &amp;&amp; OPENSSL_VERSION_NUMBER &gt;= 0x10000000L
++    EC_KEY *ecdh;
++#endif
+ 
+     if (tls_serverengine)
+ 	return (0);				/* already running */
+@@ -744,9 +747,12 @@
+ #if (OPENSSL_VERSION_NUMBER &gt;= 0x0090800fL)
+     /* Load DH params for DHE-* key exchanges */
+     SSL_CTX_set_tmp_dh(s_ctx, load_dh_param(s_key_file, s_cert_file));
+-    /* FIXME: Load ECDH params for ECDHE suites when 0.9.9 is released */
+ #endif
+-
++#if !defined(OPENSSL_NO_ECDH) &amp;&amp; OPENSSL_VERSION_NUMBER &gt;= 0x10000000L
++    ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
++    SSL_CTX_set_tmp_ecdh(s_ctx, ecdh);
++    EC_KEY_free(ecdh);
++#endif
+     verify_depth = verifydepth;
+     if (askcert!=0)
+ 	verify_flags |= SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2014-10-16 05:15:36 EDT</bug_when>
+            <thetext>[cyrus-imapd-2.4 4b26d2d] Enhance SSL/TLS configuration options
+ 3 files changed, 75 insertions(+), 18 deletions(-)</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,223 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3119</bug_id>
+          
+          <creation_ts>2008-11-05 05:00 EDT</creation_ts>
+          <short_desc>mupdate starttls always times out (and should be thread-safe)</short_desc>
+          <delta_ts>2014-10-21 10:08:04 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <bug_file_loc>http://lists.andrew.cmu.edu/pipermail/cyrus-devel/2008-November/001039.html</bug_file_loc>
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Duncan Gibb">duncan.gibb@siriusit.co.uk</reporter>
+          <assigned_to name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+    
+    <cc>dg@duncangibb.com</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Duncan Gibb">duncan.gibb@siriusit.co.uk</who>
+            <bug_when>2008-11-05 05:00:23 EDT</bug_when>
+            <thetext>Created an attachment (id=1040)
+Patch the select() so mupdate starttls does not always time out
+
+We&apos;re building a 2.3.13 murder in which we would like as much network traffic as possible to be encrypted.  We found that the starttls command always times out when talking to the MUPDATE master.
+
+strace suggests the problem is the select() call at imap/tls.c line 871 which has the fd ceiling value hard-coded to 1.  That code was introduced by rev 1.60 of this file:
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/tls.c.diff?r1=1.59;r2=1.60;f=h
+
+mupdate is the only daemon affected since all the others call &quot;tls_start_servertls(0, ...)&quot;.  In the mupdate case readfd is not stdin.
+
+The attached patch fixes this, but having starttls work reveals some thread-safety problems with the TLS code (see following).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Duncan Gibb">duncan.gibb@siriusit.co.uk</who>
+            <bug_when>2008-11-05 05:04:44 EDT</bug_when>
+            <thetext>Created an attachment (id=1041)
+TLS thread-locking functions for mupdate.
+
+This patch creates thread locking routines for TLS in a new object file, and uses them in mupdate.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Duncan Gibb">duncan.gibb@siriusit.co.uk</who>
+            <bug_when>2008-11-05 05:07:18 EDT</bug_when>
+            <thetext>The Cyrus crypto code is not thread-safe, so given a mupdate where starttls does not always time out, under moderate load TLS negotiations fail all over the place and mupdate segfaults fairly frequently.
+
+The second above patch is an attempt at addressing this.  It creates two new files, imap/tls_th-lock.c and imap/tls_th-lock.h mostly borrowed from the example pthread locking functions supplied with OpenSSL.  For brevity, this patch does not add the CMU comment block to these new files.
+
+The idea is to create an object which could be linked with daemons other than mupdate if they also need multi-threaded TLS in the future.  For now we just add CRYPTO_thread_setup() and CRYPTO_thread_cleanup() calls to mupdate&apos;s service_init() and service_abort() respectively.
+
+This has been tested only on x86_64 Debian Linux and not (yet) in a production murder.
+
+Note that ciphers requiring ephemeral keys are probably still broken without a thread-safe replacement for tmp_rsa_cb().</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-04-10 19:09:54 EDT</bug_when>
+            <thetext>I&apos;m going to attempt to apply these patches to master, thanks.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 10:08:04 EDT</bug_when>
+            <thetext>This will be in 2.5</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1040</attachid>
+            <date>2008-11-05 05:00 EDT</date>
+            <desc>Patch the select() so mupdate starttls does not always time out</desc>
+            <filename>mupdate-tls-timeout.patch</filename>
+            <type>text/plain</type>
+            <size>451</size>
+            <attacher>duncan.gibb@siriusit.co.uk</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTnJ1YiBjeXJ1cy1pbWFwZC0yLjMuMTMvaW1hcC90bHMuYyB3b3JraW5nX2NvcHkvaW1h
+cC90bHMuYwotLS0gY3lydXMtaW1hcGQtMi4zLjEzL2ltYXAvdGxzLmMJMjAwOC0wNC0xNSAxODo1
+ODowOC4wMDAwMDAwMDAgKzAxMDAKKysrIHdvcmtpbmdfY29weS9pbWFwL3Rscy5jCTIwMDgtMTEt
+MDQgMTY6NTA6MzguMDAwMDAwMDAwICswMDAwCkBAIC04NjgsNyArODY4LDcgQEAKIAl0di50dl9z
+ZWMgPSB0aW1lb3V0OwogCXR2LnR2X3VzZWMgPSAwOwogCi0Jc3RzID0gc2VsZWN0KDEsICZyZmRz
+LCBOVUxMLCBOVUxMLCAmdHYpOworCXN0cyA9IHNlbGVjdChyZWFkZmQrMSwgJnJmZHMsIE5VTEws
+IE5VTEwsICZ0dik7CiAJaWYgKHN0cyA8PSAwKSB7CiAJICAgIGlmIChzdHMgPT0gMCkgewogCQlz
+eXNsb2coTE9HX0RFQlVHLCAiU1NMX2FjY2VwdCgpIHRpbWVkIG91dCAtPiBmYWlsIik7Cg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1041</attachid>
+            <date>2008-11-05 05:04 EDT</date>
+            <desc>TLS thread-locking functions for mupdate.</desc>
+            <filename>mupdate-threaded-tls.patch</filename>
+            <type>text/plain</type>
+            <size>4532</size>
+            <attacher>duncan.gibb@siriusit.co.uk</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTnJ1YiBjeXJ1cy1pbWFwZC0yLjMuMTMvaW1hcC9NYWtlZmlsZS5pbiB3b3JraW5nX2Nv
+cHkvaW1hcC9NYWtlZmlsZS5pbgotLS0gY3lydXMtaW1hcGQtMi4zLjEzL2ltYXAvTWFrZWZpbGUu
+aW4JMjAwOC0wOS0yMyAxNzoxNzowOS4wMDAwMDAwMDAgKzAxMDAKKysrIHdvcmtpbmdfY29weS9p
+bWFwL01ha2VmaWxlLmluCTIwMDgtMTEtMDQgMTc6MDg6MzEuMDAwMDAwMDAwICswMDAwCkBAIC0x
+MDEsOCArMTAxLDggQEAKIAljb252ZXJ0X2NvZGUubyBkdXBsaWNhdGUubyBzYXNsY2xpZW50Lm8g
+c2FzbHNlcnZlci5vIHNpZ25hbHMubyBcCiAJYW5ub3RhdGUubyBzZWFyY2hfZW5naW5lcy5vIHNx
+dWF0Lm8gc3F1YXRfaW50ZXJuYWwubyBtYmR1bXAubyBcCiAJaW1hcHBhcnNlLm8gdGVsZW1ldHJ5
+Lm8gdXNlci5vIG5vdGlmeS5vIGlkbGUubyBxdW90YV9kYi5vIFwKLQlzeW5jX2xvZy5vICQoU0VF
+TikgbWJveGtleS5vIGJhY2tlbmQubyB0bHMubyBtZXNzYWdlX2d1aWQubyBcCi0Jc3RhdHVzY2Fj
+aGVfZGIubworCXN5bmNfbG9nLm8gJChTRUVOKSBtYm94a2V5Lm8gYmFja2VuZC5vIHRscy5vIHRs
+c190aC1sb2NrLm8gXAorCW1lc3NhZ2VfZ3VpZC5vIHN0YXR1c2NhY2hlX2RiLm8KIAogSU1BUERP
+QkpTPXB1c2hzdGF0cy5vIGltYXBkLm8gcHJveHkubyBpbWFwX3Byb3h5Lm8gaW5kZXgubyB2ZXJz
+aW9uLm8KIApAQCAtMjE0LDExICsyMTQsMTEgQEAKIAkgJChTRVJWSUNFKSAkKElNQVBET0JKUykg
+bXV0ZXhfZmFrZS5vIGxpYmltYXAuYSBcCiAJJChERVBMSUJTKSAkKExJQlMpICQoTElCX1dSQVAp
+CiAKLW11cGRhdGU6IG11cGRhdGUubyBtdXBkYXRlLXNsYXZlLm8gbXVwZGF0ZS1jbGllbnQubyBt
+dXRleF9wdGhyZWFkLm8gdGxzLm8gXAotCWxpYmltYXAuYSAkKERFUExJQlMpCittdXBkYXRlOiBt
+dXBkYXRlLm8gbXVwZGF0ZS1zbGF2ZS5vIG11cGRhdGUtY2xpZW50Lm8gbXV0ZXhfcHRocmVhZC5v
+IFwKKwl0bHMubyB0bHNfdGgtbG9jay5vIGxpYmltYXAuYSAkKERFUExJQlMpCiAJJChDQykgJChM
+REZMQUdTKSAtbyBtdXBkYXRlIFwKIAkgJChTRVJWSUNFVEhSRUFEKSBtdXBkYXRlLm8gbXVwZGF0
+ZS1zbGF2ZS5vIG11cGRhdGUtY2xpZW50Lm8gXAotCSBtdXRleF9wdGhyZWFkLm8gdGxzLm8gbGli
+aW1hcC5hIFwKKwkgbXV0ZXhfcHRocmVhZC5vIHRscy5vIHRsc190aC1sb2NrLm8gbGliaW1hcC5h
+IFwKIAkgJChERVBMSUJTKSAkKExJQlMpICQoTElCX1dSQVApIC1scHRocmVhZAogCiBtdXBkYXRl
+LnB1cmU6IG11cGRhdGUubyBtdXBkYXRlLXNsYXZlLm8gbXVwZGF0ZS1jbGllbnQubyBtdXRleF9w
+dGhyZWFkLm8gXApkaWZmIC1OcnViIGN5cnVzLWltYXBkLTIuMy4xMy9pbWFwL211cGRhdGUuYyB3
+b3JraW5nX2NvcHkvaW1hcC9tdXBkYXRlLmMKLS0tIGN5cnVzLWltYXBkLTIuMy4xMy9pbWFwL211
+cGRhdGUuYwkyMDA4LTEwLTA4IDE2OjQ3OjA4LjAwMDAwMDAwMCArMDEwMAorKysgd29ya2luZ19j
+b3B5L2ltYXAvbXVwZGF0ZS5jCTIwMDgtMTEtMDQgMTc6MDk6MDEuMDAwMDAwMDAwICswMDAwCkBA
+IC04Niw2ICs4Niw3IEBACiAjaW5jbHVkZSAibm9uYmxvY2suaCIKICNpbmNsdWRlICJwcm90Lmgi
+CiAjaW5jbHVkZSAidGxzLmgiCisjaW5jbHVkZSAidGxzX3RoLWxvY2suaCIKICNpbmNsdWRlICJ1
+dGlsLmgiCiAjaW5jbHVkZSAidmVyc2lvbi5oIgogI2luY2x1ZGUgInhtYWxsb2MuaCIKQEAgLTYz
+NCw2ICs2MzUsMTAgQEAKIAogICAgIGRhdGFiYXNlX2luaXQoKTsKIAorI2lmZGVmIEhBVkVfU1NM
+CisgICAgQ1JZUFRPX3RocmVhZF9zZXR1cCgpOworI2VuZGlmCisKICAgICBpZiAoIW1hc3RlcnAp
+IHsKIAlyID0gcHRocmVhZF9jcmVhdGUoJnQsIE5VTEwsICZtdXBkYXRlX2NsaWVudF9zdGFydCwg
+TlVMTCk7CiAJaWYociA9PSAwKSB7CkBAIC02NzksNiArNjg0LDkgQEAKIC8qIENhbGxlZCBieSBz
+ZXJ2aWNlIEFQSSB0byBzaHV0IGRvd24gdGhlIHNlcnZpY2UgKi8KIHZvaWQgc2VydmljZV9hYm9y
+dChpbnQgZXJyb3IpCiB7CisjaWZkZWYgSEFWRV9TU0wKKyAgICBDUllQVE9fdGhyZWFkX2NsZWFu
+dXAoKTsKKyNlbmRpZgogICAgIHNodXRfZG93bihlcnJvcik7CiB9CiAKZGlmZiAtTnJ1YiBjeXJ1
+cy1pbWFwZC0yLjMuMTMvaW1hcC90bHNfdGgtbG9jay5jIHdvcmtpbmdfY29weS9pbWFwL3Rsc190
+aC1sb2NrLmMKLS0tIGN5cnVzLWltYXBkLTIuMy4xMy9pbWFwL3Rsc190aC1sb2NrLmMJMTk3MC0w
+MS0wMSAwMTowMDowMC4wMDAwMDAwMDAgKzAxMDAKKysrIHdvcmtpbmdfY29weS9pbWFwL3Rsc190
+aC1sb2NrLmMJMjAwOC0xMS0wNCAxNzowODozMS4wMDAwMDAwMDAgKzAwMDAKQEAgLTAsMCArMSw3
+MCBAQAorLyogdGxzX3RoLWxvY2suYyAqLworLyogRGVyaXZlZCBmcm9tIG9wZW5zc2wtMC45Ljhp
+L2NyeXB0by90aHJlYWRzL3RoLWxvY2suYworICogYnkgRHVuY2FuIEdpYmIgPGR1bmNhbi5naWJi
+QHNpcml1c2l0LmNvLnVrPgorICogNCBOb3ZlbWJlciAyMDA4CisgKi8KKworI2luY2x1ZGUgPGNv
+bmZpZy5oPgorI2luY2x1ZGUgPHB0aHJlYWQuaD4KKyNpbmNsdWRlIDxzeXNsb2cuaD4KKworI2lu
+Y2x1ZGUgPG9wZW5zc2wvc3NsLmg+CisKKyNpbmNsdWRlICJ0bHNfdGgtbG9jay5oIgorCitzdGF0
+aWMgcHRocmVhZF9tdXRleF90ICpsb2NrX2NzOworc3RhdGljIGxvbmcgKmxvY2tfY291bnQ7CisK
+K3ZvaWQgQ1JZUFRPX3RocmVhZF9zZXR1cCh2b2lkKQorCXsKKwlpbnQgaTsKKworCXN5c2xvZyhM
+T0dfREVCVUcsICJTZXR0aW5nIHVwIHB0aHJlYWRzIFRMUy4iKTsKKworCWxvY2tfY3M9T1BFTlNT
+TF9tYWxsb2MoQ1JZUFRPX251bV9sb2NrcygpICogc2l6ZW9mKHB0aHJlYWRfbXV0ZXhfdCkpOwor
+CWxvY2tfY291bnQ9T1BFTlNTTF9tYWxsb2MoQ1JZUFRPX251bV9sb2NrcygpICogc2l6ZW9mKGxv
+bmcpKTsKKwlmb3IgKGk9MDsgaTxDUllQVE9fbnVtX2xvY2tzKCk7IGkrKykKKwkJeworCQlsb2Nr
+X2NvdW50W2ldPTA7CisJCXB0aHJlYWRfbXV0ZXhfaW5pdCgmKGxvY2tfY3NbaV0pLE5VTEwpOwor
+CQl9CisKKwlDUllQVE9fc2V0X2lkX2NhbGxiYWNrKCh1bnNpZ25lZCBsb25nICgqKSgpKXB0aHJl
+YWRzX3RocmVhZF9pZCk7CisJQ1JZUFRPX3NldF9sb2NraW5nX2NhbGxiYWNrKCh2b2lkICgqKSgp
+KXB0aHJlYWRzX2xvY2tpbmdfY2FsbGJhY2spOworCX0KKwordm9pZCBDUllQVE9fdGhyZWFkX2Ns
+ZWFudXAodm9pZCkKKwl7CisJaW50IGk7CisKKwlDUllQVE9fc2V0X2xvY2tpbmdfY2FsbGJhY2so
+TlVMTCk7CisJZm9yIChpPTA7IGk8Q1JZUFRPX251bV9sb2NrcygpOyBpKyspCisJCXsKKwkJcHRo
+cmVhZF9tdXRleF9kZXN0cm95KCYobG9ja19jc1tpXSkpOworCQl9CisJT1BFTlNTTF9mcmVlKGxv
+Y2tfY3MpOworCU9QRU5TU0xfZnJlZShsb2NrX2NvdW50KTsKKwl9CisKK3ZvaWQgcHRocmVhZHNf
+bG9ja2luZ19jYWxsYmFjayhpbnQgbW9kZSwgaW50IHR5cGUsIGNoYXIgKmZpbGUsCisJICAgICBp
+bnQgbGluZSkKKyAgICAgIHsKKwlpZiAobW9kZSAmIENSWVBUT19MT0NLKQorCQl7CisJCXB0aHJl
+YWRfbXV0ZXhfbG9jaygmKGxvY2tfY3NbdHlwZV0pKTsKKwkJbG9ja19jb3VudFt0eXBlXSsrOwor
+CQl9CisJZWxzZQorCQl7CisJCXB0aHJlYWRfbXV0ZXhfdW5sb2NrKCYobG9ja19jc1t0eXBlXSkp
+OworCQl9CisJfQorCit1bnNpZ25lZCBsb25nIHB0aHJlYWRzX3RocmVhZF9pZCh2b2lkKQorCXsK
+Kwl1bnNpZ25lZCBsb25nIHJldDsKKworCXJldD0odW5zaWduZWQgbG9uZylwdGhyZWFkX3NlbGYo
+KTsKKwlyZXR1cm4ocmV0KTsKKwl9CisKZGlmZiAtTnJ1YiBjeXJ1cy1pbWFwZC0yLjMuMTMvaW1h
+cC90bHNfdGgtbG9jay5oIHdvcmtpbmdfY29weS9pbWFwL3Rsc190aC1sb2NrLmgKLS0tIGN5cnVz
+LWltYXBkLTIuMy4xMy9pbWFwL3Rsc190aC1sb2NrLmgJMTk3MC0wMS0wMSAwMTowMDowMC4wMDAw
+MDAwMDAgKzAxMDAKKysrIHdvcmtpbmdfY29weS9pbWFwL3Rsc190aC1sb2NrLmgJMjAwOC0xMS0w
+NCAxNzowODozMS4wMDAwMDAwMDAgKzAwMDAKQEAgLTAsMCArMSwxOSBAQAorLyogdGxzX3RoLWxv
+Y2suaCAqLworLyogRGVyaXZlZCBmcm9tIG9wZW5zc2wtMC45LjhpL2NyeXB0by90aHJlYWRzL3Ro
+LWxvY2suYworICogYnkgRHVuY2FuIEdpYmIgPGR1bmNhbi5naWJiQHNpcml1c2l0LmNvLnVrPgor
+ICogNCBOb3ZlbWJlciAyMDA4CisgKi8KKworI2lmbmRlZiBJTkNMVURFRF9UTFNfVEhfTE9DS19I
+CisjZGVmaW5lIElOQ0xVREVEX1RMU19USF9MT0NLX0gKKworI2lmZGVmIEhBVkVfU1NMCisKK3Zv
+aWQgQ1JZUFRPX3RocmVhZF9zZXR1cCh2b2lkKTsKK3ZvaWQgQ1JZUFRPX3RocmVhZF9jbGVhbnVw
+KHZvaWQpOworCitzdGF0aWMgdm9pZCBwdGhyZWFkc19sb2NraW5nX2NhbGxiYWNrKGludCBtb2Rl
+LGludCB0eXBlLGNoYXIgKmZpbGUsaW50IGxpbmUpOworc3RhdGljIHVuc2lnbmVkIGxvbmcgcHRo
+cmVhZHNfdGhyZWFkX2lkKHZvaWQgKTsKKworI2VuZGlmIC8qIEhBVkVfU1NMICovCisjZW5kaWYg
+LyogSU5DTFVERURfVExTX1RIX0xPQ0tfSCAqLwo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

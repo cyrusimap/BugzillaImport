@@ -1,0 +1,285 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3726</bug_id>
+          
+          <creation_ts>2012-08-06 08:39 EDT</creation_ts>
+          <short_desc>Build failures on Solaris 10</short_desc>
+          <delta_ts>2012-08-13 14:23:37 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Leena Heino">Leena.Heino@uta.fi</reporter>
+          <assigned_to name="Dilyan Palauzov">dilyan.palauzov@aegee.org</assigned_to>
+          <cc>gnb@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2012-08-06 08:39:15 EDT</bug_when>
+            <thetext>Solaris 10 does not have posix_fadvise() resulting this error:
+imap/index.c:1085: error: `POSIX_FADV_WILLNEED&apos; undeclared (first use in this function)
+
+Line 1085 in imap/index.c:
+posix_fadvise(fd, 0, 16384, POSIX_FADV_WILLNEED);
+
+
+It seems sieve_script_t is not defined anywhere which leads complilation failure:
+sieve/sieve.h:245: error: syntax error before &apos;*&apos; token
+
+Line 245 in sieve/sieve.h:
+int sieveparse (sieve_script_t *parse_script);</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2012-08-06 14:05:54 EDT</bug_when>
+            <thetext>It seems quite a few generated sieve/*.c and sieve/*.h files are missing include:
+#include &quot;sieve/sieve_interface.h&quot;
+
+Problem with lib/tok.c: it uses strsep() which is a BSD extension and is not defined in Solaris 10 or earlier. Should this call to strsep() be replaced with strtok()?
+
+Problem with imap/index.c it uses memmem() which is a GNU extension and is not defined in Solaris 10 or earlier. Should this call to memmem() be replaced with strstr()?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-06 21:21:01 EDT</bug_when>
+            <thetext>I&apos;ll take this, seeing as I added most of the problematic code.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-06 22:09:53 EDT</bug_when>
+            <thetext>&gt; Solaris 10 does not have posix_fadvise() resulting this error:
+&gt; imap/index.c:1085: error: `POSIX_FADV_WILLNEED&apos; undeclared (first use in this
+function)
+
+Sure it does:
+
+http://cvs.opensolaris.org/source/xref/onnv/onnv-gate/usr/src/lib/libc/port/gen/posix_fadvise.c
+
+It&apos;s not a very useful function but it&apos;s definitely present in libc and the code should compile.  What&apos;s happening here is that we&apos;re not getting the definitions of the POSIX_FADV_* constants from the system header file.  That&apos;s because...
+
+http://cvs.opensolaris.org/source/xref/onnv/onnv-gate/usr/src/uts/common/sys/fcntl.h
+
+356 #if !defined(__XOPEN_OR_POSIX) || defined(_XPG6) || defined(__EXTENSIONS__)
+357 /* advice for posix_fadvise */
+358 #define	POSIX_FADV_NORMAL	0
+359 #define	POSIX_FADV_RANDOM	1
+360 #define	POSIX_FADV_SEQUENTIAL	2
+361 #define	POSIX_FADV_WILLNEED	3
+362 #define	POSIX_FADV_DONTNEED	4
+363 #define	POSIX_FADV_NOREUSE	5
+364 #endif
+
+which means we need some wacky -D option when building on Solaris.  According to
+
+http://docs.oracle.com/cd/E18752_01/html/816-5175/standards-5.html
+
+probably the best thing would to use -D__EXTENSIONS__.
+
+Or, I could push to master the code I have in another branch which adds a configure.ac test for posix_fadvise, and provides a local fake implementation if it&apos;s missing.  That should get Solaris compiling, and given that the libc implementation does nothing anyway there&apos;s no loss of functionality or performance.
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=e910b27d22b5349c1cb9324711ebd423265ca90d</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-07 00:20:32 EDT</bug_when>
+            <thetext>&gt; Problem with lib/tok.c: it uses strsep() which is a BSD extension and is not
+&gt; defined in Solaris 10 or earlier. Should this call to strsep() be replaced with
+&gt; strtok()?
+
+No, they have different semantics.  strsep() can be used when it&apos;s important *not* to coalesce adjacent separator characters, strtok() cannot.  If you look a little bit further down in tok.c you&apos;ll see that it uses strtok_r() when it&apos;s semantics are required and strsep() when it&apos;s semantics are required.  And strsep() *is* required, there&apos;s code in annotator.c that relies on it.
+
+I&apos;ll have to implement a portability stub for it.  The inner loop can be implemented using strpbrk() which Solaris definitely has, so performance won&apos;t suffer.
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=8f482a79394d23aef41b1db1b413fa560a8708af</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2012-08-07 01:31:25 EDT</bug_when>
+            <thetext>Please not that Solaris 10 is not based on OpenSolaris. What you find in OpenSolaris was only available in OpenSolaris builds or in the Solaris 11.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-07 01:57:44 EDT</bug_when>
+            <thetext>&gt; Problem with imap/index.c it uses memmem() which is a GNU extension and is not
+&gt; defined in Solaris 10 or earlier. Should this call to memmem() be replaced with
+&gt; strstr()?
+
+No, memmem() is used here judiciously.  We&apos;re doing a substring search where
+the needle (which was read off the wire by getbnstring()) will be
+nul-terminated but the haystack (the value part of an annotation in the
+database) may not be.  Annotations are not nul-terminated and may even contain
+embedded nuls so we can&apos;t just bung a \0 on the end and use strstr().
+
+Fortunately Solaris has memchr() and I can build a portability stub using that.
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=eb0a49df743e3cd7fe375c530e4bfe614508214f</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-07 02:01:26 EDT</bug_when>
+            <thetext>&gt; Please not that Solaris 10 is not based on OpenSolaris. What you find in
+&gt; OpenSolaris was only available in OpenSolaris builds or in the Solaris 11.
+
+Oh, my bad.  It doesn&apos;t matter though - we&apos;re now not using it on any Solaris.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-07 02:37:34 EDT</bug_when>
+            <thetext>&gt; It seems sieve_script_t is not defined anywhere which leads complilation
+&gt; failure:
+&gt; sieve/sieve.h:245: error: syntax error before &apos;*&apos; token
+&gt; 
+&gt; Line 245 in sieve/sieve.h:
+&gt; int sieveparse (sieve_script_t *parse_script);
+
+The typedef is in the same place it&apos;s always been
+
+http://git.cyrusimap.org/cyrus-imapd/tree/sieve/sieve_interface.h#n60
+
+&gt; It seems quite a few generated sieve/*.c and sieve/*.h files are missing
+&gt; include:
+&gt; #include &quot;sieve/sieve_interface.h&quot;
+
+Aha, I see what&apos;s happened.  This commit
+
+http://git.cyrusimap.org/cyrus-imapd/commit/?id=9f04eec98ed4574d7b02f1484ca3c9ff922640ee
+
+perturbed the sieve code to the point where it doesn&apos;t compile if the sieve/sieve.h generated by bison contains a declaration of the generated sieveparse() function.  Older versions of bison behave like that - 2.4.1 in particular.  Newer versions like Leena&apos;s 2.6.2 generate a declaration, and that doesn&apos;t compile.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2012-08-07 02:38:33 EDT</bug_when>
+            <thetext>Sieve compilation problems were fixed by downgrading bison from version 2.6.2 to 2.4.3.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-08-07 02:42:41 EDT</bug_when>
+            <thetext>Over to Dilyan to fix the sieve problem so we can build with a modern bison.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-08-07 17:31:00 EDT</bug_when>
+            <thetext>Does this patch fix the problem with bison 2.6.2, and does it work at the same time with bison 2.4.3?
+
+diff --git a/sieve/addr-lex.l b/sieve/addr-lex.l
+index ae0fa40..9b3b1ee 100644
+--- a/sieve/addr-lex.l
++++ b/sieve/addr-lex.l
+@@ -45,6 +45,7 @@
+  * $Id: addr-lex.l,v 1.12 2010/01/06 17:01:58 murch Exp $
+  */
+
++#include &quot;sieve/sieve_interface.h&quot;
+ #include &quot;sieve/addr.h&quot;
+ #include &lt;stdlib.h&gt;
+ #include &lt;string.h&gt;
+diff --git a/sieve/addr.y b/sieve/addr.y
+index 935f330..06f51bd 100644
+--- a/sieve/addr.y
++++ b/sieve/addr.y
+@@ -52,8 +52,8 @@
+ #include &lt;stdlib.h&gt;
+ #include &lt;string.h&gt;
+
+-#include &quot;sieve/addr.h&quot;
+ #include &quot;sieve/script.h&quot;
++#include &quot;sieve/addr.h&quot;
+ #include &quot;xmalloc.h&quot;
+ #include &quot;xstrlcpy.h&quot;
+
+diff --git a/sieve/bc_eval.c b/sieve/bc_eval.c
+index 1fb376c..e3c2570 100644
+--- a/sieve/bc_eval.c
++++ b/sieve/bc_eval.c
+@@ -1374,7 +1374,7 @@ int sieve_eval_bc(sieve_execute_t *exe, int is_incl, sieve
+            int once = ntohl(bc[ip+1].value) &amp; 64 ? 1 : 0;
+            int isoptional = ntohl(bc[ip+1].value) &amp; 128 ? 1 : 0;
+            char fpath[4096];
+-
++           isoptional = 1;
+            ip = unwrap_string(bc, ip+2, &amp;data, NULL);
+
+            res = i-&gt;getinclude(sc, data, isglobal, fpath, sizeof(fpath));
+diff --git a/sieve/comparator.c b/sieve/comparator.c
+index bcfe25d..b27d3e2 100644
+--- a/sieve/comparator.c
++++ b/sieve/comparator.c
+@@ -54,6 +54,7 @@
+
+ #include &quot;comparator.h&quot;
+ #include &quot;tree.h&quot;
++#include &quot;sieve/sieve_interface.h&quot;
+ #include &quot;sieve/sieve.h&quot;
+ #include &quot;bytecode.h&quot;
+ #include &quot;xmalloc.h&quot;
+diff --git a/sieve/sieve-lex.l b/sieve/sieve-lex.l
+index efcce0f..acdd161 100644
+--- a/sieve/sieve-lex.l
++++ b/sieve/sieve-lex.l
+@@ -52,8 +52,8 @@
+ #include &quot;xmalloc.h&quot;
+
+ #include &quot;sieve/tree.h&quot;
+-#include &quot;sieve/sieve.h&quot;
+ #include &quot;sieve/sieve_interface.h&quot;
++#include &quot;sieve/sieve.h&quot;
+
+ #define YY_NO_INPUT
+ #define YY_DECL int yylex(YYSTYPE *yylval, sieve_script_t *parse_script)
+diff --git a/sieve/tree.c b/sieve/tree.c
+index 38b3af0..9278339 100644
+--- a/sieve/tree.c
++++ b/sieve/tree.c
+@@ -51,6 +51,7 @@
+ #include &quot;xmalloc.h&quot;
+
+ #include &quot;tree.h&quot;
++#include &quot;sieve/sieve_interface.h&quot;
+ #include &quot;sieve/sieve.h&quot;
+
+ tag_t *new_tag(int type, char *s)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dilyan Palauzov">dilyan.palauzov@aegee.org</who>
+            <bug_when>2012-08-13 14:23:37 EDT</bug_when>
+            <thetext>Fixed in commit 00012d65f1bf524b1230d6676bbd49a055aa0c17 : works on my system with both bison 2.4 and 2.6.
+
+I think this is the last issue in this ticket, so I close it.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

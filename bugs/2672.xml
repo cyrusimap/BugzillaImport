@@ -1,0 +1,97 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2672</bug_id>
+          
+          <creation_ts>2005-06-01 12:51 EDT</creation_ts>
+          <short_desc>unqualified host name in Received field &quot;by&quot; component</short_desc>
+          <delta_ts>2007-05-17 16:18:33 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bruce Lilly">blilly@erols.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bruce Lilly">blilly@erols.com</who>
+            <bug_when>2005-06-01 12:51:59 EDT</bug_when>
+            <thetext>2.2.12 
+gethostname on some systems returns unqualified host name. 
+Patch: 
+*** lib/libconfig.c.original    Fri May 21 23:45:54 2004 
+--- lib/libconfig.c     Wed Jun  1 12:06:12 2005 
+*************** 
+*** 242,249 **** 
+      /* look up the hostname we should present to the user */ 
+      config_servername = config_getstring(IMAPOPT_SERVERNAME); 
+      if (!config_servername) { 
+!       config_servername = xmalloc(sizeof(char) * 256); 
+!       gethostname((char *) config_servername, 256); 
+      } 
+ 
+      config_mupdate_server = config_getstring(IMAPOPT_MUPDATE_SERVER); 
+--- 242,265 ---- 
+      /* look up the hostname we should present to the user */ 
+      config_servername = config_getstring(IMAPOPT_SERVERNAME); 
+      if (!config_servername) { 
+!         char *q = xmalloc(sizeof(char) * 256); 
+!       q[0] = &apos;\0&apos;; 
+!       (void) gethostname(q, 256); 
+!         /* check for unqualified host name, correct it */ 
+!       for (p=q; *p; p++) 
+!             if (*p == &apos;.&apos;) 
+!                 break; 
+!         if (*p != &apos;.&apos;) { /* gethostname returned unqualified host name, e.g. 
+SuSE Linux */ 
+! #include &lt;netdb.h&gt;             /* struct hostent */ 
+!             struct hostent *phe; 
+! 
+!             sethostent(0); 
+!             phe = gethostbyname(q); 
+!             if (phe) 
+!                 (void) strncpy(q, phe-&gt;h_name, 256); 
+!             endhostent(); 
+!         } 
+!         config_servername = (const char *)q; 
+      } 
+ 
+      config_mupdate_server = config_getstring(IMAPOPT_MUPDATE_SERVER);</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

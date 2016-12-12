@@ -1,0 +1,636 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2777</bug_id>
+          
+          <creation_ts>2006-01-14 17:00 EDT</creation_ts>
+          <short_desc>\HasChildren incorrect for wildcard mailbox listings (imapd.c)</short_desc>
+          <delta_ts>2010-10-18 12:43:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bruce Walter">walter@fortean.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>Leena.Heino@uta.fi</cc>
+    
+    <cc>martin.konold@erfrakon.de</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Bruce Walter">walter@fortean.com</who>
+            <bug_when>2006-01-14 17:00:58 EDT</bug_when>
+            <thetext>I&apos;ve found a bug in the way \HasChildren is determined for wildcard mailbox 
+listings in the current code.  Here is a repeatable pathology:
+
+Create a user and a folder and some subfolders under that:
+
+cyrus2_2_12.example.server&gt; cm user.testcase
+cyrus2_2_12.example.server&gt; cm user.testcase.test
+cyrus2_2_12.example.server&gt; cm user.testcase.test.sub1
+cyrus2_2_12.example.server&gt; cm user.testcase.test.sub2
+
+Beautiful.  Let&apos;s look at what we&apos;ve created:
+
+cyrus2_2_12.example.server&gt; lm user.testcase.*
+user.testcase.test (\HasChildren)
+user.testcase.test.sub1 (\HasNoChildren)
+user.testcase.test.sub2 (\HasNoChildren)
+
+Now, let&apos;s create another folder for this user, using the name of
+the previously created folder, a space, and some more text:
+
+cyrus2_2_12.example.server&gt; cm user.testcase.test\ folder
+
+Great, it worked!  Now let&apos;s take a look at the original folder:
+
+cyrus2_2_12.example.server&gt; lm user.testcase.test
+user.testcase.test (\HasChildren)
+
+Wonderful, it still has children.  Except...  When I do a wildcard
+search, things are a bit different:
+
+cyrus2_2_12.example.server&gt; lm user.testcase.*
+user.testcase.test (\HasNoChildren)
+user.testcase.test folder (\HasNoChildren)
+user.testcase.test.sub1 (\HasNoChildren)
+user.testcase.test.sub2 (\HasNoChildren)
+
+The first folder is now flagged as \HasNoChildren.  This causes
+&apos;Very Bad Things (tm)&apos; to happen in at least Thunderbird, possibly other 
+clients.  The symptoms in Thunderbird are that an end-user can create a folder 
+via their client which will cause an entire unrelated folder tree to become 
+invisible, inaccessable or erroneously displayed as empty depending on client 
+version.
+
+I started to look through imapd.c to determine what was happening.  It appears 
+that the parent is being marked as having no children because the space 
+character has artificially sorted a folder in-between the parent and it&apos;s 
+children.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-01-20 17:54:38 EDT</bug_when>
+            <thetext>Yes, the fact that &apos; &apos; sorts before &apos;.&apos; is a well-known problem and pops up in
+multiple places.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2006-07-15 21:43:28 EDT</bug_when>
+            <thetext>Created an attachment (id=445)
+patch for space and other characters like &apos;-&apos; in foldernames
+
+patch to fix the issue for flat and skiplist database backends. (Support for
+BDB is still missing but imho skiplist is good enough in any case)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2006-07-15 21:44:34 EDT</bug_when>
+            <thetext>I investigated the issue. The problem results from an extremly efficient 
+implementation of imapd. In order to provide an as fast as possible response
+time as requested by the IMAP RFC the cyrus imapd does no explicit sorting at 
+all.
+
+Instead Cyrus imapd leverages on the sort order of the database backend which 
+is used for mailboxes.db. Doing so is very smart indeed as folder names are 
+very often listed and seldom written.
+
+I created a patch (which should apply on any version of cyrus imapd for the 
+last two years) which fixes the issue at its root so that it will disappear for 
+skiplist and flat database backends. In order to support also Berkeley DB 
+backends some additional effort is required (Hint: DB-&gt;set_bt_compare)
+
+localhost&gt; cm user/testcase
+localhost&gt; cm user/testcase/test
+localhost&gt; cm user/testcase/test/sub1
+localhost&gt; cm user/testcase/test/sub2
+
+I created the folder as in the bug report.
+
+localhost&gt; lm user.testcase.*
+localhost&gt; lm user/testcase/*
+user/testcase/test (\HasChildren)
+user/testcase/test/sub1 (\HasNoChildren)
+user/testcase/test/sub2 (\HasNoChildren)
+
+Same fine result.
+
+localhost&gt; lm user/testcase/test
+user/testcase/test (\HasChildren)
+
+Still same fine result.
+
+localhost&gt; lm user/testcase/*
+user/testcase/test (\HasChildren)
+user/testcase/test folder (\HasNoChildren)
+user/testcase/test/sub1 (\HasNoChildren)
+user/testcase/test/sub2 (\HasNoChildren)
+
+The result is still fine! Thunderbird should be happy with this now. 
+The nice part is that the fix does not touch imap.c at all and therefor it 
+should catch all use cases.
+
+The patch can be applied using &quot;patch -p0 &lt; imapd.folderchar.patch&quot;.
+
+Before using the patched Cyrus imapd please make a backup copy of your existing 
+mailboxes.db file and recreate a new db with corrected sort order from the 
+ASCII mboxlist file.
+
+ctl_mboxlist -d &gt; /var/tmp/mboxlist.ascii
+ctl_mboxlist -u &lt; /var/tmp/mboxlist.ascii</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-07-19 13:45:29 EDT</bug_when>
+            <thetext>I like the design of the patch, but I&apos;m not sure that using the mailbox sort
+order is correct for ALL databases (seen state, annotations).  Perhaps the
+comparator function should be selectable by a flag.  I need to think about this
+a little bit.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-07-25 13:12:19 EDT</bug_when>
+            <thetext>Created an attachment (id=448)
+patch for space and other characters like &apos;-&apos; in foldernames
+
+Alternate patch which leverages Martin&apos;s work and makes the comparator
+selectable at DB-&gt;open() time.	This seems to work properly in my testing.  I
+will commit this to CVS if I can get independent confirmation that it does the
+right thing.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Martin Konold">martin.konold@erfrakon.de</who>
+            <bug_when>2006-07-25 14:35:00 EDT</bug_when>
+            <thetext>&gt; Alternate patch which leverages Martin&apos;s work and makes the comparator
+&gt; selectable at DB-&gt;open() time.
+
+This new patch is much more in line with Cyrus coding style. While I will 
+naturally not be able to provide independent confirmation I want to mention 
+that the cyrus flat db uses this compare order since a long time. In the past a 
+lot of databases in Cyrus used to rely on the Cyrus flat db backend.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2006-07-27 09:00:25 EDT</bug_when>
+            <thetext>If I compile Cyrus IMAP 2.3.7 with the patch #448 then the imapd processes
+crashes on startup with signal 11. Imapd processes starts normally if Cyrus IMAP
+2.3.7 is compiled without the patch #448.
+
+Compiled on Solaris 9/Sparc with gcc 3.4.3 in 32-bit mode.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-07-31 13:14:30 EDT</bug_when>
+            <thetext>Did you recompile everything, or just the modified files?  Since the size of the
+cyrusdb structs has been changed, you have to recompile all of the code that
+links cyrusdb*.o</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2006-08-01 06:21:34 EDT</bug_when>
+            <thetext>This was clean install and every file was recompiled.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-01 10:11:56 EDT</bug_when>
+            <thetext>Did you dump the mailboxes.db with the old ctl_mboxlist, remove mailboxes.db,
+and then undump it with the new?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-01 11:01:16 EDT</bug_when>
+            <thetext>Created an attachment (id=450)
+patch for space and other characters like &apos;-&apos; in foldernames
+
+Fixed crashing problem during skiplist database recovery.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-01 15:34:54 EDT</bug_when>
+            <thetext>Patch committed to 2.3 branch</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>445</attachid>
+            <date>2006-07-15 21:43 EDT</date>
+            <desc>patch for space and other characters like &apos;-&apos; in foldernames</desc>
+            <filename>imapd.folderchar.patch</filename>
+            <type>text/plain</type>
+            <size>4727</size>
+            <attacher>martin.konold@erfrakon.de</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTmF1cnAgLi4vY3lydXMtaW1hcGQtMi4yLjEyLm9yaWcvbGliL2JzZWFyY2guYyAuL2xp
+Yi9ic2VhcmNoLmMKLS0tIC4uL2N5cnVzLWltYXBkLTIuMi4xMi5vcmlnL2xpYi9ic2VhcmNoLmMJ
+MjAwMy0wMi0xMyAyMToxNTozOS4wMDAwMDAwMDAgKzAxMDAKKysrIC4vbGliL2JzZWFyY2guYwky
+MDA2LTA3LTE1IDIyOjQ5OjA1LjAwMDAwMDAwMCArMDIwMApAQCAtMjEzLDMgKzIxMywyMiBAQCBp
+bnQgYnNlYXJjaF9jb21wYXJlKGNvbnN0IGNoYXIgKnMxLCBjb25zCiAJczIrKzsKICAgICB9CiB9
+CisKK2ludCBic2VhcmNoX25jb21wYXJlKGNvbnN0IGNoYXIgKnMxLCBpbnQgbDEsIGNvbnN0IGNo
+YXIgKnMyLCBpbnQgbDIpCit7CisgICAgaW50IG1pbiA9IGwxIDwgbDIgPyBsMSA6IGwyOworICAg
+IGludCBjbXAgPSAwOworCisgICAgd2hpbGUgKG1pbi0tID4gMCAmJiAoY21wID0gVE9DT01QQVJF
+KCpzMSkgLSBUT0NPTVBBUkUoKnMyKSkgPT0gMCkgeworICAgICAgICBzMSsrOworICAgICAgICBz
+MisrOworICAgIH0KKyAgICBpZiAobWluID49IDApIHsKKyAgICAgICAgcmV0dXJuIGNtcDsKKyAg
+ICB9IGVsc2UgeworICAgICAgICBpZiAobDIgPiBsMSkgcmV0dXJuIC0xOworICAgICAgICBlbHNl
+IGlmIChsMSA+IGwyKSByZXR1cm4gMTsKKyAgICAgICAgZWxzZSByZXR1cm4gMDsKKyAgICB9Cit9
+CisKZGlmZiAtTmF1cnAgLi4vY3lydXMtaW1hcGQtMi4yLjEyLm9yaWcvbGliL2JzZWFyY2guaCAu
+L2xpYi9ic2VhcmNoLmgKLS0tIC4uL2N5cnVzLWltYXBkLTIuMi4xMi5vcmlnL2xpYi9ic2VhcmNo
+LmgJMjAwMy0wMi0xMyAyMToxNTozOS4wMDAwMDAwMDAgKzAxMDAKKysrIC4vbGliL2JzZWFyY2gu
+aAkyMDA2LTA3LTE0IDE1OjA2OjI0LjAwMDAwMDAwMCArMDIwMApAQCAtNTEsNCArNTEsNiBAQCBl
+eHRlcm4gaW50IGJzZWFyY2hfbWVtKGNvbnN0IGNoYXIgKndvcmQsCiAKIGV4dGVybiBpbnQgYnNl
+YXJjaF9jb21wYXJlKGNvbnN0IGNoYXIgKnMxLCBjb25zdCBjaGFyICpzMik7CiAKK2V4dGVybiBp
+bnQgYnNlYXJjaF9uY29tcGFyZShjb25zdCBjaGFyICpzMSwgaW50IGwxLCBjb25zdCBjaGFyICpz
+MiwgaW50IGwyKTsKKwogI2VuZGlmIC8qIElOQ0xVREVEX0JTRUFSQ0hfSCAqLwpkaWZmIC1OYXVy
+cCAuLi9jeXJ1cy1pbWFwZC0yLjIuMTIub3JpZy9saWIvY3lydXNkYl9za2lwbGlzdC5jIC4vbGli
+L2N5cnVzZGJfc2tpcGxpc3QuYwotLS0gLi4vY3lydXMtaW1hcGQtMi4yLjEyLm9yaWcvbGliL2N5
+cnVzZGJfc2tpcGxpc3QuYwkyMDA0LTA2LTA4IDIxOjU1OjE3LjAwMDAwMDAwMCArMDIwMAorKysg
+Li9saWIvY3lydXNkYl9za2lwbGlzdC5jCTIwMDYtMDctMTUgMjI6NTE6MDguMDAwMDAwMDAwICsw
+MjAwCkBAIC02OCw2ICs2OCw3IEBACiAjaW5jbHVkZSAicmV0cnkuaCIKICNpbmNsdWRlICJ1dGls
+LmgiCiAjaW5jbHVkZSAieG1hbGxvYy5oIgorI2luY2x1ZGUgImJzZWFyY2guaCIKIAogI2RlZmlu
+ZSBQUk9CICgwLjUpCiAKQEAgLTc4NywyNCArNzg4LDYgQEAgaW50IG15Y2xvc2Uoc3RydWN0IGRi
+ICpkYikKICAgICByZXR1cm4gZGlzcG9zZV9kYihkYik7CiB9CiAKLXN0YXRpYyBpbnQgY29tcGFy
+ZShjb25zdCBjaGFyICpzMSwgaW50IGwxLCBjb25zdCBjaGFyICpzMiwgaW50IGwyKQotewotICAg
+IGludCBtaW4gPSBsMSA8IGwyID8gbDEgOiBsMjsKLSAgICBpbnQgY21wID0gMDsKLQotICAgIHdo
+aWxlIChtaW4tLSA+IDAgJiYgKGNtcCA9ICpzMSAtICpzMikgPT0gMCkgewotCXMxKys7Ci0JczIr
+KzsKLSAgICB9Ci0gICAgaWYgKG1pbiA+PSAwKSB7Ci0JcmV0dXJuIGNtcDsKLSAgICB9IGVsc2Ug
+ewotCWlmIChsMSA+IGwyKSByZXR1cm4gMTsKLQllbHNlIGlmIChsMiA+IGwxKSByZXR1cm4gLTE7
+Ci0JZWxzZSByZXR1cm4gMDsKLSAgICB9Ci19Ci0KIC8qIHJldHVybnMgdGhlIG9mZnNldCB0byB0
+aGUgbm9kZSBhc2tlZCBmb3IsIG9yIHRoZSBub2RlIGFmdGVyIGl0CiAgICBpZiBpdCBkb2Vzbid0
+IGV4aXN0LgogICAgaWYgcHJldmlvdXMgaXMgc2V0LCBmaW5kcyB0aGUgbGFzdCBub2RlIDwga2V5
+ICovCkBAIC04MjQsNyArODA3LDcgQEAgc3RhdGljIGNvbnN0IGNoYXIgKmZpbmRfbm9kZShzdHJ1
+Y3QgZGIgKgogCiAgICAgZm9yIChpID0gZGItPmN1cmxldmVsIC0gMTsgaSA+PSAwOyBpLS0pIHsK
+IAl3aGlsZSAoKG9mZnNldCA9IEZPUldBUkQocHRyLCBpKSkgJiYgCi0JICAgICAgIGNvbXBhcmUo
+S0VZKGRiLT5tYXBfYmFzZSArIG9mZnNldCksIEtFWUxFTihkYi0+bWFwX2Jhc2UgKyBvZmZzZXQp
+LCAKKwkgICAgICAgYnNlYXJjaF9uY29tcGFyZShLRVkoZGItPm1hcF9iYXNlICsgb2Zmc2V0KSwg
+S0VZTEVOKGRiLT5tYXBfYmFzZSArIG9mZnNldCksIAogCQkgICAgICAga2V5LCBrZXlsZW4pIDwg
+MCkgewogCSAgICAvKiBtb3ZlIGZvcndhcmQgYXQgbGV2ZWwgJ2knICovCiAJICAgIHB0ciA9IGRi
+LT5tYXBfYmFzZSArIG9mZnNldDsKQEAgLTg3NSw3ICs4NTgsNyBAQCBpbnQgbXlmZXRjaChzdHJ1
+Y3QgZGIgKmRiLAogCiAgICAgcHRyID0gZmluZF9ub2RlKGRiLCBrZXksIGtleWxlbiwgMCk7CiAK
+LSAgICBpZiAocHRyID09IGRiLT5tYXBfYmFzZSB8fCBjb21wYXJlKEtFWShwdHIpLCBLRVlMRU4o
+cHRyKSwga2V5LCBrZXlsZW4pKSB7CisgICAgaWYgKHB0ciA9PSBkYi0+bWFwX2Jhc2UgfHwgYnNl
+YXJjaF9uY29tcGFyZShLRVkocHRyKSwgS0VZTEVOKHB0ciksIGtleSwga2V5bGVuKSkgewogCS8q
+IGZhaWxlZCB0byBmaW5kIGtleS9rZXlsZW4gKi8KIAlyID0gQ1lSVVNEQl9OT1RGT1VORDsKICAg
+ICB9IGVsc2UgewpAQCAtOTYzLDcgKzk0Niw3IEBAIGludCBteWZvcmVhY2goc3RydWN0IGRiICpk
+YiwKICAgICB3aGlsZSAocHRyICE9IGRiLT5tYXBfYmFzZSkgewogCS8qIGRvZXMgaXQgbWF0Y2gg
+cHJlZml4PyAqLwogCWlmIChLRVlMRU4ocHRyKSA8IChiaXQzMikgcHJlZml4bGVuKSBicmVhazsK
+LQlpZiAocHJlZml4bGVuICYmIGNvbXBhcmUoS0VZKHB0ciksIHByZWZpeGxlbiwgcHJlZml4LCBw
+cmVmaXhsZW4pKSBicmVhazsKKwlpZiAocHJlZml4bGVuICYmIGJzZWFyY2hfbmNvbXBhcmUoS0VZ
+KHB0ciksIHByZWZpeGxlbiwgcHJlZml4LCBwcmVmaXhsZW4pKSBicmVhazsKIAogCWlmICghZ29v
+ZHAgfHwKIAkgICAgZ29vZHAocm9jaywgS0VZKHB0ciksIEtFWUxFTihwdHIpLCBEQVRBKHB0ciks
+IERBVEFMRU4ocHRyKSkpIHsKQEAgLTExMTYsNyArMTA5OSw3IEBAIGludCBteXN0b3JlKHN0cnVj
+dCBkYiAqZGIsIAogICAgIG5ld29mZnNldCA9IHRwLT5sb2dlbmQ7CiAgICAgcHRyID0gZmluZF9u
+b2RlKGRiLCBrZXksIGtleWxlbiwgdXBkYXRlb2Zmc2V0cyk7CiAgICAgaWYgKHB0ciAhPSBkYi0+
+bWFwX2Jhc2UgJiYgCi0JIWNvbXBhcmUoS0VZKHB0ciksIEtFWUxFTihwdHIpLCBrZXksIGtleWxl
+bikpIHsKKwkhYnNlYXJjaF9uY29tcGFyZShLRVkocHRyKSwgS0VZTEVOKHB0ciksIGtleSwga2V5
+bGVuKSkgewogCSAgICAKIAlpZiAoIW92ZXJ3cml0ZSkgewogCSAgICBteWFib3J0KGRiLCB0cCk7
+CS8qIHJlbGVhc2VzIGxvY2sgKi8KQEAgLTEyODIsNyArMTI2NSw3IEBAIGludCBteWRlbGV0ZShz
+dHJ1Y3QgZGIgKmRiLCAKIAogICAgIHB0ciA9IGZpbmRfbm9kZShkYiwga2V5LCBrZXlsZW4sIHVw
+ZGF0ZW9mZnNldHMpOwogICAgIGlmIChwdHIgPT0gZGItPm1hcF9iYXNlIHx8Ci0JIWNvbXBhcmUo
+S0VZKHB0ciksIEtFWUxFTihwdHIpLCBrZXksIGtleWxlbikpIHsKKwkhYnNlYXJjaF9uY29tcGFy
+ZShLRVkocHRyKSwgS0VZTEVOKHB0ciksIGtleSwga2V5bGVuKSkgewogCS8qIGdvdGNoYSAqLwog
+CW9mZnNldCA9IHB0ciAtIGRiLT5tYXBfYmFzZTsKIApAQCAtMTgyNSwxMSArMTgwOCwxMSBAQCBz
+dGF0aWMgaW50IG15Y29uc2lzdGVudChzdHJ1Y3QgZGIgKmRiLCBzCiAJCWNvbnN0IGNoYXIgKnEg
+PSBkYi0+bWFwX2Jhc2UgKyBvZmZzZXQ7CiAJCWludCBjbXA7CiAKLQkJY21wID0gY29tcGFyZShL
+RVkocHRyKSwgS0VZTEVOKHB0ciksIEtFWShxKSwgS0VZTEVOKHEpKTsKKwkJY21wID0gYnNlYXJj
+aF9uY29tcGFyZShLRVkocHRyKSwgS0VZTEVOKHB0ciksIEtFWShxKSwgS0VZTEVOKHEpKTsKIAkJ
+aWYgKGNtcCA+PSAwKSB7CiAJCSAgICBmcHJpbnRmKHN0ZG91dCwgCiAJCQkgICAgInNraXBsaXN0
+IGluY29uc2lzdGVudDogJTA0WDogcHRyICVkIGlzICUwNFg7ICIKLQkJCSAgICAiY29tcGFyZSgp
+ID0gJWRcbiIsIAorCQkJICAgICJic2VhcmNoX25jb21wYXJlKCkgPSAlZFxuIiwgCiAJCQkgICAg
+cHRyIC0gZGItPm1hcF9iYXNlLAogCQkJICAgIGksCiAJCQkgICAgb2Zmc2V0LCBjbXApOwpAQCAt
+MjA1OCw3ICsyMDQxLDcgQEAgc3RhdGljIGludCByZWNvdmVyeShzdHJ1Y3QgZGIgKmRiLCBpbnQg
+ZgogCWlmIChUWVBFKHB0cikgPT0gQUREKSB7CiAJICAgIGtleXB0ciA9IGZpbmRfbm9kZShkYiwg
+S0VZKHB0ciksIEtFWUxFTihwdHIpLCB1cGRhdGVvZmZzZXRzKTsKIAkgICAgaWYgKGtleXB0ciA9
+PSBkYi0+bWFwX2Jhc2UgfHwKLQkJY29tcGFyZShLRVkocHRyKSwgS0VZTEVOKHB0ciksIEtFWShr
+ZXlwdHIpLCBLRVlMRU4oa2V5cHRyKSkpIHsKKwkJYnNlYXJjaF9uY29tcGFyZShLRVkocHRyKSwg
+S0VZTEVOKHB0ciksIEtFWShrZXlwdHIpLCBLRVlMRU4oa2V5cHRyKSkpIHsKIAkJLyogZGlkbid0
+IGZpbmQgZXhhY3RseSB0aGlzIG5vZGUgKi8KIAkJa2V5cHRyID0gTlVMTDsKIAkgICAgfQo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>448</attachid>
+            <date>2006-07-25 13:12 EDT</date>
+            <desc>patch for space and other characters like &apos;-&apos; in foldernames</desc>
+            <filename>mboxsort.diff</filename>
+            <type>text/plain</type>
+            <size>7295</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXAvbWJveGxpc3QuYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9z
+eXN0ZW0vY3ZzL3NyYy9jeXJ1cy9pbWFwL21ib3hsaXN0LmMsdgpyZXRyaWV2aW5nIHJldmlzaW9u
+IDEuMjIxLjIuMjIKZGlmZiAtdSAtcjEuMjIxLjIuMjIgbWJveGxpc3QuYwotLS0gaW1hcC9tYm94
+bGlzdC5jCTIyIE1heSAyMDA2IDIwOjM3OjI1IC0wMDAwCTEuMjIxLjIuMjIKKysrIGltYXAvbWJv
+eGxpc3QuYwkyNSBKdWwgMjAwNiAxNzowODoyNSAtMDAwMApAQCAtMjcwOCw3ICsyNzA4LDcgQEAK
+IAlzdHJsY2F0KGZuYW1lLCBGTkFNRV9NQk9YTElTVCwgZm5hbWVfbGVuKTsKICAgICB9CiAKLSAg
+ICByZXQgPSBEQi0+b3BlbihmbmFtZSwgQ1lSVVNEQl9DUkVBVEUsICZtYmRiKTsKKyAgICByZXQg
+PSBEQi0+b3BlbihmbmFtZSwgQ1lSVVNEQl9DUkVBVEV8Q1lSVVNEQl9NQk9YU09SVCwgJm1iZGIp
+OwogICAgIGlmIChyZXQgIT0gMCkgewogCXN5c2xvZyhMT0dfRVJSLCAiREJFUlJPUjogb3Blbmlu
+ZyAlczogJXMiLCBmbmFtZSwKIAkgICAgICAgY3lydXNkYl9zdHJlcnJvcihyZXQpKTsKQEAgLTI3
+ODEsNyArMjc4MSw3IEBACiAKICAgICAvKiBCdWlsZCBzdWJzY3JpcHRpb24gbGlzdCBmaWxlbmFt
+ZSAqLwogICAgIHN1YnNmbmFtZSA9IG1ib3hsaXN0X2hhc2hfdXNlcnN1YnModXNlcmlkKTsKLSAg
+ICByID0gU1VCREItPm9wZW4oc3Vic2ZuYW1lLCBDWVJVU0RCX0NSRUFURSwgcmV0KTsKKyAgICBy
+ID0gU1VCREItPm9wZW4oc3Vic2ZuYW1lLCBDWVJVU0RCX0NSRUFURXxDWVJVU0RCX01CT1hTT1JU
+LCByZXQpOwogICAgIGlmIChyICE9IENZUlVTREJfT0spIHsKIAlyID0gSU1BUF9JT0VSUk9SOwog
+ICAgIH0KSW5kZXg6IGxpYi9ic2VhcmNoLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRy
+ZXcvc3lzdGVtL2N2cy9zcmMvY3lydXMvbGliL2JzZWFyY2guYyx2CnJldHJpZXZpbmcgcmV2aXNp
+b24gMS4xOQpkaWZmIC11IC1yMS4xOSBic2VhcmNoLmMKLS0tIGxpYi9ic2VhcmNoLmMJMTMgRmVi
+IDIwMDMgMjA6MTU6MzkgLTAwMDAJMS4xOQorKysgbGliL2JzZWFyY2guYwkyNSBKdWwgMjAwNiAx
+NzowODoyNiAtMDAwMApAQCAtMjEzLDMgKzIxMywyMiBAQAogCXMyKys7CiAgICAgfQogfQorCitp
+bnQgYnNlYXJjaF9uY29tcGFyZShjb25zdCBjaGFyICpzMSwgaW50IGwxLCBjb25zdCBjaGFyICpz
+MiwgaW50IGwyKQoreworICAgIGludCBtaW4gPSBsMSA8IGwyID8gbDEgOiBsMjsKKyAgICBpbnQg
+Y21wID0gMDsKKworICAgIHdoaWxlIChtaW4tLSA+IDAgJiYgKGNtcCA9IFRPQ09NUEFSRSgqczEp
+IC0gVE9DT01QQVJFKCpzMikpID09IDApIHsKKyAgICAgICAgczErKzsKKyAgICAgICAgczIrKzsK
+KyAgICB9CisgICAgaWYgKG1pbiA+PSAwKSB7CisgICAgICAgIHJldHVybiBjbXA7CisgICAgfSBl
+bHNlIHsKKyAgICAgICAgaWYgKGwyID4gbDEpIHJldHVybiAtMTsKKyAgICAgICAgZWxzZSBpZiAo
+bDEgPiBsMikgcmV0dXJuIDE7CisgICAgICAgIGVsc2UgcmV0dXJuIDA7CisgICAgfQorfQorCklu
+ZGV4OiBsaWIvYnNlYXJjaC5oCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9hZnMvYW5kcmV3L3N5c3Rl
+bS9jdnMvc3JjL2N5cnVzL2xpYi9ic2VhcmNoLmgsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuNwpk
+aWZmIC11IC1yMS43IGJzZWFyY2guaAotLS0gbGliL2JzZWFyY2guaAkxMyBGZWIgMjAwMyAyMDox
+NTozOSAtMDAwMAkxLjcKKysrIGxpYi9ic2VhcmNoLmgJMjUgSnVsIDIwMDYgMTc6MDg6MjYgLTAw
+MDAKQEAgLTUxLDQgKzUxLDYgQEAKIAogZXh0ZXJuIGludCBic2VhcmNoX2NvbXBhcmUoY29uc3Qg
+Y2hhciAqczEsIGNvbnN0IGNoYXIgKnMyKTsKIAorZXh0ZXJuIGludCBic2VhcmNoX25jb21wYXJl
+KGNvbnN0IGNoYXIgKnMxLCBpbnQgbDEsIGNvbnN0IGNoYXIgKnMyLCBpbnQgbDIpOworCiAjZW5k
+aWYgLyogSU5DTFVERURfQlNFQVJDSF9IICovCkluZGV4OiBsaWIvY3lydXNkYi5oCj09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT0KUkNTIGZpbGU6IC9hZnMvYW5kcmV3L3N5c3RlbS9jdnMvc3JjL2N5cnVzL2xpYi9jeXJ1c2Ri
+LmgsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMjUuMi40CmRpZmYgLXUgLXIxLjI1LjIuNCBjeXJ1
+c2RiLmgKLS0tIGxpYi9jeXJ1c2RiLmgJNCBKYW4gMjAwNiAwMjoxNDoxNCAtMDAwMAkxLjI1LjIu
+NAorKysgbGliL2N5cnVzZGIuaAkyNSBKdWwgMjAwNiAxNzowODoyNiAtMDAwMApAQCAtNjcsNyAr
+NjcsOCBAQAogfTsKIAogZW51bSBjeXJ1c2RiX29wZW5mbGFncyB7Ci0gICAgQ1lSVVNEQl9DUkVB
+VEUgPSAweDAxICAgICAgIC8qIENyZWF0ZSB0aGUgZGF0YWJhc2UgaWYgbm90IGV4aXN0YW50ICov
+CisgICAgQ1lSVVNEQl9DUkVBVEUgICA9IDB4MDEsCS8qIENyZWF0ZSB0aGUgZGF0YWJhc2UgaWYg
+bm90IGV4aXN0YW50ICovCisgICAgQ1lSVVNEQl9NQk9YU09SVCA9IDB4MDIJLyogVXNlIG1haWxi
+b3ggc29ydCBvcmRlciAoJy4nIHNvcnRzIDFzdCkgKi8KIH07CiAKIHR5cGVkZWYgaW50IGZvcmVh
+Y2hfcCh2b2lkICpyb2NrLApJbmRleDogbGliL2N5cnVzZGJfYmVya2VsZXkuYwo9PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0vY3ZzL3NyYy9jeXJ1cy9saWIvY3lydXNkYl9i
+ZXJrZWxleS5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjIuMi4xMgpkaWZmIC11IC1yMS4yLjIu
+MTIgY3lydXNkYl9iZXJrZWxleS5jCi0tLSBsaWIvY3lydXNkYl9iZXJrZWxleS5jCTI4IEZlYiAy
+MDA2IDEyOjU4OjA3IC0wMDAwCTEuMi4yLjEyCisrKyBsaWIvY3lydXNkYl9iZXJrZWxleS5jCTI1
+IEp1bCAyMDA2IDE3OjA4OjI2IC0wMDAwCkBAIC01MSw2ICs1MSw3IEBACiAjaW5jbHVkZSA8c3Rk
+bGliLmg+CiAjaW5jbHVkZSA8dW5pc3RkLmg+CiAKKyNpbmNsdWRlICJic2VhcmNoLmgiCiAjaW5j
+bHVkZSAiY3lydXNkYi5oIgogI2luY2x1ZGUgImV4aXRjb2Rlcy5oIgogI2luY2x1ZGUgImxpYmN5
+cl9jZmcuaCIKQEAgLTM3Niw2ICszNzcsMTIgQEAKICAgICByZXR1cm4gMDsKIH0KIAorc3RhdGlj
+IGludCBtYm94X2NvbXBhcihEQiAqZGIsIGNvbnN0IERCVCAqYSwgY29uc3QgREJUICpiKQorewor
+ICAgIHJldHVybiBic2VhcmNoX25jb21wYXJlKChjb25zdCBjaGFyICopIGEtPmRhdGEsIGEtPnNp
+emUsCisJCQkgICAgKGNvbnN0IGNoYXIgKikgYi0+ZGF0YSwgYi0+c2l6ZSk7Cit9CisKIHN0YXRp
+YyBpbnQgbXlvcGVuKGNvbnN0IGNoYXIgKmZuYW1lLCBEQlRZUEUgdHlwZSwgaW50IGZsYWdzLCBz
+dHJ1Y3QgZGIgKipyZXQpCiB7CiAgICAgREIgKmRiID0gTlVMTDsKQEAgLTM5Miw2ICszOTksNyBA
+QAogCXJldHVybiBDWVJVU0RCX0lPRVJST1I7CiAgICAgfQogICAgIC8qIHh4eCBzZXQgY29tcGFy
+YXRvciEgKi8KKyAgICBpZiAoZmxhZ3MgJiBDWVJVU0RCX01CT1hTT1JUKSBkYi0+c2V0X2J0X2Nv
+bXBhcmUoZGIsIG1ib3hfY29tcGFyKTsKIAogI2lmIERCX1ZFUlNJT05fTUFKT1IgPT0gNCAmJiBE
+Ql9WRVJTSU9OX01JTk9SID49IDEKICAgICByID0gZGItPm9wZW4oZGIsIE5VTEwsIGZuYW1lLCBO
+VUxMLCB0eXBlLCBkYmZsYWdzIHwgREJfQVVUT19DT01NSVQsIDA2NjQpOwpJbmRleDogbGliL2N5
+cnVzZGJfc2tpcGxpc3QuYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0v
+Y3ZzL3NyYy9jeXJ1cy9saWIvY3lydXNkYl9za2lwbGlzdC5jLHYKcmV0cmlldmluZyByZXZpc2lv
+biAxLjQyLjIuMwpkaWZmIC11IC1yMS40Mi4yLjMgY3lydXNkYl9za2lwbGlzdC5jCi0tLSBsaWIv
+Y3lydXNkYl9za2lwbGlzdC5jCTkgSnVuIDIwMDQgMTk6NDI6NDcgLTAwMDAJMS40Mi4yLjMKKysr
+IGxpYi9jeXJ1c2RiX3NraXBsaXN0LmMJMjUgSnVsIDIwMDYgMTc6MDg6MjYgLTAwMDAKQEAgLTYx
+LDYgKzYxLDcgQEAKICNlbmRpZgogI2luY2x1ZGUgPG5ldGluZXQvaW4uaD4KIAorI2luY2x1ZGUg
+ImJzZWFyY2guaCIKICNpbmNsdWRlICJjeXJ1c2RiLmgiCiAjaW5jbHVkZSAibGliY3lyX2NmZy5o
+IgogI2luY2x1ZGUgImxvY2suaCIKQEAgLTE1Myw2ICsxNTQsOCBAQAogICAgIGludCBsaXN0c2l6
+ZTsKICAgICBpbnQgbG9nc3RhcnQ7CQkvKiB3aGVyZSB0aGUgbG9nIHN0YXJ0cyBmcm9tIGxhc3Qg
+Y2hrcG50ICovCiAgICAgdGltZV90IGxhc3RfcmVjb3Zlcnk7CisKKyAgICBpbnQgKCpjb21wYXIp
+IChjb25zdCBjaGFyICpzMSwgaW50IGwxLCBjb25zdCBjaGFyICpzMiwgaW50IGwyKTsKIH07CiAK
+IHN0cnVjdCB0eG4gewpAQCAtMTc1LDYgKzE3OCw4IEBACiAgICAgdXNlX29zeW5jID0gMAogfTsK
+IAorc3RhdGljIGludCBjb21wYXJlKGNvbnN0IGNoYXIgKnMxLCBpbnQgbDEsIGNvbnN0IGNoYXIg
+KnMyLCBpbnQgbDIpOworCiBzdGF0aWMgdm9pZCBuZXd0eG4oc3RydWN0IGRiICpkYiwgc3RydWN0
+IHR4biAqdCkKIHsKICAgICAvKiBmaWxsIGluIHQgKi8KQEAgLTc3OCw2ICs3ODMsOCBAQAogCX0K
+ICAgICB9CiAKKyAgICBkYi0+Y29tcGFyID0gKGZsYWdzICYgQ1lSVVNEQl9NQk9YU09SVCkgPyBi
+c2VhcmNoX25jb21wYXJlIDogY29tcGFyZTsKKwogICAgICpyZXQgPSBkYjsKICAgICByZXR1cm4g
+MDsKIH0KQEAgLTgyNCw3ICs4MzEsNyBAQAogCiAgICAgZm9yIChpID0gZGItPmN1cmxldmVsIC0g
+MTsgaSA+PSAwOyBpLS0pIHsKIAl3aGlsZSAoKG9mZnNldCA9IEZPUldBUkQocHRyLCBpKSkgJiYg
+Ci0JICAgICAgIGNvbXBhcmUoS0VZKGRiLT5tYXBfYmFzZSArIG9mZnNldCksIEtFWUxFTihkYi0+
+bWFwX2Jhc2UgKyBvZmZzZXQpLCAKKwkgICAgICAgZGItPmNvbXBhcihLRVkoZGItPm1hcF9iYXNl
+ICsgb2Zmc2V0KSwgS0VZTEVOKGRiLT5tYXBfYmFzZSArIG9mZnNldCksIAogCQkgICAgICAga2V5
+LCBrZXlsZW4pIDwgMCkgewogCSAgICAvKiBtb3ZlIGZvcndhcmQgYXQgbGV2ZWwgJ2knICovCiAJ
+ICAgIHB0ciA9IGRiLT5tYXBfYmFzZSArIG9mZnNldDsKQEAgLTg3NSw3ICs4ODIsNyBAQAogCiAg
+ICAgcHRyID0gZmluZF9ub2RlKGRiLCBrZXksIGtleWxlbiwgMCk7CiAKLSAgICBpZiAocHRyID09
+IGRiLT5tYXBfYmFzZSB8fCBjb21wYXJlKEtFWShwdHIpLCBLRVlMRU4ocHRyKSwga2V5LCBrZXls
+ZW4pKSB7CisgICAgaWYgKHB0ciA9PSBkYi0+bWFwX2Jhc2UgfHwgZGItPmNvbXBhcihLRVkocHRy
+KSwgS0VZTEVOKHB0ciksIGtleSwga2V5bGVuKSkgewogCS8qIGZhaWxlZCB0byBmaW5kIGtleS9r
+ZXlsZW4gKi8KIAlyID0gQ1lSVVNEQl9OT1RGT1VORDsKICAgICB9IGVsc2UgewpAQCAtOTYzLDcg
+Kzk3MCw3IEBACiAgICAgd2hpbGUgKHB0ciAhPSBkYi0+bWFwX2Jhc2UpIHsKIAkvKiBkb2VzIGl0
+IG1hdGNoIHByZWZpeD8gKi8KIAlpZiAoS0VZTEVOKHB0cikgPCAoYml0MzIpIHByZWZpeGxlbikg
+YnJlYWs7Ci0JaWYgKHByZWZpeGxlbiAmJiBjb21wYXJlKEtFWShwdHIpLCBwcmVmaXhsZW4sIHBy
+ZWZpeCwgcHJlZml4bGVuKSkgYnJlYWs7CisJaWYgKHByZWZpeGxlbiAmJiBkYi0+Y29tcGFyKEtF
+WShwdHIpLCBwcmVmaXhsZW4sIHByZWZpeCwgcHJlZml4bGVuKSkgYnJlYWs7CiAKIAlpZiAoIWdv
+b2RwIHx8CiAJICAgIGdvb2RwKHJvY2ssIEtFWShwdHIpLCBLRVlMRU4ocHRyKSwgREFUQShwdHIp
+LCBEQVRBTEVOKHB0cikpKSB7CkBAIC0xMTE2LDcgKzExMjMsNyBAQAogICAgIG5ld29mZnNldCA9
+IHRwLT5sb2dlbmQ7CiAgICAgcHRyID0gZmluZF9ub2RlKGRiLCBrZXksIGtleWxlbiwgdXBkYXRl
+b2Zmc2V0cyk7CiAgICAgaWYgKHB0ciAhPSBkYi0+bWFwX2Jhc2UgJiYgCi0JIWNvbXBhcmUoS0VZ
+KHB0ciksIEtFWUxFTihwdHIpLCBrZXksIGtleWxlbikpIHsKKwkhZGItPmNvbXBhcihLRVkocHRy
+KSwgS0VZTEVOKHB0ciksIGtleSwga2V5bGVuKSkgewogCSAgICAKIAlpZiAoIW92ZXJ3cml0ZSkg
+ewogCSAgICBteWFib3J0KGRiLCB0cCk7CS8qIHJlbGVhc2VzIGxvY2sgKi8KQEAgLTEyODIsNyAr
+MTI4OSw3IEBACiAKICAgICBwdHIgPSBmaW5kX25vZGUoZGIsIGtleSwga2V5bGVuLCB1cGRhdGVv
+ZmZzZXRzKTsKICAgICBpZiAocHRyID09IGRiLT5tYXBfYmFzZSB8fAotCSFjb21wYXJlKEtFWShw
+dHIpLCBLRVlMRU4ocHRyKSwga2V5LCBrZXlsZW4pKSB7CisJIWRiLT5jb21wYXIoS0VZKHB0ciks
+IEtFWUxFTihwdHIpLCBrZXksIGtleWxlbikpIHsKIAkvKiBnb3RjaGEgKi8KIAlvZmZzZXQgPSBw
+dHIgLSBkYi0+bWFwX2Jhc2U7CiAKQEAgLTE4MjUsMTEgKzE4MzIsMTEgQEAKIAkJY29uc3QgY2hh
+ciAqcSA9IGRiLT5tYXBfYmFzZSArIG9mZnNldDsKIAkJaW50IGNtcDsKIAotCQljbXAgPSBjb21w
+YXJlKEtFWShwdHIpLCBLRVlMRU4ocHRyKSwgS0VZKHEpLCBLRVlMRU4ocSkpOworCQljbXAgPSBk
+Yi0+Y29tcGFyKEtFWShwdHIpLCBLRVlMRU4ocHRyKSwgS0VZKHEpLCBLRVlMRU4ocSkpOwogCQlp
+ZiAoY21wID49IDApIHsKIAkJICAgIGZwcmludGYoc3Rkb3V0LCAKIAkJCSAgICAic2tpcGxpc3Qg
+aW5jb25zaXN0ZW50OiAlMDRYOiBwdHIgJWQgaXMgJTA0WDsgIgotCQkJICAgICJjb21wYXJlKCkg
+PSAlZFxuIiwgCisJCQkgICAgImRiLT5jb21wYXIoKSA9ICVkXG4iLCAKIAkJCSAgICBwdHIgLSBk
+Yi0+bWFwX2Jhc2UsCiAJCQkgICAgaSwKIAkJCSAgICBvZmZzZXQsIGNtcCk7CkBAIC0yMDU4LDcg
+KzIwNjUsNyBAQAogCWlmIChUWVBFKHB0cikgPT0gQUREKSB7CiAJICAgIGtleXB0ciA9IGZpbmRf
+bm9kZShkYiwgS0VZKHB0ciksIEtFWUxFTihwdHIpLCB1cGRhdGVvZmZzZXRzKTsKIAkgICAgaWYg
+KGtleXB0ciA9PSBkYi0+bWFwX2Jhc2UgfHwKLQkJY29tcGFyZShLRVkocHRyKSwgS0VZTEVOKHB0
+ciksIEtFWShrZXlwdHIpLCBLRVlMRU4oa2V5cHRyKSkpIHsKKwkJZGItPmNvbXBhcihLRVkocHRy
+KSwgS0VZTEVOKHB0ciksIEtFWShrZXlwdHIpLCBLRVlMRU4oa2V5cHRyKSkpIHsKIAkJLyogZGlk
+bid0IGZpbmQgZXhhY3RseSB0aGlzIG5vZGUgKi8KIAkJa2V5cHRyID0gTlVMTDsKIAkgICAgfQo=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>450</attachid>
+            <date>2006-08-01 11:01 EDT</date>
+            <desc>patch for space and other characters like &apos;-&apos; in foldernames</desc>
+            <filename>mboxsort.diff</filename>
+            <type>text/plain</type>
+            <size>7458</size>
+            <attacher>murch@andrew.cmu.edu</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXAvbWJveGxpc3QuYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9z
+eXN0ZW0vY3ZzL3NyYy9jeXJ1cy9pbWFwL21ib3hsaXN0LmMsdgpyZXRyaWV2aW5nIHJldmlzaW9u
+IDEuMjIxLjIuMjIKZGlmZiAtdSAtcjEuMjIxLjIuMjIgbWJveGxpc3QuYwotLS0gaW1hcC9tYm94
+bGlzdC5jCTIyIE1heSAyMDA2IDIwOjM3OjI1IC0wMDAwCTEuMjIxLjIuMjIKKysrIGltYXAvbWJv
+eGxpc3QuYwkxIEF1ZyAyMDA2IDE0OjU4OjU4IC0wMDAwCkBAIC0yNzA4LDcgKzI3MDgsNyBAQAog
+CXN0cmxjYXQoZm5hbWUsIEZOQU1FX01CT1hMSVNULCBmbmFtZV9sZW4pOwogICAgIH0KIAotICAg
+IHJldCA9IERCLT5vcGVuKGZuYW1lLCBDWVJVU0RCX0NSRUFURSwgJm1iZGIpOworICAgIHJldCA9
+IERCLT5vcGVuKGZuYW1lLCBDWVJVU0RCX0NSRUFURXxDWVJVU0RCX01CT1hTT1JULCAmbWJkYik7
+CiAgICAgaWYgKHJldCAhPSAwKSB7CiAJc3lzbG9nKExPR19FUlIsICJEQkVSUk9SOiBvcGVuaW5n
+ICVzOiAlcyIsIGZuYW1lLAogCSAgICAgICBjeXJ1c2RiX3N0cmVycm9yKHJldCkpOwpAQCAtMjc4
+MSw3ICsyNzgxLDcgQEAKIAogICAgIC8qIEJ1aWxkIHN1YnNjcmlwdGlvbiBsaXN0IGZpbGVuYW1l
+ICovCiAgICAgc3Vic2ZuYW1lID0gbWJveGxpc3RfaGFzaF91c2Vyc3Vicyh1c2VyaWQpOwotICAg
+IHIgPSBTVUJEQi0+b3BlbihzdWJzZm5hbWUsIENZUlVTREJfQ1JFQVRFLCByZXQpOworICAgIHIg
+PSBTVUJEQi0+b3BlbihzdWJzZm5hbWUsIENZUlVTREJfQ1JFQVRFfENZUlVTREJfTUJPWFNPUlQs
+IHJldCk7CiAgICAgaWYgKHIgIT0gQ1lSVVNEQl9PSykgewogCXIgPSBJTUFQX0lPRVJST1I7CiAg
+ICAgfQpJbmRleDogbGliL2JzZWFyY2guYwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJl
+dy9zeXN0ZW0vY3ZzL3NyYy9jeXJ1cy9saWIvYnNlYXJjaC5jLHYKcmV0cmlldmluZyByZXZpc2lv
+biAxLjE5CmRpZmYgLXUgLXIxLjE5IGJzZWFyY2guYwotLS0gbGliL2JzZWFyY2guYwkxMyBGZWIg
+MjAwMyAyMDoxNTozOSAtMDAwMAkxLjE5CisrKyBsaWIvYnNlYXJjaC5jCTEgQXVnIDIwMDYgMTQ6
+NTg6NTggLTAwMDAKQEAgLTIxMywzICsyMTMsMjIgQEAKIAlzMisrOwogICAgIH0KIH0KKworaW50
+IGJzZWFyY2hfbmNvbXBhcmUoY29uc3QgY2hhciAqczEsIGludCBsMSwgY29uc3QgY2hhciAqczIs
+IGludCBsMikKK3sKKyAgICBpbnQgbWluID0gbDEgPCBsMiA/IGwxIDogbDI7CisgICAgaW50IGNt
+cCA9IDA7CisKKyAgICB3aGlsZSAobWluLS0gPiAwICYmIChjbXAgPSBUT0NPTVBBUkUoKnMxKSAt
+IFRPQ09NUEFSRSgqczIpKSA9PSAwKSB7CisgICAgICAgIHMxKys7CisgICAgICAgIHMyKys7Cisg
+ICAgfQorICAgIGlmIChtaW4gPj0gMCkgeworICAgICAgICByZXR1cm4gY21wOworICAgIH0gZWxz
+ZSB7CisgICAgICAgIGlmIChsMiA+IGwxKSByZXR1cm4gLTE7CisgICAgICAgIGVsc2UgaWYgKGwx
+ID4gbDIpIHJldHVybiAxOworICAgICAgICBlbHNlIHJldHVybiAwOworICAgIH0KK30KKwpJbmRl
+eDogbGliL2JzZWFyY2guaAo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvYWZzL2FuZHJldy9zeXN0ZW0v
+Y3ZzL3NyYy9jeXJ1cy9saWIvYnNlYXJjaC5oLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjcKZGlm
+ZiAtdSAtcjEuNyBic2VhcmNoLmgKLS0tIGxpYi9ic2VhcmNoLmgJMTMgRmViIDIwMDMgMjA6MTU6
+MzkgLTAwMDAJMS43CisrKyBsaWIvYnNlYXJjaC5oCTEgQXVnIDIwMDYgMTQ6NTg6NTggLTAwMDAK
+QEAgLTUxLDQgKzUxLDYgQEAKIAogZXh0ZXJuIGludCBic2VhcmNoX2NvbXBhcmUoY29uc3QgY2hh
+ciAqczEsIGNvbnN0IGNoYXIgKnMyKTsKIAorZXh0ZXJuIGludCBic2VhcmNoX25jb21wYXJlKGNv
+bnN0IGNoYXIgKnMxLCBpbnQgbDEsIGNvbnN0IGNoYXIgKnMyLCBpbnQgbDIpOworCiAjZW5kaWYg
+LyogSU5DTFVERURfQlNFQVJDSF9IICovCkluZGV4OiBsaWIvY3lydXNkYi5oCj09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0K
+UkNTIGZpbGU6IC9hZnMvYW5kcmV3L3N5c3RlbS9jdnMvc3JjL2N5cnVzL2xpYi9jeXJ1c2RiLmgs
+dgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMjUuMi40CmRpZmYgLXUgLXIxLjI1LjIuNCBjeXJ1c2Ri
+LmgKLS0tIGxpYi9jeXJ1c2RiLmgJNCBKYW4gMjAwNiAwMjoxNDoxNCAtMDAwMAkxLjI1LjIuNAor
+KysgbGliL2N5cnVzZGIuaAkxIEF1ZyAyMDA2IDE0OjU4OjU4IC0wMDAwCkBAIC02Nyw3ICs2Nyw4
+IEBACiB9OwogCiBlbnVtIGN5cnVzZGJfb3BlbmZsYWdzIHsKLSAgICBDWVJVU0RCX0NSRUFURSA9
+IDB4MDEgICAgICAgLyogQ3JlYXRlIHRoZSBkYXRhYmFzZSBpZiBub3QgZXhpc3RhbnQgKi8KKyAg
+ICBDWVJVU0RCX0NSRUFURSAgID0gMHgwMSwJLyogQ3JlYXRlIHRoZSBkYXRhYmFzZSBpZiBub3Qg
+ZXhpc3RhbnQgKi8KKyAgICBDWVJVU0RCX01CT1hTT1JUID0gMHgwMgkvKiBVc2UgbWFpbGJveCBz
+b3J0IG9yZGVyICgnLicgc29ydHMgMXN0KSAqLwogfTsKIAogdHlwZWRlZiBpbnQgZm9yZWFjaF9w
+KHZvaWQgKnJvY2ssCkluZGV4OiBsaWIvY3lydXNkYl9iZXJrZWxleS5jCj09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KUkNT
+IGZpbGU6IC9hZnMvYW5kcmV3L3N5c3RlbS9jdnMvc3JjL2N5cnVzL2xpYi9jeXJ1c2RiX2Jlcmtl
+bGV5LmMsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMi4yLjEyCmRpZmYgLXUgLXIxLjIuMi4xMiBj
+eXJ1c2RiX2JlcmtlbGV5LmMKLS0tIGxpYi9jeXJ1c2RiX2JlcmtlbGV5LmMJMjggRmViIDIwMDYg
+MTI6NTg6MDcgLTAwMDAJMS4yLjIuMTIKKysrIGxpYi9jeXJ1c2RiX2JlcmtlbGV5LmMJMSBBdWcg
+MjAwNiAxNDo1ODo1OCAtMDAwMApAQCAtNTEsNiArNTEsNyBAQAogI2luY2x1ZGUgPHN0ZGxpYi5o
+PgogI2luY2x1ZGUgPHVuaXN0ZC5oPgogCisjaW5jbHVkZSAiYnNlYXJjaC5oIgogI2luY2x1ZGUg
+ImN5cnVzZGIuaCIKICNpbmNsdWRlICJleGl0Y29kZXMuaCIKICNpbmNsdWRlICJsaWJjeXJfY2Zn
+LmgiCkBAIC0zNzYsNiArMzc3LDEyIEBACiAgICAgcmV0dXJuIDA7CiB9CiAKK3N0YXRpYyBpbnQg
+bWJveF9jb21wYXIoREIgKmRiLCBjb25zdCBEQlQgKmEsIGNvbnN0IERCVCAqYikKK3sKKyAgICBy
+ZXR1cm4gYnNlYXJjaF9uY29tcGFyZSgoY29uc3QgY2hhciAqKSBhLT5kYXRhLCBhLT5zaXplLAor
+CQkJICAgIChjb25zdCBjaGFyICopIGItPmRhdGEsIGItPnNpemUpOworfQorCiBzdGF0aWMgaW50
+IG15b3Blbihjb25zdCBjaGFyICpmbmFtZSwgREJUWVBFIHR5cGUsIGludCBmbGFncywgc3RydWN0
+IGRiICoqcmV0KQogewogICAgIERCICpkYiA9IE5VTEw7CkBAIC0zOTIsNiArMzk5LDcgQEAKIAly
+ZXR1cm4gQ1lSVVNEQl9JT0VSUk9SOwogICAgIH0KICAgICAvKiB4eHggc2V0IGNvbXBhcmF0b3Ih
+ICovCisgICAgaWYgKGZsYWdzICYgQ1lSVVNEQl9NQk9YU09SVCkgZGItPnNldF9idF9jb21wYXJl
+KGRiLCBtYm94X2NvbXBhcik7CiAKICNpZiBEQl9WRVJTSU9OX01BSk9SID09IDQgJiYgREJfVkVS
+U0lPTl9NSU5PUiA+PSAxCiAgICAgciA9IGRiLT5vcGVuKGRiLCBOVUxMLCBmbmFtZSwgTlVMTCwg
+dHlwZSwgZGJmbGFncyB8IERCX0FVVE9fQ09NTUlULCAwNjY0KTsKSW5kZXg6IGxpYi9jeXJ1c2Ri
+X3NraXBsaXN0LmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2cy9z
+cmMvY3lydXMvbGliL2N5cnVzZGJfc2tpcGxpc3QuYyx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS40
+Mi4yLjMKZGlmZiAtdSAtcjEuNDIuMi4zIGN5cnVzZGJfc2tpcGxpc3QuYwotLS0gbGliL2N5cnVz
+ZGJfc2tpcGxpc3QuYwk5IEp1biAyMDA0IDE5OjQyOjQ3IC0wMDAwCTEuNDIuMi4zCisrKyBsaWIv
+Y3lydXNkYl9za2lwbGlzdC5jCTEgQXVnIDIwMDYgMTQ6NTg6NTggLTAwMDAKQEAgLTYxLDYgKzYx
+LDcgQEAKICNlbmRpZgogI2luY2x1ZGUgPG5ldGluZXQvaW4uaD4KIAorI2luY2x1ZGUgImJzZWFy
+Y2guaCIKICNpbmNsdWRlICJjeXJ1c2RiLmgiCiAjaW5jbHVkZSAibGliY3lyX2NmZy5oIgogI2lu
+Y2x1ZGUgImxvY2suaCIKQEAgLTE1Myw2ICsxNTQsOSBAQAogICAgIGludCBsaXN0c2l6ZTsKICAg
+ICBpbnQgbG9nc3RhcnQ7CQkvKiB3aGVyZSB0aGUgbG9nIHN0YXJ0cyBmcm9tIGxhc3QgY2hrcG50
+ICovCiAgICAgdGltZV90IGxhc3RfcmVjb3Zlcnk7CisKKyAgICAvKiBjb21wYXJhdG9yIGZ1bmN0
+aW9uIHRvIHVzZSBmb3Igc29ydGluZyAqLworICAgIGludCAoKmNvbXBhcikgKGNvbnN0IGNoYXIg
+KnMxLCBpbnQgbDEsIGNvbnN0IGNoYXIgKnMyLCBpbnQgbDIpOwogfTsKIAogc3RydWN0IHR4biB7
+CkBAIC0xNzUsNiArMTc5LDggQEAKICAgICB1c2Vfb3N5bmMgPSAwCiB9OwogCitzdGF0aWMgaW50
+IGNvbXBhcmUoY29uc3QgY2hhciAqczEsIGludCBsMSwgY29uc3QgY2hhciAqczIsIGludCBsMik7
+CisKIHN0YXRpYyB2b2lkIG5ld3R4bihzdHJ1Y3QgZGIgKmRiLCBzdHJ1Y3QgdHhuICp0KQogewog
+ICAgIC8qIGZpbGwgaW4gdCAqLwpAQCAtNjc0LDYgKzY4MCw3IEBACiAKICAgICBkYi0+ZmQgPSAt
+MTsKICAgICBkYi0+Zm5hbWUgPSB4c3RyZHVwKGZuYW1lKTsKKyAgICBkYi0+Y29tcGFyID0gKGZs
+YWdzICYgQ1lSVVNEQl9NQk9YU09SVCkgPyBic2VhcmNoX25jb21wYXJlIDogY29tcGFyZTsKIAog
+ICAgIGRiLT5mZCA9IG9wZW4oZm5hbWUsIE9fUkRXUiwgMDY0NCk7CiAgICAgaWYgKGRiLT5mZCA9
+PSAtMSAmJiBlcnJubyA9PSBFTk9FTlQgJiYgKGZsYWdzICYgQ1lSVVNEQl9DUkVBVEUpKSB7CkBA
+IC04MjQsNyArODMxLDcgQEAKIAogICAgIGZvciAoaSA9IGRiLT5jdXJsZXZlbCAtIDE7IGkgPj0g
+MDsgaS0tKSB7CiAJd2hpbGUgKChvZmZzZXQgPSBGT1JXQVJEKHB0ciwgaSkpICYmIAotCSAgICAg
+ICBjb21wYXJlKEtFWShkYi0+bWFwX2Jhc2UgKyBvZmZzZXQpLCBLRVlMRU4oZGItPm1hcF9iYXNl
+ICsgb2Zmc2V0KSwgCisJICAgICAgIGRiLT5jb21wYXIoS0VZKGRiLT5tYXBfYmFzZSArIG9mZnNl
+dCksIEtFWUxFTihkYi0+bWFwX2Jhc2UgKyBvZmZzZXQpLCAKIAkJICAgICAgIGtleSwga2V5bGVu
+KSA8IDApIHsKIAkgICAgLyogbW92ZSBmb3J3YXJkIGF0IGxldmVsICdpJyAqLwogCSAgICBwdHIg
+PSBkYi0+bWFwX2Jhc2UgKyBvZmZzZXQ7CkBAIC04NzUsNyArODgyLDcgQEAKIAogICAgIHB0ciA9
+IGZpbmRfbm9kZShkYiwga2V5LCBrZXlsZW4sIDApOwogCi0gICAgaWYgKHB0ciA9PSBkYi0+bWFw
+X2Jhc2UgfHwgY29tcGFyZShLRVkocHRyKSwgS0VZTEVOKHB0ciksIGtleSwga2V5bGVuKSkgewor
+ICAgIGlmIChwdHIgPT0gZGItPm1hcF9iYXNlIHx8IGRiLT5jb21wYXIoS0VZKHB0ciksIEtFWUxF
+TihwdHIpLCBrZXksIGtleWxlbikpIHsKIAkvKiBmYWlsZWQgdG8gZmluZCBrZXkva2V5bGVuICov
+CiAJciA9IENZUlVTREJfTk9URk9VTkQ7CiAgICAgfSBlbHNlIHsKQEAgLTk2Myw3ICs5NzAsNyBA
+QAogICAgIHdoaWxlIChwdHIgIT0gZGItPm1hcF9iYXNlKSB7CiAJLyogZG9lcyBpdCBtYXRjaCBw
+cmVmaXg/ICovCiAJaWYgKEtFWUxFTihwdHIpIDwgKGJpdDMyKSBwcmVmaXhsZW4pIGJyZWFrOwot
+CWlmIChwcmVmaXhsZW4gJiYgY29tcGFyZShLRVkocHRyKSwgcHJlZml4bGVuLCBwcmVmaXgsIHBy
+ZWZpeGxlbikpIGJyZWFrOworCWlmIChwcmVmaXhsZW4gJiYgZGItPmNvbXBhcihLRVkocHRyKSwg
+cHJlZml4bGVuLCBwcmVmaXgsIHByZWZpeGxlbikpIGJyZWFrOwogCiAJaWYgKCFnb29kcCB8fAog
+CSAgICBnb29kcChyb2NrLCBLRVkocHRyKSwgS0VZTEVOKHB0ciksIERBVEEocHRyKSwgREFUQUxF
+TihwdHIpKSkgewpAQCAtMTExNiw3ICsxMTIzLDcgQEAKICAgICBuZXdvZmZzZXQgPSB0cC0+bG9n
+ZW5kOwogICAgIHB0ciA9IGZpbmRfbm9kZShkYiwga2V5LCBrZXlsZW4sIHVwZGF0ZW9mZnNldHMp
+OwogICAgIGlmIChwdHIgIT0gZGItPm1hcF9iYXNlICYmIAotCSFjb21wYXJlKEtFWShwdHIpLCBL
+RVlMRU4ocHRyKSwga2V5LCBrZXlsZW4pKSB7CisJIWRiLT5jb21wYXIoS0VZKHB0ciksIEtFWUxF
+TihwdHIpLCBrZXksIGtleWxlbikpIHsKIAkgICAgCiAJaWYgKCFvdmVyd3JpdGUpIHsKIAkgICAg
+bXlhYm9ydChkYiwgdHApOwkvKiByZWxlYXNlcyBsb2NrICovCkBAIC0xMjgyLDcgKzEyODksNyBA
+QAogCiAgICAgcHRyID0gZmluZF9ub2RlKGRiLCBrZXksIGtleWxlbiwgdXBkYXRlb2Zmc2V0cyk7
+CiAgICAgaWYgKHB0ciA9PSBkYi0+bWFwX2Jhc2UgfHwKLQkhY29tcGFyZShLRVkocHRyKSwgS0VZ
+TEVOKHB0ciksIGtleSwga2V5bGVuKSkgeworCSFkYi0+Y29tcGFyKEtFWShwdHIpLCBLRVlMRU4o
+cHRyKSwga2V5LCBrZXlsZW4pKSB7CiAJLyogZ290Y2hhICovCiAJb2Zmc2V0ID0gcHRyIC0gZGIt
+Pm1hcF9iYXNlOwogCkBAIC0xODI1LDExICsxODMyLDExIEBACiAJCWNvbnN0IGNoYXIgKnEgPSBk
+Yi0+bWFwX2Jhc2UgKyBvZmZzZXQ7CiAJCWludCBjbXA7CiAKLQkJY21wID0gY29tcGFyZShLRVko
+cHRyKSwgS0VZTEVOKHB0ciksIEtFWShxKSwgS0VZTEVOKHEpKTsKKwkJY21wID0gZGItPmNvbXBh
+cihLRVkocHRyKSwgS0VZTEVOKHB0ciksIEtFWShxKSwgS0VZTEVOKHEpKTsKIAkJaWYgKGNtcCA+
+PSAwKSB7CiAJCSAgICBmcHJpbnRmKHN0ZG91dCwgCiAJCQkgICAgInNraXBsaXN0IGluY29uc2lz
+dGVudDogJTA0WDogcHRyICVkIGlzICUwNFg7ICIKLQkJCSAgICAiY29tcGFyZSgpID0gJWRcbiIs
+IAorCQkJICAgICJkYi0+Y29tcGFyKCkgPSAlZFxuIiwgCiAJCQkgICAgcHRyIC0gZGItPm1hcF9i
+YXNlLAogCQkJICAgIGksCiAJCQkgICAgb2Zmc2V0LCBjbXApOwpAQCAtMjA1OCw3ICsyMDY1LDcg
+QEAKIAlpZiAoVFlQRShwdHIpID09IEFERCkgewogCSAgICBrZXlwdHIgPSBmaW5kX25vZGUoZGIs
+IEtFWShwdHIpLCBLRVlMRU4ocHRyKSwgdXBkYXRlb2Zmc2V0cyk7CiAJICAgIGlmIChrZXlwdHIg
+PT0gZGItPm1hcF9iYXNlIHx8Ci0JCWNvbXBhcmUoS0VZKHB0ciksIEtFWUxFTihwdHIpLCBLRVko
+a2V5cHRyKSwgS0VZTEVOKGtleXB0cikpKSB7CisJCWRiLT5jb21wYXIoS0VZKHB0ciksIEtFWUxF
+TihwdHIpLCBLRVkoa2V5cHRyKSwgS0VZTEVOKGtleXB0cikpKSB7CiAJCS8qIGRpZG4ndCBmaW5k
+IGV4YWN0bHkgdGhpcyBub2RlICovCiAJCWtleXB0ciA9IE5VTEw7CiAJICAgIH0K
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

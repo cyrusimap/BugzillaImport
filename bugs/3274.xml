@@ -1,0 +1,130 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3274</bug_id>
+          
+          <creation_ts>2010-10-17 16:11 EDT</creation_ts>
+          <short_desc>Cyrus stops responding to imap:143 requests</short_desc>
+          <delta_ts>2014-10-21 09:56:08 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rodrigo Ventura">yoda@isr.ist.utl.pt</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rodrigo Ventura">yoda@isr.ist.utl.pt</who>
+            <bug_when>2010-10-17 16:11:08 EDT</bug_when>
+            <thetext>From time to time cyrus-imap stops answering to imap (IPv4 port 143) connections: the connection is established, but master/imapd neither sends welcome message, nor responds to commands. imap+ssl services continues working flawlessly though.
+
+This is the information I was able to gather about this issue, under the failure condition:
+
+According to netstat, master is listening to port 143 on both IPv4 and IPv6. 
+
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name   
+tcp        0      0 0.0.0.0:143             0.0.0.0:*               LISTEN      17659/master        
+tcp        0      0 :::143                  :::*                    LISTEN      17659/master    
+
+However, its select() call does not include the LISTENing ports file descriptors (7 and 10)
+
+COMMAND   PID  USER   FD   TYPE     DEVICE    SIZE     NODE NAME
+master  17659 cyrus    7u  IPv6   27602117              TCP *:imap (LISTEN)
+master  17659 cyrus   10u  IPv4   27602119              TCP *:imap (LISTEN)
+
+# strace -p 17659
+Process 17659 attached - interrupt to quit
+select(48, [8 11 14 17 20 23 26 29 32 35 38 41 44 47], NULL, NULL, {2, 692000}) = 1 (in [29], left {2, 328000})
+
+But maybe it&apos;s one of imap processes that is listening to that port, is it?
+
+# ps aux | grep imap | grep -v -- -s
+cyrus    20685  0.0  0.1  30448  2040 ?        S    18:17   0:00 imapd
+cyrus    20686  0.0  0.1  30448  2040 ?        S    18:17   0:00 imapd
+cyrus    20687  0.0  0.1  30448  2040 ?        S    18:17   0:00 imapd
+cyrus    20688  0.0  0.1  30448  2040 ?        S    18:17   0:00 imapd
+cyrus    20689  0.0  0.1  30448  2040 ?        S    18:17   0:00 imapd
+root     32415  0.0  0.0   1804   560 pts/1    S+   20:52   0:00 grep imap
+
+# strace -p 20685 -p 20686 -p 20687 -p 20688 -p 20689
+Process 20685 attached - interrupt to quit
+Process 20686 attached - interrupt to quit
+Process 20687 attached - interrupt to quit
+Process 20688 attached - interrupt to quit
+Process 20689 attached - interrupt to quit
+[pid 20685] accept(4,  &lt;unfinished ...&gt;
+[pid 20686] fcntl64(8, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=0, len=0} &lt;unfinished ...&gt;
+[pid 20687] fcntl64(8, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=0, len=0} &lt;unfinished ...&gt;
+[pid 20688] fcntl64(8, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=0, len=0} &lt;unfinished ...&gt;
+[pid 20689] fcntl64(8, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=0, len=0} &lt;unfinished ...&gt;
+
+Well, there is one imapd listening to something, what is it?
+
+# lsof -p 20685
+COMMAND   PID  USER   FD   TYPE     DEVICE     SIZE     NODE NAME
+[...]
+imapd   20685 cyrus    4u  IPv6   27602117               TCP *:imap (LISTEN)
+
+It seems to be listening to IPv6 only!
+
+Now let&apos;s restart master and see what happens: master keeps on listening to both IPv4 and IPv6 ports 143, at fds 7 and 10, and not including them on select(). and there are TWO imapd daemons listening to port 143, one in IPv4 and another in IPv6:
+
+# lsof -p 439
+COMMAND PID  USER   FD   TYPE     DEVICE     SIZE     NODE NAME
+imapd   439 cyrus    4u  IPv4   30894904               TCP *:imap (LISTEN)
+
+# lsof -p 32668
+COMMAND   PID  USER   FD   TYPE     DEVICE     SIZE     NODE NAME
+[...]
+imapd   32668 cyrus    4u  IPv6   30894902               TCP *:imap (LISTEN)
+
+After killing all imapd daemons by hand, master respawns a new set, and once again there is one listening on IPv4 and another on IPv6. When I did this, i.e. killing all imapd daemons, under the failure condition, master also respawned them all, but only ONE of of them was LISTENing, and it was listening on IPv6.
+
+I&apos;m running Cyrus IMAP v2.3.16 on Linux kernel version 2.6.24.5-smp. Cyrus-imap was compiled with gcc 4.2.3 and the server is running glibc version 2.7.
+
+Regards,
+Rodrigo Ventura
+ISR / IST</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-21 09:56:08 EDT</bug_when>
+            <thetext>Batch moving bugs that won&apos;t be in 2.5</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

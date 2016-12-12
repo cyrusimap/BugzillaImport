@@ -1,0 +1,95 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1684</bug_id>
+          
+          <creation_ts>2002-11-28 10:18 EDT</creation_ts>
+          <short_desc>prop pool memory bug?</short_desc>
+          <delta_ts>2002-12-12 13:57:10 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>SASL</component>
+          <version>2.1.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rob Siemborski">rjs3@andrew.cmu.edu</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>flicker@mariinsky.ru</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-11-28 10:18:08 EDT</bug_when>
+            <thetext>Hello.
+
+I&apos;ve noticed this problem first when I tried to use OpenLDAP 2.1.8 with
+Cyrus SASL 2.1.7 (patched for BDB 4.1.24). OpenLDAP failed to
+proxy-authorize user: ldapsearch -U &quot;authuser&quot; -X &quot;u:authzuser&quot; gave out
+rights of &quot;authuser&quot;. As I&apos;ve found out, the bug resides in
+(SASL)/lib/auxprop.c.
+
+Corresponding code in Openldap is in (SASL)/servers/slapd/sasl.c, function
+slap_sasl_canonicalize. As it appears to me, prop_request at line 803
+requests to increase number of allocated values (from 4 to 6 values), then
+ctx-&gt;list_end become broken (it must be updated, but it isn&apos;t). Next call to
+prop_set at line 814 corrupts ctx-&gt;values[4].
+
+My issue is fixed by changing &quot;#define PROP_DEFAULT 4&quot; line in
+(SASL)/includes/prop.h to &quot;#define PROP_DEFAULT 8&quot;. This trick avoids
+runtime prop pool resizing, thus avoidung the bug.
+
+I&apos;m not sure how to fix this bug completely, as I do not understand how prop
+pool&apos;s data is used.
+---
+
+I haven&apos;t verified this bug myself yet. Obviously we don&apos;t want to do the
+#define thing</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2002-12-09 16:12:48 EDT</bug_when>
+            <thetext>I believe I have this corrected in CVS now.  Indeed, we were failing to update
+list_end in prop_request().
+
+Though, I don&apos;t have a good test case, so if you could provide one (or try the
+cvs version of auxprop.c against your openldap test case) that&apos;d be good.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Pavel Levshin">flicker@mariinsky.ru</who>
+            <bug_when>2002-12-12 13:57:10 EDT</bug_when>
+            <thetext>Yes, it works for me (SASL 2.1.10 + auxprop.c from CVS)
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

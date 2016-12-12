@@ -1,0 +1,172 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3655</bug_id>
+          
+          <creation_ts>2012-03-22 23:31 EDT</creation_ts>
+          <short_desc>Make quota -f more efficient</short_desc>
+          <delta_ts>2012-10-19 14:29:18 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          <blocked>3674</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>brong@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-03-22 23:31:45 EDT</bug_when>
+            <thetext>After discussion with Bron...
+
+The quota -f algorithm was fixed, on the master branch that will become
+2.5, to remove a race condition between fixing quotas and other updates
+to the mailbox (like deliveries).
+
+Unfortunately, the algorithm relies on setting a flag in the cyrus.index
+header for each mailbox before it starts, then clearing it again.  Each of
+those involves a write and fsync of the file.  When performed in bulk, this
+does a lot of slow synchronous IO.
+
+That IO shouldn&apos;t be necessary.  We need to tweak the algorithm to avoid
+those.
+
+One obvious thing would be avoid the fsync() - after all, this one bit
+change is only a signal to other processes running at the same time as
+the quota -f, and if we lose the machine or the filesystem that bit does
+not need to be persistent.
+
+Or, better, we could store the same state in a record in the quota db
+itself, say with a list of the mboxnames that have been scanned.  In
+the common case that &apos;quota -f&apos; isn&apos;t running, the record does not exist.
+fixquota_pass1() can just replace the record with a new empty one, and
+quota_update_useds() can check for it.
+
+It would be nice to have this performance improvement in place before 2.5
+is released.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-04-10 19:49:27 EDT</bug_when>
+            <thetext>Go to ASSIGNED to shut up the Bugzilla whinygram.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-04-15 23:26:19 EDT</bug_when>
+            <thetext>Per earlier discussion with Bron, this is a 2.5 blocker.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-05-03 22:34:03 EDT</bug_when>
+            <thetext>Fixed in these commits:
+
+The following changes since commit 775a512d604171a2cbd7acf8e118366ffb5d0036:
+
+  Revert &quot;Makefile.PL&apos;s use @VERSION@ from configure&quot; (2012-05-04 10:43:50 +1000)
+
+are available in the git repository at:
+  ssh://git.cyrusimap.org/git/cyrus-imapd master
+
+Greg Banks (4):
+      cunit: don&apos;t name test suites &quot;foo.testc&quot;
+      quotalegacy db handles embedded NUL characters
+      quota: add API for managing a scanset of mboxnames
+      Bug 3655 - Make quota -f more efficient
+
+ cunit/cunit.pl            |    2 +-
+ cunit/quota.testc         |  103 ++++++++++++++++++++++++++++++++++
+ imap/mailbox.c            |    3 +-
+ imap/mailbox.h            |    4 +-
+ imap/mboxlist.c           |    7 +-
+ imap/quota.c              |   46 +++++----------
+ imap/quota.h              |    8 ++-
+ imap/quota_db.c           |  134 ++++++++++++++++++++++++++++++++++++++++++++-
+ imap/upgrade_index.c      |    3 +-
+ lib/cyrusdb_quotalegacy.c |    8 ++-
+ 10 files changed, 270 insertions(+), 48 deletions(-)
+
+This passes the Quota test suite in Cassandane, with full Valgrind.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-05-11 03:34:47 EDT</bug_when>
+            <thetext>Heh - there&apos;s a couple of issues in production.  One is this:
+
+2012-05-10T08:54:49.474059-04:00 imap14 sloti14d1p1/quota[1516]: IOERROR: unlinking /mnt/ssd14/sloti14d1p1/store107/conf/quota/q/..SCANSET: No such file or directory
+2012-05-10T08:54:49.474076-04:00 imap14 sloti14d1p1/quota[1516]: IOERROR: committing quota: No such file or directory
+
+Which doesn&apos;t seem to be breaking anything, but causes a lot of noise.
+
+The other thing is that running quota -f on a busy server causes a very large ..SCANSET file to be created.
+
+One way to improve this case is to use the guaranteed ordering property of the mailboxes.db.  In 2.5 you can use the function cyrusdb_compar on the mailboxes.db pointer to see if you&apos;re before or after the quota pointer - so:
+
+1) we need a global lock file for quota -f and quotaroot creation/deletion, since there&apos;s no sane way to cope with quotas being created or deleted during a quota -f run.
+
+2) we can store just ONE value, the name of the last mailbox processed.  This needs to be readable to every cyrus utility which wants to write a quota update, because it will use that value to decide if the folder IT is changing has already been processed by the quota tool.
+
+---------
+
+Given that we already have the lock, we can process quotas in a stack based arrangement rather than all at once.  The easiest way would be to build an array of all quotaroot names along with two pointers (or offsets).
+
+1) next
+2) child
+
+So you would get things like this (next is down, child is across)
+
+user.aaaa
+    v
+user.brong  -&gt;  user.brong.Otherquota
+    |                   v
+    |           user.brong.Trash
+    v
+user.zzzzz
+
+So if you kept a stack of &quot;quotaroot being processed&quot; you could quite easily know you had finished a particular quotaroot when you got alphabetically past -&gt; and either go to the next pointer, or if there was no next pointer, pop the stack.  Also, for each folder, you would check if there was a child pointer, and if so, compare for substring matches in it and all its nexts.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2012-07-08 21:05:43 EDT</bug_when>
+            <thetext>Bron seems to be working on this now, so give him the ticket.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-10-19 14:29:18 EDT</bug_when>
+            <thetext>This has been done on master for 2.5.  There are tons of commits, too many to paste here!</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

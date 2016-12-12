@@ -1,0 +1,159 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3524</bug_id>
+          
+          <creation_ts>2011-08-23 17:50 EDT</creation_ts>
+          <short_desc>Add calendar-query REPORT filtering</short_desc>
+          <delta_ts>2013-08-29 02:11:43 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>CalDAV</component>
+          <version>2.5.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ken Murchison">murch@andrew.cmu.edu</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>alfiej@fastmail.fm</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2011-08-23 17:50:04 EDT</bug_when>
+            <thetext>Time range, component type, etc.  This will probably require an extension to cyrus.caldav for efficiency.  Need to research what client actually use and optimize for these use cases</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2012-03-29 18:06:30 EDT</bug_when>
+            <thetext>Component type and time range filtering are implemented by brute force at the moment.  This functionality needs to be moved into cyrus.caldav.
+
+prop-filter and partial retrieval is on the back burner until a client actually tries to use it.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2013-07-02 15:42:52 EDT</bug_when>
+            <thetext>Component type and time range filtering are now accelerated by fields in DAV DB entry.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2013-08-29 01:36:02 EDT</bug_when>
+            <thetext>I don&apos;t think it should matter what clients actually use.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2013-08-29 01:50:26 EDT</bug_when>
+            <thetext>(In reply to comment #3)
+&gt; I don&apos;t think it should matter what clients actually use.
+
+Oops. Accidently submitted before finishing previous comment. But as I read the other comments again, I now don&apos;t have anything to add. Ignore this and the previous comment.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alfie John">alfiej@fastmail.fm</who>
+            <bug_when>2013-08-29 02:11:43 EDT</bug_when>
+            <thetext>(In reply to comment #4)
+&gt; (In reply to comment #3)
+&gt; &gt; I don&apos;t think it should matter what clients actually use.
+&gt; 
+&gt; Oops. Accidently submitted before finishing previous comment. But as I read the
+&gt; other comments again, I now don&apos;t have anything to add. Ignore this and the
+&gt; previous comment.
+
+On second thought, your comments were on optimisation of the filters for searching (think C:filter as the WHERE clause), not on filter retrieval (think D:prop as the SELECT)...
+
+If you&apos;re looking for an example on how clients may use filtering, on page 38 of RFC4791 there&apos;s an example for a time-range calendar-query REPORT. I&apos;ve modified it to return only the C:SUMMARY property:
+
+  &lt;C:calendar-query xmlns:D=&quot;DAV:&quot; xmlns:C=&quot;urn:ietf:params:xml:ns:caldav&quot;&gt;
+     &lt;D:prop&gt;
+       &lt;C:calendar-data&gt;
+         &lt;C:comp name=&quot;VCALENDAR&quot;&gt;
+           &lt;C:comp name=&quot;VEVENT&quot;&gt;
+             &lt;C:prop name=&quot;SUMMARY&quot;/&gt;
+           &lt;/C:comp&gt;
+         &lt;/C:comp&gt;
+       &lt;/C:calendar-data&gt;
+     &lt;/D:prop&gt;
+     &lt;C:filter&gt;
+       &lt;C:comp-filter name=&quot;VCALENDAR&quot;&gt;
+         &lt;C:comp-filter name=&quot;VEVENT&quot;&gt;
+           &lt;C:time-range start=&quot;20060104T000000Z&quot; end=&quot;20060105T000000Z&quot;/&gt;
+         &lt;/C:comp-filter&gt;
+       &lt;/C:comp-filter&gt;
+     &lt;/C:filter&gt;
+  &lt;/C:calendar-query&gt;
+
+Sending this request to Apple&apos;s Calendarserver I get back in the calendar-data component:
+
+  BEGIN:VCALENDAR
+  BEGIN:VEVENT
+  SUMMARY:MySummary
+  END:VEVENT
+  END:VCALENDAR
+
+However sending this request to Cyrus gives me all the components and properties in the calendar-data component:
+
+  BEGIN:VCALENDAR
+  PRODID:-//Mozilla.org/NONSGML Mozilla Calendar V1.1//EN
+  VERSION:2.0
+  BEGIN:VTIMEZONE
+  TZID:Australia/Sydney
+  X-LIC-LOCATION:Australia/Sydney
+  BEGIN:STANDARD
+  TZOFFSETFROM:+1100
+  TZOFFSETTO:+1000
+  TZNAME:EST
+  DTSTART:19700405T030000
+  RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=4
+  END:STANDARD
+  BEGIN:DAYLIGHT
+  TZOFFSETFROM:+1000
+  TZOFFSETTO:+1100
+  TZNAME:EST
+  DTSTART:19701004T020000
+  RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=10
+  END:DAYLIGHT
+  END:VTIMEZONE
+  BEGIN:VEVENT
+  CREATED:20130827T052645Z
+  LAST-MODIFIED:20130827T052659Z
+  DTSTAMP:20130827T052659Z
+  UID:f57ec9f4-e7a8-7448-b12d-7efb3c91a012
+  SUMMARY:MySummary
+  DTSTART;TZID=Australia/Sydney:20130829T113000
+  DTEND;TZID=Australia/Sydney:20130829T123000
+  DESCRIPTION:MyDescription
+  END:VEVENT
+  END:VCALENDAR</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

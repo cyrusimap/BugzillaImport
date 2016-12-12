@@ -1,0 +1,364 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3240</bug_id>
+          
+          <creation_ts>2010-06-07 21:32 EDT</creation_ts>
+          <short_desc>Copy fails with &quot;The remote server does not support MULTIAPPEND&quot;</short_desc>
+          <delta_ts>2010-10-25 18:46:49 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>3121</dup_id>
+          
+          
+          
+          <priority>P1</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>wes@umich.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-07 21:32:31 EDT</bug_when>
+            <thetext>Created an attachment (id=1286)
+Shows the incorrect behaviour when attempting to copy a message to a remote  server
+
+We are in the process of updating from 2.3.12p to 2.3.16, but have run into a show-stopper with this bug, and cannot continue until we get a fix.
+
+The effect of the bug is that users on the upgraded servers cannot copy email from their inboxes (local server) to shared folders on any remote server. It used to work fine with the old 2.3.12p.
+
+We are operating with Murder in unified mode, with around 100 Cyrus servers each providing both front-end and back-end services to a local office, and back-end services to other offices. The Murder master runs on a separate server in a centralised location (still on 2.3.12p, it will be the last to be upgraded).
+
+Using Wireshark to investigate the behaviour, we discovered that the remote server is in fact advertising MULTIAPPEND in the post-authentication capability list, but this is being ignored - we suspect the local server is using the pre-auth list, and not updating it after authentication.
+
+We believe we have found when this behaviour changed, in version 1.8 of imap_proxy.c (committed 2008/04/21 by murch).  We tried reverting a single line of this change (details below), this allowed the copy local-to-remote to work correctly, but resulted in worse problems with too many open files.
+
+I am also attaching a wireshark capture (tcpdump) of the failure in action.
+
+This is the change we tried:
+
+--- imap/imap_proxy.c    2010-06-03 15:24:47.000000000 +1200
++++ imap/imap_proxy.c.orig    2010-06-03 16:48:10.000000000 +1200
+@@ -107,7 +107,7 @@
+
+ struct protocol_t imap_protocol =
+ { &quot;imap&quot;, &quot;imap&quot;,
+-  { 0, &quot;* OK&quot; },
++  { 1, NULL },
+   { &quot;C01 CAPABILITY&quot;, NULL, &quot;C01 &quot;, &amp;imap_parsemechlist,
+     { { &quot; AUTH=&quot;, CAPA_AUTH },
+       { &quot; STARTTLS&quot;, CAPA_STARTTLS },
+
+
+Basically makes the
+    if (prot-&gt;banner.is_capa) {
+test (Line 418 backend.c) false; this forces the later
+ if(ask)
+to always evaluate true, so the actual capabilities are asked for explicitly, rather than just relying on the capabilities advertised during the initial connection.  This full list of capabilities includes MULTIAPPEND, whereas the initial set does not.
+
+(PS: I&apos;m setting P1 priority because it is a P1 for us. I recognise that your priorities may be different, and won&apos;t be surprised if you change it.)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-07 21:46:29 EDT</bug_when>
+            <thetext>I forgot to mention our OS: We&apos;re running Debian Etch on all servers. Cyrus-imadp is hand-compiled with options as follows:
+
+./configure --prefix=/opt/${CYRUS_VERSION} \
+              --with-cyrus-prefix=/opt/${CYRUS_VERSION} \
+              --with-cyrus-user=cyrus \
+              --with-cyrus-group=mail \
+              --localstatedir=/var/local/${CYRUS_NAME} \
+              --sysconfdir=/opt/${CYRUS_VERSION}/etc \
+              --enable-idled \
+              --enable-murder \
+              --enable-listext \
+              --without-snmp
+
+
+Also: This may be the same bug as 3121, although we&apos;ve arrived at it by a different path. I thought it best to log ours as a new case since we&apos;re on a different version.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-08 01:41:58 EDT</bug_when>
+            <thetext>Created an attachment (id=1287)
+patch attempt 2
+
+This is another workaround I&apos;ve tried.
+
+My reasoning was: at this point in the process, we are establishing a connection to a remote server. We have read the pre-auth greeting banner, which tells us something about the remote server&apos;s capabilities, but not necessarily the full set. There may be some other reason to keep this block of code, so I&apos;m leaving the rest of it alone, but commenting this line out should force it to ask for the list again after the authentication is complete.
+
+Results: It has allowed the copy to work, but it breaks mupdate for some reason I cannot fathom as yet.
+
+The TCP trace of the proxy connection setup (with this patch) shows that the re-ask actually happens before authentication, but it does at least get the whole list:
+
+* OK [CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID MUPDATE=mupdate://com.opus.co.nz/ STARTTLS AUTH=LOGIN AUTH=PLAIN SASL-IR COMPRESS=DEFLATE] nosv01 Cyrus IMAP Murder v2.3.16 server ready
+
+C01 CAPABILITY
+
+* CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID MUPDATE=mupdate://com.opus.co.nz/ STARTTLS AUTH=LOGIN AUTH=PLAIN SASL-IR COMPRESS=DEFLATE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE CATENATE CONDSTORE SCAN IDLE LISTEXT LIST-SUBSCRIBED URLAUTH
+
+C01 OK Completed
+
+A01 AUTHENTICATE PLAIN Z3JscncxAGN5cnVzX3Byb3h5AHExdzJlM3I0
+
+A01 OK [CAPABILITY IMAP4 IMAP4rev1 LITERAL+ ID MUPDATE=mupdate://com.opus.co.nz/ LOGINDISABLED COMPRESS=DEFLATE ACL RIGHTS=kxte QUOTA MAILBOX-REFERRALS NAMESPACE UIDPLUS NO_ATOMIC_RENAME UNSELECT CHILDREN MULTIAPPEND BINARY SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES ANNOTATEMORE CATENATE CONDSTORE SCAN IDLE LISTEXT LIST-SUBSCRIBED URLAUTH] Success (no protection)
+
+6 Append {38+}
+[snip]
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-08 02:12:39 EDT</bug_when>
+            <thetext>Patch attempt 2 breaks mupdate:
+- master starts mupdate
+- mupdate connects to mupdate master server then tears down the connection
+- log file reports mupdate &quot;signalled to death by 11&quot;
+- mupdate terminates abnormally
+- master starts another update
+Rinse and repeat until SIGHUP
+
+Clearly this is not usable. Further attempts will follow tomorrow.
+
+One of the actual log file entries:
+
+Jun  8 15:54:28 zzsv01 master[19626]: process 19636 exited, signaled to death by 11
+Jun  8 15:54:28 zzsv01 master[19626]: service mupdate pid 19636 in READY state: terminated abnormally
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-09 17:51:34 EDT</bug_when>
+            <thetext>I need some help with this urgently.  I have run out of ideas on what to try next.
+
+Everything I have tried so far has been along the lines of trying to get the local server to request capabilities from the remote instead of using AUTO_BANNER, and every attempt has caused mupdate to fail.
+
+Do I need to change something in mupdate to allow this to work?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-06-09 23:13:09 EDT</bug_when>
+            <thetext>Have you tried the suggestion from 3121, move MULTIAPPEND to pre-auth?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-09 23:53:39 EDT</bug_when>
+            <thetext>I would like to try that as a workaround, but I can&apos;t figure out how to do it.  I&apos;m not actually a C programmer, I just know enough to be dangerous.
+
+(Also, it seems to me it would be a good idea to get rid of the SEGV signal problem in mupdate, regardless.)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-10 01:20:10 EDT</bug_when>
+            <thetext>Ok, I&apos;ve had the suggestion translated from Programmer to Sysadmin and I&apos;m testing it now.  It seems to work with no undue side-effects so far.  I&apos;ll leave it running on a couple of servers overnight, and if it survives until lunchtime I will call it a successful workaround and upload the patch.
+
+Tenatively, I&apos;m a happy camper.  :-)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-06-10 23:23:39 EDT</bug_when>
+            <thetext>Created an attachment (id=1288)
+Advertise MULTIAPPEND in pre-auth banner
+
+The version with this patch has been running on 2 servers for over 20 hours with no apparently ill effects, and it successfully works around our problem.
+
+Huzzah!
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Lesley Longhurst">Lesley.Longhurst@opus.co.nz</who>
+            <bug_when>2010-07-18 22:47:19 EDT</bug_when>
+            <thetext>We&apos;ve been running with the patch (Advertise MULTIAPPEND in CAPA_PREAUTH_STRING) for about 6 weeks now, with no apparent ill effects, and I strongly recommend it to anyone who&apos;s running a unified murder config similar to ours.
+
+I still regard it as a workaround rather than a fix; a better solution would be if the code that checks for MULTIAPPEND could check the POSTAUTH string after authorisation. However, I will continue to apply this patch to any future versions until such time as as it is no longer required.
+
+Over to the Cyrus team to decide the fate of this bug.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-08-06 13:47:09 EDT</bug_when>
+            <thetext>
+
+*** This bug has been marked as a duplicate of bug 3121 ***</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1286</attachid>
+            <date>2010-06-07 21:32 EDT</date>
+            <desc>Shows the incorrect behaviour when attempting to copy a message to a remote  server</desc>
+            <filename>copy_msg_fails_grlrw1_from_zz_with_proxy_setup.pcap</filename>
+            <type>application/octet-stream</type>
+            <size>4431</size>
+            <attacher>Lesley.Longhurst@opus.co.nz</attacher>
+            
+              <data encoding="base64">1MOyoQIABAAAAAAAAAAAAP//AAABAAAATeAGTEq+AQBMAAAATAAAAAAacEbeRgAMKRVJLQgARQAA
+Pqp3QABABkAjCgAEHwoAOAG64A9BXW+TK2ckFyyAGAEhoOgAAAEBCAo1vkDoKAyBw041MiBOT09Q
+DQpN4AZM3MABAFYAAABWAAAAAAwpFUktABpwRt5GCABFAABI3RJAAD8GDn4KADgBCgAEHw9BuuBn
+JBcsXW+TNYAYAAwJvwAAAQEICigMlUs1vkDoTjUyIE9LICJOb29wIGRvbmUiDQpN4AZM8sABAEIA
+AABCAAAAABpwRt5GAAwpFUktCABFAAA0qnhAAEAGQCwKAAQfCgA4AbrgD0Fdb5M1ZyQXQIAQASG4
+UwAAAQEICjW+QOgoDJVLTeAGTLq0BQBMAAAATAAAAAAacEbeRgAMKRVJLQgARQAAPrPNQABABjbN
+CgAEHwoAOAG63g9BXVGg5WZGDmCAGAC1nOIAAAEBCAo1vkEpKAyCBE41MiBOT09QDQpN4AZMZLcF
+AFYAAABWAAAAAAwpFUktABpwRt5GCABFAABI12NAAD8GFC0KADgBCgAEHw9But5mRg5gXVGg74AY
+AAwFTQAAAQEICigMlYw1vkEpTjUyIE9LICJOb29wIGRvbmUiDQpN4AZMercFAEIAAABCAAAAABpw
+Rt5GAAwpFUktCABFAAA0s85AAEAGNtYKAAQfCgA4AbreD0FdUaDvZkYOdIAQALW0TQAAAQEICjW+
+QSkoDJWMYeAGTO29AQBMAAAATAAAAAAacEbeRgAMKRVJLQgARQAAPqp5QABABkAhCgAEHwoAOAG6
+4A9BXW+TNWckF0CAGAEheLoAAAEBCAo1vlRwKAyVS041MyBOT09QDQph4AZMr8ABAFYAAABWAAAA
+AAwpFUktABpwRt5GCABFAABI3RNAAD8GDn0KADgBCgAEHw9BuuBnJBdAXW+TP4AYAAzhkAAAAQEI
+CigMqNM1vlRwTjUzIE9LICJOb29wIGRvbmUiDQph4AZMwMABAEIAAABCAAAAABpwRt5GAAwpFUkt
+CABFAAA0qnpAAEAGQCoKAAQfCgA4AbrgD0Fdb5M/ZyQXVIAQASGRJQAAAQEICjW+VHAoDKjTYeAG
+TLG0BQBMAAAATAAAAAAacEbeRgAMKRVJLQgARQAAPrPPQABABjbLCgAEHwoAOAG63g9BXVGg72ZG
+DnSAGAC1dLQAAAEBCAo1vlSxKAyVjE41MyBOT09QDQph4AZMAbcFAFYAAABWAAAAAAwpFUktABpw
+Rt5GCABFAABI12RAAD8GFCwKADgBCgAEHw9But5mRg50XVGg+YAYAAzdHgAAAQEICigMqRQ1vlSx
+TjUzIE9LICJOb29wIGRvbmUiDQph4AZMG7cFAEIAAABCAAAAABpwRt5GAAwpFUktCABFAAA0s9BA
+AEAGNtQKAAQfCgA4AbreD0FdUaD5ZkYOiIAQALWNHwAAAQEICjW+VLEoDKkUY+AGTB9QAABIAAAA
+SAAAAAAMKRVJLQAmuYCCgQgARQAAOjXyQABABuiYCgAEFQoABB+tWACPtWiBWeg619eAGABHsAgA
+AAEBCAoHsE0/NbzbJURPTkUNCmPgBkxeUQAAUgAAAFIAAAAAJrmAgoEADCkVSS0IAEUAAEQJY0AA
+QAYVHgoABB8KAAQVAI+tWOg619e1aIFfgBgADHg+AAABAQgKNb5WTAewTT81IE9LIENvbXBsZXRl
+ZA0KY+AGTO9SAABCAAAAQgAAAAAMKRVJLQAmuYCCgQgARQAANDXzQABABuidCgAEFQoABB+tWACP
+tWiBX+g61+eAEABH1HYAAAEBCAoHsE0/Nb5WTGPgBkwHWAAAoQAAAKEAAAAADCkVSS0AJrmAgoEI
+AEUAAJM19EAAQAboPQoABBUKAAQfrVgAj7VogV/oOtfngBgAR2Z0AAABAQgKB7BNPzW+Vkw3IHVp
+ZCBjb3B5IDIgIk5aLkF1Y2tsYW5kIEVudmlyb25tZW50YWwgRW5naW5lZXJpbmcuTWV0cm93YXRl
+ci4zX0FXNjcyXzAzIE1hdW5nYXdoYXUgUGhhc2UgMiINCmPgBkxZXgAASgAAAEoAAAAAGnBG3kYA
+DCkVSS0IAEUAADxq20AAQAafwQoABB8KABgBpscAj1RNPJYAAAAAoAIW0DzJAAACBAW0BAIICjW+
+Vk0AAAAAAQMDCWPgBkxtkwAASgAAAEoAAAAADCkVSS0AGnBG3kYIAEUAADwAAEAAOwYPnQoAGAEK
+AAQfAI+mx469tOVUTTyXoBIWoLLXAAACBAW0BAIICkzj+Yk1vlZNAQMDCWPgBkx1kwAAQgAAAEIA
+AAAAGnBG3kYADCkVSS0IAEUAADRq3EAAQAafyAoABB8KABgBpscAj1RNPJeOvbTmgBAADPg2AAAB
+AQgKNb5WUEzj+Ylj4AZMbssAAPkAAAD5AAAAAAwpFUktABpwRt5GCABFAADrTWtAADsGwYIKABgB
+CgAEHwCPpseOvbTmVE08l4AYAAzGVwAAAQEICkzj+Y01vlZQKiBPSyBbQ0FQQUJJTElUWSBJTUFQ
+NCBJTUFQNHJldjEgTElURVJBTCsgSUQgTVVQREFURT1tdXBkYXRlOi8vY29tLm9wdXMuY28ubnov
+IFNUQVJUVExTIEFVVEg9TE9HSU4gQVVUSD1QTEFJTiBTQVNMLUlSIENPTVBSRVNTPURFRkxBVEVd
+IGF1c3YwMSBDeXJ1cyBJTUFQIE11cmRlciB2Mi4zLjE2IHNlcnZlciByZWFkeQ0KY+AGTL/LAABC
+AAAAQgAAAAAacEbeRgAMKRVJLQgARQAANGrdQABABp/HCgAEHwoAGAGmxwCPVE08l469tZ2AEAAO
+93UAAAEBCAo1vlZUTOP5jWPgBky0zAAAfwAAAH8AAAAAGnBG3kYADCkVSS0IAEUAAHFq3kAAQAaf
+iQoABB8KABgBpscAj1RNPJeOvbWdgBgADstRAAABAQgKNb5WVEzj+Y1BMDEgQVVUSEVOVElDQVRF
+IFBMQUlOIFozSnNjbmN4QUdONWNuVnpYM0J5YjNoNUFIRXhkekpsTTNJMA0KY+AGTMPxAABCAAAA
+QgAAAAAmuYCCgQAMKRVJLQgARQAANAlkQABABhUtCgAEHwoABBUAj61Y6DrX57Vogb6AEAAM1EcA
+AAEBCAo1vlZXB7BNP2PgBkzXAAEAQgAAAEIAAAAADCkVSS0AGnBG3kYIAEUAADRNbEAAOwbCOAoA
+GAEKAAQfAI+mx469tZ1UTTzUgBAADPc2AAABAQgKTOP5kTW+VlRj4AZMbQwBAL8BAAC/AQAAAAwp
+FUktABpwRt5GCABFAAGxTW1AADsGwLoKABgBCgAEHwCPpseOvbWdVE081IAYAAwQ4AAAAQEICkzj
++ZE1vlZUQTAxIE9LIFtDQVBBQklMSVRZIElNQVA0IElNQVA0cmV2MSBMSVRFUkFMKyBJRCBNVVBE
+QVRFPW11cGRhdGU6Ly9jb20ub3B1cy5jby5uei8gTE9HSU5ESVNBQkxFRCBDT01QUkVTUz1ERUZM
+QVRFIEFDTCBSSUdIVFM9a3h0ZSBRVU9UQSBNQUlMQk9YLVJFRkVSUkFMUyBOQU1FU1BBQ0UgVUlE
+UExVUyBOT19BVE9NSUNfUkVOQU1FIFVOU0VMRUNUIENISUxEUkVOIE1VTFRJQVBQRU5EIEJJTkFS
+WSBTT1JUIFNPUlQ9TU9EU0VRIFRIUkVBRD1PUkRFUkVEU1VCSkVDVCBUSFJFQUQ9UkVGRVJFTkNF
+UyBBTk5PVEFURU1PUkUgQ0FURU5BVEUgQ09ORFNUT1JFIFNDQU4gSURMRSBMSVNURVhUIExJU1Qt
+U1VCU0NSSUJFRCBVUkxBVVRIXSBTdWNjZXNzIChubyBwcm90ZWN0aW9uKQ0KY+AGTKgMAQB3AAAA
+dwAAAAAmuYCCgQAMKRVJLQgARQAAaQllQABABhT3CgAEHwoABBUAj61Y6DrX57Vogb6AGAAMrJQA
+AAEBCAo1vlZYB7BNPzcgTk8gVGhlIHJlbW90ZSBzZXJ2ZXIgZG9lcyBub3Qgc3VwcG9ydCBNVUxU
+SUFQUEVORA0KY+AGTJWWAQBCAAAAQgAAAAAMKRVJLQAmuYCCgQgARQAANDX1QABABuibCgAEFQoA
+BB+tWACPtWiBvug62ByAEABH080AAAEBCAoHsE1INb5WWGPgBkx/nQEAQgAAAEIAAAAAGnBG3kYA
+DCkVSS0IAEUAADRq30AAQAafxQoABB8KABgBpscAj1RNPNSOvbcagBAAEPWnAAABAQgKNb5WYkzj
++ZFl4AZMFB0MAEoAAABKAAAAAAwpFUktACa5gIKBCABFAAA8NfZAAEAG6JIKAAQVCgAEH61YAI+1
+aIG+6DrYHIAYAEf3/AAAAQEICgewTlU1vlZYOCBJRExFDQpl4AZMKR0MAEIAAABCAAAAACa5gIKB
+AAwpFUktCABFAAA0CWZAAEAGFSsKAAQfCgAEFQCPrVjoOtgctWiBxoAQAAzQSQAAAQEICjW+WQIH
+sE5VZeAGTIIdDABMAAAATAAAAAAmuYCCgQAMKRVJLQgARQAAPglnQABABhUgCgAEHwoABBUAj61Y
+6DrYHLVogcaAGAAMU9gAAAEBCAo1vlkCB7BOVSsgaWRsaW5nDQpl4AZMqR4MAEIAAABCAAAAAAwp
+FUktACa5gIKBCABFAAA0NfdAAEAG6JkKAAQVCgAEH61YAI+1aIHG6DrYJoAQAEfQBAAAAQEICgew
+TlU1vlkCdeAGTGu9AQBMAAAATAAAAAAacEbeRgAMKRVJLQgARQAAPqp7QABABkAfCgAEHwoAOAG6
+4A9BXW+TP2ckF1SAGAEhUIwAAAEBCAo1vmf4KAyo0041NCBOT09QDQp14AZMMsEBAFYAAABWAAAA
+AAwpFUktABpwRt5GCABFAABI3RRAAD8GDnwKADgBCgAEHw9BuuBnJBdUXW+TSYAYAAy5YgAAAQEI
+CigMvFs1vmf4TjU0IE9LICJOb29wIGRvbmUiDQp14AZMP8EBAEIAAABCAAAAABpwRt5GAAwpFUkt
+CABFAAA0qnxAAEAGQCgKAAQfCgA4AbrgD0Fdb5NJZyQXaIAQASFp9wAAAQEICjW+Z/goDLxbdeAG
+TKS0BQBMAAAATAAAAAAacEbeRgAMKRVJLQgARQAAPrPRQABABjbJCgAEHwoAOAG63g9BXVGg+WZG
+DoiAGAC1TIYAAAEBCAo1vmg5KAypFE41NCBOT09QDQp14AZMF7cFAFYAAABWAAAAAAwpFUktABpw
+Rt5GCABFAABI12VAAD8GFCsKADgBCgAEHw9But5mRg6IXVGhA4AYAAy08AAAAQEICigMvJw1vmg5
+TjU0IE9LICJOb29wIGRvbmUiDQp14AZMIrcFAEIAAABCAAAAABpwRt5GAAwpFUktCABFAAA0s9JA
+AEAGNtIKAAQfCgA4AbreD0FdUaEDZkYOnIAQALVl8QAAAQEICjW+aDkoDLycfeAGTFtyAwBQAAAA
+UAAAAAAeTxdwKAAMKRVJLQgARQAAQuVlQABABjkxCgAEHwoABAGY0ACPBBUP2wkQTgyAGABaKPgA
+AAEBCAo1vm/kNcRdfVBST1hZMTAgTm9vcA0KfeAGTD5zAwBYAAAAWAAAAAAMKRVJLQAeTxdwKAgA
+RQAAShYOQABABgiBCgAEAQoABB8Aj5jQCRBODAQVD+mAGAAMkjYAAAEBCAo1xJgVNb5v5FBST1hZ
+MTAgT0sgQ29tcGxldGVkDQp94AZMXXMDAEIAAABCAAAAAB5PF3AoAAwpFUktCABFAAA05WZAAEAG
+OT4KAAQfCgAEAZjQAI8EFQ/pCRBOIoAQAFriNwAAAQEICjW+b+Q1xJgV
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1287</attachid>
+            <date>2010-06-08 01:41 EDT</date>
+            <desc>patch attempt 2 (caused mupdate to segfault)</desc>
+            <filename>cyrus_patch_lrw.txt</filename>
+            <type>text/plain</type>
+            <size>560</size>
+            <attacher>Lesley.Longhurst@opus.co.nz</attacher>
+            
+              <data encoding="base64">LS0tIGJhY2tlbmQuYy5vcmlnICAgICAgMjAxMC0wNi0wMyAxNTo0MDo0MC4wMDAwMDAwMDAgKzEy
+MDAKKysrIGJhY2tlbmQuYyAgIDIwMTAtMDYtMDggMTU6MjE6MzguMDAwMDAwMDAwICsxMjAwCkBA
+IC00MjEsNyArNDIxLDEwIEBACiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAmcmV0
+LT5jYXBhYmlsaXR5LCBBVVRPX0JBTk5FUik7CiAgICAgICAgaWYgKG1lY2hsaXN0IHx8IHJldC0+
+Y2FwYWJpbGl0eSkgewogICAgICAgICAgICAvKiBmb3VuZCBjYXBhYmlsaXRpZXMgaW4gYmFubmVy
+IC0+IGRvbid0IGFzayAqLwotICAgICAgICAgICBhc2sgPSAwOworICAgICAgICAgICAgICAgLyog
+Q29tbWVudGluZyBvdXQgdGhlIChxdWVzdGlvbmFibGUpIGFzc3VtcHRpb24gdGhhdCB0aGUKKyAg
+ICAgICAgICAgICAgICAqIGNhcGFiaWxpdHkgbGlzdCBpbiB0aGUgcHJlLWF1dGggZ3JlZXRpbmcg
+YmFubmVyIGlzIGZ1bGwKKyAgICAgICAgICAgICAgICAqIGFuZCBhdXRob3JpdGF0aXZlCisgICAg
+ICAgICAgIGFzayA9IDA7ICovCiAgICAgICAgfQogICAgIH0KICAgICBlbHNlIHs=
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1288</attachid>
+            <date>2010-06-10 23:23 EDT</date>
+            <desc>Advertise MULTIAPPEND in CAPA_PREAUTH_STRING</desc>
+            <filename>multiappend.patch</filename>
+            <type>text/plain</type>
+            <size>660</size>
+            <attacher>Lesley.Longhurst@opus.co.nz</attacher>
+            
+              <data encoding="base64">LS0tIHZlcnNpb24uaAkyMDA5LTEyLTIyIDAwOjQyOjAxLjAwMDAwMDAwMCArMTMwMAorKysgdmVy
+c2lvbi5oLm5ldwkyMDEwLTA2LTEwIDAyOjUyOjIxLjAwMDAwMDAwMCArMTIwMApAQCAtNjIsMTIg
+KzYyLDEyIEBACiAKIC8qIENBUEFCSUxJVElFUyBhcmUgZGVmaW5lZCBoZXJlLCBub3QgaW5jbHVk
+aW5nIFRMUy9TQVNMIG9uZXMsCiAgICBhbmQgdGhvc2UgdGhhdCBhcmUgY29uZmlndXJhYmxlICov
+Ci0jZGVmaW5lIENBUEFfUFJFQVVUSF9TVFJJTkcgIklNQVA0IElNQVA0cmV2MSBMSVRFUkFMKyBJ
+RCIKKyNkZWZpbmUgQ0FQQV9QUkVBVVRIX1NUUklORyAiSU1BUDQgSU1BUDRyZXYxIExJVEVSQUwr
+IElEIE1VTFRJQVBQRU5EIgogCiAjZGVmaW5lIENBUEFfUE9TVEFVVEhfU1RSSU5HICIgQUNMIFJJ
+R0hUUz1reHRlIFFVT1RBICIgXAogCSJNQUlMQk9YLVJFRkVSUkFMUyBOQU1FU1BBQ0UgVUlEUExV
+UyAiIFwKIAkiTk9fQVRPTUlDX1JFTkFNRSBVTlNFTEVDVCAiIFwKLQkiQ0hJTERSRU4gTVVMVElB
+UFBFTkQgQklOQVJZICIgXAorCSJDSElMRFJFTiBCSU5BUlkgIiBcCiAJIlNPUlQgU09SVD1NT0RT
+RVEgVEhSRUFEPU9SREVSRURTVUJKRUNUIFRIUkVBRD1SRUZFUkVOQ0VTICIgXAogCSJBTk5PVEFU
+RU1PUkUgQ0FURU5BVEUgQ09ORFNUT1JFIFNDQU4iCiAK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

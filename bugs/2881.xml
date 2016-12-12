@@ -1,0 +1,139 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2881</bug_id>
+          
+          <creation_ts>2006-09-26 11:25 EDT</creation_ts>
+          <short_desc>squatter fails because of remote mailboxes in a (unified) murder environment</short_desc>
+          <delta_ts>2010-10-25 18:46:40 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Farzad FARID">ffarid@pragmatic-source.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Farzad FARID">ffarid@pragmatic-source.com</who>
+            <bug_when>2006-09-26 11:25:36 EDT</bug_when>
+            <thetext>Hi,
+I&apos;m running cyrus imapd 2.3.7 in a unified murder env.
+
+Whenever squatter runs, it fails almost immediatly because it is trying to index
+remote mailboxes as if they were local files. Here is the syslog of the imap
+server (aberlour):
+Sep 26 03:17:00 aberlour cyrus/master[8244]: about to exec /usr/sbin/squatter
+Sep 26 03:17:00 aberlour cyrus/squatter[8244]: indexing mailboxes
+Sep 26 03:17:00 aberlour cyrus/squatter[8244]: IOERROR: opening
+chivas!default/cyrus.header: No such file or directory
+Sep 26 03:17:00 aberlour cyrus/squatter[8244]: done indexing mailboxes
+
+&quot;chivas&quot; is the second imap server.
+
+When run from the command line, there is an additionnal error message:
+  aberlour# sudo -u cyrus /usr/sbin/squatter -v
+  error opening commun.test: System I/O error
+
+&quot;commun.test&quot; is a shared mailbox located on chivas, not aberlour.
+
+I&apos;d say the error is in mailbox.c:mailbox_open_header_path() which tries to
+open() any mailbox without checking if it is local or remote.
+
+Or maybe squatter.c:index_me() should first check if the mb type is
+MBTYPE_REMOTE and not index this mailbox?
+
+Regards,</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Farzad FARID">ffarid@pragmatic-source.com</who>
+            <bug_when>2006-09-26 11:53:22 EDT</bug_when>
+            <thetext>Created an attachment (id=461)
+Patch to skip remote mailboxes
+
+Here is a patch for squatter.c that skips remote mailboxes. It is minimally
+intrusive. It has one negative impact: because mboxlist_detail() is now called
+twice in index_me(), DB-&gt;fetch() is also called twice.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-09-26 12:50:46 EDT</bug_when>
+            <thetext>Applied a slightly modified version of your patch.
+
+BTW, I don&apos;t see where mboxlist_detail() is called twice in index_me().</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Farzad FARID">ffarid@pragmatic-source.com</who>
+            <bug_when>2006-09-27 10:40:05 EDT</bug_when>
+            <thetext>What I meant is that mbox_list_header() is called once in index_me() thanks to
+my patch, and then once again in mailbox_open_header() which is called by
+index_me().
+
+So I wondered if calling DB-&gt;fetch() twice would have a negative performance
+impact or not.
+</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>461</attachid>
+            <date>2006-09-26 11:53 EDT</date>
+            <desc>Patch to skip remote mailboxes</desc>
+            <filename>squatter-skip-remote-mboxes.patch</filename>
+            <type>text/plain</type>
+            <size>594</size>
+            <attacher>ffarid@pragmatic-source.com</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMy0yLjMuNy1DTEVBTi9pbWFwL3NxdWF0dGVyLmMJMjAwNi0wMy0z
+MSAyMToyMjoyOC4wMDAwMDAwMDAgKzAyMDAKKysrIGN5cnVzLWltYXBkLTIuMy0yLjMuNy9pbWFw
+L3NxdWF0dGVyLmMJMjAwNi0wOS0yNiAxNzo0NjozMi4wMDAwMDAwMDAgKzAyMDAKQEAgLTMwMSw2
+ICszMDEsMTMgQEAKICAgICBjaGFyIHVpZF92YWxpZGl0eV9idWZbMzBdOwogICAgIGNoYXIgZXh0
+bmFtZVtNQVhfTUFJTEJPWF9OQU1FKzFdOwogICAgIGludCB1c2VfYW5ub3QgPSAqKChpbnQgKikg
+cm9jayk7CisgICAgaW50IG1idHlwZTsKKworICAgIC8qIFNraXAgcmVtb3RlIG1haWxib3hlcyAq
+LworICAgIHIgPSBtYm94bGlzdF9kZXRhaWwobmFtZSwgJm1idHlwZSwgTlVMTCwgTlVMTCwgTlVM
+TCwgTlVMTCwgTlVMTCk7CisgICAgaWYgKHIpIHJldHVybiByOworICAgIGlmIChtYnR5cGUgJiBN
+QlRZUEVfUkVNT1RFKQorCSAgICByZXR1cm4gMDsKIAogICAgIC8qIG1ha2Ugc3VyZSB0aGUgbWFp
+bGJveCAob3IgYW4gYW5jZXN0b3IpIGhhcwogICAgICAgIC92ZW5kb3IvY211L2N5cnVzLWltYXBk
+L3NxdWF0IHNldCB0byAidHJ1ZSIgKi8K
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

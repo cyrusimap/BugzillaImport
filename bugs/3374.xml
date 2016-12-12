@@ -1,0 +1,298 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3374</bug_id>
+          
+          <creation_ts>2010-12-20 08:59 EDT</creation_ts>
+          <short_desc>Selection of most fitting partition/backend upon account creation</short_desc>
+          <delta_ts>2014-10-17 07:39:55 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.6</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>2.5-next</target_milestone>
+          
+          <blocked>3674</blocked>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</assigned_to>
+          <cc>awilliam@whitemice.org</cc>
+    
+    <cc>brong@fastmail.fm</cc>
+    
+    <cc>gnb@fastmail.fm</cc>
+    
+    <cc>hmh@debian.org</cc>
+    
+    <cc>vanmeeuwen@kolabsys.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-12-20 08:59:04 EDT</bug_when>
+            <thetext>As proposed on cyrus-devel mailing list, this bugzilla entry will be used to suggest an enhancement to the partition/backend selection upon account creation.
+The code will be based on recently released 2.4.6 version.
+
+
+Original mail follows:
+
+Hi,
+
+In latest cyrus versions (beginning with 2.3.x branch), cyrus is
+capable of selecting the most fitting partition when creating a new
+account. To do so, the default partition has to be left unspecified,
+and in this case cyrus selects the partition with the most free space.
+Similarly, when creating an account from a murder proxy, it is
+possible to let cyrus select the backend with the most free space.
+
+Due to some of our clients needs, we had to rework those features to
+handle other modes of selection (see below). We currently have code
+for 2.3.16 version.
+If you are interested, we could create a patch out of it, adapted for
+2.4.5 version, and add an entry for it on bugzilla.
+
+
+Here are some details on the changes we made:
+
+Partitions/backend are managed using a new structure which contains
+all valuable data. Those data are retrieved the first time it is
+needed, and then cached (configuration allows to refresh data).
+
+New configuration options manage partition/backend selection:
+  - partition_mode: how most fitting partition is selected; value is one of
+     - random: (pseudo-)random selection
+     - freespace-most: partition with the most free space (KiB)
+        -&gt; same as current cyrus behaviour
+     - freespace-percent-most: partition with the most free space (%)
+     - freespace-percent-weighted: each partition is weighted
+according to its free space (%)
+        -&gt; the more free space the partition has, the more chances it
+has to be selected
+     - freespace-percent-weighted-delta: each partition is weighted
+according to its difference of free space (%) compared to the most
+used partition
+        -&gt; the more the partition is lagging behind the most used
+partition, the more chances it has to be selected
+        -&gt; actually the code is made so that even the most used
+partition has a few chances to be selected, and those chances increase
+when other partitions get closer
+  - partition_mode_exclude: list of partitions to exclude from selection mode
+  - partition_mode_weighted_usage_limit: limit of partition usage (%)
+     -&gt; if a partition is over that limit, it is automatically
+excluded from selection mode
+     -&gt; if all partitions are over that limit, this feature is not used anymore
+  - partition_mode_usage_reinit: for a given session, number of
+&quot;operations&quot; (e.g. partition selection) for which partitions usage
+data are cached
+     -&gt; useful for clients that massively create new mailboxes using
+the same session
+
+  - serverlist_mode: same as partition_mode, but used on proxy for
+selecting most fitting backend
+     - random: (pseudo-)random
+     - freespace-most: backend with the most (total) free space (KiB)
+        -&gt; same as current cyrus behaviour
+     - freespace-percent-most: backend whose partition has the most
+free space (%)
+        -&gt; and not the backend with the most (total) free space (%);
+the goal is to compare the most fitting partition of each backend
+     - freespace-percent-weighted: same as for partition selection,
+comparing the free space (%) of the least used partition of each
+backend
+        -&gt; again the goal is to compare the most fitting partition of
+each backend
+     - freespace-percent-weighted-delta: same as for partition
+selection, comparing the free space (%) of the least used partition of
+each backend
+        -&gt; again the goal is to compare the most fitting partition of
+each backend
+  - serverlist_mode_weighted_usage_limit: same as
+partition_mode_weighted_usage_limit
+  - serverlist_mode_usage_reinit: same as partition_mode_usage_reinit
+
+Necessary data are fetched from backend through new annotations
+(vendor name was replaced by yours):
+  - &quot;/vendor/cmu/cyrus-imapd/freespace/total&quot;: returns the (sum of)
+available and total space of configured partitions, in the form
+&quot;available;total&quot;
+  - &quot;/vendor/cmu/cyrus-imapd/freespace/percent/most&quot;: returns the
+available and total space of the partition with the most free space
+(%), in the form &quot;available;total&quot;
+
+For the proxy, the function find_free_server was modified to select
+the most fitting backend according to the configured mode, thanks to
+the two new annotations.
+
+For the backend, the function find_free_partition was replaced to
+select the most fitting partition according to the configured mode.
+
+
+We refactored our code recently, and if necessary the options can be
+renamed (as well as the different modes or annotations): better use a
+consistent naming scheme if you decide to integrate it in cyrus :)
+So, let us know if you are interested in that code.
+
+Regards</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-12-21 12:05:53 EDT</bug_when>
+            <thetext>As promised, the feature is available on github.
+
+Repository (clone of cyrus-imapd repository from official server): git@github.com:worldline-messaging/cyrus-imapd.git
+Branch (from cyrus-imapd-2.4.6 tag): ticket/3374
+
+
+As you can see, most of the code has been added in dedicated files: imap/partlist.c and imap/partlist.h
+Data are lazily loaded. Services/tools which may use mailbox creation free those data upon shutdown.
+
+
+Please note that once applied, the ticket #3363 (http://bugzilla.cyrusimap.org/show_bug.cgi?id=3363) becomes obsolete.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2010-12-22 07:35:49 EDT</bug_when>
+            <thetext>If necessary, here is the public URL for the git repository: git://github.com/worldline-messaging/cyrus-imapd.git</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-02-10 13:19:11 EDT</bug_when>
+            <thetext>For information, we encountered a nasty issue in a previous version of our code (before refactoring), which was apparently due to gcc compilation optimizations on x86 architecture.
+
+Briefly: when hold in registers, floating point values (at least float and double types) retain more precision than when stored in memory. Thus some comparisons between floating point values would not return the expected result, breaking the selection algorithm.
+
+
+There does not seem to be a magic solution to it.
+Using the -ffloat-store would fix our current case, but according to the documentation it does not fix every situation. Instead we declared one variable (the one used for testing and storing results) volatile, which prevents it to be stored in a register.
+
+The refactored code we pushed on github did not show this problem, while the code is quite similar for the algorithm (just a bit more long, since it now handles more selection modes).
+To be safe, we think the variable shall also be made volatile in the refactored code: commit b0ac2c78c5b7cad244f0dc06c2b8aec793de70f1.
+
+Maybe someone knows a better (and portable) way to fix that kind of issue ?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2011-02-10 15:56:29 EDT</bug_when>
+            <thetext>Please don&apos;t compare floating-point for equality on generic computers, you will lose.  You really shouldn&apos;t do that, ever.
+
+Can&apos;t you use fixed-point 64-bit or 128-bit?  Or change the algorithm to make it immune to rounding errors?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-02-11 00:56:07 EDT</bug_when>
+            <thetext>http://www.parashift.com/c++-faq-lite/newbie.html#faq-29.17</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-02-11 04:32:39 EDT</bug_when>
+            <thetext>Thanks for the replies.
+
+Nothing is impossible, that would just require to work some more on that part of the algorithm.
+
+Greg: nice FAQ. I did know there were issues to take into account with floating-point precision, but I dit not know yet that the CPU itself would mess with it even more :)
+What we encoutered is somehow a variant of entries 29.18 and 29.14, since we actualy do something like
+
+if (a &lt; b) {
+    b = a;
+}
+
+And then when we test (a &gt;= b) some lines later it returns false: the first time &apos;a&apos; was held in a CPU register (with excess precision), and the second time &apos;a&apos; had been rounded to fit floating-point precision when stored in memory.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-02-14 04:04:49 EDT</bug_when>
+            <thetext>After tweaking a bit the algorithm, it shall now be immune to rounding errors. Tested it on machines that had the issue, and now it is fine. Commit: 1567e20a26052089743edf4679b0258fd06c53b0</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-02-14 05:05:07 EDT</bug_when>
+            <thetext>And fixed a mniro typo. Commit: db199c84928cf69687823fb9302c4c04c171782d</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-06-28 11:52:00 EDT</bug_when>
+            <thetext>FYI, I&apos;m currently working on moving this feature to be up-to-date with master, and also refresh it a bit (removing a few stuff not necessary in vanilla code). There will be a new branch for this one: ticket/3374/master (while ticket/3374 would still be based on cyrus-imapd-2-4-6).
+
+This will allow me to play a bit with git cherry-picking and rebasing :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-07-08 06:57:36 EDT</bug_when>
+            <thetext>New branch ticket/3374-master is available on the repository: git://github.com/worldline-messaging/cyrus-imapd.git
+Content was refreshed a bit and rebased on current master.
+
+PS: I just learned that you cannot create branch ticket/3374/master if ticket/3374 already exists, due to the way git handles branch information in the repository.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-04-19 10:00:37 EDT</bug_when>
+            <thetext>Re-assigning to Andreas.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2012-12-21 14:36:45 EDT</bug_when>
+            <thetext>Is there any more work required on this, or can it be merged?  Another &quot;I&apos;d like to get it into master so we can get 2.5 release candidates out&quot;</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-12-22 07:21:07 EDT</bug_when>
+            <thetext>(In reply to comment #12)
+&gt; Is there any more work required on this, or can it be merged?  Another &quot;I&apos;d
+&gt; like to get it into master so we can get 2.5 release candidates out&quot;
+
+I don&apos;t think any more work was required on this.
+
+Julien, feel free to merge and push if/when you feel it&apos;s ready.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2012-12-22 07:21:33 EDT</bug_when>
+            <thetext>Adjusting the milestone</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2012-12-22 18:35:34 EDT</bug_when>
+            <thetext>Had to adjust a few things for the current master.
+
+The branch ticket/3374-master at git://github.com/worldline-messaging/cyrus-imapd.git is now rebased (old branch saved as ticket/3374-master-old).
+I believe I don&apos;t have push rights anymore on cyrusimap git repository: should have been removed some time ago because the SSH key was actually used not only by me but shared with the few people I work with, and you prefer each people having its own key. And since then I did not get a new key since I did not need to push anything.
+
+Aside from the feature (reduced to one commit: https://github.com/worldline-messaging/cyrus-imapd/commit/19c05fe9ffaa904bbab67c334eae77f4fb786dd2), I had to add a few dependencies in Makefile.am (commit https://github.com/worldline-messaging/cyrus-imapd/commit/d8ea9f84ebd42b306d6bd806fb15547fce7b1eeb) otherwise the code would not compile under Ubuntu 12.10. This commit also adds &apos;.libs&apos; to .gitignore :)
+Don&apos;t know if this is an issue only on my side, or if you would also like to get this one.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2014-10-17 07:39:55 EDT</bug_when>
+            <thetext>Merged in to master.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

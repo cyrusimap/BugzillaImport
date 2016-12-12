@@ -1,0 +1,175 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3500</bug_id>
+          
+          <creation_ts>2011-08-04 09:46 EDT</creation_ts>
+          <short_desc>Timsieved fails to perform proxy authorization (?)</short_desc>
+          <delta_ts>2011-08-04 10:45:24 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.4.10</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>dwhite@olp.net</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-08-04 09:46:37 EDT</bug_when>
+            <thetext>Scenario:
+
+- Discrete murder, backends firewalled to only allow frontends.
+- &apos;sieve_allowreferrals: 0&apos;, to have the frontends proxy the connection through to the backend.
+
+- &apos;cyrus-murder&apos; admin user for internal Murder connections
+
+Symptoms:
+
+- user &apos;lucy.meier&apos; connects to frontend on sieve port,
+- attempting to login causes the following log messages:
+
+Aug  4 09:33:28 frontend1 sieve[18581]: accepted connection
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload(): fetched cache record (lucy.meier@kolab.org)(mark 1312463327, current 1312464810, limit 1312454010)
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload returning data
+Aug  4 09:33:30 frontend1 sieve[18581]: canonified lucy.meier@kolab.org -&gt; lucy.meier@kolab.org
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload(): pinging ptloader
+Aug  4 09:33:30 frontend1 sieve[18581]: connected with no delay
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload(): connected
+Aug  4 09:33:30 frontend1 sieve[18581]: timeout_select: sock = 10, rp = 0x0, wp = 0x7fff75593490, sec = 30
+Aug  4 09:33:30 frontend1 sieve[18581]: timeout_select exiting. r = 1; errno = 0
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload sent data
+Aug  4 09:33:30 frontend1 sieve[18581]: timeout_select: sock = 10, rp = 0x7fff75593510, wp = 0x0, sec = 30
+Aug  4 09:33:30 frontend1 ptloader[10660]: accepted connection
+Aug  4 09:33:30 frontend1 sieve[18581]: timeout_select exiting. r = 1; errno = 0
+Aug  4 09:33:30 frontend1 sieve[18581]: timeout_select: sock = 10, rp = 0x7fff75593510, wp = 0x0, sec = 30
+Aug  4 09:33:30 frontend1 sieve[18581]: timeout_select exiting. r = 1; errno = 0
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload read data back
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload(): bad response from ptloader server: identifier not found
+Aug  4 09:33:30 frontend1 sieve[18581]: No data available at all from ptload()
+Aug  4 09:33:30 frontend1 sieve[18581]: ptload completely failed: unable to canonify identifier: lucy^meier@kolab.org
+Aug  4 09:33:30 frontend1 sieve[18581]: couldn&apos;t authenticate to backend server: authentication failure
+Aug  4 09:33:30 frontend1 sieve[18581]: couldn&apos;t authenticate to backend server
+
+Logs on backend:
+
+Aug  4 09:33:30 backend1 sieve[18400]: executed
+Aug  4 09:33:30 backend1 sieve[18400]: accepted connection
+Aug  4 09:33:30 backend1 sieve[18400]: Lost connection to client -- exiting
+
+Workaround:
+
+- allow connections to the backends (open up firewall),
+- allow sieve to use referrals</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Dan White">dwhite@olp.net</who>
+            <bug_when>2011-08-04 10:11:40 EDT</bug_when>
+            <thetext>Do you see any sasl syslog output in your auth syslog facility (e.g. /var/log/auth.log)?
+
+Do you know what sasl mechnism your frontend it attempting to use? A few mechanisms do not support proxy authentication. You might want to explicitly define a list of mechanisms on the backend, such as:
+
+neo:~# grep timsieved /etc/cyrus.conf
+        sieve           cmd=&quot;timsieved&quot; listen=&quot;sieve&quot; prefork=0 maxchild=100
+neo:~# cat &gt;&gt; /etc/imapd.conf &lt;&lt; EOF
+&gt; sieve_sasl_mech_list: DIGEST-MD5 EXTERNAL GSSAPI PLAIN
+&gt; sieve_sasl_log_level: 7
+&gt; EOF
+
+see: http://www.cyrussasl.org/docs/cyrus-sasl/2.1.23/mechanisms.php
+
+And increase your auth syslog facility to &apos;debug&apos; for (potentially) useful syslogging.
+
+Do you have proxyservers or sieve_proxyservers configured on the backend?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jeroen van Meeuwen (Kolab Systems)">vanmeeuwen@kolabsys.com</who>
+            <bug_when>2011-08-04 10:45:24 EDT</bug_when>
+            <thetext>Hi Dan,
+
+(In reply to comment #1)
+&gt; Do you see any sasl syslog output in your auth syslog facility (e.g.
+&gt; /var/log/auth.log)?
+&gt; 
+
+On the frontend&apos;s /var/log/messages:
+
+Aug  4 09:33:28 frontend1 sieve[18581]: auxpropfunc error invalid parameter supplied 
+Aug  4 09:33:29 frontend1 sieve[18585]: auxpropfunc error invalid parameter supplied 
+Aug  4 09:33:30 frontend1 sieve[18587]: auxpropfunc error invalid parameter supplied 
+Aug  4 09:33:30 frontend1 sievefilter[18588]: auxpropfunc error invalid parameter supplied 
+Aug  4 09:33:30 frontend1 sieve[18581]: bad userid authenticated
+Aug  4 09:33:32 trprkofe1 sieve[18581]: attempting server step after doneflag
+Aug  4 09:33:32 trprkofe1 kernel: timsieved[18581]: segfault at 0000000000000000 rip 0000000000000000 rsp 00007fff75595fe8 error 14
+
+On the backend&apos;s /var/log/messages:
+
+Aug  4 09:33:30 backend1 sieve[18400]: auxpropfunc error invalid parameter supplied 
+
+&gt; Do you know what sasl mechnism your frontend it attempting to use?
+
+Frontend&apos;s /etc/imapd.conf:
+
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN LOGIN
+allowplaintext: 1
+auth_mech: pts
+pts_module: ldap
+serverlist: backend1.kolab.org backend2.kolab.org
+proxy_authname: kolabmdr
+proxy_password: ********
+
+Backend&apos;s /etc/imapd.conf:
+
+sasl_pwcheck_method: saslauthd
+sasl_mech_list: PLAIN LOGIN
+allowplaintext: 1
+auth_mech: pts
+pts_module: ldap
+proxyservers: kolabmdr
+proxy_authname: kolabmdr
+proxy_password: ********
+
+&gt; A few
+&gt; mechanisms do not support proxy authentication. You might want to explicitly
+&gt; define a list of mechanisms on the backend, such as:
+&gt; 
+
+I can set / increase the sieve_sasl_log_level to a higher level later today, and possibly generate some more useful output.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

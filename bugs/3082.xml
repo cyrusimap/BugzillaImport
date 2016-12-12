@@ -1,0 +1,225 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3082</bug_id>
+          
+          <creation_ts>2008-09-19 11:08 EDT</creation_ts>
+          <short_desc>make install fails with missing libsasldb.lai</short_desc>
+          <delta_ts>2010-10-25 18:46:46 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>plugins</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Patrick Welche">prlw1@cam.ac.uk</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>vvk@altlinux.org</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Patrick Welche">prlw1@cam.ac.uk</who>
+            <bug_when>2008-09-19 11:08:58 EDT</bug_when>
+            <thetext>&quot;make install&quot; fails with
+
+ /bin/ksh ../libtool   --mode=install /usr/bin/install -c  &apos;libsasldb.la&apos; &apos;/usr/local/lib/sasl2/libsasldb.la&apos;
+/usr/bin/install -c .libs/libsasldb.lai /usr/local/lib/sasl2/libsasldb.la
+install: .libs/libsasldb.lai: stat: No such file or directory
+
+This is because plugins/Makefile.am correctly sets -module and -rpath flags in
+
+AM_LDFLAGS = -module -export-dynamic -rpath $(plugindir)
+
+but then _overrides_ these flags for every plugin with e.g.,
+
+libplain_la_LDFLAGS = -version-info $(plain_version)
+
+The plugins are then built without -module or -rpath, so libtool considers them to be convenience libraries which shouldn&apos;t be installed.
+
+The attachment fixes this, and simplifies the makefile, as the plugins&apos; version
+is always the same.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Patrick Welche">prlw1@cam.ac.uk</who>
+            <bug_when>2008-09-19 14:04:22 EDT</bug_when>
+            <thetext>Ralf Wildenhues pointed out that this is because of a change of behaviour in automake 1.10 - the patch still is correct either way though!
+
+  - Per-target flags are now correctly handled in link rules.
+
+    For instance maude_CFLAGS correctly overrides AM_CFLAGS; likewise
+    for maude_LDFLAGS and AM_LDFLAGS.  Previous versions bogusly
+    preferred AM_CFLAGS over maude_CFLAGS while linking, and they
+    used both AM_LDFLAGS and maude_LDFLAGS on the same link command.
+
+    The fix for compiler flags (i.e., using maude_CFLAGS instead of
+    AM_CFLAGS) should not hurt any package since that is how _CFLAGS
+    is expected to work (and actually works during compilation).
+
+    However using maude_LDFLAGS &quot;instead of&quot; AM_LDFLAGS rather than
+    &quot;in addition to&quot; breaks backward compatibility with older versions.
+    If your package used both variables, as in
+
+      AM_LDFLAGS = common flags
+      bin_PROGRAMS = a b c
+      a_LDFLAGS = more flags
+      ...
+
+    and assumed *_LDFLAGS would sum up, you should rewrite it as
+
+      AM_LDFLAGS = common flags
+      bin_PROGRAMS = a b c
+      a_LDFLAGS = $(AM_LDFLAGS) more flags
+      ...
+
+    This new behavior of *_LDFLAGS is more coherent with other
+    per-target variables, and the way *_LDFLAGS variables were
+    considered internally.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Patrick Welche">prlw1@cam.ac.uk</who>
+            <bug_when>2008-09-22 10:05:42 EDT</bug_when>
+            <thetext>Created an attachment (id=1016)
+patch to Makefile.am
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-10-31 11:50:56 EDT</bug_when>
+            <thetext>Applied to CVS:
+
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/sasl/plugins/Makefile.am.diff?r1=1.78;r2=1.79</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-11-06 10:22:25 EDT</bug_when>
+            <thetext>*** Bug 3076 has been marked as a duplicate of this bug. ***</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1016</attachid>
+            <date>2008-09-22 10:05 EDT</date>
+            <desc>patch to Makefile.am</desc>
+            <filename>plugin.diff</filename>
+            <type>text/plain</type>
+            <size>4428</size>
+            <attacher>prlw1@cam.ac.uk</attacher>
+            
+              <data encoding="base64">SW5kZXg6IHBsdWdpbnMvTWFrZWZpbGUuYW0KPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2N2cy9zcmMv
+c2FzbC9wbHVnaW5zL01ha2VmaWxlLmFtLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjc4CmRpZmYg
+LXUgLXIxLjc4IE1ha2VmaWxlLmFtCi0tLSBwbHVnaW5zL01ha2VmaWxlLmFtCTE5IEFwciAyMDA2
+IDIwOjI0OjIxIC0wMDAwCTEuNzgKKysrIHBsdWdpbnMvTWFrZWZpbGUuYW0JMjIgU2VwIDIwMDgg
+MTM6MzI6NDMgLTAwMDAKQEAgLTQ2LDIzICs0NiwxMCBAQAogCiAjIExpYnJhcnkgdmVyc2lvbiBp
+bmZvIC0gaGVyZSBhdCB0aGUgdG9wLCBmb3Igc2FuaXR5CiAjIENVUlJFTlQ6UkVWSVNJT046QUdF
+Ci1hbm9ueW1vdXNfdmVyc2lvbiA9IDI6MjI6MAotZGlnZXN0bWQ1X3ZlcnNpb24gPSAyOjIyOjAK
+LWtlcmJlcm9zNF92ZXJzaW9uID0gMjoyMjowCi1nc3NhcGl2Ml92ZXJzaW9uID0gMjoyMjowCi1j
+cmFtbWQ1X3ZlcnNpb24gPSAyOjIyOjAKLXBhc3Nkc3NfdmVyc2lvbiA9IDI6MjI6MAotc2FzbGRi
+X3ZlcnNpb24gPSAyOjIyOjAKLWxvZ2luX3ZlcnNpb24gPSAyOjIyOjAKLXBsYWluX3ZlcnNpb24g
+PSAyOjIyOjAKLW50bG1fdmVyc2lvbiA9IDI6MjI6MAotb3RwX3ZlcnNpb24gPSAyOjIyOjAKLXNx
+bF92ZXJzaW9uID0gMjoyMjowCi1sZGFwZGJfdmVyc2lvbiA9IDI6MjI6MAotc3JwX3ZlcnNpb24g
+PSAyOjIyOjAKK3BsdWdpbl92ZXJzaW9uID0gMjoyMjowCiAKIElOQ0xVREVTPS1JJCh0b3Bfc3Jj
+ZGlyKS9pbmNsdWRlIC1JJCh0b3Bfc3JjZGlyKS9saWIgLUkkKHRvcF9zcmNkaXIpL3Nhc2xkYiAt
+SSQodG9wX2J1aWxkZGlyKS9pbmNsdWRlCi1BTV9MREZMQUdTID0gLW1vZHVsZSAtZXhwb3J0LWR5
+bmFtaWMgLXJwYXRoICQocGx1Z2luZGlyKQorQU1fTERGTEFHUyA9IC1tb2R1bGUgLWV4cG9ydC1k
+eW5hbWljIC1ycGF0aCAkKHBsdWdpbmRpcikgLXZlcnNpb24taW5mbyAkKHBsdWdpbl92ZXJzaW9u
+KQogCiBDT01QQVRfT0JKUyA9IEBMVEdFVEFERFJJTkZPT0JKU0AgQExUR0VUTkFNRUlORk9PQkpT
+QCBATFRTTlBSSU5URk9CSlNACiAKQEAgLTgyLDczICs2OSw2MCBAQAogCWxpYm50bG0ubGEgbGli
+cGFzc2Rzcy5sYSBsaWJzYXNsZGIubGEgbGlic3FsLmxhIGxpYmxkYXBkYi5sYQogCiBsaWJwbGFp
+bl9sYV9TT1VSQ0VTID0gcGxhaW4uYyBwbGFpbl9pbml0LmMgJChjb21tb25fc291cmNlcykKLWxp
+YnBsYWluX2xhX0xERkxBR1MgPSAtdmVyc2lvbi1pbmZvICQocGxhaW5fdmVyc2lvbikKIGxpYnBs
+YWluX2xhX0RFUEVOREVOQ0lFUyA9ICQoQ09NUEFUX09CSlMpCiBsaWJwbGFpbl9sYV9MSUJBREQg
+PSAkKFBMQUlOX0xJQlMpICQoQ09NUEFUX09CSlMpCiAKIGxpYmFub255bW91c19sYV9TT1VSQ0VT
+ID0gYW5vbnltb3VzLmMgYW5vbnltb3VzX2luaXQuYyAkKGNvbW1vbl9zb3VyY2VzKQotbGliYW5v
+bnltb3VzX2xhX0xERkxBR1MgPSAtdmVyc2lvbi1pbmZvICQoYW5vbnltb3VzX3ZlcnNpb24pCiBs
+aWJhbm9ueW1vdXNfbGFfREVQRU5ERU5DSUVTID0gJChDT01QQVRfT0JKUykKIGxpYmFub255bW91
+c19sYV9MSUJBREQgPSAkKENPTVBBVF9PQkpTKQogCiBsaWJrZXJiZXJvczRfbGFfU09VUkNFUyA9
+IGtlcmJlcm9zNC5jIGtlcmJlcm9zNF9pbml0LmMgJChjb21tb25fc291cmNlcykKLWxpYmtlcmJl
+cm9zNF9sYV9MREZMQUdTID0gLXZlcnNpb24taW5mbyAkKGtlcmJlcm9zNF92ZXJzaW9uKQogbGli
+a2VyYmVyb3M0X2xhX0RFUEVOREVOQ0lFUyA9ICQoQ09NUEFUX09CSlMpCiBsaWJrZXJiZXJvczRf
+bGFfTElCQUREID0gJChTQVNMX0tSQl9MSUIpICQoTElCX1NPQ0tFVCkgJChDT01QQVRfT0JKUykK
+IAogbGliZ3NzYXBpdjJfbGFfU09VUkNFUyA9IGdzc2FwaS5jIGdzc2FwaXYyX2luaXQuYyAkKGNv
+bW1vbl9zb3VyY2VzKQotbGliZ3NzYXBpdjJfbGFfTERGTEFHUyA9IC12ZXJzaW9uLWluZm8gJChn
+c3NhcGl2Ml92ZXJzaW9uKQogbGliZ3NzYXBpdjJfbGFfREVQRU5ERU5DSUVTID0gJChDT01QQVRf
+T0JKUykKIGxpYmdzc2FwaXYyX2xhX0xJQkFERCA9ICQoR1NTQVBJQkFTRV9MSUJTKSAkKEdTU0FQ
+SV9MSUJTKSAkKExJQl9TT0NLRVQpICQoQ09NUEFUX09CSlMpCiAKIGxpYmNyYW1tZDVfbGFfU09V
+UkNFUyA9IGNyYW0uYyBjcmFtbWQ1X2luaXQuYyAkKGNvbW1vbl9zb3VyY2VzKQotbGliY3JhbW1k
+NV9sYV9MREZMQUdTID0gLXZlcnNpb24taW5mbyAkKGNyYW1tZDVfdmVyc2lvbikKIGxpYmNyYW1t
+ZDVfbGFfREVQRU5ERU5DSUVTID0gJChDT01QQVRfT0JKUykKIGxpYmNyYW1tZDVfbGFfTElCQURE
+ID0gJChDT01QQVRfT0JKUykKIAogbGliZGlnZXN0bWQ1X2xhX1NPVVJDRVMgPSBkaWdlc3RtZDUu
+YyBkaWdlc3RtZDVfaW5pdC5jICQoY29tbW9uX3NvdXJjZXMpCi1saWJkaWdlc3RtZDVfbGFfTERG
+TEFHUyA9IC12ZXJzaW9uLWluZm8gJChkaWdlc3RtZDVfdmVyc2lvbikKIGxpYmRpZ2VzdG1kNV9s
+YV9ERVBFTkRFTkNJRVMgPSAkKENPTVBBVF9PQkpTKQogbGliZGlnZXN0bWQ1X2xhX0xJQkFERCA9
+ICQoTElCX0RFUykgJChMSUJfU09DS0VUKSAkKENPTVBBVF9PQkpTKQogCiBsaWJsb2dpbl9sYV9T
+T1VSQ0VTID0gbG9naW4uYyBsb2dpbl9pbml0LmMgJChjb21tb25fc291cmNlcykKLWxpYmxvZ2lu
+X2xhX0xERkxBR1MgPSAtdmVyc2lvbi1pbmZvICQobG9naW5fdmVyc2lvbikKIGxpYmxvZ2luX2xh
+X0RFUEVOREVOQ0lFUyA9ICQoQ09NUEFUX09CSlMpCiBsaWJsb2dpbl9sYV9MSUJBREQgPSAkKFBM
+QUlOX0xJQlMpICQoQ09NUEFUX09CSlMpCiAKIGxpYnNycF9sYV9TT1VSQ0VTID0gc3JwLmMgc3Jw
+X2luaXQuYyAkKGNvbW1vbl9zb3VyY2VzKQotbGlic3JwX2xhX0xERkxBR1MgPSAtdmVyc2lvbi1p
+bmZvICQoc3JwX3ZlcnNpb24pCiBsaWJzcnBfbGFfREVQRU5ERU5DSUVTID0gJChDT01QQVRfT0JK
+UykKIGxpYnNycF9sYV9MSUJBREQgPSAkKFNSUF9MSUJTKSAkKENPTVBBVF9PQkpTKQogCiBsaWJv
+dHBfbGFfU09VUkNFUyA9IG90cC5jIG90cF9pbml0LmMgb3RwLmggJChjb21tb25fc291cmNlcykK
+LWxpYm90cF9sYV9MREZMQUdTID0gLXZlcnNpb24taW5mbyAkKG90cF92ZXJzaW9uKQogbGlib3Rw
+X2xhX0RFUEVOREVOQ0lFUyA9ICQoQ09NUEFUX09CSlMpCiBsaWJvdHBfbGFfTElCQUREID0gJChP
+VFBfTElCUykgJChDT01QQVRfT0JKUykKIAogbGlibnRsbV9sYV9TT1VSQ0VTID0gbnRsbS5jIG50
+bG1faW5pdC5jICQoY29tbW9uX3NvdXJjZXMpCi1saWJudGxtX2xhX0xERkxBR1MgPSAtdmVyc2lv
+bi1pbmZvICQobnRsbV92ZXJzaW9uKQogbGlibnRsbV9sYV9ERVBFTkRFTkNJRVMgPSAkKENPTVBB
+VF9PQkpTKQogbGlibnRsbV9sYV9MSUJBREQgPSAkKE5UTE1fTElCUykgJChDT01QQVRfT0JKUykK
+IAogbGlicGFzc2Rzc19sYV9TT1VSQ0VTID0gcGFzc2Rzcy5jIHBhc3Nkc3NfaW5pdC5jICQoY29t
+bW9uX3NvdXJjZXMpCi1saWJwYXNzZHNzX2xhX0xERkxBR1MgPSAtdmVyc2lvbi1pbmZvICQocGFz
+c2Rzc192ZXJzaW9uKQogbGlicGFzc2Rzc19sYV9ERVBFTkRFTkNJRVMgPSAkKENPTVBBVF9PQkpT
+KQogbGlicGFzc2Rzc19sYV9MSUJBREQgPSAkKFBBU1NEU1NfTElCUykgJChDT01QQVRfT0JKUykK
+IAogIyBBdXhwcm9wIFBsdWdpbnMKIGxpYnNhc2xkYl9sYV9TT1VSQ0VTID0gc2FzbGRiLmMgc2Fz
+bGRiX2luaXQuYyAkKGNvbW1vbl9zb3VyY2VzKQotbGlic2FzbGRiX2xhX0xERkxBR1MgPSAtdmVy
+c2lvbi1pbmZvICQoc2FzbGRiX3ZlcnNpb24pCiBsaWJzYXNsZGJfbGFfREVQRU5ERU5DSUVTID0g
+JChDT01QQVRfT0JKUykKIGxpYnNhc2xkYl9sYV9MSUJBREQgPSAuLi9zYXNsZGIvbGlic2FzbGRi
+LmxhICQoU0FTTF9EQl9MSUIpICQoQ09NUEFUX09CSlMpCiAKIGxpYmxkYXBkYl9sYV9TT1VSQ0VT
+ID0gbGRhcGRiLmMgbGRhcGRiX2luaXQuYyAkKGNvbW1vbl9zb3VyY2VzKQotbGlibGRhcGRiX2xh
+X0xERkxBR1MgPSAkKExJQl9MREFQKSAtdmVyc2lvbi1pbmZvICQobGRhcGRiX3ZlcnNpb24pCiBs
+aWJsZGFwZGJfbGFfREVQRU5ERU5DSUVTID0gJChDT01QQVRfT0JKUykKIGxpYmxkYXBkYl9sYV9M
+SUJBREQgPSAkKENPTVBBVF9PQkpTKQogCiBsaWJzcWxfbGFfU09VUkNFUyA9IHNxbC5jIHNxbF9p
+bml0LmMgJChjb21tb25fc291cmNlcykKLWxpYnNxbF9sYV9MREZMQUdTID0gJChMSUJfTVlTUUwp
+ICQoTElCX1BHU1FMKSAkKExJQl9TUUxJVEUpIC12ZXJzaW9uLWluZm8gJChzcWxfdmVyc2lvbikK
+K2xpYnNxbF9sYV9MREZMQUdTID0gJChMSUJfTVlTUUwpICQoTElCX1BHU1FMKSAkKExJQl9TUUxJ
+VEUpICQoQU1fTERGTEFHUykKIGxpYnNxbF9sYV9ERVBFTkRFTkNJRVMgPSAkKENPTVBBVF9PQkpT
+KQogbGlic3FsX2xhX0xJQkFERCA9ICQoQ09NUEFUX09CSlMpCiAK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

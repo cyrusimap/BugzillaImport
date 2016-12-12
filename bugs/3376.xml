@@ -1,0 +1,196 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3376</bug_id>
+          
+          <creation_ts>2010-12-24 09:30 EDT</creation_ts>
+          <short_desc>take care 64-bits (!= 32-bits) time_t</short_desc>
+          <delta_ts>2014-06-17 02:16:53 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.6</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>other</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          <bug_file_loc>http://gnats.netbsd.org/44275</bug_file_loc>
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="OBATA Akio">obache@wizdas.com</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>ajacoutot@bsdfrog.org</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="OBATA Akio">obache@wizdas.com</who>
+            <bug_when>2010-12-24 09:30:18 EDT</bug_when>
+            <thetext>On NetBSD-current (will be NetBSD-6.0), time_t is 64-bits.
+But I feel time_t is expected as 32-bits in Cyrus-IMAP sources.
+I&apos;m not sure whether it should be exactly 32-bits (for protocol reason?
+from IMAP spec, and doc/internal/replication_protocol.html)
+or native time_t value for any case.
+
+For example, in imap/mailbox.c:1892, time_t is treated as &quot;%lu&quot; for snprintf.
+In this case, it will crash because a half of record-&gt;internaldate will be used as
+the next &quot;%s&quot;.  Then, how to fix? record-&gt;* should be unsigned long? or introduce platform depend TIME_T_FMT?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="OBATA Akio">obache@wizdas.com</who>
+            <bug_when>2011-01-05 01:12:20 EDT</bug_when>
+            <thetext>Not just 64-bits and 32-bits time_t issue,
+time_t != long int platforms (32-bits arch, but time_t is 64-bits).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Antoine Jacoutot">ajacoutot@bsdfrog.org</who>
+            <bug_when>2014-06-16 12:03:48 EDT</bug_when>
+            <thetext>Created an attachment (id=1536)
+cast time_t to long long</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Antoine Jacoutot">ajacoutot@bsdfrog.org</who>
+            <bug_when>2014-06-16 12:04:58 EDT</bug_when>
+            <thetext>On OpenBSD we are using this patch to prevent a crash when delivering with cyrusv2 and sendmail. IIRC casting time_t to long long is the most portable way to represent time values.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="OBATA Akio">obache@wizdas.com</who>
+            <bug_when>2014-06-16 20:36:04 EDT</bug_when>
+            <thetext>(In reply to comment #3)
+&gt; On OpenBSD we are using this patch to prevent a crash when delivering with
+&gt; cyrusv2 and sendmail. IIRC casting time_t to long long is the most portable way
+&gt; to represent time values.
+
+I&apos;m using cyrusimap in pkgsrc, i.e. need multiple platform support.
+Moreover, current souce codes use &quot;HAVE_LONG_LONG_INT&quot; switch in various location.
+So unconditional cast to &quot;unsigned long long&quot; is probably not acceptable. 
+
+Anyway, you should also patch to log_record() in imap/sync_client.c,
+but you can find &quot;unsinged long&quot; is used by sieve_upload() as a argment.
+It may also be changed to &quot;time_t&quot;, because &quot;last_updated&quot; is passed to
+dlist_date(), and its argment is defined as &quot;time_t&quot;.
+Other such mismatch also may be found.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="OBATA Akio">obache@wizdas.com</who>
+            <bug_when>2014-06-16 22:08:10 EDT</bug_when>
+            <thetext>Here are current our patches, using modseq_t and MODSEQ_FMT,
+same as imap/dlist.c:
+
+
+--- imap/sync_client.c.orig     2012-12-01 19:57:54.000000000 +0000
++++ imap/sync_client.c
+@@ -573,7 +573,7 @@ static int folder_unannotation(const cha
+ /* ====================================================================== */
+
+ static int sieve_upload(const char *userid, const char *filename,
+-                       unsigned long last_update)
++                       time_t last_update)
+ {
+     const char *cmd = &quot;SIEVE&quot;;
+     struct dlist *kl;
+@@ -913,9 +913,9 @@ static void log_record(const char *name,
+                       struct index_record *record)
+ {
+     syslog(LOG_NOTICE, &quot;SYNCNOTICE: %s uid:%u modseq:&quot; MODSEQ_FMT &quot; &quot;
+-         &quot;last_updated:%lu internaldate:%lu flags:(%s)&quot;,
++         &quot;last_updated:&quot; MODSEQ_FMT &quot; internaldate:&quot; MODSEQ_FMT &quot; flags:(%s)&quot;,
+           name, record-&gt;uid, record-&gt;modseq,
+-          record-&gt;last_updated, record-&gt;internaldate,
++          (modseq_t)record-&gt;last_updated, (modseq_t)record-&gt;internaldate,
+           make_flags(mailbox, record));
+ }
+
+--- imap/mailbox.c.orig 2012-12-01 19:57:54.000000000 +0000
++++ imap/mailbox.c
+@@ -1960,10 +1960,10 @@ bit32 make_sync_crc(struct mailbox *mail
+        flagcrc ^= crc32_cstring(buf);
+     }
+
+-    snprintf(buf, 4096, &quot;%u &quot; MODSEQ_FMT &quot; %lu (%u) %lu %s&quot;,
+-           record-&gt;uid, record-&gt;modseq, record-&gt;last_updated,
++    snprintf(buf, 4096, &quot;%u &quot; MODSEQ_FMT &quot; &quot; MODSEQ_FMT &quot; (%u) &quot; MODSEQ_FMT &quot; %s&quot;,
++           record-&gt;uid, record-&gt;modseq, (modseq_t)record-&gt;last_updated,
+            flagcrc,
+-           record-&gt;internaldate,
++           (modseq_t)record-&gt;internaldate,
+            message_guid_encode(&amp;record-&gt;guid));
+
+     return crc32_cstring(buf);</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Antoine Jacoutot">ajacoutot@bsdfrog.org</who>
+            <bug_when>2014-06-17 02:16:53 EDT</bug_when>
+            <thetext>&gt; So unconditional cast to &quot;unsigned long long&quot; is probably not acceptable. 
+
+Well as far as I know casting to long long it&apos;s the only way that it will work on most UNIX OSes.
+Granted that may require more work in the cyrus case.
+
+&gt; Anyway, you should also patch to log_record() in imap/sync_client.c,
+&gt; but you can find &quot;unsinged long&quot; is used by sieve_upload() as a argment.
+&gt; It may also be changed to &quot;time_t&quot;, because &quot;last_updated&quot; is passed to
+&gt; dlist_date(), and its argment is defined as &quot;time_t&quot;.
+&gt; Other such mismatch also may be found.
+
+Yeah unfortunately there are lots of places where the use of time_t is wrong...
+I have no time to dig but I will have a look at your patches for the OpenBSD package at least. Since this bug was opened almost 4 years ago, I doubt it is of interested to the devs.
+
+Thanks.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>1536</attachid>
+            <date>2014-06-16 12:03 EDT</date>
+            <desc>cast time_t to long long</desc>
+            <filename>patch-imap_mailbox_c.txt</filename>
+            <type>text/plain</type>
+            <size>751</size>
+            <attacher>ajacoutot@bsdfrog.org</attacher>
+            
+              <data encoding="base64">JE9wZW5CU0Q6IHBhdGNoLWltYXBfbWFpbGJveF9jLHYgMS44IDIwMTQvMDYvMTYgMTU6MDg6NDMg
+YWphY291dG90IEV4cCAkCgpodHRwczovL2J1Z3ppbGxhLmN5cnVzaW1hcC5vcmcvc2hvd19idWcu
+Y2dpP2lkPTMzNzYKCi0tLSBpbWFwL21haWxib3guYy5vcmlnCU1vbiBKdW4gMTYgMTc6MDI6MjYg
+MjAxNAorKysgaW1hcC9tYWlsYm94LmMJTW9uIEp1biAxNiAxNzowMzozNCAyMDE0CkBAIC0xOTYw
+LDEwICsxOTYwLDEwIEBAIGJpdDMyIG1ha2Vfc3luY19jcmMoc3RydWN0IG1haWxib3ggKm1haWxi
+b3gsIHN0cnVjdCBpbgogCWZsYWdjcmMgXj0gY3JjMzJfY3N0cmluZyhidWYpOwogICAgIH0KIAot
+ICAgIHNucHJpbnRmKGJ1ZiwgNDA5NiwgIiV1ICIgTU9EU0VRX0ZNVCAiICVsdSAoJXUpICVsdSAl
+cyIsCi0JICAgIHJlY29yZC0+dWlkLCByZWNvcmQtPm1vZHNlcSwgcmVjb3JkLT5sYXN0X3VwZGF0
+ZWQsCisgICAgc25wcmludGYoYnVmLCA0MDk2LCAiJXUgIiBNT0RTRVFfRk1UICIgJWxsZCAoJXUp
+ICVsbGQgJXMiLAorCSAgICByZWNvcmQtPnVpZCwgcmVjb3JkLT5tb2RzZXEsIChsb25nIGxvbmcp
+cmVjb3JkLT5sYXN0X3VwZGF0ZWQsCiAJICAgIGZsYWdjcmMsCi0JICAgIHJlY29yZC0+aW50ZXJu
+YWxkYXRlLAorCSAgICAobG9uZyBsb25nKXJlY29yZC0+aW50ZXJuYWxkYXRlLAogCSAgICBtZXNz
+YWdlX2d1aWRfZW5jb2RlKCZyZWNvcmQtPmd1aWQpKTsKIAogICAgIHJldHVybiBjcmMzMl9jc3Ry
+aW5nKGJ1Zik7Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

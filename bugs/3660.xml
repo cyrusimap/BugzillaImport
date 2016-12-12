@@ -1,0 +1,307 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3660</bug_id>
+          
+          <creation_ts>2012-04-01 09:30 EDT</creation_ts>
+          <short_desc>Cyrus replication gets stuck after applying http://www.irbs.net/internet/info-cyrus/0602/att-0330/pop3_uidl.diff and doing a SEEN action with a large number of uuids seen in the record of the mailbox in the skipllist seen file.</short_desc>
+          <delta_ts>2012-04-02 07:47:17 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Replication</component>
+          <version>2.3.18</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>FreeBSD</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Egoitz Aurrekoetxea">egoitz@ramattack.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Egoitz Aurrekoetxea">egoitz@ramattack.net</who>
+            <bug_when>2012-04-01 09:30:13 EDT</bug_when>
+            <thetext>Created an attachment (id=1460)
+Fixes UIDL Issue with Outlook and allows replication SEEN actions to work with long strings of seen uuid of messages in the seen skiplist
+
+Good morning,
+
+I&apos;m running an ISP environment with Cyrus 2.3.18. I have seen, we have some problems when sync_client tries to do a SEEN from some mailboxes. First of all, say that we had to patch Cyrus IMAP with this proposed patch http://www.irbs.net/internet/info-cyrus/0602/0330.html because else... our customers who used Outlook (with any version!!!, even 2010!!!) and pop3 mail retrieval protocol and the option of left message copy on the server, where constantly downloading the same messages one time and another (and always they checked for new mail in this MUA... and obviously you know... our customer&apos;s annoyance). After applying this patch, although the first problem has been corrected, (the Outlook and UIDL one...) I have observed (and reproduced) that sync_client&apos;s forked proccess gets stuck with some mailboxes when SEEN actions that had to move big strings like this one :
+
+
+%cyr_dbtool /expert/correo/imap/domain/e/egoitz.com/user/e/egoitz.seen skiplist show
+04409b4d4f77894d	1 1333236088 8127 1333236383 25,84,88,96:97,104,120,130,147,149,152,158:160,198,204,218,263,273,333,335,337,341,355,382:383,420,441,458,467,509,512,514,530,545,548,594,601,616,641,661,666,681,703,716,742,786,790,794:795,812,819,824,845,847,859,865,878,889,891,893:894,899,905,934,953,984,997,1002,1009,1024,1033,1045,1055,1068,1070,1123,1126,1137,1142,1165,1170,1175:1176,1179,1195,1197,1211,1221,1230,1236,1261,1263,1271,1275,1299,1314,1345,1377,1381,1417,1421,1428,1439,1443,1451,1454,1462,1470,1476,1478,1515,1526,1540,1564:1566,1573,1593,1608,1626,1628,1661,1674,1697,1699,1702,1713,1736,1748,1772,1775,1781,1797,1830,1834,1865,1870:1871,1888,1910,1923,1930,1932,1935,1940,1950,1963,1974,2005,2009,2011,2019,2027,2044,2058,2069,2073,2079,2095,2101:2102,2119,2122,2134,2137,2141,2143,2209,2213,2220,2223,2237,2247,2253,2267,2271,2287,2293,2313,2331,2334,2336,2338,2356,2370,2375,2387,2411,2431,2451,2457,2478,2493,2517,2520,2550,2556,2572,2575,2594,2596,2600,2605,2658:2659,2708,2715,2732,2738,2766,2778,2795,2817,2830,2885,2889,2904,2911,2917,2920,2930,2940,2953,2955,2962,2970:2971,2985,2991,3014,3031,3035,3038:3040,3091,3096,3147,3154,3171,3180,3183,3191,3199,3219,3221,3225,3227,3230,3235,3254,3264,3273,3280,3304,3343,3371,3375,3406,3414,3419,3425,3445,3451,3463,3489,3492,3499,3525,3556,3564,3604,3636,3643,3665,3667,3670,3691:3692,3746:3747,3797,3801,3803,3811,3852,3872,3883,3886,3907,3923,3930,3960,3963,3993,4020,4036,4043,4045,4105,4142,4149,4152,4159,4172,4218,4220,4257,4275,4309,4363,4365,4369,4371,4393,4400,4434,4463,4481,4515,4554,4581,4585,4591,4600,4641,4663,4710,4713,4721,4767,4792,4818,4872,4898,4928,4961,4970:4971,4977,4979:4981,4983,5009,5014,5037,5075:5076,5105,5152,5156,5165,5177,5193,5208,5241,5261,5275,5281,5296,5298,5313,5321,5328,5334,5363,5392,5395,5398,5401,5408,5427,5440,5453,5466,5483,5520,5527,5537,5549,5597,5602:5603,5608,5613,5652,5683,5688,5692,5719,5730,5747,5752:5753,5764,5804,5845,5848,5860,5887,5919:5920,5937,5950,5963,5974,5980,6008,6017,6031:6032,6043,6051:6052,6054,6070,6143,6180,6194,6273,6307,6327,6359,6384,6389,6405,6407,6418,6421,6435,6443,6452,6462,6480,6488,6499,6518,6534,6556,6566,6576,6588,6603,6606,6616,6618,6651,6691,6736,6772,6820,6840,6844,6858,6860,6864,6880,6907,6913,6921,6932,6969,6977,6990,6996,7014:7015,7030,7034,7042,7052,7084,7087,7095,7109,7142,7151,7157,7162,7176:7177,7187,7194,7199,7215,7247,7256,7275,7282,7325,7331,7340:7341,7346,7349:7350,7376,7383:7384,7403,7425,7479,7566,7571,7578,7603,7611,7623,7648,7688:7689,7700,7728,7758,7766,7781,7794,7806,7815,7819,7851,7854,7863:7864,7887,7915,7919,7929:7930,7941,7981,7985
+60fce00e4f778f59	1 1333235732 31 1333235973 1,3:4,8:9,12,14:15,22:28,31
+6dd5e44d4f778f49	1 1333236161 1 1333235642 1
+
+
+
+After doing some tests, and as said before, reproduced the problem... have noticed that sync_client is not being able to handle this big string with the function prot_printf as left in the proposed patch in the previous written URL (http://www.irbs.net/internet/info-cyrus/0602/0330.html). With other smaller strings has no problem with SEEN, but with this one, as said gets stuck there. So... like Outlook is a very used MUA (very known in fact....) and replication is essential IMHO to work smoothly.... I wanted to propose you this modified version of the patch I have attached to this mail. If you were so kind, I would be very thanked if you told me if you see some problem applying this to Cyrus-IMAPd 2.3.18 (you know... you would have to apply them with -p0 because have not take care with file locations.... sorry :) ). I have checked that when applying my modified version of the patch, the problem of SEEN mailboxes gets fixed and although have not tested directly the Outlook problem has to be corrected too... because of the own naure of the changes. If you see it ok?, wouldn&apos;t it be fine if you commit it to the official cvs of this nice server project?. I mean this is a very common problem that could happen, and the replication IMHO makes Cyrus (apart from other features of course) to be the better software of this kind.
+
+So to summarize... do you see any problem with this patch?... and to be applied to now patched servers (with previous version of the patch of the proposed patch of the URL) ?. Could it be committed to cvs?
+
+Thanks a lot for you&apos;re time,
+Best regards</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Egoitz Aurrekoetxea">egoitz@ramattack.net</who>
+            <bug_when>2012-04-01 10:16:53 EDT</bug_when>
+            <thetext>I have reproduced this using rolling replication only.... should say... unless have not seen this effect using user mode replication... just with rolling...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Egoitz Aurrekoetxea">egoitz@ramattack.net</who>
+            <bug_when>2012-04-01 16:57:31 EDT</bug_when>
+            <thetext>Created an attachment (id=1461)
+Final changes done in a better way... and getting working....</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Egoitz Aurrekoetxea">egoitz@ramattack.net</who>
+            <bug_when>2012-04-02 07:47:03 EDT</bug_when>
+            <thetext>Hi all,
+
+I think here I have done some anoying noise. I explain the situation... We
+have historically Cyrus patched this way because in it&apos;s day there were
+some problems with this...  the problem really existed... but nowadays...
+this problem does not exist... the fact is that I changed one mail machine
+some days ago (apart had a 2.3.14 version, although there&apos;s no problem
+with this version directly too I have checked it)... I forgotten to apply
+this patch... and all our customers like the uidl format changed (zeros
+are removed)... I assume suffered this issue...  and all they&apos;re mail
+started downloading again of the whole mailbox. So there&apos;s not an issue
+with Outlook nowadays it&apos;s just that I changed the way I was serving
+UIDL... and I will have to have this patched nowadays... because we have
+been for years serving UIDL this way.
+
+The only thing, is that If you see it proper... I&apos;m gonna patch prot.c
+with my last proposed patch... in order to server uidl like our customers
+&quot;hope&quot; to receive but keep prot_printf in a &quot;compatible&quot; way and without
+breaking things.
+
+Do you see any problem in the prot.c patch proposed by me?. I think it
+shouldn&apos;t cause any harm... but could please give me you&apos;re opinion?.
+
+Apart from this I hope that unless this thread to be able to maintain
+informed to people who has suffered this kind of issue.
+
+What do you think about the prot.c last proposed patch (modifying directly
+prot_printf and making it to recognise %.10lu or %.10u))?.
+
+Sorry for the noise,
+Best regards!</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Egoitz Aurrekoetxea">egoitz@ramattack.net</who>
+            <bug_when>2012-04-02 07:47:17 EDT</bug_when>
+            <thetext>&gt; Hi all,
+&gt;
+&gt;
+&gt; I think here I have done some anoying noise. I explain the situation...
+&gt; We
+&gt; have historically Cyrus patched
+
+with http://www.irbs.net/internet/info-cyrus/0602/att-0330/pop3_uidl.diff
+I mean.... SEEN in replication was modified too for not to be applied
+(because happened what I have noticed now)... but now I want to have all
+this working properly....
+
+this way because in it&apos;s day there were
+&gt; some problems with this...  the problem really existed...
+
+the outlook uidl problem I mean...
+
+ but nowadays...
+&gt;  this problem does not exist... the fact is that I changed one mail
+&gt; machine some days ago (apart had a 2.3.14 version, although there&apos;s no
+&gt; problem with this version directly too I have checked it)...
+
+I mean nowadays a 2.3.14 behaves the same way as the 2.3.18 in UIDL past
+issue... because the issue was really of the MUAs....
+
+ I forgotten
+&gt; to apply this patch... and all our customers like the uidl format changed
+&gt; (zeros
+&gt; are removed)... I assume suffered this issue...  and all they&apos;re mail
+&gt; started downloading again of the whole mailbox.
+
+So I assumed this bug was still alive... apart I receive calls of
+customers with Outlook 2010...
+
+So there&apos;s not an issue
+&gt; with Outlook nowadays it&apos;s just that I changed the way I was serving
+&gt; UIDL... and I will have to have this patched nowadays... because we have
+&gt; been for years serving UIDL this way.
+&gt;
+
+And this seems to be what really happended....
+
+&gt; The only thing, is that If you see it proper... I&apos;m gonna patch prot.c
+&gt; with my last proposed patch... in order to server uidl like our customers
+&gt; &quot;hope&quot; to receive but keep prot_printf in a &quot;compatible&quot; way and without
+&gt; breaking things.
+&gt;
+
+
+Because I have no option... I need to have Cyrus patched because has been
+serving that number format for years... some customer could start
+downloading several thousands of mails...
+
+
+&gt; Do you see any problem in the prot.c patch proposed by me?. I think it
+&gt; shouldn&apos;t cause any harm... but could please give me you&apos;re opinion?.
+&gt;
+
+Thanks for you&apos;re time :)
+
+&gt; Apart from this I hope that unless this thread to be able to maintain
+&gt; informed to people who has suffered this kind of issue.
+&gt;
+
+Unless... :)
+
+
+&gt; What do you think about the prot.c last proposed patch (modifying
+&gt; directly prot_printf and making it to recognise %.10lu or %.10u))?.
+&gt;
+
+Thanks a lot!!!
+
+&gt; Sorry for the noise,
+&gt; Best regards!
+&gt;
+&gt;</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1460</attachid>
+            <date>2012-04-01 09:30 EDT</date>
+            <desc>Fixes UIDL Issue with Outlook and allows replication SEEN actions to work with long strings of seen uuid of messages in the seen skiplist</desc>
+            <filename>suggested-changes</filename>
+            <type>text/plain</type>
+            <size>1987</size>
+            <attacher>egoitz@ramattack.net</attacher>
+            
+              <data encoding="base64">VGhpcyBpcyB1bmlmZmllZCBkaWZmIG91dHB1dCBmb3Iga25vd2luZyB0aGUgY2hhbmdlcyBJJ20g
+cHJvcG9zaW5nIGZvciByZXBsaWNhdGlvbiB0byB3b3JrIHByb3Blcmx5Li4uIGFzIHdlbGwgYXMg
+dGhlIE91dGxvb2sgYW5kIHVpZGwgc3RhZmYgZGVzY3JpYmVkIGluIHRoZSBidWcuLi4uCgpGb3Ig
+dGhlIGZpbGUgaW1hcC9wb3AzZC5jIDogCj09PT09PT09PT09PT09PT09PT09PT09PT09PT0KCgot
+LS0gL3BvcDNkLmMJMjAxMi0wMy0zMSAyMzowMTo1MC4wMDAwMDAwMDAgKzAyMDAKKysrIGltYXAv
+cG9wM2QuYwkyMDEyLTA0LTAxIDAxOjM0OjU4LjAwMDAwMDAwMCArMDIwMApAQCAtMTA2OSwxMyAr
+MTA2OSwxMyBAQAogCQkgICAgcHJvdF9wcmludGYocG9wZF9vdXQsICItRVJSIE5vIHN1Y2ggbWVz
+c2FnZVxyXG4iKTsKIAkJfQogCQllbHNlIGlmIChtYm94c3RydWN0Lm9wdGlvbnMgJiBPUFRfUE9Q
+M19ORVdfVUlETCkgewotCQkJICAgIHByb3RfcHJpbnRmKHBvcGRfb3V0LCAiK09LICV1ICVsdS4l
+dVxyXG4iLCBtc2csIAorCQkJICAgIHByb3QyX3ByaW50Zihwb3BkX291dCwgIitPSyAldSAlbHUu
+JS4xMHVcclxuIiwgbXNnLCAKIAkJCQkJbWJveHN0cnVjdC51aWR2YWxpZGl0eSwKIAkJCQkJcG9w
+ZF9tc2dbbXNnXS51aWQpOwogCQl9CiAJCWVsc2UgewogCQkgICAgLyogb2xkIHVpZGwgZm9ybWF0
+ICovCi0JCSAgICBwcm90X3ByaW50Zihwb3BkX291dCwgIitPSyAldSAldVxyXG4iLCAKKwkJICAg
+IHByb3QyX3ByaW50Zihwb3BkX291dCwgIitPSyAldSAlLjEwdVxyXG4iLCAKIAkJCQltc2csIHBv
+cGRfbXNnW21zZ10udWlkKTsKIAkJfQogCSAgICB9CkBAIC0xMDg0LDExICsxMDg0LDExIEBACiAJ
+CWZvciAobXNnID0gMTsgbXNnIDw9IHBvcGRfZXhpc3RzOyBtc2crKykgewogCQkgICAgaWYgKCFw
+b3BkX21zZ1ttc2ddLmRlbGV0ZWQpIHsKIAkJCWlmIChtYm94c3RydWN0Lm9wdGlvbnMgJiBPUFRf
+UE9QM19ORVdfVUlETCkgewotCQkJICAgIHByb3RfcHJpbnRmKHBvcGRfb3V0LCAiJXUgJWx1LiV1
+XHJcbiIsIG1zZywgCisJCQkgICAgcHJvdDJfcHJpbnRmKHBvcGRfb3V0LCAiJXUgJWx1LiUuMTB1
+XHJcbiIsIG1zZywgCiAJCQkJCW1ib3hzdHJ1Y3QudWlkdmFsaWRpdHksCiAJCQkJCXBvcGRfbXNn
+W21zZ10udWlkKTsKIAkJCX0gZWxzZSB7Ci0JCQkgICAgcHJvdF9wcmludGYocG9wZF9vdXQsICIl
+dSAldVxyXG4iLCBtc2csIAorCQkJICAgIHByb3QyX3ByaW50Zihwb3BkX291dCwgIiV1ICUuMTB1
+XHJcbiIsIG1zZywgCiAJCQkJCXBvcGRfbXNnW21zZ10udWlkKTsKIAkJCX0KIAkJICAgIH0KCgoK
+CkZvciB0aGUgZmlsZSBsaWIvcHJvdC5jIDogCj09PT09PT09PT09PT09PT09PT09PT09PT09PT0K
+CgotLS0gL3Byb3QuYwkyMDEyLTAzLTMxIDIzOjA0OjMwLjAwMDAwMDAwMCArMDIwMAorKysgbGli
+L3Byb3QuYwkyMDEyLTA0LTAxIDAxOjQwOjQwLjAwMDAwMDAwMCArMDIwMApAQCAtMTI0Nyw2ICsx
+MjQ3LDIzIEBACiAgICAgcmV0dXJuIDA7CiB9CiAKK2ludCBwcm90Ml9wcmludGYoc3RydWN0IHBy
+b3RzdHJlYW0gKnMsIGNvbnN0IGNoYXIgKmZtdCwgLi4uKQoreworICAgIHZhX2xpc3QgcHZhcjsK
+KyAgICBjaGFyIGJ1ZlsyMDQ4XTsKKworICAgIGFzc2VydChzLT53cml0ZSk7CisKKyAgICB2YV9z
+dGFydChwdmFyLCBmbXQpOworICAgIHZzbnByaW50ZihidWYsIHNpemVvZihidWYpLCBmbXQsIHB2
+YXIpOworICAgIHZhX2VuZChwdmFyKTsKKyAgIAorICAgIHByb3Rfd3JpdGUocywgYnVmLCBzdHJs
+ZW4oYnVmKSk7CisKKyAgICBpZiAocy0+ZXJyb3IgfHwgcy0+ZW9mKSByZXR1cm4gRU9GOworICAg
+IHJldHVybiAwOworfQorCiAvKgogICogUmVhZCBmcm9tIHRoZSBwcm90ZWN0aW9ucyBzdHJlYW0g
+J3MnIHVwIHRvICdzaXplJyBieXRlcyBpbnRvIHRoZSBidWZmZXIKICAqICdidWYnLiAgUmV0dXJu
+cyB0aGUgbnVtYmVyIG9mIGJ5dGVzIHJlYWQsIG9yIDAgZm9yIHNvbWUgZXJyb3IuCg==
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>1461</attachid>
+            <date>2012-04-01 16:57 EDT</date>
+            <desc>Final changes done in a better way... and getting working....</desc>
+            <filename>diff-final.txt</filename>
+            <type>text/plain</type>
+            <size>2030</size>
+            <attacher>egoitz@ramattack.net</attacher>
+            
+              <data encoding="base64">Rm9yIGltYXAvcG9wM2QuYyA6Cj09PT09PT09PT09PT09PT09PT0KCi0tLSAvcG9wM2QuYwkyMDEy
+LTAzLTMxIDIzOjAxOjUwLjAwMDAwMDAwMCArMDIwMAorKysgaW1hcC9wb3AzZC5jCTIwMTItMDQt
+MDEgMDE6MzQ6NTguMDAwMDAwMDAwICswMjAwCkBAIC0xMDY5LDEzICsxMDY5LDEzIEBACiAJCSAg
+ICBwcm90X3ByaW50Zihwb3BkX291dCwgIi1FUlIgTm8gc3VjaCBtZXNzYWdlXHJcbiIpOwogCQl9
+CiAJCWVsc2UgaWYgKG1ib3hzdHJ1Y3Qub3B0aW9ucyAmIE9QVF9QT1AzX05FV19VSURMKSB7Ci0J
+CQkgICAgcHJvdF9wcmludGYocG9wZF9vdXQsICIrT0sgJXUgJWx1LiV1XHJcbiIsIG1zZywgCisJ
+CQkgICAgcHJvdF9wcmludGYocG9wZF9vdXQsICIrT0sgJXUgJWx1LiUuMTB1XHJcbiIsIG1zZywg
+CiAJCQkJCW1ib3hzdHJ1Y3QudWlkdmFsaWRpdHksCiAJCQkJCXBvcGRfbXNnW21zZ10udWlkKTsK
+IAkJfQogCQllbHNlIHsKIAkJICAgIC8qIG9sZCB1aWRsIGZvcm1hdCAqLwotCQkgICAgcHJvdF9w
+cmludGYocG9wZF9vdXQsICIrT0sgJXUgJXVcclxuIiwgCisJCSAgICBwcm90X3ByaW50Zihwb3Bk
+X291dCwgIitPSyAldSAlLjEwdVxyXG4iLCAKIAkJCQltc2csIHBvcGRfbXNnW21zZ10udWlkKTsK
+IAkJfQogCSAgICB9CkBAIC0xMDg0LDExICsxMDg0LDExIEBACiAJCWZvciAobXNnID0gMTsgbXNn
+IDw9IHBvcGRfZXhpc3RzOyBtc2crKykgewogCQkgICAgaWYgKCFwb3BkX21zZ1ttc2ddLmRlbGV0
+ZWQpIHsKIAkJCWlmIChtYm94c3RydWN0Lm9wdGlvbnMgJiBPUFRfUE9QM19ORVdfVUlETCkgewot
+CQkJICAgIHByb3RfcHJpbnRmKHBvcGRfb3V0LCAiJXUgJWx1LiV1XHJcbiIsIG1zZywgCisJCQkg
+ICAgcHJvdF9wcmludGYocG9wZF9vdXQsICIldSAlbHUuJS4xMHVcclxuIiwgbXNnLCAKIAkJCQkJ
+bWJveHN0cnVjdC51aWR2YWxpZGl0eSwKIAkJCQkJcG9wZF9tc2dbbXNnXS51aWQpOwogCQkJfSBl
+bHNlIHsKLQkJCSAgICBwcm90X3ByaW50Zihwb3BkX291dCwgIiV1ICV1XHJcbiIsIG1zZywgCisJ
+CQkgICAgcHJvdF9wcmludGYocG9wZF9vdXQsICIldSAlLjEwdVxyXG4iLCBtc2csIAogCQkJCQlw
+b3BkX21zZ1ttc2ddLnVpZCk7CiAJCQl9CiAJCSAgICB9CgoKCkZvciBsaWIvcHJvdC5jIDogCj09
+PT09PT09PT09PT09PT09CgotLS0gbGliL3Byb3QuYwkyMDExLTEwLTA0IDIxOjU5OjE0LjAwMDAw
+MDAwMCArMDIwMAorKysgL3Byb3QuYwkyMDEyLTA0LTAxIDIwOjU2OjI4LjAwMDAwMDAwMCArMDIw
+MApAQCAtMTE3MCw2ICsxMTcwLDMwIEBACiAJICAgIHByb3RfcHV0YygnJScsIHMpOwogCSAgICBi
+cmVhazsKIAorCWNhc2UgJy4nOgorCSAgICBzd2l0Y2ggKCorK3BlcmNlbnQpIHsKKwkgICAgY2Fz
+ZSAnMSc6CisgICAgICAgICAgICAJc3dpdGNoICgqKytwZXJjZW50KSB7CisJCWNhc2UgJzAnOgor
+CQkJc3dpdGNoICgqKytwZXJjZW50KSB7CisJCQljYXNlICdsJzoKKwkJCSAgICAgICAgc3dpdGNo
+ICgqKytwZXJjZW50KSB7CisJCQkgICAgCWNhc2UgJ3UnOgorCQkJCXVsID0gdmFfYXJnKHB2YXIs
+IGxvbmcpOworCQkJCXNucHJpbnRmKGJ1Ziwgc2l6ZW9mKGJ1ZiksICIlLjEwbHUiLCB1bCk7CisJ
+CQkJcHJvdF93cml0ZShzLCBidWYsIHN0cmxlbihidWYpKTsKKwkJCQlicmVhazsKKwkJCQkgICAg
+ICAgICAgICAgICAgICAgIH0KKwkJIAljYXNlICd1JzoKKyAJCQl1ID0gdmFfYXJnKHB2YXIsIGlu
+dCk7CisgICAgICAgICAgICAJICAgICAgICBzbnByaW50ZihidWYsIHNpemVvZihidWYpLCAiJS4x
+MHUiLCB1KTsKKyAgICAgICAgICAgIAkgICAgICAgIHByb3Rfd3JpdGUocywgYnVmLCBzdHJsZW4o
+YnVmKSk7CisgICAgICAgICAgICAJICAgICAgICBicmVhazsKKwkJCSAgICAgICAgICAgICAgICAg
+ICB9CisJCQkJICB9CisJCSAgICAgICAgICAgICAgICB9CisJCWJyZWFrOworCiAJY2FzZSAnbCc6
+CiAJICAgIHN3aXRjaCAoKisrcGVyY2VudCkgewogCSAgICBjYXNlICdkJzoKbWFjcmFtYXR0YWNr
+OkRlc2t0b3AgZWdvaXR6YXVycmVrb2V0eGVhYXVycmUkIAo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

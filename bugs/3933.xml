@@ -1,0 +1,184 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3933</bug_id>
+          
+          <creation_ts>2016-06-07 02:32 EDT</creation_ts>
+          <short_desc>Fud daemon is unable to retrieve info for a mailbox which name is longer than 15 symbols</short_desc>
+          <delta_ts>2016-06-10 11:13:15 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>FreeBSD</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter>eugene@zhegan.in</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>ellie@fastmail.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="">eugene@zhegan.in</who>
+            <bug_when>2016-06-07 02:32:06 EDT</bug_when>
+            <thetext>Fud daemon is unable to retrieve info for a mailbox which name is longer than 15 symbols. Below is the console log with speps to reproduce. Fud.pl is a simple perl script, derived from a source provided in a mailing list, it&apos;s provided after the console log. FUDDebug.pm is a slightly modified FUD.pm, which is able to report connection and syscall() stages. FUP.pm behaves identically, besides debug output. When called with argument - the name of the mailbox, which is longer than 15 sumbols (without the &apos;user&lt;separator&gt;&apos; part) the sysread() perl call never returns.
+
+Console log:
+
+# cyradm --user cyrus localhost
+Password: 
+localhost&gt; cm user.12345678901
+localhost&gt; cm user.123456789012
+localhost&gt; cm user.1234567890123
+localhost&gt; cm user.12345678901234
+localhost&gt; cm user.123456789012345
+localhost&gt; cm user.1234567890123467
+localhost&gt; #                                                                               # ./fud-debug.pl 12345678901      
+Calling sysread().
+sysread() ended: PERMDENY.
+Error: permission denied.
+# cyradm --user cyrus localhost
+Password: 
+localhost&gt; setacl user.12345678901 anonymous 0
+localhost&gt; setacl user.123456789012 anonymous 0 
+localhost&gt; setacl user.1234567890123 anonymous 0
+localhost&gt; setacl user.12345678901234 anonymous 0
+localhost&gt; setacl user.123456789012345 anonymous 0
+localhost&gt; setacl user.1234567890123467 anonymous 0
+localhost&gt; #                                                                               # ./fud-debug.pl 12345678901   
+Calling sysread().
+sysread() ended: 12345678901|user.12345678901|0|0|0.
+0/0/0
+[root@ns:data.mail.perm.ws/cgi-bin]# ./fud-debug.pl 123456789012
+Calling sysread().
+sysread() ended: 123456789012|user.123456789012|0|0|0.
+0/0/0
+[root@ns:data.mail.perm.ws/cgi-bin]# ./fud-debug.pl 1234567890123
+Calling sysread().
+sysread() ended: 1234567890123|user.1234567890123|0|0|0.
+0/0/0
+[root@ns:data.mail.perm.ws/cgi-bin]# ./fud-debug.pl 12345678901234
+Calling sysread().
+sysread() ended: 12345678901234|user.12345678901234|0|0|0.
+0/0/0
+[root@ns:data.mail.perm.ws/cgi-bin]# ./fud-debug.pl 123456789012345
+Calling sysread().
+sysread() ended: 123456789012345|user.123456789012345|0|0|0.
+0/0/0
+[root@ns:data.mail.perm.ws/cgi-bin]# ./fud-debug.pl 1234567890123457
+Calling sysread().
+^C
+
+Source of fud-debug.pl:
+
+#!/usr/local/bin/perl
+
+use strict;
+use warnings;
+use Net::FUDDebug;
+
+#------------
+my $fud;
+my @ret;
+my $err;
+my $separator = &apos;.&apos;;
+
+my $version = &quot;1.0.1&quot;;
+
+my $debug = 0;
+#------------
+
+$fud = Net::FUD -&gt; new(server =&gt; &quot;localhost&quot;);
+
+if ($fud) {
+    if (defined($ARGV[1])) {
+        @ret = $fud -&gt; retr_info($ARGV[0], &apos;user&apos;.$separator.$ARGV[0].$separator.$ARGV[1]);
+    } else {
+        @ret = $fud -&gt; retr_info($ARGV[0], &apos;user&apos;.$separator.$ARGV[0]);
+    }
+    if ($debug &gt; 0) {
+        print STDOUT &quot;Returned from main call.\n&quot;;
+    }
+    chomp($ret[0]);
+
+    if (defined($fud-&gt;error)) {
+        print STDERR &quot;Error: &quot;, $fud-&gt;error, &quot;\n&quot;;
+    }
+
+    # some weird symbols at the end
+    $ret[0] = substr($ret[0],0, 8);
+
+    if (!defined($fud-&gt;error) &amp;&amp; $ret[0] ne &quot;PERMDENY&quot;) {
+        # unseen/last accessed/last delivered
+        print STDOUT $ret[2], &quot;/&quot;, $ret[3], &quot;/&quot;, $ret[4], &quot;\n&quot;;
+    } else {
+        if ($ret[0] ne &quot;PERMDENY&quot;) {
+            print STDERR &quot;Error: &quot;, $fud-&gt;error, &quot;\n&quot;;
+        } else {
+            print STDERR &quot;Error: permission denied.\n&quot;;
+        }
+    }
+    $fud-&gt;close;
+} else {
+    print STDERR &quot;Error.\n&quot;;
+}</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-06-10 01:27:42 EDT</bug_when>
+            <thetext>At a guess, the problem is probably these definitions in imap/fud.c, which have existed pretty much forever:
+
+#define MAXLOGNAME 16           /* should find out for real */
+#define MAXDOMNAME 20           /* should find out for real */
+
+In 2.4.17 they&apos;re used to determine maxuserlen, which is used to carve the username out of the request data.  If it doesn&apos;t find a &apos;|&apos; within this many bytes, it disregards the request.
+
+In 2.5 and later these defines are only used to allocate a single large buffer (MAXLOGNAME + MAXDOMNAME + MAX_MAILBOX_BUFFER), in which I think they might even be redundant.  (MAX_MAILBOX_BUFFER is 1024; the largest request size we accept is 511 bytes.)  It doesn&apos;t care about the length of individual components, because it&apos;s not trying to copy them into separate buffers.
+
+Does this problem affect 2.5 and later?  Looking at code, I&apos;m pretty sure it doesn&apos;t.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="elliefm">ellie@fastmail.com</who>
+            <bug_when>2016-06-10 01:33:22 EDT</bug_when>
+            <thetext>I believe 2.5 and later were fixed by this commit:
+
+https://cgit.cyrus.foundation/cyrus-imapd/commit/?id=7b0b38cab7e8c61ad4d5ff476df398f285c9b107</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="">eugene@zhegan.in</who>
+            <bug_when>2016-06-10 11:13:15 EDT</bug_when>
+            <thetext>Yup, you&apos;re right, this is not reproducible under 2.5.x.
+Thanks a lot.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

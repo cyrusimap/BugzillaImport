@@ -1,0 +1,187 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3211</bug_id>
+          
+          <creation_ts>2010-05-03 16:21 EDT</creation_ts>
+          <short_desc>saslauthd against courier-imap server results in &quot;Unexpected response from remote authentication server&quot;</short_desc>
+          <delta_ts>2012-05-29 12:50:20 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>saslauthd</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Oguz Yilmaz">oguzyilmazlist@gmail.com</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+    
+    <cc>oguzyilmazlist@gmail.com</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Oguz Yilmaz">oguzyilmazlist@gmail.com</who>
+            <bug_when>2010-05-03 16:21:16 EDT</bug_when>
+            <thetext>We are using testsaslauth to authenticate through the Courier IMAP e-mail server which is a seperate server.
+Everything was OK with RHEL 3.4 with cyrus-sasl-2.1.15-10.
+However with RHEL 5 and saslauthd 2.1.22-5.el5(and 2.1.24rc), authentication request to saslauth daemon will result in &quot;NO Login Failed&quot; in the foreground, and &quot;unexpected response from remote authnetication server&quot; in the background logs.
+
+Original Greeting of the imap server is:
+
+* OK [CAPABILITY IMAP4rev1 UIDPLUS CHILDREN NAMESPACE
+THREAD=ORDEREDSUBJECT THREAD=REFERENCES SORT QUOTA IDLE ACL ACL2=UNION
+STARTTLS] Courier-IMAP ready. Copyright 1998-2005 Double Precision,
+Inc.  See COPYING for distribution information.
+
+Logs are:
+
+Apr 21 10:36:47 2010 saslauthd[23061]: auth_rimap: unexpected response to auth
+request: MESPACE THREAD=ORDEREDSUBJECT THREAD=REFERENCES SORT QUOTA IDLE ACL
+ACL2=UNION STARTTLS] Courier-IMAP ready. Copyright 1998-2005 Double Precision,
+Inc.  See COPYING for distribution information.
+
+Apr 21 10:36:47 2010 saslauthd[23061]: do_auth         : auth failure:
+[user=test] [service=smtp] [realm=] [mech=rimap] [reason=[ALERT] Unexpected
+response from remote authentication server]
+
+
+Actually saslauthd give up after imap server has sent the &quot;OK LOGIN
+Ok&quot; message. It does not wait for the answer because of some error. At
+Redhat Bugzilla, there is similar problem with Dovecot. however the
+patch Lutz provided does not work with Courier IMAP.
+https://bugzilla.redhat.com/show_bug.cgi?id=582540
+
+Some Tcpdump output:
+
+09:07:21.963576 IP 192.168.1.2.42412 &gt; 12.12.12.12.143: P 1:58(57) ack
+47 win 46 &lt;nop,nop,timestamp 526135 408482924&gt;
+q......b.....&quot;o..JGZ......&lt;.....
+...7.X.lsaslauthd LOGIN &quot;test ....
+
+09:07:22.435365 IP 12.12.12.12.143 &gt; 192.168.1.2.42412: P 47:243(196)
+ack 1 win 33360 &lt;nop,nop,timestamp 408483396 526134&gt;
+E.....@.:.I...b.........JGZ.&quot;o.....P.......
+.X.D...6MESPACE THREAD=ORDEREDSUBJEC
+
+09:07:22.435814 IP 192.168.1.2.42412 &gt; 12.12.12.12.143: F 58:58(0) ack
+243 win 54 &lt;nop,nop,timestamp 526607 408483396&gt;
+.......b.....&quot;o.GJGZ....63......
+..      ..X.D
+
+09:07:22.534349 IP 12.12.12.12.143 &gt; 192.168.1.2.42412: P 243:267(24)
+ack 58 win 33360 &lt;nop,nop,timestamp 408483496 526135&gt;
+E..L..@.:.J...b.........JGZ.&quot;o.G...P.F.....
+.X.....7saslauthd OK LOGIN Ok.
+
+09:07:22.534479 IP 192.168.1.2.42412 &gt; 12.12.12.12.143: R
+577750087:577750087(0) win 0
+E..(..@.@.A.......b.....&quot;o.G....P...)...
+
+
+Some Strace Output:
+
+socket(PF_INET, SOCK_STREAM, IPPROTO_TCP) = 8
+connect(8, {sa_family=AF_INET, sin_port=htons(143),
+sin_addr=inet_addr(&quot;12.12.12.12&quot;)}, 16) = 0
+rt_sigaction(SIGALRM, {0x804b6a0, [ALRM], SA_RESTART}, {0x1, [], 0}, 8) = 0
+rt_sigaction(SIGPIPE, {0x804b6a0, [PIPE], SA_RESTART}, {0x1, [], 0}, 8) = 0
+alarm(30)                               = 0
+read(8, &quot;* OK [CAPABILITY IMAP4rev1 UIDPLUS CHILDREN NA&quot;, 1000) = 46
+alarm(0)                                = 30
+alarm(30)                               = 0
+writev(8, [{&quot;saslauthd LOGIN &quot;, 16}, {&quot;\&quot;test\&quot;&quot;, 30}, {&quot; &quot;, 1},
+{&quot;\&quot;test\&quot;&quot;, 8}, {&quot;\r\n&quot;, 2}], 5) = 57
+alarm(0)                                = 30
+alarm(30)                               = 0
+read(8, &quot;MESPACE THREAD=ORDEREDSUBJECT THREAD=REFERENCES SORT QUOTA
+IDLE ACL ACL2=UNION STARTTLS] Courier-IMAP ready. Copyright 1998-2005
+Double Precision, Inc.  See COPYING for distribution
+information.\r\n&quot;, 1000) = 196
+alarm(0)                                = 30
+close(8)                                = 0
+time(NULL)                              = 1271917242
+stat64(&quot;/etc/localtime&quot;, {st_mode=S_IFREG|0644, st_size=2721, ...}) = 0
+stat64(&quot;/etc/localtime&quot;, {st_mode=S_IFREG|0644, st_size=2721, ...}) = 0
+stat64(&quot;/etc/localtime&quot;, {st_mode=S_IFREG|0644, st_size=2721, ...}) = 0
+send(3, &quot;&lt;36&gt;Apr 22 09:20:42 saslauthd[13399]: auth_rimap: unexpected
+response to auth request: MESPACE THREAD=ORDEREDSUBJECT
+THREAD=REFERENCES SORT QUOTA IDLE ACL ACL2=UNION STARTTLS]
+Courier-IMAP ready. Copyright 1998-2005 Double Precision, Inc.  See
+COPYING for distribution information.\0&quot;, 282, MSG_NOSIGNAL) = 282
+time(NULL)                              = 1271917242
+stat64(&quot;/etc/localtime&quot;, {st_mode=S_IFREG|0644, st_size=2721, ...}) = 0
+stat64(&quot;/etc/localtime&quot;, {st_mode=S_IFREG|0644, st_size=2721, ...}) = 0
+stat64(&quot;/etc/localtime&quot;, {st_mode=S_IFREG|0644, st_size=2721, ...}) = 0
+send(3, &quot;&lt;38&gt;Apr 22 09:20:42 saslauthd[13399]: do_auth         : auth
+failure: [user=test] [service=smtp] [realm=] [mech=rimap]
+[reason=[ALERT] Unexpected response from remote authentication
+server]\0&quot;, 214, MSG_NOSIGNAL) = 214
+write(7, &quot;\0@&quot;, 2)                      = 2
+write(7, &quot;NO [ALERT] Unexpected response from remote authentication
+server&quot;, 64) = 64
+close(7)                                = 0
+fcntl64(6, F_SETLKW, {type=F_WRLCK, whence=SEEK_SET, start=0, len=1}) = 0
+accept(5,
+
+According to Dan White of Cyrus-sasl mailing list:
+&quot;The tcpdump and strace outputs below indicate that the initial greeting is
+being fragmented into separate packets.
+
+saslauthd appears to only grab the first packet and assumes the whole
+greeting is contained in that packet. The patch from the Redhat bug report
+may not be sufficient. saslauthd should be reading until a CRLF is reached,
+since there may be more than two packets involved.
+
+Please file a bug report at https://bugzilla.andrew.cmu.edu/.&quot;
+
+IP of the problematic server is possible if requested through private e-mail.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Oguz Yilmaz">oguzyilmazlist@gmail.com</who>
+            <bug_when>2010-05-04 03:57:17 EDT</bug_when>
+            <thetext>Also, saslauthd dies after the query.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Oguz Yilmaz">oguzyilmazlist@gmail.com</who>
+            <bug_when>2010-05-04 08:19:04 EDT</bug_when>
+            <thetext>Patch from Lutz Mark is working, tested.
+https://bugzilla.redhat.com/show_bug.cgi?id=582540#c8</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2012-05-29 12:50:20 EDT</bug_when>
+            <thetext>Fixed by 2d0e416946ee599e407fca9ab0858a1ebe27cd80 post 2.1.25.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

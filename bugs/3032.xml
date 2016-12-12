@@ -1,0 +1,130 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3032</bug_id>
+          
+          <creation_ts>2008-01-16 07:38 EDT</creation_ts>
+          <short_desc>ldapdb auxprop plugin crashes</short_desc>
+          <delta_ts>2012-05-29 12:10:37 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus SASL</product>
+          <component>plugins</component>
+          <version>2.1.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>WORKSFORME</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Torsten Schlabach">tschlabach@gmx.net</reporter>
+          <assigned_to name="Alexey Melnikov">Alexey.Melnikov@isode.com</assigned_to>
+          <cc>Alexey.Melnikov@isode.com</cc>
+    
+    <cc>murch@andrew.cmu.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Torsten Schlabach">tschlabach@gmx.net</who>
+            <bug_when>2008-01-16 07:38:43 EDT</bug_when>
+            <thetext>There is a problem with the ldapdb auxprop plugin code.
+
+1. as reported here:
+
+http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=405495
+
+2. in an Exim -&gt; cyrus_sasl -&gt; ldapdb setting
+
+We have set up Exim with a cyrus_sasl server authenticator which has been configured to use the ldapdb auxprop plugin. (The original one, contained in the released version 2.1.22 of the SASL lib, not the patched one mentioned in Bug #3031!)
+
+Authentication fails with the Exim process terminating abnormally as soon as the ldapdb auxprop plugin is used. We switched to a local sasldb auxprop setting with anything else unchanged and did not have any problems, thus concluding that the problem seems to be in the ldapdb auxprop code.
+
+A network trace shows that we get as far as the ldapdb plugin searching and finding the LDAP object corresponding to the user who is trying to authenticate. The network trace also shows the plain text password of the user travelling over the wire and the LDAP being properly unbound. The problem seems to occur in a step after that.
+
+I have put some extra logging into ldapdb.c and found that ldapdb_auxprop_lookup function seems to be entered twice, where in the first pass, it makes it all the way down to done: but in the second pass seems to fail.
+
+Why does one authentication attempt create two lookups? Is that by design? In case it is, it looks like that code is not reentrant.
+
+Regards,
+Torsten</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Schlabach">tschlabach@gmx.net</who>
+            <bug_when>2008-01-16 09:24:09 EDT</bug_when>
+            <thetext>It seems to be normal that the  function is called twice. I could confirm that in the 2nd pass it finds if does not have anything left to do and just silently exists.
+
+I was also able to confirm that this call
+
+            sparams-&gt;utils-&gt;prop_set(sparams-&gt;propctx, pr[aindx[i]].name,
+                                 bvals[0]-&gt;bv_val, bvals[0]-&gt;bv_len);
+
+in the ldapdb_auxprop_lookup function apparently puts the correct retrieved clear text password of the user into the propctx. If the password is 11 characters long, the 4th parameter will be 11. I hope this is as it&apos;s designed.
+
+Now that leaves the question:
+
+What can be wrong about the *userPassword attribute that makes anything trying to use it later segfault?
+
+It also tries to retrieve an attribute called *cmusaslsecretCRAM-MD5 from LDAP, but obviously cannot find it and does not care.
+
+Again, any ideas are welcome.
+
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Schlabach">tschlabach@gmx.net</who>
+            <bug_when>2008-01-16 16:08:22 EDT</bug_when>
+            <thetext>I have done some additional debugging, with a somewhat strange result:
+
+If I comment out this line in ldapdb.c:
+
+    if(cp.ld) ldap_unbind(cp.ld);
+
+at the end of the ldapdb_auxprop_lookup function, I get a lot further. Actually, I can trace things up to the point where the hash supplied by the client is compared and found successful. (Also tried with an intentionally wrong password, got a failed auth, all fine.)
+
+Just it still segfaults. I can trace this up to the end of the function sasl_server_step in server.c, which is returning a result of 0 (SASL_OK).
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Schlabach">tschlabach@gmx.net</who>
+            <bug_when>2008-01-18 10:35:53 EDT</bug_when>
+            <thetext>The problem might actually be down in the LDAP code. On the Debian system used to try this, there is an LDAP lib from OpenLDAP 2.1.x used. Some reports say that 2.3 might solve this.
+
+Updated the Debian Bug as well, please have a look there.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexey Melnikov">Alexey.Melnikov@isode.com</who>
+            <bug_when>2009-01-25 11:29:18 EDT</bug_when>
+            <thetext>This really looks like an OpenLDAP bug.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

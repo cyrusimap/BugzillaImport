@@ -1,0 +1,228 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2967</bug_id>
+          
+          <creation_ts>2007-06-14 02:27 EDT</creation_ts>
+          <short_desc>LMTP IGNOREQUOTA is broken on IA64</short_desc>
+          <delta_ts>2010-10-25 18:46:42 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>LMTP</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Frank Richter">Frank.Richter@hrz.tu-chemnitz.de</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>michael.menge@zdv.uni-tuebingen.de</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Frank Richter">Frank.Richter@hrz.tu-chemnitz.de</who>
+            <bug_when>2007-06-14 02:27:41 EDT</bug_when>
+            <thetext>Hi,
+I&apos;m running a standard Murder: 2 backends, 2 frontends
+(Linux, cyrus-imapd 2.3.8, Simon&apos;s RPM).
+
+I&apos;d like to use &apos;deliver -q user&apos; on the frontend for delivering
+&quot;Over quota messages&quot; to users. This doesn&apos;t work, neither for
+mailboxes over quota nor for users not over quota.
+
+backend&gt; quota user.fri
+   Quota   % Used     Used Root
+  250000  44 110050   user.fri
+
+frontend&gt; strace -s 1000 deliver -q fri &lt; /tmp/message
+...
+connect(3, {sa_family=AF_FILE, path=&quot;/var/lib/imap/socket/lmtp&quot;}, 28) = 0
+read(3, &quot;220 mailbox.hrz.tu-chemnitz.de LMTP Cyrus v2.3.8-Invoca-RPM-2.3.8-5 ready\r\n&quot;, 4096) =
+75
+write(3, &quot;LHLO murder\r\n&quot;, 13)         = 13
+read(3,
+&quot;250-mailbox.hrz.tu-chemnitz.de\r\n250-8BITMIME\r\n250-ENHANCEDSTATUSCODES\r\n250-PIPELINING\r\n2
+50-SIZE\r\n250-AUTH EXTERNAL\r\n250 IGNOREQUOTA\r\n&quot;, 4096) = 133
+write(3, &quot;RSET\r\n&quot;, 6)                 = 6
+write(3, &quot;MAIL FROM:&lt;cyrus&gt; AUTH=&lt;&gt;\r\n&quot;, 27) = 27
+read(3, &quot;250 2.1.0 ok\r\n&quot;, 4096)       = 14
+write(3, &quot;RCPT TO:&lt;fri&gt; IGNOREQUOTA\r\n&quot;, 27) = 27
+read(3, &quot;250 2.1.5 ok\r\n&quot;, 4096)       = 14
+write(3, &quot;DATA\r\n&quot;, 6)                 = 6
+read(3, &quot;354 go ahead\r\n&quot;, 4096)       = 14
+write(3, &quot;From: Mail-Administrator &lt;postmaster@tu-chemnitz.de&gt;\r\nTo:
+&lt;fri@hrz.tu-chemnitz.de&gt;\r\nSubject: Ihre E-Mailbox an der TU Chemnitz\r\nDate: Mon, 2 Apr 2007
+10:25:52 +0200\r\nMessage-Id:
+&lt;10732-10255213022-1@mailbox.hrz.tu-chemnitz.de&gt;\r\n\r\nTest\r\n\r\n\r\n.\r\n&quot;, 243) = 243
+
+read(3, &quot;452 4.2.2 Over quota\r\n&quot;, 4096) = 22
+
+write(3, &quot;QUIT\r\n&quot;, 6)                 = 6
+read(3, &quot;221 2.0.0 bye\r\n&quot;, 4096)      = 15
+
+
+Same behavior on backend server. I consider this a bug.
+
+Any ideas?
+
+Thanks,
+Frank Richter</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Frank Richter">Frank.Richter@hrz.tu-chemnitz.de</who>
+            <bug_when>2007-06-14 05:04:39 EDT</bug_when>
+            <thetext>syslog on the backend:
+tiberius lmtp[7492]: sieve runtime error for fri id &lt;....@mailbox.hrz.tu-chemnitz.de&gt;: Keep: Over quota</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-06-14 12:32:40 EDT</bug_when>
+            <thetext>Are you saying that deliver doesn&apos;t work even when used on a backend?  I just tested it locally on a single server, and it works as expected both when under quota and over quota.
+
+I haven&apos;t checked its use on a frontend yet, but I will once I get clarification.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Frank Richter">Frank.Richter@hrz.tu-chemnitz.de</who>
+            <bug_when>2007-06-15 03:13:52 EDT</bug_when>
+            <thetext>
+&gt; Are you saying that deliver doesn&apos;t work even when used on a backend?
+
+Yes, it doesn&apos;t work on a backend either.
+This &quot;sieve runtime error&quot; puzzles me. This is the log for a user with an empty sieve filter (.bc file is 20 Bytes):
+
+Jun 15 09:06:36 tiberius lmtp[11487]: duplicate_check: &lt;cmu-lmtpd-28857-1181891196-0@mailbox.hrz.tu-chemnitz.de&gt; user.otto            0
+Jun 15 09:06:36 tiberius lmtp[11487]: sieve runtime error for otto id &lt;cmu-lmtpd-28857-1181891196-0@mailbox.hrz.tu-chemnitz.de&gt;: Keep: Over quota
+Jun 15 09:06:36 tiberius lmtp[11487]: duplicate_check: &lt;cmu-lmtpd-28857-1181891196-0@mailbox.hrz.tu-chemnitz.de&gt; user.otto            0
+
+A normal delivery works as expected, just deliver -q doesn&apos;t.
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Frank Richter">Frank.Richter@hrz.tu-chemnitz.de</who>
+            <bug_when>2007-06-15 08:20:19 EDT</bug_when>
+            <thetext>And, yes, it&apos;s on x86_64 here.
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2007-06-15 12:04:50 EDT</bug_when>
+            <thetext>some Infos about this bug.
+
+i have the same problem on a x86_64 (not Murder) systen, on an i586 system
+deliver -q works fine.
+
+
+If lmtp_overquota_perm_failure is set 1 the error message is &quot;Over quota&quot;
+but if lmtp_overquota_perm_failure is set 0 there is no error message in the
+logs but the mail is not deliverd either
+
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-06-18 13:08:49 EDT</bug_when>
+            <thetext>I&apos;ll have to see if I can dig up an x86_64 box, unless someone else wants to debug this.
+
+Since this deliver IS properly sending the IGNOREQUOTA keyword and doesn&apos;t actually check the quota itself, I&apos;m changing the summary to something more correct.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Frank Richter">Frank.Richter@hrz.tu-chemnitz.de</who>
+            <bug_when>2007-07-18 08:11:20 EDT</bug_when>
+            <thetext>Created an attachment (id=941)
+casting needed (long)
+
+Please check it ...</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Frank Richter">Frank.Richter@hrz.tu-chemnitz.de</who>
+            <bug_when>2007-07-18 08:17:41 EDT</bug_when>
+            <thetext>imap/append.c:
+  append_setup expects 7th argument: long quotacheck
+imap/lmtpd.c:
+  deliver_mailbox() with quotaoverride != 0 calls
+    append_setup() with -1 (int) 
+On x86_64 int)-1 != (long)-1
+
+The patch works for me. Probably the  6th argument should be casted (long), too.
+- Frank</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Michael Menge">michael.menge@zdv.uni-tuebingen.de</who>
+            <bug_when>2007-07-18 09:43:41 EDT</bug_when>
+            <thetext>(In reply to comment #7)
+&gt; Created an attachment (id=941) [details]
+&gt; casting needed (long)
+&gt; 
+&gt; Please check it ...
+&gt; 
+
+Patch works for me.
+
+Thanks</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-07-18 14:12:27 EDT</bug_when>
+            <thetext>Patch applied to CVS</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>941</attachid>
+            <date>2007-07-18 08:11 EDT</date>
+            <desc>casting needed (long)</desc>
+            <filename>cyrus-imapd-2.3.8-lmtpd-quota.patch</filename>
+            <type>text/x-patch</type>
+            <size>651</size>
+            <attacher>Frank.Richter@hrz.tu-chemnitz.de</attacher>
+            
+              <data encoding="base64">ZGlmZiAtTnVyIGN5cnVzLWltYXBkLTIuMy44L2ltYXAvbG10cGQuYyBjeXJ1cy1pbWFwZC0yLjMu
+OC50dWMvaW1hcC9sbXRwZC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjMuOC9pbWFwL2xtdHBkLmMJMjAw
+Ny0wMi0wNSAxOTo0MTo0Ny4wMDAwMDAwMDAgKzAxMDAKKysrIGN5cnVzLWltYXBkLTIuMy44LnR1
+Yy9pbWFwL2xtdHBkLmMJMjAwNy0wNy0xOCAxMzo1MzoyMi4wMDAwMDAwMDAgKzAyMDAKQEAgLTQ4
+NSw4ICs0ODUsOCBAQAogCiAgICAgciA9IGFwcGVuZF9zZXR1cCgmYXMsIG1haWxib3huYW1lLCBN
+QUlMQk9YX0ZPUk1BVF9OT1JNQUwsCiAJCSAgICAgYXV0aHVzZXIsIGF1dGhzdGF0ZSwgYWNsb3Zl
+cnJpZGUgPyAwIDogQUNMX1BPU1QsIAotCQkgICAgIHF1b3Rhb3ZlcnJpZGUgPyAtMSA6Ci0JCSAg
+ICAgY29uZmlnX2dldHN3aXRjaChJTUFQT1BUX0xNVFBfU1RSSUNUX1FVT1RBKSA/IHNpemUgOiAw
+KTsKKwkJICAgICBxdW90YW92ZXJyaWRlID8gKGxvbmcpLTEgOgorCQkgICAgIGNvbmZpZ19nZXRz
+d2l0Y2goSU1BUE9QVF9MTVRQX1NUUklDVF9RVU9UQSkgPyAobG9uZylzaXplIDogMCk7CiAKICAg
+ICBpZiAoIXIgJiYgIWNvbnRlbnQtPmJvZHkpIHsKIAkvKiBwYXJzZSB0aGUgbWVzc2FnZSBib2R5
+IGlmIHdlIGhhdmVuJ3QgYWxyZWFkeSwK
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

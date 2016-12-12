@@ -1,0 +1,88 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3599</bug_id>
+          
+          <creation_ts>2011-11-17 09:25 EDT</creation_ts>
+          <short_desc>Unpredictible behaviour when performing commands in a certain order</short_desc>
+          <delta_ts>2014-10-20 17:06:19 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.3.18</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Julien Coloos">julien.coloos@atos.net</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Julien Coloos">julien.coloos@atos.net</who>
+            <bug_when>2011-11-17 09:25:58 EDT</bug_when>
+            <thetext>Cyrus 2.3.x currently has some unpredictible behaviour in index.c under certain conditions.
+
+When calling index_operatemailbox, index_closemailbox and index_check in a certain order, unpredictible behaviour can happen because index_closemailbox does not reset cache_len variable to 0.
+index_check dirties the cache mmap statically known in index.c, index_closemailbox resets cache_end, then if index_check is called again its mmap_refresh on the cache content may do nothing (because the requested length cache_end may not be bigger than cache_len): later on the code may thus try to access a memory zone that have actually not been mmaped.
+
+This can for example happen when using the IMAP commands in this order: SCAN, SELECT, FETCH/STORE/...
+It&apos;s quite hard to reproduce because it depends on the way mmap is handled by the kernel. Depending on the conditions, the memory zone could either be:
+ - the good one: reattributed to the mmapped cyrus.cache in mailbox structure
+ - an invalid one: illegal access triggered
+ - a bad one: belongs to the process, but is not the cyrus.cache content
+
+Problem was observed and seems reproducible on Ubuntu 11.04 x64 with the following conditions:
+ - account has INBOX and INBOX.sub folders
+ - INBOX folder has at least 12 messages (body size around 1KiB each)
+ - user performs the following actions
+   -&gt; SCAN folders
+. SCAN &quot;&quot; * test
+   -&gt; open INBOX folder
+. SELECT INBOX
+   -&gt; access cyrus.cache data for the last mail, e.g. when reading the mail etc.
+. FETCH * bodystructure
+
+Proposed fix is as easy as setting cache_len to 0 in index_closemailbox.
+See commit 82dc53e1bf9148b511ae3de0b34d08867dc61a01, in &apos;2.3/dev&apos; branch on git://github.com/worldline-messaging/cyrus-imapd.git.
+
+
+Issue does not appear in cyrus 2.4 due to the fact the whole code was refactored, and the static variables went away :)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Bron Gondwana">brong@fastmail.fm</who>
+            <bug_when>2014-10-20 17:06:19 EDT</bug_when>
+            <thetext>We don&apos;t care about 2.3 any more.  Wontfix.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

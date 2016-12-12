@@ -1,0 +1,285 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2806</bug_id>
+          
+          <creation_ts>2006-03-06 10:58 EDT</creation_ts>
+          <short_desc>master mupdate process not working (sits on CPU, uses lots of memory, and basically hangs)</short_desc>
+          <delta_ts>2010-10-25 18:46:37 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Aleksandar Milivojevic">alex@milivojevic.org</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>tmerritt@email.arizona.edu</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Aleksandar Milivojevic">alex@milivojevic.org</who>
+            <bug_when>2006-03-06 10:58:27 EDT</bug_when>
+            <thetext>I first experienced this with 2.3.1, and the problem is still present in 2.3.3.
+ The system is CentOS 4.2 (Red Hat Enterprise Linux 4 clone), fully updated.
+
+In my configuration, I&apos;m using one of my frontends as mupdate master.  All
+databases are skiplist.  I&apos;ll include complete imapd.conf and cyrus.conf as
+attachments.  I was able to reproduce the problem on two different
+installations.  The first machine was single-CPU running under VmWare, and
+mupdate would just render it unusable (type &quot;uptime&quot;, wait a loong time until it
+executes).  The second machine was dual-CPU (real machine, not VmWare
+virtualization).  The mupdate would hog only one CPU, so it was more usable for
+experimenting (not that I found anything too usefull).
+
+As soon as Cyrus system is started, mupdate starts sucking up all CPU cycles it
+can get (top shows it at 99%).  On completely idle and freshly installed system
+(no frontends/backends running yet, master&apos;s databases not yet populated) it
+grabs some 170MB of memory.  For comparation, 2.2.x mupdate would took something
+like 80-90MB of memory.
+
+Also, it is not possible to connect to this mupdate process.  Doing something
+like &quot;telnet localhost 3905&quot; would conenct to the port, and then it just hangs.
+ There&apos;s no greeting or anything.  Looks like mupdate is simply stuck.
+
+I&apos;ve attempted to attach to the mupdate process with strace (output to follow)
+with and without -f option.  An interesting thing is that when I attach to it
+using -f option, mupdate goess off the CPU.  However, it is still stuck. 
+Reattaching with &quot;strace -f&quot; shows the same output as the first time.  Kind of
+strange, attaching with strace shouldn&apos;t change anything in the process itself...
+
+Anyhow, strace without -f shows main thread waiting in accept call.  Using -f
+prints this in an infinite loop (until I press ctrl-c):
+
+[pid  3995] clock_gettime(CLOCK_REALTIME,  &lt;unfinished ...&gt;
+[pid  3998] futex(0x8122134, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid  3995] &lt;... clock_gettime resumed&gt; {1141412737, 901972000}) = 0
+[pid  3994] &lt;... futex resumed&gt; )       = 0
+[pid  3998] &lt;... futex resumed&gt; )       = 1
+[pid  3995] futex(0x8119fe0, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid  3994] futex(0x8122134, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid  3998] gettimeofday( &lt;unfinished ...&gt;
+[pid  3995] &lt;... futex resumed&gt; )       = 0
+[pid  3994] &lt;... futex resumed&gt; )       = 0
+[pid  3998] &lt;... gettimeofday resumed&gt; {1141412737, 902155}, NULL) = 0
+[pid  3995] futex(0x8119fe4, FUTEX_WAIT, -106641967, {59, 994760000} &lt;unfinished
+...&gt;
+[pid  3994] time( &lt;unfinished ...&gt;
+[pid  3998] clock_gettime(CLOCK_REALTIME,  &lt;unfinished ...&gt;
+[pid  3995] &lt;... futex resumed&gt; )       = -1 EAGAIN (Resource temporarily
+unavailable)
+[pid  3994] &lt;... time resumed&gt; NULL)    = 1141412737
+[pid  3998] &lt;... clock_gettime resumed&gt; {1141412737, 902307000}) = 0
+[pid  3995] futex(0x8119fe0, FUTEX_WAIT, 2, NULL &lt;unfinished ...&gt;
+[pid  3994] select(7, [6], NULL, NULL, {0, 0}finished ...&gt;
+[pid  3992] &lt;... clock_gettime resumed&gt; {1141412737, 903913000}) = 0</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Aleksandar Milivojevic">alex@milivojevic.org</who>
+            <bug_when>2006-03-06 11:01:26 EDT</bug_when>
+            <thetext>Created an attachment (id=426)
+imapd.conf
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Aleksandar Milivojevic">alex@milivojevic.org</who>
+            <bug_when>2006-03-06 11:02:19 EDT</bug_when>
+            <thetext>Created an attachment (id=427)
+cyrus.conf
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-03-13 15:07:57 EDT</bug_when>
+            <thetext>mupdate was spinning on prot_select() because I broke it while fixing imapd
+timeout issues.  Now fixed in CVS.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andrew Findlay">andrew.findlay@skills-1st.co.uk</who>
+            <bug_when>2006-07-05 05:02:07 EDT</bug_when>
+            <thetext>This still happens in 2.3.6 - master mupdate ran happily for days, then started
+using 99% CPU. Can connect to port 3905 with telnet, but no greeting appears.
+
+CentOS 4.3 (Linux, like RHEL) on x86 virtual machine, using system-provided SASL
+library.
+
+Connecting with strace -f shows:
+
+[pid 13774] futex(0x80f65a0, FUTEX_WAIT, 2, NULL &lt;unfinished ...&gt;
+[pid 13661] clock_gettime(CLOCK_REALTIME, {1152149598, 884917000}) = 0
+[pid 13661] futex(0x80f65a0, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13774] &lt;... futex resumed&gt; )       = 0
+[pid 13661] &lt;... futex resumed&gt; )       = 1
+[pid 13774] futex(0x80f65a4, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13745] &lt;... futex resumed&gt; )       = 0
+[pid 13661] futex(0x80f65a4, FUTEX_WAIT, 201030536, {59, 991304000} &lt;unfinished ...&gt;
+[pid 13774] &lt;... futex resumed&gt; )       = 1
+[pid 13745] futex(0x80f65a0, FUTEX_WAIT, 2, NULL &lt;unfinished ...&gt;
+[pid 13661] &lt;... futex resumed&gt; )       = -1 EAGAIN (Resource temporarily
+unavailable)
+[pid 13774] futex(0x80f65a0, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13745] &lt;... futex resumed&gt; )       = -1 EAGAIN (Resource temporarily
+unavailable)
+[pid 13661] futex(0x80fce6c, FUTEX_WAIT, 2, NULL &lt;unfinished ...&gt;
+[pid 13774] &lt;... futex resumed&gt; )       = 0
+[pid 13745] clock_gettime(CLOCK_REALTIME,  &lt;unfinished ...&gt;
+[pid 13774] futex(0x80fce6c, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13661] &lt;... futex resumed&gt; )       = 0
+[pid 13745] &lt;... clock_gettime resumed&gt; {1152149598, 900028000}) = 0
+[pid 13774] &lt;... futex resumed&gt; )       = 1
+[pid 13661] futex(0x80fce6c, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13745] futex(0x80f65a0, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13774] time( &lt;unfinished ...&gt;
+[pid 13661] &lt;... futex resumed&gt; )       = 0
+[pid 13745] &lt;... futex resumed&gt; )       = 0
+[pid 13774] &lt;... time resumed&gt; NULL)    = 1152149598
+[pid 13661] time( &lt;unfinished ...&gt;
+[pid 13745] futex(0x80f65a4, FUTEX_WAIT, 201030537, {55, 216607000} &lt;unfinished ...&gt;
+[pid 13774] select(13, [12], NULL, NULL, {0, 0} &lt;unfinished ...&gt;
+[pid 13661] &lt;... time resumed&gt; NULL)    = 1152149598
+[pid 13774] &lt;... select resumed&gt; )      = 0 (Timeout)
+[pid 13661] select(16, [6 9 10 13 14 15], NULL, NULL, {0, 0} &lt;unfinished ...&gt;
+[pid 13774] time( &lt;unfinished ...&gt;
+[pid 13661] &lt;... select resumed&gt; )      = 1 (in [6], left {0, 0})
+[pid 13774] &lt;... time resumed&gt; NULL)    = 1152149598
+[pid 13661] time( &lt;unfinished ...&gt;
+[pid 13774] write(7, &quot;\377\377\377\377&quot;, 4 &lt;unfinished ...&gt;
+[pid 13661] &lt;... time resumed&gt; NULL)    = 1152149598
+[pid 13774] &lt;... write resumed&gt; )       = 4
+[pid 13661] read(6,  &lt;unfinished ...&gt;
+[pid 13774] gettimeofday( &lt;unfinished ...&gt;
+[pid 13661] &lt;... read resumed&gt; &quot;\377\377\377\377&quot;, 4) = 4
+[pid 13774] &lt;... gettimeofday resumed&gt; {1152149598, 914731}, NULL) = 0
+[pid 13661] futex(0x80fce6c, FUTEX_WAIT, 2, NULL &lt;unfinished ...&gt;
+[pid 13774] futex(0x80fce6c, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13661] &lt;... futex resumed&gt; )       = -1 EAGAIN (Resource temporarily
+unavailable)
+[pid 13774] &lt;... futex resumed&gt; )       = 0
+[pid 13661] futex(0x80f65a0, FUTEX_WAIT, 2, NULL &lt;unfinished ...&gt;
+[pid 13774] clock_gettime(CLOCK_REALTIME, {1152149598, 918114000}) = 0
+[pid 13774] futex(0x80f65a0, FUTEX_WAKE, 1 &lt;unfinished ...&gt;
+[pid 13661] &lt;... futex resumed&gt; )       = 0
+[pid 13774] &lt;... futex resumed&gt; )       = 1
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2007-02-06 09:39:51 EDT</bug_when>
+            <thetext>We found a bug in mupdate.c related to timed out connections which caused our
+newly deployed 2.3.7 servers to spin.  This has been fixed in CVS and the
+upcoming 2.3.8.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>426</attachid>
+            <date>2006-03-06 11:01 EDT</date>
+            <desc>imapd.conf</desc>
+            <filename>imapd.conf</filename>
+            <type>text/plain</type>
+            <size>1188</size>
+            <attacher>alex@milivojevic.org</attacher>
+            
+              <data encoding="base64">Y29uZmlnZGlyZWN0b3J5OiAvdmFyL2xpYi9pbWFwCnBhcnRpdGlvbi1kZWZhdWx0OiAvdmFyL3Nw
+b29sL2ltYXAKYWRtaW5zOiBjeXJ1cyBtdXJkZXIKc2lldmVkaXI6IC92YXIvbGliL2ltYXAvc2ll
+dmUKc2VuZG1haWw6IC91c3Ivc2Jpbi9zZW5kbWFpbApoYXNoaW1hcHNwb29sOiB0cnVlCnNhc2xf
+cHdjaGVja19tZXRob2Q6IHNhc2xhdXRoZApzYXNsX21lY2hfbGlzdDogUExBSU4gTE9HSU4KdGxz
+X2NlcnRfZmlsZTogL3Vzci9zaGFyZS9zc2wvY2VydHMvd2NtZmUxLWltYXAuY3J0CnRsc19rZXlf
+ZmlsZTogL3Vzci9zaGFyZS9zc2wvcHJpdmF0ZS93Y21mZTEtaW1hcC5rZXkKdGxzX2NhX2ZpbGU6
+IC91c3Ivc2hhcmUvc3NsL2NlcnRzL2NhLWJ1bmRsZS5jcnQKCiMjIyMjCiMgVXNlIHNraXBsaXN0
+IGZvciBhbGwgZGF0YWJhc2VzCgphbm5vdGF0aW9uX2RiOiBza2lwbGlzdApkdXBsaWNhdGVfZGI6
+IHNraXBsaXN0Cm1ib3hsaXN0X2RiOiBza2lwbGlzdApwdHNjYWNoZV9kYjogc2tpcGxpc3QKcXVv
+dGFfZGI6IHNraXBsaXN0CnNlZW5zdGF0ZV9kYjogc2tpcGxpc3QKc3Vic2NyaXB0aW9uX2RiOiBz
+a2lwbGlzdAp0bHNjYWNoZV9kYjogc2tpcGxpc3QKCiMjIyMjCiMgVHVybiBvZmYgcXVvdGFzCgph
+dXRvY3JlYXRlcXVvdGE6IDAKCiMjIyMjCiMgVHVybiBvZmYgZHVwbGljYXRlcyBzdXByZXNzaW9u
+LgoKZHVwbGljYXRlc3VwcHJlc3Npb246IDAKCiMjIyMjCiMgTm8gYW5vbnltb3VzIGxvZ2lucyAo
+MCBpcyBkZWZhdWx0LCBidXQgbGV0IGJlIGV4cGxpY2l0IGFib3V0IHRoaXMgb25lKS4KCmFsbG93
+YW5vbnltb3VzbG9naW46IDAKCiMjIyMjCiMgTXVyZGVyIHN0dWZmCgojIEFsbG93IG1vdmluZyB1
+c2VycyBiZXR3ZWVuIGJhY2tlbmRzCmFsbG93dXNlcm1vdmVzOiAxCgojIEhvdyB0byBnZXQgdG8g
+bXVwZGF0ZSBzZXJ2ZXIKbXVwZGF0ZV9zZXJ2ZXI6IGZlMS5mb29iYXIuY29tCm11cGRhdGVfcG9y
+dDogMzkwNQptdXBkYXRlX2F1dGhuYW1lOiBtdXJkZXIKbXVwZGF0ZV91c2VybmFtZTogbXVyZGVy
+Cm11cGRhdGVfcGFzc3dvcmQ6IHBhc3N3b3JkX2hlcmUKbXVwZGF0ZV9yZXRyeV9kZWxheTogMTAK
+CiMgSG93IHRvIGdldCB0byBiYWNrZW5kcwpwcm94eV9hdXRobmFtZTogbXVyZGVyCmJlMV9wYXNz
+d29yZDogcGFzc3dvcmRfaGVyZQpiZTJfcGFzc3dvcmQ6IHBhc3N3b3JkX2hlcmUK
+</data>        
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>427</attachid>
+            <date>2006-03-06 11:02 EDT</date>
+            <desc>cyrus.conf</desc>
+            <filename>cyrus.conf</filename>
+            <type>text/plain</type>
+            <size>1570</size>
+            <attacher>alex@milivojevic.org</attacher>
+            
+              <data encoding="base64">IyBzdGFuZGFyZCBzdGFuZGFsb25lIHNlcnZlciBpbXBsZW1lbnRhdGlvbgoKU1RBUlQgewogICMg
+ZG8gbm90IGRlbGV0ZSB0aGlzIGVudHJ5IQogIHJlY292ZXIJY21kPSJjdGxfY3lydXNkYiAtciIK
+CiAgIyB0aGlzIGlzIG9ubHkgbmVjZXNzYXJ5IGlmIHVzaW5nIGlkbGVkIGZvciBJTUFQIElETEUK
+ICBpZGxlZAkJY21kPSJpZGxlZCIKfQoKIyBVTklYIHNvY2tldHMgc3RhcnQgd2l0aCBhIHNsYXNo
+IGFuZCBhcmUgcHV0IGludG8gL3Zhci9saWIvaW1hcC9zb2NrZXRzClNFUlZJQ0VTIHsKICAjIFNv
+LCB0aGlzIGd1eSBnb25uYSBiZSBtdXBkYXRlIG1hc3RlcgogIG11cGRhdGUgICAgICAgY21kPSJt
+dXBkYXRlIC1tIiBsaXN0ZW49MzkwNSBwcmVmb3JrPTEKCiAgIyBhZGQgb3IgcmVtb3ZlIGJhc2Vk
+IG9uIHByZWZlcmVuY2VzCiMgaW1hcAkJY21kPSJpbWFwZCIgbGlzdGVuPSJpbWFwIiBwcmVmb3Jr
+PTUKIyBpbWFwcwkJY21kPSJpbWFwZCAtcyIgbGlzdGVuPSJpbWFwcyIgcHJlZm9yaz0xCiAgaW1h
+cAkJY21kPSJwcm94eWQiIGxpc3Rlbj0iaW1hcCIgcHJlZm9yaz01CiAgaW1hcHMJCWNtZD0icHJv
+eHlkIC1zIiBsaXN0ZW49ImltYXBzIiBwcmVmb3JrPTEKICBwb3AzCQljbWQ9InBvcDNkIiBsaXN0
+ZW49InBvcDMiIHByZWZvcms9MwogIHBvcDNzCQljbWQ9InBvcDNkIC1zIiBsaXN0ZW49InBvcDNz
+IiBwcmVmb3JrPTEKICBzaWV2ZQkJY21kPSJ0aW1zaWV2ZWQiIGxpc3Rlbj0ic2lldmUiIHByZWZv
+cms9MAoKICAjIHRoZXNlIGFyZSBvbmx5IG5lY2Vzc2FyeSBpZiByZWNlaXZpbmcvZXhwb3J0aW5n
+IHVzZW5ldCB2aWEgTk5UUAojICBubnRwCQljbWQ9Im5udHBkIiBsaXN0ZW49Im5udHAiIHByZWZv
+cms9MwojICBubnRwcwkJY21kPSJubnRwZCAtcyIgbGlzdGVuPSJubnRwcyIgcHJlZm9yaz0xCgog
+ICMgYXQgbGVhc3Qgb25lIExNVFAgaXMgcmVxdWlyZWQgZm9yIGRlbGl2ZXJ5CiMgbG10cAkJY21k
+PSJsbXRwZCIgbGlzdGVuPSJsbXRwIiBwcmVmb3JrPTAKIyBsbXRwdW5peAljbWQ9ImxtdHBkIiBs
+aXN0ZW49Ii92YXIvbGliL2ltYXAvc29ja2V0L2xtdHAiIHByZWZvcms9MQogIGxtdHB1bml4CWNt
+ZD0ibG10cHByb3h5ZCIgbGlzdGVuPSIvdmFyL2xpYi9pbWFwL3NvY2tldC9sbXRwIiBwcmVmb3Jr
+PTEKCiAgIyB0aGlzIGlzIG9ubHkgbmVjZXNzYXJ5IGlmIHVzaW5nIG5vdGlmaWNhdGlvbnMKIyBu
+b3RpZnkJY21kPSJub3RpZnlkIiBsaXN0ZW49Ii92YXIvbGliL2ltYXAvc29ja2V0L25vdGlmeSIg
+cHJvdG89InVkcCIgcHJlZm9yaz0xCn0KCkVWRU5UUyB7CiAgIyB0aGlzIGlzIHJlcXVpcmVkCiAg
+Y2hlY2twb2ludAljbWQ9ImN0bF9jeXJ1c2RiIC1jIiBwZXJpb2Q9MzAKCiAgIyB0aGlzIGlzIG9u
+bHkgbmVjZXNzYXJ5IGlmIHVzaW5nIGR1cGxpY2F0ZSBkZWxpdmVyeSBzdXBwcmVzc2lvbiwKICAj
+IFNpZXZlIG9yIE5OVFAKICBkZWxwcnVuZQljbWQ9ImN5cl9leHBpcmUgLUUgMyIgYXQ9MDQwMAoK
+ICAjIHRoaXMgaXMgb25seSBuZWNlc3NhcnkgaWYgY2FjaGluZyBUTFMgc2Vzc2lvbnMKICB0bHNw
+cnVuZQljbWQ9InRsc19wcnVuZSIgYXQ9MDQwMAp9Cg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

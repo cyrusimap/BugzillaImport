@@ -1,0 +1,111 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3546</bug_id>
+          
+          <creation_ts>2011-08-29 04:26 EDT</creation_ts>
+          <short_desc>CID 237: SECURE_CODING in mysieve_error</short_desc>
+          <delta_ts>2011-10-05 02:47:21 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.4.x (next)</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P5</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Greg Banks">gnb@fastmail.fm</reporter>
+          <assigned_to name="Greg Banks">gnb@fastmail.fm</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-08-29 04:26:18 EDT</bug_when>
+            <thetext>Found by Coverity.  It complained about this:
+
+86   	int mysieve_error(int lineno, const char *msg,
+87   			  void *i __attribute__((unused)), void *s)
+88   	{
+89   	    char buf[1024];
+90   	    char **errstr = (char **) s;
+91   	
+92   	    snprintf(buf, 80, &quot;line %d: %s\r\n&quot;, lineno, msg);
+93   	    *errstr = xrealloc(*errstr, strlen(*errstr) + strlen(buf) + 30);
+94   	    syslog(LOG_DEBUG, &quot;%s&quot;, buf);
+Event secure_coding: [VERY RISKY]. Using &quot;strcat&quot; can cause a buffer overflow when done incorrectly.  The destination of a strcat() call must have enough space to accept the source. Use strncat() instead.
+95   	    strcat(*errstr, buf);
+96   	
+97   	    return SIEVE_OK;
+98   	}
+
+Hmmm, there&apos;s several more things wrong here.
+
+1) buf[] is sized to 1024 chars but only 80 chars are used.
+2) the xrealloc() is overestimating the size of the string by 29 chars for each line of errors
+3) we have a struct buf which does this expanding string realloc() guff properly
+4) do_sieve_error() does this
+
+580     if ((ret != SIEVE_OK) &amp;&amp; interp-&gt;err) {
+...
+598         ret |= interp-&gt;execute_err(buf, interp-&gt;interp_context,
+599                                    script_context, message_context);
+600     }
+
+It&apos;s a good thing that neither -&gt;err nor -&gt;execute_err end up as NULL.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Greg Banks">gnb@fastmail.fm</who>
+            <bug_when>2011-10-05 02:47:21 EDT</bug_when>
+            <thetext>It turns out there are two identical copies of the same bogus code, one
+in sieve/sievec.c and one in timsieved/scriptest.c.  These commits to
+the Cyrus cmu master branch fix them both, and a number of minor issues
+which I encountered while testing:
+
+e0d2f31 git-ignore some new temporary files
+183f6f7 Bug #3546 use struct buf for sieve error strings
+bd51985 sieve: check the correct function pointer for NULL
+7288106 Fix error reporting in installsieve
+46df8c1 Fix Perl include path in sieveshell etc
+2d7bbc2 Fix &apos;make coverage_all&apos; for perl binary modules
+
+and these commits to the Cassandane cmu repository add test cases which
+exercise the new code (demonstrated with coverage):
+
+75a1417 Add tests for timsieved syntax error failure modes
+90e1f85 Add --service argument to start-instance.pl
+63ff988 Pull content-sensitive asserts from compile method
+2234345 Add tests for sievec syntax error failure modes
+121ba0c Improved the Sieve.deliver test</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

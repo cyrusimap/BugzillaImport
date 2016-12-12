@@ -1,0 +1,344 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3009</bug_id>
+          
+          <creation_ts>2008-01-02 08:48 EDT</creation_ts>
+          <short_desc>imapd closes files after removing directories instead of doing this before. Causes problems with NFS.</short_desc>
+          <delta_ts>2010-10-18 12:43:11 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Mikael Davranche">plops2@free.fr</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Mikael Davranche">plops2@free.fr</who>
+            <bug_when>2008-01-02 08:48:26 EDT</bug_when>
+            <thetext>Created an attachment (id=966)
+Patch for imap/mailbox.c 2.3.9
+
+When we delete a user with imapd, imapd does the following:
+1. removes the user in the database
+2. removes all the files in the user&apos;s directories
+3. removes those directories
+4. closes files (that has been deleted on 2.)
+
+The following lines will:
+- explain why does the step 2 leads NFS inconsistencies on Linux 2.4.
+- explain why does the step 3 fails on Linux 2.6, leading empty directories on the file system.
+- propose patches for 2.0.17, 2.1.18, 2.2.12 and 2.3.9 imapd versions to fix those problems.
+
+Using NFS on a Linux 2.4 kernel, we have the following system calls (note that those calls have been taken using strace on a Linux 2.4.20 system during a &quot;. delete user.plops&quot; IMAP request):
+
+l01 - unlink(&quot;/FILER/vol3/partz-mboxes/N/user/plops/cyrus.header&quot;) = 0
+l02 - unlink(&quot;/FILER/vol3/partz-mboxes/N/user/plops/cyrus.index&quot;) = 0
+l03 - unlink(&quot;/FILER/vol3/partz-mboxes/N/user/plops/cyrus.cache&quot;) = 0
+l04 - getdents64(14, /* 3 entries */, 512)    = 120
+l05 - unlink(&quot;/FILER/vol3/partz-mboxes/N/user/plops/.nfs0169b63902d2fc2b&quot;) = 0
+l06 - unlink(&quot;/FILER/vol3/partz-mboxes/N/user/plops/.nfs0169b63a02d2fc2c&quot;) = 0
+l07 - unlink(&quot;/FILER/vol3/partz-mboxes/N/user/plops/.nfs0169b63b02d2fc2d&quot;) = 0
+l08 - getdents64(14, /* 0 entries */, 512)    = 0
+l09 - close(14)                               = 0
+l10 - rmdir(&quot;/FILER/vol3/partz-mboxes/N/user/plops&quot;) = 0
+l11 - rmdir(&quot;/FILER/vol3/partz-mboxes/N/user&quot;) = -1 ENOTEMPTY (Directory not empty)
+l12 - close(10)                               = 0
+l13 - munmap(0x41445000, 168)                 = 0
+l14 - close(11)                               = 0
+l15 - munmap(0x41453000, 16384)               = 0
+l16 - close(12)                               = 0
+l17 - munmap(0x41457000, 16384)               = 0
+
+Notes on those system calls:
+
+- On l05, l06 and l07, .nfs files are still there, because files have not been closed. We can remove them, even if removing .nfs files is dirty (it is called &quot;silly renamed&quot; in kernel source code), and even if this can leads NFS inconsistencies.
+- On l10, we can remove /FILER/vol3/partz-mboxes/N/user/plops directory, because it is empty.
+- On l12, we close the /FILER/vol3/partz-mboxes/N/user/plops/cyrus.header file.
+- On l15, we close the /FILER/vol3/partz-mboxes/N/user/plops/cyrus.index file.
+- On l17, we close the /FILER/vol3/partz-mboxes/N/user/plops/cyrus.cache file.
+
+Using NFS on a Linux 2.6 kernel, we have the following system calls (note that those calls have been taken using strace on a Linux 2.6.21 system during a &quot;. delete user.plops&quot; IMAP request):
+
+l01 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/cyrus.header&quot;) = 0
+l02 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/cyrus.index&quot;) = 0
+l03 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/cyrus.cache&quot;) = 0
+l04 - getdents64(14, /* 3 entries */, 8192)   = 120
+l05 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/.nfs00b0409400101fd7&quot;) = -1 EBUSY (Device or resource busy)
+l06 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/.nfs00b0409500101fd8&quot;) = -1 EBUSY (Device or resource busy)
+l07 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/.nfs00b0409600101fd9&quot;) = -1 EBUSY (Device or resource busy)
+l08 - getdents64(14, /* 0 entries */, 8192)   = 0
+l09 - close(14)                               = 0
+l10 - rmdir(&quot;/FILER/vol1/mboxes/N/user/plops&quot;) = -1 ENOTEMPTY (Directory not empty)
+l11 - close(10)                               = 0
+l12 - munmap(0x41644000, 168)                 = 0
+l13 - close(11)                               = 0
+l14 - munmap(0x41656000, 16384)               = 0
+l15 - close(12)                               = 0
+l16 - munmap(0x4165a000, 16384)               = 0
+
+Notes on those system calls:
+
+- On l05, l06 and l07, .nfs files are still there, because files have not been closed. We can not remove them. Removing .nfs files is dirty, it still not allowed on 2.6 kernels.
+- On l10, we can not remove /FILER/vol1/mboxes/N/user/plops directory, because it contains 3 .nfs files.
+- On l11, we close the /FILER/vol1/mboxes/N/user/plops/cyrus.header file. So the system removed the /FILER/vol1/mboxes/N/user/plops/.nfs00b0409400101fd7 file.
+- On l13, we close the /FILER/vol1/mboxes/N/user/plops/cyrus.index file. So the system removed the /FILER/vol1/mboxes/N/user/plops/.nfs00b0409500101fd8 file.
+- On l15, we close the /FILER/vol1/mboxes/N/user/plops/cyrus.cache file. So the system removed the /FILER/vol1/mboxes/N/user/plops/.nfs00b0409600101fd9 file.
+- After l16, the &quot;rmdir(&quot;/FILER/vol1/mboxes/N/user/plops&quot;)&quot; system call will work. Unfortunately, it is called before.
+
+Here is an exemple to show you can remove a .nfs file on a Linux 2.4 kernel:
+
+# echo test &gt; /FILER/vol1/plops
+# tail -f /FILER/vol1/plops
+On another TTY:
+# lsof -p 1953
+COMMAND  PID USER   FD   TYPE DEVICE     SIZE    NODE NAME
+tail    1953 root  cwd    DIR  104,1     4096   49154 /root
+tail    1953 root  rtd    DIR  104,1     4096       2 /
+tail    1953 root  txt    REG  104,3    43531  114761 /usr/bin/tail
+tail    1953 root  mem    REG  104,1   618818   65562 /lib/ld-2.2.5.so
+tail    1953 root  mem    REG  104,1  1074855   65575 /lib/libm-2.2.5.so
+tail    1953 root  mem    REG  104,1   293225   65595 /lib/librt-2.2.5.so
+tail    1953 root  mem    REG  104,1 10237750   65569 /lib/libc-2.2.5.so
+tail    1953 root  mem    REG  104,1   884386   65591 /lib/libpthread-0.9.so
+tail    1953 root    0u   CHR  136,0                2 /dev/pts/0
+tail    1953 root    1u   CHR  136,0                2 /dev/pts/0
+tail    1953 root    2u   CHR  136,0                2 /dev/pts/0
+tail    1953 root    3r   REG    0,8        5 3453677 /FILER/vol1/plops (myfiler:/vol/vol15_1)
+# rm /FILER/vol1/plops
+# lsof -p 1953
+COMMAND  PID USER   FD   TYPE DEVICE     SIZE    NODE NAME
+tail    1953 root  cwd    DIR  104,1     4096   49154 /root
+tail    1953 root  rtd    DIR  104,1     4096       2 /
+tail    1953 root  txt    REG  104,3    43531  114761 /usr/bin/tail
+tail    1953 root  mem    REG  104,1   618818   65562 /lib/ld-2.2.5.so
+tail    1953 root  mem    REG  104,1  1074855   65575 /lib/libm-2.2.5.so
+tail    1953 root  mem    REG  104,1   293225   65595 /lib/librt-2.2.5.so
+tail    1953 root  mem    REG  104,1 10237750   65569 /lib/libc-2.2.5.so
+tail    1953 root  mem    REG  104,1   884386   65591 /lib/libpthread-0.9.so
+tail    1953 root    0u   CHR  136,0                2 /dev/pts/0
+tail    1953 root    1u   CHR  136,0                2 /dev/pts/0
+tail    1953 root    2u   CHR  136,0                2 /dev/pts/0
+tail    1953 root    3r   REG    0,8       12 3453677 /FILER/vol1/.nfs0034b2ed00030e75 (deleted) (myfiler:/vol/vol15_1)
+# rm /FILER/vol1/.nfs0034b2ed00030e75
+# echo $?
+0
+Note that the .nfs file has been deleted.
+
+Here is an exemple to show you can not remove a .nfs file on a Linux 2.6 kernel:
+
+# echo test &gt; /FILER/vol1/plops
+# tail -f /FILER/vol1/plops
+On another TTY:
+# lsof -p 15413
+COMMAND   PID USER   FD   TYPE DEVICE     SIZE     NODE NAME
+tail    15413 root  cwd    DIR  104,1     4096    81922 /root
+tail    15413 root  rtd    DIR  104,1     4096        2 /
+tail    15413 root  txt    REG  104,3    43531   196680 /usr/bin/tail
+tail    15413 root  mem    REG  104,1   884386   114744 /lib/libpthread-0.9.so
+tail    15413 root  mem    REG  104,1 10237750   114722 /lib/libc-2.2.5.so
+tail    15413 root  mem    REG  104,1   293225   114748 /lib/librt-2.2.5.so
+tail    15413 root  mem    REG  104,1  1074855   114728 /lib/libm-2.2.5.so
+tail    15413 root  mem    REG  104,1   618818   114715 /lib/ld-2.2.5.so
+tail    15413 root    0u   CHR  136,0                 2 /dev/pts/0
+tail    15413 root    1u   CHR  136,0                 2 /dev/pts/0
+tail    15413 root    2u   CHR  136,0                 2 /dev/pts/0
+tail    15413 root    3r   REG   0,13       11 16572045 /FILER/vol1/plops (myfiler:/vol/vol0j_1)
+# rm /FILER/vol1/plops
+# lsof -p 15413
+COMMAND   PID USER   FD   TYPE DEVICE     SIZE     NODE NAME
+tail    15413 root  cwd    DIR  104,1     4096    81922 /root
+tail    15413 root  rtd    DIR  104,1     4096        2 /
+tail    15413 root  txt    REG  104,3    43531   196680 /usr/bin/tail
+tail    15413 root  mem    REG  104,1   884386   114744 /lib/libpthread-0.9.so
+tail    15413 root  mem    REG  104,1 10237750   114722 /lib/libc-2.2.5.so
+tail    15413 root  mem    REG  104,1   293225   114748 /lib/librt-2.2.5.so
+tail    15413 root  mem    REG  104,1  1074855   114728 /lib/libm-2.2.5.so
+tail    15413 root  mem    REG  104,1   618818   114715 /lib/ld-2.2.5.so
+tail    15413 root    0u   CHR  136,0                 2 /dev/pts/0
+tail    15413 root    1u   CHR  136,0                 2 /dev/pts/0
+tail    15413 root    2u   CHR  136,0                 2 /dev/pts/0
+tail    15413 root    3r   REG   0,13       11 16572045 /FILER/vol1/.nfs00fcde8d00199c69 (myfiler:/vol/vol0j_1)
+# rm /FILER/vol1/.nfs00fcde8d00199c69
+rm: cannot remove `/FILER/vol1/.nfs00fcde8d00199c69&apos;: Device or resource busy
+# echo $?
+1
+Note that the .nfs file has not been deleted.
+
+To avoid NFS inconsistencies and empty directories on the file system, all we have to do is closing files before removing directories. When we do this, we have the following system calls on Linux 2.6:
+
+l01 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/cyrus.header&quot;) = 0
+l02 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/cyrus.index&quot;) = 0
+l03 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/cyrus.cache&quot;) = 0
+l04 - getdents64(14, /* 3 entries */, 8192)   = 120
+l05 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/.nfs00867a6d00092c70&quot;) = -1 EBUSY (Device or resource busy)
+l06 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/.nfs00867a6e00092c71&quot;) = -1 EBUSY (Device or resource busy)
+l07 - unlink(&quot;/FILER/vol1/mboxes/N/user/plops/.nfs00867a6f00092c72&quot;) = -1 EBUSY (Device or resource busy)
+l08 - getdents64(14, /* 0 entries */, 8192)   = 0
+l09 - close(14)                               = 0
+l10 - close(10)                               = 0
+l11 - munmap(0x41644000, 168)                 = 0
+l12 - close(11)                               = 0
+l13 - munmap(0x41652000, 16384)               = 0
+l14 - close(12)                               = 0
+l15 - munmap(0x41656000, 16384)               = 0
+l16 - rmdir(&quot;/FILER/vol1/mboxes/N/user/plops&quot;) = 0
+
+Notes on those system calls:
+- On l05, we can not remove .nfs00867a6d00092c70. But it will be removed by system on l10.
+- On l06, we can not remove .nfs00867a6e00092c71. But it will be removed by system on l11.
+- On l07, we can not remove .nfs00867a6f00092c72. But it will be removed by system on l12.
+- On l16, we can remove the /FILER/vol1/mboxes/N/user/plops directory because it is empty.
+
+We have the following patches:
+
+For 2.3.9 version (last testing release on 2nd January 2007) - see attached file:
+--- mailbox.c	Fri Jul 20 16:21:57 2007
++++ mailbox.c.2-3-9	Wed Jan  2 13:46:03 2008
+@@ -2781,6 +2781,7 @@
+ 
+     strlcpy(nbuf, mailbox-&gt;name, sizeof(nbuf));
+     ntail = nbuf + strlen(nbuf);
++    mailbox_close(mailbox);
+     do {
+ 	/* Check if the mailbox has children */
+ 	strcpy(ntail, &quot;.*&quot;);
+@@ -2822,8 +2823,7 @@
+ 	r = mboxlist_lookup(nbuf, NULL, NULL);
+     } while(r == IMAP_MAILBOX_NONEXISTENT);
+ 
+-    syslog(LOG_NOTICE, &quot;Deleted mailbox %s&quot;, mailbox-&gt;name);
+-    mailbox_close(mailbox);
++    syslog(LOG_NOTICE, &quot;Deleted mailbox %s&quot;, nbuf);
+     return 0;
+ }
+
+2.2.12 (last stable release on 2nd January 2007):
+--- mailbox.c	Mon Feb 14 07:39:57 2005
++++ mailbox.c.2-2-12	Wed Jan  2 13:13:34 2008
+@@ -2174,6 +2174,7 @@
+ 	}
+ 	closedir(dirp);
+     }
++    mailbox_close(mailbox);
+ 
+     /* Remove empty directories, going up path */
+     tail--;
+@@ -2181,7 +2182,6 @@
+ 	*tail = &apos;\0&apos;;
+     } while (rmdir(buf) == 0 &amp;&amp; (tail = strrchr(buf, &apos;/&apos;)));
+ 
+-    mailbox_close(mailbox);
+     return 0;
+ }
+ 
+2.1.18 (last release in the 2.1.x series on 2nd January 2007):
+--- mailbox.c	Tue Nov  4 22:43:00 2003
++++ mailbox.c.2-1-18	Wed Jan  2 13:17:47 2008
+@@ -2274,6 +2274,7 @@
+ 	}
+ 	closedir(dirp);
+     }
++    mailbox_close(mailbox);
+ 
+     /* Remove empty directories, going up path */
+     tail--;
+@@ -2281,7 +2282,6 @@
+ 	*tail = &apos;\0&apos;;
+     } while (rmdir(buf) == 0 &amp;&amp; (tail = strrchr(buf, &apos;/&apos;)));
+ 
+-    mailbox_close(mailbox);
+     return 0;
+ }
+ 
+2.0.17 (last release in the 2.0.x series on 2nd January 2007):
+--- mailbox.c	Tue May 29 21:24:01 2001
++++ mailbox.c.2-0-17	Wed Jan  2 13:24:34 2008
+@@ -2049,6 +2049,7 @@
+ 	}
+ 	closedir(dirp);
+     }
++    mailbox_close(mailbox);
+ 
+     /* Remove empty directories, going up path */
+     tail--;
+@@ -2056,7 +2057,6 @@
+ 	*tail = &apos;\0&apos;;
+     } while (rmdir(buf) == 0 &amp;&amp; (tail = strrchr(buf, &apos;/&apos;)));
+ 
+-    mailbox_close(mailbox);
+     return 0;
+ }
+ 
+Regards,
+
+Mikael Davranche</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2008-01-07 13:30:26 EDT</bug_when>
+            <thetext>Committed to CVS.  Thanks</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>966</attachid>
+            <date>2008-01-02 08:48 EDT</date>
+            <desc>Patch for imap/mailbox.c 2.3.9</desc>
+            <filename>mailbox.c.2-3-9.patch</filename>
+            <type>text/plain</type>
+            <size>569</size>
+            <attacher>plops2@free.fr</attacher>
+            
+              <data encoding="base64">LS0tIG1haWxib3guYwlGcmkgSnVsIDIwIDE2OjIxOjU3IDIwMDcKKysrIG1haWxib3guYy4yLTMt
+OQlXZWQgSmFuICAyIDEzOjQ2OjAzIDIwMDgKQEAgLTI3ODEsNiArMjc4MSw3IEBACiAKICAgICBz
+dHJsY3B5KG5idWYsIG1haWxib3gtPm5hbWUsIHNpemVvZihuYnVmKSk7CiAgICAgbnRhaWwgPSBu
+YnVmICsgc3RybGVuKG5idWYpOworICAgIG1haWxib3hfY2xvc2UobWFpbGJveCk7CiAgICAgZG8g
+ewogCS8qIENoZWNrIGlmIHRoZSBtYWlsYm94IGhhcyBjaGlsZHJlbiAqLwogCXN0cmNweShudGFp
+bCwgIi4qIik7CkBAIC0yODIyLDggKzI4MjMsNyBAQAogCXIgPSBtYm94bGlzdF9sb29rdXAobmJ1
+ZiwgTlVMTCwgTlVMTCk7CiAgICAgfSB3aGlsZShyID09IElNQVBfTUFJTEJPWF9OT05FWElTVEVO
+VCk7CiAKLSAgICBzeXNsb2coTE9HX05PVElDRSwgIkRlbGV0ZWQgbWFpbGJveCAlcyIsIG1haWxi
+b3gtPm5hbWUpOwotICAgIG1haWxib3hfY2xvc2UobWFpbGJveCk7CisgICAgc3lzbG9nKExPR19O
+T1RJQ0UsICJEZWxldGVkIG1haWxib3ggJXMiLCBuYnVmKTsKICAgICByZXR1cm4gMDsKIH0KIAo=
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

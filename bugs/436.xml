@@ -1,0 +1,199 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>436</bug_id>
+          
+          <creation_ts>2001-03-21 16:48 EDT</creation_ts>
+          <short_desc>TLS should accept reauthentication</short_desc>
+          <delta_ts>2010-10-18 12:42:50 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.0.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</reporter>
+          <assigned_to name="Ken Murchison">ken@oceana.com</assigned_to>
+          <cc>rjs3@andrew.cmu.edu</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2001-03-21 16:48:38 EDT</bug_when>
+            <thetext>we should use TLS fast reauthentication stuff. investigate how to give OpenSSL
+a database to enable this.  should work across all services, obviously.
+
+(investigate whether mulberry does this?)</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-03 12:28:59 EDT</bug_when>
+            <thetext>did a little digging...  the openssl s_server app reuses sessions using its 
+internal cache, and mod_ssl for Apache uses both the internal cache and an 
+external DBM database to reuse sessions between forked processes
+
+if i new a little bit more about openssl and cyrusdb, i&apos;d try to migrate some 
+of this code</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-05 10:47:10 EDT</bug_when>
+            <thetext>Created an attachment (id=20)
+TLS session reuse patch (single process only)
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-05 10:48:33 EDT</bug_when>
+            <thetext>Description of previous patch:
+
+I started to get a little more curious, so I put some effort into this. 
+I currently have what I *think* is a correct implementation for reusing
+sessions within one process.  I have attached a very simple patch which
+does this in imapd and pop3d for you to browse when you get bored at
+IETF.  The most important thing is to not call SSL_free() in reset().  I
+have tested this without calling SSL_set_shutdown() and/or
+SSL_CTX_set_session_id_context() and the code still works, but I think
+this is just plain dumb luck.  All of the server code that I looked at
+sets the session id and OpenSSL s_server uses the SSL_set_shutdown()
+call, so I think these should be used even if not entirely necessary.
+
+If this looks harmless, I&apos;ll go ahead and commit it.
+
+To test this, I modified the -reconnect feature of OpenSSL s_client so
+that it goes into &quot;echo&quot; mode for each connection, and I can terminate
+the connection to the daemon gracefully (via LOGOUT or QUIT).  The
+standard behavior is for s_client to simply close the connection, which
+causes imapd/pop3d to shutdown and master would have to fork a new one
+(rendering my current reuse code useless).  I can send you the patch if
+you like.
+
+Next, I&apos;m going to take a closer look at the mod_ssl code and see if I
+can setup a DB3 database so that sessions can be shared bewteen
+processes.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-06 22:11:23 EDT</bug_when>
+            <thetext>just committed 95% correct/complete code.  need to check db3 correctness and 
+need to decide how to delete expired session from db</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-07 12:18:31 EDT</bug_when>
+            <thetext>FYI, Netscape Communicator 4.77, OE 5.5 and Outlook 2000 all reuse TLS 
+sessions!  Very cool.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2001-08-17 21:19:16 EDT</bug_when>
+            <thetext>Just committed complete working/documented implementation.  Needs to be tested
+on a system using cyrusdb_flat for mailboxes.db.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>20</attachid>
+            <date>2001-08-05 10:47 EDT</date>
+            <desc>TLS session reuse patch (single process only)</desc>
+            <filename>tls_reuse.patch</filename>
+            <type>text/plain</type>
+            <size>3201</size>
+            <attacher>ken@oceana.com</attacher>
+            
+              <data encoding="base64">SW5kZXg6IGltYXBkLmMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2
+cy9zcmMvY3lydXMvaW1hcC9pbWFwZC5jLHYKcmV0cmlldmluZyByZXZpc2lvbiAxLjMxMApkaWZm
+IC1jIC1yMS4zMTAgaW1hcGQuYwoqKiogaW1hcGQuYwkyMDAxLzA4LzAzIDIxOjE4OjA2CTEuMzEw
+Ci0tLSBpbWFwZC5jCTIwMDEvMDgvMDUgMTQ6NDM6MTQKKioqKioqKioqKioqKioqCioqKiAzODQs
+MzkxICoqKioKLS0tIDM4NCwzOTYgLS0tLQogICAgICBpbWFwZF9zdGFydHRsc19kb25lID0gMDsK
+ICAjaWZkZWYgSEFWRV9TU0wKICAgICAgaWYgKHRsc19jb25uKSB7CisgI2lmZGVmIFRMU19SRVVT
+RQorIAkvKiBtYWtlIHN1cmUgd2UgcmUtdXNlIHNlc3Npb25zICovCisgCVNTTF9zZXRfc2h1dGRv
+d24odGxzX2Nvbm4sU1NMX1NFTlRfU0hVVERPV058U1NMX1JFQ0VJVkVEX1NIVVRET1dOKTsKKyAj
+ZWxzZQogIAl0bHNfZnJlZSgmdGxzX2Nvbm4pOwogIAl0bHNfY29ubiA9IE5VTEw7CisgI2VuZGlm
+CiAgICAgIH0KICAjZW5kaWYKICAKSW5kZXg6IHBvcDNkLmMKPT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTog
+L2Fmcy9hbmRyZXcvc3lzdGVtL2N2cy9zcmMvY3lydXMvaW1hcC9wb3AzZC5jLHYKcmV0cmlldmlu
+ZyByZXZpc2lvbiAxLjEwMQpkaWZmIC1jIC1yMS4xMDEgcG9wM2QuYwoqKiogcG9wM2QuYwkyMDAx
+LzA4LzAzIDIxOjE4OjA4CTEuMTAxCi0tLSBwb3AzZC5jCTIwMDEvMDgvMDUgMTQ6NDM6MTQKKioq
+KioqKioqKioqKioqCioqKiAxOTEsMTk4ICoqKioKLS0tIDE5MSwyMDMgLS0tLQogICAgICBwb3Bk
+X3N0YXJ0dGxzX2RvbmUgPSAwOwogICNpZmRlZiBIQVZFX1NTTAogICAgICBpZiAodGxzX2Nvbm4p
+IHsKKyAjaWZkZWYgVExTX1JFVVNFCisgCS8qIG1ha2Ugc3VyZSB3ZSByZS11c2Ugc2Vzc2lvbnMg
+Ki8KKyAJU1NMX3NldF9zaHV0ZG93bih0bHNfY29ubixTU0xfU0VOVF9TSFVURE9XTnxTU0xfUkVD
+RUlWRURfU0hVVERPV04pOworICNlbHNlCiAgCXRsc19mcmVlKCZ0bHNfY29ubik7CiAgCXRsc19j
+b25uID0gTlVMTDsKKyAjZW5kaWYKICAgICAgfQogICNlbmRpZgogIApJbmRleDogdGxzLmMKPT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PQpSQ1MgZmlsZTogL2Fmcy9hbmRyZXcvc3lzdGVtL2N2cy9zcmMvY3lydXMvaW1hcC90
+bHMuYyx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS4xNApkaWZmIC1jIC1yMS4xNCB0bHMuYwoqKiog
+dGxzLmMJMjAwMS8wNS8yMSAxODoyODoxOAkxLjE0Ci0tLSB0bHMuYwkyMDAxLzA4LzA1IDE0OjQz
+OjE0CioqKioqKioqKioqKioqKgoqKiogMzY4LDM3MyAqKioqCi0tLSAzNjgsMzc0IC0tLS0KICB7
+CiAgICAgIGludCAgICAgb2ZmID0gMDsKICAgICAgaW50ICAgICB2ZXJpZnlfZmxhZ3MgPSBTU0xf
+VkVSSUZZX05PTkU7CisgICAgIGludCAgICAgc2Vzc2lvbl9pZF9jb250ZXh0ID0gMTsgLyogYW55
+dGhpbmcgd2lsbCBkbyAqLwogICAgICBjaGFyICAgKkNBcGF0aDsKICAgICAgY2hhciAgICpDQWZp
+bGU7CiAgICAgIGNoYXIgICAqc19jZXJ0X2ZpbGU7CioqKioqKioqKioqKioqKgoqKiogNDQyLDQ0
+NyAqKioqCi0tLSA0NDMsNDUwIC0tLS0KICAJdmVyaWZ5X2ZsYWdzIHw9IFNTTF9WRVJJRllfUEVF
+UiB8IFNTTF9WRVJJRllfRkFJTF9JRl9OT19QRUVSX0NFUlQKICAJICAgIHwgU1NMX1ZFUklGWV9D
+TElFTlRfT05DRTsKICAgICAgU1NMX0NUWF9zZXRfdmVyaWZ5KGN0eCwgdmVyaWZ5X2ZsYWdzLCB2
+ZXJpZnlfY2FsbGJhY2spOworICAgICBTU0xfQ1RYX3NldF9zZXNzaW9uX2lkX2NvbnRleHQoY3R4
+LCh2b2lkKikmc2Vzc2lvbl9pZF9jb250ZXh0LAorIAkJCQkgICBzaXplb2Ygc2Vzc2lvbl9pZF9j
+b250ZXh0KTsKICAKICAgICAgaWYgKGFza2NlcnQgfHwgcmVxdWlyZWNlcnQpIHsKICAgICAgICBp
+ZiAoQ0FmaWxlID09IE5VTEwpIHsKKioqKioqKioqKioqKioqCioqKiA2MjMsNjM2ICoqKioKICAg
+ICAgfQogIAogICAgICBpZiAoYXV0aGlkICYmICphdXRoaWQpIHsKISAJc3lzbG9nKExPR19OT1RJ
+Q0UsICJzdGFydHRsczogJXMgd2l0aCBjaXBoZXIgJXMgKCVkLyVkIGJpdHMpIgogIAkgICAgICAg
+ICAgICAgICAgICAgIiBhdXRoZW50aWNhdGVkIGFzICVzIiwgCiAgCSAgICAgICB0bHNfcHJvdG9j
+b2wsIHRsc19jaXBoZXJfbmFtZSwKICAJICAgICAgIHRsc19jaXBoZXJfdXNlYml0cywgdGxzX2Np
+cGhlcl9hbGdiaXRzLCAKICAJICAgICAgICphdXRoaWQpOwogICAgICB9IGVsc2UgewohIAlzeXNs
+b2coTE9HX05PVElDRSwgInN0YXJ0dGxzOiAlcyB3aXRoIGNpcGhlciAlcyAoJWQvJWQgYml0cyki
+CiAgCSAgICAgICAgICAgICAgICAgICAiIG5vIGF1dGhlbnRpY2F0aW9uIiwgCiAgCSAgICAgICB0
+bHNfcHJvdG9jb2wsIHRsc19jaXBoZXJfbmFtZSwKICAJICAgICAgIHRsc19jaXBoZXJfdXNlYml0
+cywgdGxzX2NpcGhlcl9hbGdiaXRzKTsKICAgICAgfQotLS0gNjI2LDY0MSAtLS0tCiAgICAgIH0K
+ICAKICAgICAgaWYgKGF1dGhpZCAmJiAqYXV0aGlkKSB7CiEgCXN5c2xvZyhMT0dfTk9USUNFLCAi
+c3RhcnR0bHM6ICVzLCAlcyB3aXRoIGNpcGhlciAlcyAoJWQvJWQgYml0cykiCiAgCSAgICAgICAg
+ICAgICAgICAgICAiIGF1dGhlbnRpY2F0ZWQgYXMgJXMiLCAKKyAJICAgICAgIHRsc19jb25uLT5o
+aXQgPyAiUmV1c2VkIiA6ICJOZXciLAogIAkgICAgICAgdGxzX3Byb3RvY29sLCB0bHNfY2lwaGVy
+X25hbWUsCiAgCSAgICAgICB0bHNfY2lwaGVyX3VzZWJpdHMsIHRsc19jaXBoZXJfYWxnYml0cywg
+CiAgCSAgICAgICAqYXV0aGlkKTsKICAgICAgfSBlbHNlIHsKISAJc3lzbG9nKExPR19OT1RJQ0Us
+ICJzdGFydHRsczogJXMsICVzIHdpdGggY2lwaGVyICVzICglZC8lZCBiaXRzKSIKICAJICAgICAg
+ICAgICAgICAgICAgICIgbm8gYXV0aGVudGljYXRpb24iLCAKKyAJICAgICAgIHRsc19jb25uLT5o
+aXQgPyAiUmV1c2VkIiA6ICJOZXciLAogIAkgICAgICAgdGxzX3Byb3RvY29sLCB0bHNfY2lwaGVy
+X25hbWUsCiAgCSAgICAgICB0bHNfY2lwaGVyX3VzZWJpdHMsIHRsc19jaXBoZXJfYWxnYml0cyk7
+CiAgICAgIH0K
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

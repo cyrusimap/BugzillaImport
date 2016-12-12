@@ -1,0 +1,79 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>3832</bug_id>
+          
+          <creation_ts>2014-01-02 09:33 EDT</creation_ts>
+          <short_desc>cvt_cyrusdb leaks file descriptors converting quotas to quotalegacy format</short_desc>
+          <delta_ts>2016-06-02 05:36:50 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>lib</component>
+          <version>2.4.17</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>NEW</bug_status>
+          
+          
+          
+          
+          
+          <priority>P3</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Deniss Gaplevsky">slim@inbox.lv</reporter>
+          <assigned_to name="Bron Gondwana">brong@fastmail.fm</assigned_to>
+          <cc>wbreyha@gmx.net</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Deniss Gaplevsky">slim@inbox.lv</who>
+            <bug_when>2014-01-02 09:33:40 EDT</bug_when>
+            <thetext>cvt_cyrusdb leaks file descriptors while converting quotas to quotalegacy format - newly created per user quota files are not released due rock while iterating over quota records.
+For example, it is impossible to convert skiplist db with record&apos;s count more than  open files limit (default in linux is 1024)
+
+patch with simple hack:
+--- cyrus-imapd-2.4.17.orig/lib/cyrusdb.c       2012-12-01 21:57:54.000000000 +0200
++++ cyrus-imapd-2.4.17/lib/cyrusdb.c    2014-01-02 16:14:41.000000000 +0200
+@@ -172,7 +172,7 @@
+                        const char *data, int datalen) 
+ {
+     struct convert_rock *cr = (struct convert_rock *)rock;
+-    return (cr-&gt;backend-&gt;store)(cr-&gt;db, key, keylen, data, datalen, &amp;cr-&gt;tid);
++    return (cr-&gt;backend-&gt;store)(cr-&gt;db, key, keylen, data, datalen, (strcmp(cr-&gt;backend-&gt;name,&quot;quotalegacy&quot;) ? &amp;cr-&gt;tid : NULL)); // [DG]: no rock for ql
+ }
+ 
+ /* convert (just copy every record) from one database to another in possibly</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wolfgang Breyha">wbreyha@gmx.net</who>
+            <bug_when>2016-06-02 05:36:50 EDT</bug_when>
+            <thetext>same is (still) true for 2.5.8 converting the other direction.
+eg.:
+cvt_cyrusdb /var/spool/imap/config/quota/ quotalegacy /var/spool/imap/config/quota.db twoskip
+finishes without any error message (except syslog). The twoskip DB ends up with &quot;max open files - 4&quot; entries.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

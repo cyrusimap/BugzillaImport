@@ -1,0 +1,184 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>1750</bug_id>
+          
+          <creation_ts>2003-01-09 05:40 EDT</creation_ts>
+          <short_desc>File descriptor leak with BerkeleyDB 4.1.x</short_desc>
+          <delta_ts>2010-10-18 12:08:41 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.1.x</version>
+          <rep_platform>Sun</rep_platform>
+          <op_sys>Solaris</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>2.1.x</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Leena Heino">Leena.Heino@uta.fi</reporter>
+          <assigned_to name="Rob Siemborski">rjs3@andrew.cmu.edu</assigned_to>
+          <cc>tk@Genetik.Uni-Bielefeld.DE</cc>
+          
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-01-09 05:40:24 EDT</bug_when>
+            <thetext>If using DB version 4.1.x and DB-&gt;open fails then cyrus leaks filedescriptors
+and bad things start to happen. Errors like:
+DBERROR db4: Database handles open during environment close
+DBERROR: opening /var/imap/deliver.db: Not enough space
+
+Accoring to man page at sleepycat:
+http://www.sleepycat.com/docs/api_c/db_open.html
+
+If DB-&gt;open fails, the DB-&gt;close method should be called to discard the DB
+handle.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-01-09 06:04:54 EDT</bug_when>
+            <thetext>--- lib/cyrusdb_db3.c.orig      Mon Nov  4 19:32:07 2002
++++ lib/cyrusdb_db3.c   Thu Jan  9 12:58:57 2003
+@@ -346,7 +346,7 @@
+ 
+     r = db_create(&amp;db, dbenv, 0);
+     if (r != 0) {
+-       syslog(LOG_ERR, &quot;DBERROR: opening %s: %s&quot;, fname, db_strerror(r));
++       syslog(LOG_ERR, &quot;DBERROR: creating %s: %s&quot;, fname, db_strerror(r));
+        return CYRUSDB_IOERROR;
+     }
+     /* xxx set comparator! */
+@@ -358,6 +358,12 @@
+ #endif
+     if (r != 0) {
+        syslog(LOG_ERR, &quot;DBERROR: opening %s: %s&quot;, fname, db_strerror(r));
++#if DB_VERSION_MAJOR == 4 &amp;&amp; DB_VERSION_MINOR &gt;= 1
++       r = db-&gt;close(db, DB_NOSYNC);
++       if (r != 0) {
++           syslog(LOG_ERR, &quot;DBERROR: closing %s: %s&quot;, fname, db_strerror(r));
++       }
++#endif
+        return CYRUSDB_IOERROR;
+     }
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-01-10 05:10:15 EDT</bug_when>
+            <thetext>Patch did fix the errors:
+DBERROR db4: Database handles open during environment close
+
+Unfortunately it did not fix the &quot;Not enough space&quot; errors.
+
+I tried wheter this error had something to do with db cache size. Increasing the
+cache size from 256KB to 512KB had no noticeable effects.
+
+It seems that Cyrus IMAP 2.1.11 and BerkeleyDB 4.1.25 might have some unresolved
+issues. For now it seems that only way to fix the situation is to use BerkeleyDB
+4.0.14 or older 3.x versions.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</who>
+            <bug_when>2003-02-05 12:25:39 EDT</bug_when>
+            <thetext>i don&apos;t think that this applies only to db 4.1. shouldn&apos;t we always close
+DB-&gt;close() regardless of the db version?
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Leena Heino">Leena.Heino@uta.fi</who>
+            <bug_when>2003-02-06 08:55:09 EDT</bug_when>
+            <thetext>Yeah, I guess. Looking at the code in the SASL (the sasldb with BerkeleyDB), the
+db is always closed. 
+
+Therefore the patch should be installed without the ifdefs.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-02-18 15:07:34 EDT</bug_when>
+            <thetext>reassigning to me</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Torsten Kasch">tk@Genetik.Uni-Bielefeld.DE</who>
+            <bug_when>2003-03-30 08:56:41 EDT</bug_when>
+            <thetext>We are seeing similar errors but from &quot;ctl_cyrusdb -r&quot; (this is imap/sasl 2.1.12, BDB 
+4.1.25p1 on Solaris 8). The recovery finally &quot;hangs&quot; and truss(1) shows something 
+like the following: 
+ 
+[...] 
+621:    open64(&quot;/var/imap/mailboxes.db&quot;, O_RDWR)        = 254 
+621:    fcntl(254, F_SETFD, 0x00000001)                 = 0 
+621:    read(254, &quot;\0\0\006\0 78EC4\0\0\0\0&quot;.., 512)    = 512 
+621:    close(254)                                      = 0 
+621:    open64(&quot;/var/imap/mailboxes.db&quot;, O_RDWR)        = 254 
+621:    fcntl(254, F_SETFD, 0x00000001)                 = 0 
+621:    fstat64(254, 0xFFBFE8C8)                        = 0 
+621:    stat64(&quot;/var/imap/mailboxes.db&quot;, 0xFFBFE770)    = 0 
+621:    open64(&quot;/var/imap/mailboxes.db&quot;, O_RDWR)        = 255 
+621:    fcntl(255, F_SETFD, 0x00000001)                 = 0 
+621:    read(255, &quot;\0\0\006\0 78EC4\0\0\0\0&quot;.., 512)    = 512 
+621:    close(255)                                      = 0 
+621:    open64(&quot;/var/imap/mailboxes.db&quot;, O_RDWR)        = 255 
+621:    fcntl(255, F_SETFD, 0x00000001)                 = 0 
+621:    fstat64(255, 0xFFBFE8C8)                        = 0 
+621:    brk(0x00146968)                                 = 0 
+621:    brk(0x00148968)                                 = 0 
+621:    stat64(&quot;/var/imap/mailboxes.db&quot;, 0xFFBFE770)    = 0 
+621:    open64(&quot;/var/imap/mailboxes.db&quot;, O_RDWR)        Err#24 EMFILE 
+621:    poll(0xFFBFE618, 0, 2000)       (sleeping...) 
+621:    poll(0xFFBFE618, 0, 2000)                       = 0 
+621:    open64(&quot;/var/imap/mailboxes.db&quot;, O_RDWR)        Err#24 EMFILE 
+621:    poll(0xFFBFE618, 0, 4000)       (sleeping...) 
+621:    poll(0xFFBFE618, 0, 4000)                       = 0 
+[...] 
+ 
+(complete output available on request) 
+ 
+Although the patch listed in comment 1 might obsolete this (will try this evening), 
+I&apos;m wondering if it would make sense to introduce a &quot;maxfds&quot; parameter for the 
+config sections START and/or EVENTS as in attachment 124 (of bug 1886)? If I&apos;m 
+reading the code correctly, &quot;maxfds&quot; is introduced for the SERVICES section only? </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Rob Siemborski">rjs3@andrew.cmu.edu</who>
+            <bug_when>2003-06-18 18:54:40 EDT</bug_when>
+            <thetext>I have also been able to duplicate the looping problem of db-&gt;open with a
+corrupt database.  I want to say this is a bug in berkeley DB since its
+happening entirely
+within db-&gt;open (I&apos;d expect it to atleast return DB_RUNRECOVERY or
+DB_YOU_ARE_SCREWED or something).
+
+I don&apos;t know why it would do this sort of thing on recovery.  I&apos;m going to
+commit the db-&gt;close() patch in any case.</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

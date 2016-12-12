@@ -1,0 +1,353 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2762</bug_id>
+          
+          <creation_ts>2005-12-02 09:17 EDT</creation_ts>
+          <short_desc>Synchronization error while processing IDLE command</short_desc>
+          <delta_ts>2010-10-18 12:43:09 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>IMAP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alexander Drozdov">dzal_mail@mtu-net.ru</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>kvk@elbrus.ru</cc>
+    
+    <cc>sorcerer@elbrus.ru</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-02 09:17:49 EDT</bug_when>
+            <thetext>I&apos;ve emulated such timeouts in processing IDLE command that I got output below:
+
+. select &quot;Other Users/u1/test2&quot;
+* FLAGS (\Answered \Flagged \Draft \Deleted \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Draft \Deleted \Seen \*)]  
+* 7 EXISTS
+* 0 RECENT
+* OK [UNSEEN 6]  
+* OK [UIDVALIDITY 1132155751]  
+* OK [UIDNEXT 20]  
+. OK [READ-WRITE] Completed
+. idled
+. BAD Unrecognized command
+. idle
++ idling
+done
+. OK Completed
+* 8 EXISTS
+* 1 RECENT
+. idle
++ idling
+done
+.* 9 EXISTS
+* 2 RECENT
+
+I used idled to emulate this error but you may use &quot;poll&quot; to get the same output.
+
+The error is in imapd.c:cmd_idle() function:
+
+    /* Tell client we are idling and waiting for end of command */
+    prot_printf(imapd_out, &quot;+ idling\r\n&quot;);
+    prot_flush(imapd_out);
+
+    /* Get continuation data */
+    c = getword(imapd_in, &amp;arg);
+    if (c != EOF) {
+	if (!strcasecmp(arg.s, &quot;Done&quot;) &amp;&amp;
+	    (c = (c == &apos;\r&apos;) ? prot_getc(imapd_in) : c) == &apos;\n&apos;) {
+	    prot_printf(imapd_out, &quot;%s OK %s\r\n&quot;, tag,
+			error_message(IMAP_OK_COMPLETED));
+	}
+
+	else {
+	    prot_printf(imapd_out, 
+			&quot;%s BAD Invalid Idle continuation\r\n&quot;, tag);
+	    eatline(imapd_in, c);
+	}
+    }
+
+    /* Do any necessary cleanup */
+    idle_done(imapd_mailbox);
+
+As you can see, if the signal (from idled or by timeout if polling) is got by
+imapd between getword() and idle_done() functions call then result can be
+unexpected.
+
+I think that the patch is simple: it is needed to call idle_done() directly
+after getword() fuction call.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-06 09:04:28 EDT</bug_when>
+            <thetext>I agree with your assessment.  Have you tried moving the idle_done() call to
+verify that it solves the problem in your case?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-06 09:25:24 EDT</bug_when>
+            <thetext>moved idle_done() in CVS</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-06 10:40:07 EDT</bug_when>
+            <thetext>Yes, if I move the idle_done() call then my problem is gone.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-07 08:41:45 EDT</bug_when>
+            <thetext>Created an attachment (id=401)
+A patch
+
+I&apos;ve found 3 other bugs in processing IDLE:
+1. If using idled, it is possible to call 2 idle_update() functions
+simultaneously by receiving signals USR1 and USR2 in same time;
+2. If using idled, idle_init() doesn&apos;t clean the current state if one of the
+sigaction() function calls fails;
+3. The same race condition as in this bugreport is possible, but now at the
+beginning of processing IDLE command, especially if using idled. &quot;+ idling&quot; is
+printed when idled have already listening for signals.
+
+I think my patch fixes all these bugs. The patch includes the first bug that
+has been committed in the CVS.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-07 09:22:04 EDT</bug_when>
+            <thetext>&gt; &quot;+ idling&quot; is printed when idled have already listening for signals.
+
+&quot;+ idling&quot; is printed when _imapd_ have already been listening for signals.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-09 11:14:07 EDT</bug_when>
+            <thetext>Applied slightly different patch to CVS.  Please test and reopen if it still
+doesn&apos;t behave properly (although it does in my testing).</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-09 13:52:00 EDT</bug_when>
+            <thetext>Your patch is fine, but I have two comments on it:
+
+1. IMO a race condition is still possible. Look at the time diagram to compare
+execution of imapd and idled:
+
+imapd                                     idled
+------------------------------------------------
+1 Executed idle_init().
+  Ready to accept signals.
+2 Printed &quot;+ idling&quot;.
+3 Executed idle_start().
+  The message 1 is sent to idled.
+4                                         The message 1 is received.
+5 Executed idle_done().
+  The message 2 is sent to idled.
+  No more signals allowed.
+6 Executed idle_init().
+  Ready to accept signals.
+7 Start printing &quot;+ idling&quot;.
+  Printed &quot;+&quot;.
+8                                         New mail in the mailbox.
+                                          Send the message to the imapd via signal.
+9 The signal is received. Oops.
+10                                        The message 2 is received. Stop sending.
+
+2. In my patch, imapd send the signals to itself in case of using idled. This
+because I thought that if new mail have been received before doing IDLE command
+then IMAP client won&apos;t be notified until one more mailbox event occured. But
+this is only a supposition.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-09 14:19:25 EDT</bug_when>
+            <thetext>1. I don&apos;t understand what race condition you&apos;re trying to point out in your
+diagram.  idled will not send any signals to imapd until told to do so by
+idle_start(), which is called after we send the continuation to the client.
+
+2. I don&apos;t think this is a major issue, but I added calls to index_check()
+before idle_start() and after idle_done() which should pick up anything that we
+missed.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-09 15:09:26 EDT</bug_when>
+            <thetext>1. If a client quickly send to imapd 2 IDLE commands as showed below then my
+diagram is possible:
+
+(only client queries)
+. idle
+done
+. idle
+done
+
+Imapd doesn&apos;t check if ldapd received AND processed the message so when
+idle_done() finished, imapd cannot be sure that ldapd will never send signals to
+the imapd. OK, we disabled receiving any signals from ldapd. Yes, but we are
+enabling it again in the next idle_init(). So, it is possible to receive signals
+from ldapd between idle_init() and idle_start().</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-09 15:14:01 EDT</bug_when>
+            <thetext>Read &quot;idled&quot; instead &quot;ldapd&quot;. Sorry.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-09 16:09:52 EDT</bug_when>
+            <thetext>Committed a small change to idle_idled.c which should solve this.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-12 04:23:47 EDT</bug_when>
+            <thetext>2. With your index_check() call at the beginning of cmd_idle(), new messages may
+come between index_check() and idle_start(). Thus, imapd can still miss new
+messages.
+
+I don&apos;t understand why you added index_check() after idle_done().</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2005-12-12 08:03:22 EDT</bug_when>
+            <thetext>Yes, it still is *possible* that a change may occur between the two calls, but
+since the client will be notified of this change whenever the mailbox
+experiences another change, I don&apos;t think that its a huge deal.  At least its
+not important enough to drastically rewrite the code.
+
+The second call to index_check() is to catch any changes that occur after
+idle_done().  We do this for all other command as well.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alexander Drozdov">dzal_mail@mtu-net.ru</who>
+            <bug_when>2005-12-12 08:17:19 EDT</bug_when>
+            <thetext>It is not needed to do big changes in the code. You can just send the USR1
+signal from imapd to itself after idle_start() (or at the end of idle_start())
+in case of using idled. index_check() before idle_start() is not needed in this
+case.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>401</attachid>
+            <date>2005-12-07 08:41 EDT</date>
+            <desc>A patch</desc>
+            <filename>cyrus-imapd-idle-2.2.12_2.patch</filename>
+            <type>text/plain</type>
+            <size>4174</size>
+            <attacher>dzal_mail@mtu-net.ru</attacher>
+            
+              <data encoding="base64">ZGlmZiAtdXIgY3lydXMtaW1hcGQtMi4yLjEyLm9yaWcvaW1hcC9pZGxlLmggY3lydXMtaW1hcGQt
+Mi4yLjEyL2ltYXAvaWRsZS5oCi0tLSBjeXJ1cy1pbWFwZC0yLjIuMTIub3JpZy9pbWFwL2lkbGUu
+aAkyMDAzLTEwLTIzIDAwOjA1OjEwICswNDAwCisrKyBjeXJ1cy1pbWFwZC0yLjIuMTIvaW1hcC9p
+ZGxlLmgJMjAwNS0xMi0wNyAxNjozMDoyNyArMDMwMApAQCAtNjQsNiArNjQsOSBAQAogICovCiBp
+bnQgaWRsZV9pbml0KHN0cnVjdCBtYWlsYm94ICptYWlsYm94LCBpZGxlX3VwZGF0ZXByb2NfdCAq
+cHJvYyk7CiAKKy8qIENhbiBkbyBvZmYtc2hlZHVsZWQgY2hlY2tpbmcgb2YgdGhlIG1haWxib3gg
+YW5kIEFMRVJUcyAqLwordm9pZCBpZGxlX3NpZ25hbCh2b2lkKTsKKwogLyogQ2xlYW51cCB3aGVu
+IElETEUgaXMgY29tcGxldGVkLiAqLwogdm9pZCBpZGxlX2RvbmUoc3RydWN0IG1haWxib3ggKm1h
+aWxib3gpOwogCmRpZmYgLXVyIGN5cnVzLWltYXBkLTIuMi4xMi5vcmlnL2ltYXAvaWRsZV9pZGxl
+ZC5jIGN5cnVzLWltYXBkLTIuMi4xMi9pbWFwL2lkbGVfaWRsZWQuYwotLS0gY3lydXMtaW1hcGQt
+Mi4yLjEyLm9yaWcvaW1hcC9pZGxlX2lkbGVkLmMJMjAwMy0xMC0yMyAwMDowNToxMSArMDQwMAor
+KysgY3lydXMtaW1hcGQtMi4yLjEyL2ltYXAvaWRsZV9pZGxlZC5jCTIwMDUtMTItMDcgMTY6MzA6
+MjggKzAzMDAKQEAgLTcwLDYgKzcwLDcgQEAKIHN0YXRpYyBpbnQgbm90aWZ5X3NvY2sgPSAtMTsK
+IHN0YXRpYyBzdHJ1Y3Qgc29ja2FkZHJfdW4gaWRsZV9yZW1vdGU7CiBzdGF0aWMgaW50IGlkbGVf
+cmVtb3RlX2xlbiA9IDA7CitzdGF0aWMgaW50IHNpZ25hbF90eXBlOwogCiAvKiBGb3J3YXJkIGRl
+Y2xhcmF0aW9ucyAqLwogaW50IGlkbGVfc2VuZF9tc2coaW50IG1zZywgc3RydWN0IG1haWxib3gg
+Km1haWxib3gpOwpAQCAtMTU2LDcgKzE1NywxMiBAQAogCiAgICAgaWRsZV91cGRhdGUgPSBwcm9j
+OwogCisgICAgLyogd2UgZG9uJ3Qgd2FudCB0byAicmVjdXJzaXZlIiBjYWxsIGlkbGVfdXBkYXRl
+KCkgb24gcmVjZWl2aW5nCisgICAgICAgZGlmZmVyZW50IHNpZ25hbHMgaW4gc2FtZSB0aW1lICov
+CiAgICAgc2lnZW1wdHlzZXQoJmFjdGlvbi5zYV9tYXNrKTsKKyAgICBzaWdhZGRzZXQoJmFjdGlv
+bi5zYV9tYXNrLCBTSUdVU1IxKTsKKyAgICBzaWdhZGRzZXQoJmFjdGlvbi5zYV9tYXNrLCBTSUdV
+U1IyKTsKKwogICAgIGFjdGlvbi5zYV9mbGFncyA9IDA7CiAjaWZkZWYgU0FfUkVTVEFSVAogICAg
+IGFjdGlvbi5zYV9mbGFncyB8PSBTQV9SRVNUQVJUOwpAQCAtMTY5LDggKzE3NSwxMyBAQAogCWlm
+ICgoc2lnYWN0aW9uKFNJR1VTUjEsICZhY3Rpb24sIE5VTEwpIDwgMCkgfHwKIAkgICAgKHNpZ2Fj
+dGlvbihTSUdVU1IyLCAmYWN0aW9uLCBOVUxMKSA8IDApKSB7CiAJICAgIHN5c2xvZyhMT0dfRVJS
+LCAic2lnYWN0aW9uOiAlbSIpOworCisJICAgIC8qIGNhbmNlbCByZWNlaXZpbmcgc2lnbmFscyBh
+bmQgdGVsbCBpZGxlZCB0aGF0IHdlJ3JlIGRvbmUgKi8KKwkgICAgaWRsZV9kb25lKG1haWxib3gp
+OworCiAJICAgIHJldHVybiAwOwogCX0KKwlzaWduYWxfdHlwZSA9IDA7CiAgICAgfQogICAgIGVs
+c2UgeyAvKiBvdGhlcndpc2UsIHdlJ2xsIHBvbGwgd2l0aCBTSUdBTFJNICovCiAJaWYgKHNpZ2Fj
+dGlvbihTSUdBTFJNLCAmYWN0aW9uLCBOVUxMKSA8IDApIHsKQEAgLTE3OSw2ICsxOTAsOCBAQAog
+CX0KIAogCWFsYXJtKGlkbGVfcGVyaW9kKTsKKworCXNpZ25hbF90eXBlID0gMTsKICAgICB9CiAK
+ICAgICByZXR1cm4gMTsKQEAgLTE5NSw2ICsyMDgsMTYgQEAKICAgICBzaWduYWwoU0lHQUxSTSwg
+U0lHX0lHTik7CiB9CiAKK3ZvaWQgaWRsZV9zaWduYWwodm9pZCkKK3sKKyAgICBpZighc2lnbmFs
+X3R5cGUpIHsKKwlwaWRfdCBwaWQgPSBnZXRwaWQoKTsKKworCWtpbGwocGlkLCBTSUdVU1IxKTsK
+KwlraWxsKHBpZCwgU0lHVVNSMik7CisgICAgfQorfQorCiAvKgogICogU2VuZCBhIG1lc3NhZ2Ug
+dG8gaWRsZWQKICAqLwpkaWZmIC11ciBjeXJ1cy1pbWFwZC0yLjIuMTIub3JpZy9pbWFwL2lkbGVf
+bm8uYyBjeXJ1cy1pbWFwZC0yLjIuMTIvaW1hcC9pZGxlX25vLmMKLS0tIGN5cnVzLWltYXBkLTIu
+Mi4xMi5vcmlnL2ltYXAvaWRsZV9uby5jCTIwMDMtMTAtMjMgMDA6MDU6MTEgKzA0MDAKKysrIGN5
+cnVzLWltYXBkLTIuMi4xMi9pbWFwL2lkbGVfbm8uYwkyMDA1LTEyLTA3IDE2OjMwOjI4ICswMzAw
+CkBAIC01OCwzICs1OCw3IEBACiB2b2lkIGlkbGVfZG9uZShzdHJ1Y3QgbWFpbGJveCAqbWFpbGJv
+eCkKIHsKIH0KKwordm9pZCBpZGxlX3NpZ25hbCh2b2lkKQoreworfQpkaWZmIC11ciBjeXJ1cy1p
+bWFwZC0yLjIuMTIub3JpZy9pbWFwL2lkbGVfcG9sbC5jIGN5cnVzLWltYXBkLTIuMi4xMi9pbWFw
+L2lkbGVfcG9sbC5jCi0tLSBjeXJ1cy1pbWFwZC0yLjIuMTIub3JpZy9pbWFwL2lkbGVfcG9sbC5j
+CTIwMDMtMTAtMjMgMDA6MDU6MTEgKzA0MDAKKysrIGN5cnVzLWltYXBkLTIuMi4xMi9pbWFwL2lk
+bGVfcG9sbC5jCTIwMDUtMTItMDcgMTY6MzA6MjggKzAzMDAKQEAgLTEwOCwzICsxMDgsNyBAQAog
+ICAgIC8qIFJlbW92ZSB0aGUgcG9sbGluZyBmdW5jdGlvbiAqLwogICAgIHNpZ25hbChTSUdBTFJN
+LCBTSUdfSUdOKTsKIH0KKwordm9pZCBpZGxlX3NpZ25hbCh2b2lkKQoreworfQpkaWZmIC11ciBj
+eXJ1cy1pbWFwZC0yLjIuMTIub3JpZy9pbWFwL2ltYXBkLmMgY3lydXMtaW1hcGQtMi4yLjEyL2lt
+YXAvaW1hcGQuYwotLS0gY3lydXMtaW1hcGQtMi4yLjEyLm9yaWcvaW1hcC9pbWFwZC5jCTIwMDUt
+MDItMTQgMDk6Mzk6NTUgKzAzMDAKKysrIGN5cnVzLWltYXBkLTIuMi4xMi9pbWFwL2ltYXBkLmMJ
+MjAwNS0xMi0wNyAxNjozMDoyOCArMDMwMApAQCAtMTE4LDYgKzExOCw3IEBACiBzdGF0aWMgaW50
+IGltYXBkX3VzZXJpc3Byb3h5YWRtaW4gPSAwOwogc3RhdGljIHNhc2xfY29ubl90ICppbWFwZF9z
+YXNsY29ubjsgLyogdGhlIHNhc2wgY29ubmVjdGlvbiBjb250ZXh0ICovCiBzdGF0aWMgaW50IGlt
+YXBkX3N0YXJ0dGxzX2RvbmUgPSAwOyAvKiBoYXZlIHdlIGRvbmUgYSBzdWNjZXNzZnVsIHN0YXJ0
+dGxzPyAqLworc3RhdGljIGludCBpZGxlX3VwZGF0ZV9pZ25vcmU7CiAjaWZkZWYgSEFWRV9TU0wK
+IC8qIG91ciB0bHMgY29ubmVjdGlvbiwgaWYgYW55ICovCiBzdGF0aWMgU1NMICp0bHNfY29ubiA9
+IE5VTEw7CkBAIC0yMTgwLDYgKzIxODEsOCBAQAogICAgIGludCBjOwogICAgIHN0YXRpYyBzdHJ1
+Y3QgYnVmIGFyZzsKIAorICAgIGlkbGVfdXBkYXRlX2lnbm9yZSA9IDE7CisgICAgCiAgICAgLyog
+U2V0dXAgZm9yIGRvaW5nIG1haWxib3ggdXBkYXRlcyAqLwogICAgIGlmICghaWRsZV9pbml0KGlt
+YXBkX21haWxib3gsIGlkbGVfdXBkYXRlKSkgewogCXByb3RfcHJpbnRmKGltYXBkX291dCwgCkBA
+IC0yMTkxLDggKzIxOTQsMTUgQEAKICAgICBwcm90X3ByaW50ZihpbWFwZF9vdXQsICIrIGlkbGlu
+Z1xyXG4iKTsKICAgICBwcm90X2ZsdXNoKGltYXBkX291dCk7CiAKKyAgICBpZGxlX3VwZGF0ZV9p
+Z25vcmUgPSAwOworICAgIGlkbGVfc2lnbmFsKCk7CisKICAgICAvKiBHZXQgY29udGludWF0aW9u
+IGRhdGEgKi8KICAgICBjID0gZ2V0d29yZChpbWFwZF9pbiwgJmFyZyk7CisKKyAgICAvKiBEbyBh
+bnkgbmVjZXNzYXJ5IGNsZWFudXAgKi8KKyAgICBpZGxlX2RvbmUoaW1hcGRfbWFpbGJveCk7CisK
+ICAgICBpZiAoYyAhPSBFT0YpIHsKIAlpZiAoIXN0cmNhc2VjbXAoYXJnLnMsICJEb25lIikgJiYK
+IAkgICAgKGMgPSAoYyA9PSAnXHInKSA/IHByb3RfZ2V0YyhpbWFwZF9pbikgOiBjKSA9PSAnXG4n
+KSB7CkBAIC0yMjA3LDE1ICsyMjE3LDE1IEBACiAJfQogICAgIH0KIAotICAgIC8qIERvIGFueSBu
+ZWNlc3NhcnkgY2xlYW51cCAqLwotICAgIGlkbGVfZG9uZShpbWFwZF9tYWlsYm94KTsKLQogICAg
+IHJldHVybjsKIH0KIAogLyogU2VuZCB1bnNvbGljaXRlZCB1bnRhZ2dlZCByZXNwb25zZXMgdG8g
+dGhlIGNsaWVudCAqLwogdm9pZCBpZGxlX3VwZGF0ZShpZGxlX2ZsYWdzX3QgZmxhZ3MpCiB7Cisg
+ICAgaWYoaWRsZV91cGRhdGVfaWdub3JlKQorIAlyZXR1cm47CisKICAgICBpZiAoKGZsYWdzICYg
+SURMRV9NQUlMQk9YKSAmJiBpbWFwZF9tYWlsYm94KQogCWluZGV4X2NoZWNrKGltYXBkX21haWxi
+b3gsIDAsIDEpOwogCg==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

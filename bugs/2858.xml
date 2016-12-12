@@ -1,0 +1,167 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2858</bug_id>
+          
+          <creation_ts>2006-07-03 10:46 EDT</creation_ts>
+          <short_desc>IMAP frontend process crashes when asked to copy message to non-existant malibox</short_desc>
+          <delta_ts>2010-10-25 18:46:39 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.3.x</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrew Findlay">andrew.findlay@skills-1st.co.uk</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Andrew Findlay">andrew.findlay@skills-1st.co.uk</who>
+            <bug_when>2006-07-03 10:46:33 EDT</bug_when>
+            <thetext> </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andrew Findlay">andrew.findlay@skills-1st.co.uk</who>
+            <bug_when>2006-07-03 10:53:34 EDT</bug_when>
+            <thetext>The IMAP front-end process in a murder crashes when asked to copy a message
+to a non-existant mailbox.
+
+I am testing this with Mutt, and snooping the network traffic shows the command
+issued immediately before the crash is:
+
+a0007 UID COPY 2 &quot;INBOX/new&quot;
+
+By attaching to the proxy process just before the crash I see this in GDB:
+
+Program received signal SIGSEGV, Segmentation fault.
+[Switching to Thread -1208854848 (LWP 8338)]
+0x08066e5e in index_check (mailbox=0x0, usinguid=1, checkseen=0) at index.c:286
+286     index.c: No such file or directory.
+        in index.c
+(gdb) where
+#0  0x08066e5e in index_check (mailbox=0x0, usinguid=1, checkseen=0) at index.c:286
+#1  0x08051d72 in cmd_copy (tag=0x871f6b0 &quot;a0007&quot;, sequence=0x871f790 &quot;2&quot;,
+    name=0x871f800 &quot;INBOX/new&quot;, usinguid=1) at imapd.c:4732
+#2  0x0805eeb6 in cmdloop () at imapd.c:1137
+#3  0x08060677 in service_main (argc=1, argv=0x8715008, envp=0xbfffadcc) at
+imapd.c:789
+#4  0x0804c545 in main (argc=1, argv=0xbfffadc4, envp=0xbfffadcc) at service.c:532
+(gdb) up
+#1  0x08051d72 in cmd_copy (tag=0x871f6b0 &quot;a0007&quot;, sequence=0x871f790 &quot;2&quot;,
+    name=0x871f800 &quot;INBOX/new&quot;, usinguid=1) at imapd.c:4732
+4732    imapd.c: No such file or directory.
+        in imapd.c
+(gdb) print r
+$1 = -1904809461
+(gdb) print (char *) r
+$2 = 0x8e76ea0b &lt;Address 0x8e76ea0b out of bounds&gt;
+(gdb) print name
+$3 = 0x871f800 &quot;INBOX/new&quot;
+(gdb) print myrights
+$4 = 134823771
+(gdb) print backend_current
+$5 = (struct backend *) 0x871f150
+(gdb) print *backend_current
+$6 = {hostname = &quot;ms1.srv.tile&quot;, &apos;\0&apos; &lt;repeats 51 times&gt;, addr = {ss_family = 2,
+    __ss_align = 1683689644, __ss_padding = &apos;\0&apos; &lt;repeats 119 times&gt;}, sock = 11,
+  prot = 0x812f880, context = 0x0, clientin = 0x8717988, current = 0x8135c6c,
+inbox = 0x8135c70,
+  timeout = 0x871f888, saslconn = 0x8731190, tlsconn = 0x0, tlssess = 0x0,
+capability = 29,
+  last_result = {s = 0x8732cc0 &quot;OK Completed\r\n&quot;, len = 14, alloc = 2048}, in =
+0x871f2c8,
+  out = 0x871f258}
+(gdb)
+
+Line 286 is actually the second on in this fragment:
+
+                if (seendb) {
+                    seen_close(seendb);
+                    seendb = 0;
+                }
+
+I rather suspect that compiler optimisation has resulted in the wrong line
+number being reported. A more likely point for the crash is a few lines up
+where the code tries to dereference mailbox:
+
+        path = (mailbox-&gt;mpath &amp;&amp;
+                (config_metapartition_files &amp;
+                 IMAP_ENUM_METAPARTITION_FILES_INDEX)) ?
+            mailbox-&gt;mpath : mailbox-&gt;path;
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andrew Findlay">andrew.findlay@skills-1st.co.uk</who>
+            <bug_when>2006-07-03 11:04:11 EDT</bug_when>
+            <thetext>Hmm: index_len is zero, so the crash is actually on 290:
+
+        else if ((sbuf.st_ino != mailbox-&gt;index_ino) ||
+
+The problem is still the attempt to defer mailbox.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Andrew Findlay">andrew.findlay@skills-1st.co.uk</who>
+            <bug_when>2006-07-03 11:24:25 EDT</bug_when>
+            <thetext>This prevents the crash:
+
+--- imap/imapd.c.dist  2006-07-03 15:00:28.000000000 +0100
++++ imap/imapd.c        2006-07-03 16:35:33.000000000 +0100
+@@ -4729,7 +4729,9 @@
+                       &amp;copyuid, !config_getswitch(IMAPOPT_SINGLEINSTANCESTORE));
+     }
+
+-    index_check(imapd_mailbox, usinguid, 0);
++    if (imapd_mailbox) {
++       index_check(imapd_mailbox, usinguid, 0);
++    }
+
+   done:
+     if (r &amp;&amp; !(usinguid &amp;&amp; r == IMAP_NO_NOSUCHMSG)) {
+
+
+However, I am not familiar enough with the code-base to know whether it causes
+other problems. Tests so far are OK.
+</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">murch@andrew.cmu.edu</who>
+            <bug_when>2006-08-01 18:01:15 EDT</bug_when>
+            <thetext>Fixed in CVS.  The proper fix is here:
+https://bugzilla.andrew.cmu.edu/cgi-bin/cvsweb.cgi/src/cyrus/imap/imapd.c.diff?r2=1.443.2.86&amp;r1=1.443.2.85&amp;f=u</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

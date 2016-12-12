@@ -1,0 +1,363 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2640</bug_id>
+          
+          <creation_ts>2005-03-30 12:55 EDT</creation_ts>
+          <short_desc>cyrus-murder problems with database corruption in the frontend/master</short_desc>
+          <delta_ts>2010-10-18 12:43:08 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Murder</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="32044">jfassad@parperfeito.com.br</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          <cc>bruder@haxent.com.br</cc>
+    
+    <cc>tjanouse@redhat.com</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="32044">jfassad@parperfeito.com.br</who>
+            <bug_when>2005-03-30 12:55:57 EDT</bug_when>
+            <thetext>We currently have 1.200.000+ mailboxes split in 3 backend servers using 1
+frontend / master server (both services running on the same server) for a grand
+total of 3.400.000+ mailboxes and subfolders.
+
+the servers are used for imap access only. no pop3, no sieve scripts, no nntp,
+nothing else besides imap.
+
+Now, the problem in question.
+
+after some days running smoothly I start getting errors on the  master/frontend
+server. It has happened a few times now..
+
+So far I&apos;ve seen it happen only on the master/frontend server.. not on the
+backend servers.
+
+the errors:
+
+  cyrus/mupdate[1433]: DBERROR: skiplist recovery
+  /var/lib/imap/mailboxes.db: 141BAD94 should be ADD or DELETE
+  cyrus/mupdate[1433]: DBERROR: error updating database user.1215407: cyrusdb error
+
+then after some time I start getting these:
+
+  cyrus/lmtp[1276]: authentication to remote mupdate server failed: EOF from server
+  cyrus/lmtp[1276]: couldn&apos;t connect to 10.1.5.101: no authentication to server
+
+after a little more time
+
+  cyrus/imap[30969]: kick_mupdate: can&apos;t connect to target: Connection refused
+  cyrus/lmtp[2240]: mupdate-client: connection to server closed: end of file reached
+  cyrus/lmtp[2240]: couldn&apos;t connect to 10.1.5.101: no connection to server
+
+then this is what I get when trying to restart cyrus frontend/master
+
+  cyrus/ctl_cyrusdb[30607]: recovering cyrus databases
+  cyrus/ctl_cyrusdb[30607]: DBERROR: skiplist recovery
+/var/lib/imap/mailboxes.db: 141BAD94 should be ADD or DELETE
+  cyrus/ctl_cyrusdb[30607]: DBERROR: opening /var/lib/imap/mailboxes.db: cyrusdb
+error
+
+
+what I need to do next is completely delete the dbs from the master/frontend and
+reimport all the mailboxes.
+
+Thank you very much,
+
+João Assad
+
+------------------
+Below is my frontend/master configuration
+
+##### cyrus.conf
+
+  START {
+   # do not delete this entry!
+   recover       cmd=&quot;ctl_cyrusdb -r&quot;
+  }
+
+  # UNIX sockets start with a slash and are put into /var/lib/imap/sockets
+  SERVICES {
+   # add or remove based on preferences
+   mupdate       cmd=&quot;mupdate -m&quot; listen=3905 prefork=1
+   lmtp          cmd=&quot;lmtpproxyd&quot; listen=&quot;lmtp&quot; prefork=0
+   imap          cmd=&quot;proxyd&quot; listen=&quot;imap&quot; prefork=0
+  }
+
+  EVENTS {
+   # this is required
+   checkpoint    cmd=&quot;ctl_cyrusdb -c&quot; period=240
+  }
+
+###### imapd.conf
+
+  configdirectory: /var/lib/imap
+  partition-default: /tmp
+  admins: cyrus
+  sievedir: /var/lib/imap/sieve
+  sendmail: /usr/sbin/sendmail
+  hashimapspool: true
+  sasl_pwcheck_method: saslauthd
+  sasl_mech_list: PLAIN
+  tls_cert_file: /usr/share/ssl/certs/crt.crt
+  tls_key_file: /usr/share/ssl/certs/key.key
+  tls_ca_file: /usr/share/ssl/certs/ca.ca
+
+  allowusermoves: 1
+
+  #Backend servers
+  cyrus-be1_password: ***
+  cyrus-be2_password: ***
+  cyrus-be3_password: ***
+  proxy_authname: cyrus
+
+
+  #Mupdate server
+  mupdate_server:10.1.5.101
+  mupdate_authname:cyrus
+  mupdate_password: ***
+
+  maxmessagesize: 2097152
+  syslog_prefix:cyrus
+  lmtp_over_quota_perm_failure:1
+  quotawarn: 110
+  imapidlepoll: 0
+  fulldirhash: 1
+  munge8bit: 0
+  timeout: 10
+
+  tls_session_timeout: 0
+  mupdate_connections_max: 1024
+  berkeley_cachesize:102400
+  berkeley_txns_max:500
+
+Fedora bugzilla bug id 152548
+https://bugzilla.redhat.com/bugzilla/show_bug.cgi?id=152548</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="32044">jfassad@parperfeito.com.br</who>
+            <bug_when>2005-03-31 17:49:10 EDT</bug_when>
+            <thetext>New info
+
+It seems before the corruption , I always get the following error
+
+cyrus/mupdate[12614]: IOERROR: mapping /var/lib/imap/mailboxes.db file: Cannot
+allocate memory
+cyrus/mupdate[12614]: failed to mmap /var/lib/imap/mailboxes.db file
+cyrus/master[12580]: service mupdate pid 12614 in READY state: terminated
+abnormally 
+
+This error is given by the map_refresh method ... there are 2 declarations of
+the method. one in lib/map_stupidshared.c and another in lib/map_shared.c .
+
+I dont know which one cyrus use when compiled under fedora.
+
+Regards</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="32044">jfassad@parperfeito.com.br</who>
+            <bug_when>2005-04-08 15:01:38 EDT</bug_when>
+            <thetext>2 gdb backtraces
+
+
+----------------------------
+#18988 0x0804dcd3 in fatal (
+   s=0x8d52f070 &quot;Internal error: assertion failed: mupdate.c: 586: 0&quot;,
+   code=75) at mupdate.c:586
+#18989 0x08082622 in assertionfailed (file=0x8082ab9 &quot;mupdate.c&quot;, line=586,
+   expr=0x8082ce1 &quot;0&quot;) at assert.c:61
+#18990 0x0804dcd3 in fatal (
+   s=0x8d52f4c0 &quot;failed to mmap /var/lib/imap/mailboxes.db file&quot;, code=75)
+   at mupdate.c:586
+#18991 0x080755f5 in map_refresh (fd=8, onceonly=0, base=0x8ad56e0,
+   len=0x8ad56e4, newlen=366993408,
+   name=0x8ad5710 &quot;/var/lib/imap/mailboxes.db&quot;, mboxname=0x0)
+   at map_shared.c:105
+#18992 0x08078178 in update_lock (db=0x8ad56d8, txn=0x8d52f6e0)
+   at cyrusdb_skiplist.c:572
+#18993 0x0807a2f9 in mycommit (db=0x8ad56d8, tid=0x8d52f6e0)
+   at cyrusdb_skiplist.c:1345
+#18994 0x08079d64 in mystore (db=0x8ad56d8, key=0x8b41ba8 &quot;user.1440034&quot;,
+   keylen=12,
+   data=0x8c5a248 &quot;1 cyrus-be2.gazzag.com!default 1440034\tlrswipcda\t&quot;,
+   datalen=49, tid=0x0, overwrite=1) at cyrusdb_skiplist.c:1225
+#18995 0x08079de5 in store (db=0x8ad56d8, key=0x8b41ba8 &quot;user.1440034&quot;,
+   keylen=12,
+   data=0x8c5a248 &quot;1 cyrus-be2.gazzag.com!default 1440034\tlrswipcda\t&quot;,
+   datalen=49, tid=0x0) at cyrusdb_skiplist.c:1244
+#18996 0x080571a9 in mboxlist_insertremote (name=0x8b41ba8 &quot;user.1440034&quot;,
+   mbtype=0, host=0x8b144f0 &quot;cyrus-be2.gazzag.com!default&quot;,
+   acl=0x8c4dab8 &quot;1440034\tlrswipcda\t&quot;, tid=0x0) at mboxlist.c:801
+#18997 0x0804f869 in database_log (mb=0x8c4daa8, mytid=0x0) at mupdate.c:1300
+#18998 0x0804ffe3 in cmd_set (C=0x8bdd778, tag=0x8be8918 &quot;X1&quot;,
+   mailbox=0x8bb6ec8 &quot;user.1440034&quot;,
+   server=0x8bb54b8 &quot;cyrus-be2.gazzag.com!default&quot;,
+   acl=0x8c36e28 &quot;1440034\tlrswipcda\t&quot;, t=SET_ACTIVE) at mupdate.c:1527
+#18999 0x0804e1f0 in docmd (c=0x8bdd778) at mupdate.c:685
+#19000 0x0804f669 in thread_main (rock=0x0) at mupdate.c:1228
+#19001 0x0069b98c in start_thread () from /lib/tls/libpthread.so.0
+#19002 0x005897da in clone () from /lib/tls/libc.so.6
+
+----------------------------
+
+#18988 0x0804dcd3 in fatal (
+   s=0x9fcd6070 &quot;Internal error: assertion failed: mupdate.c: 586: 0&quot;,
+   code=75) at mupdate.c:586
+#18989 0x08082622 in assertionfailed (file=0x8082ab9 &quot;mupdate.c&quot;, line=586,
+   expr=0x8082ce1 &quot;0&quot;) at assert.c:61
+#18990 0x0804dcd3 in fatal (
+   s=0x9fcd64c0 &quot;failed to mmap /var/lib/imap/mailboxes.db file&quot;, code=75)
+   at mupdate.c:586
+#18991 0x080755f5 in map_refresh (fd=8, onceonly=0, base=0x85856e0,
+   len=0x85856e4, newlen=366583808,
+   name=0x8585710 &quot;/var/lib/imap/mailboxes.db&quot;, mboxname=0x0)
+   at map_shared.c:105
+#18992 0x08078178 in update_lock (db=0x85856d8, txn=0x9fcd66e0)
+   at cyrusdb_skiplist.c:572
+#18993 0x0807a2f9 in mycommit (db=0x85856d8, tid=0x9fcd66e0)
+   at cyrusdb_skiplist.c:1345
+#18994 0x08079d64 in mystore (db=0x85856d8,
+   key=0x88046a78 &quot;user.950836._TRASH&quot;, keylen=18,
+   data=0x88056cc0 &quot;1 cyrus-be3.gazzag.com!default 950836\tlrswipcda\t&quot;,
+   datalen=48, tid=0x0, overwrite=1) at cyrusdb_skiplist.c:1225
+#18995 0x08079de5 in store (db=0x85856d8, key=0x88046a78 &quot;user.950836._TRASH&quot;,
+   keylen=18,
+   data=0x88056cc0 &quot;1 cyrus-be3.gazzag.com!default 950836\tlrswipcda\t&quot;,
+   datalen=48, tid=0x0) at cyrusdb_skiplist.c:1244
+#18996 0x080571a9 in mboxlist_insertremote (
+   name=0x88046a78 &quot;user.950836._TRASH&quot;, mbtype=0,
+   host=0x88019a70 &quot;cyrus-be3.gazzag.com!default&quot;,
+   acl=0x8804b7c0 &quot;950836\tlrswipcda\t&quot;, tid=0x0) at mboxlist.c:801
+#18997 0x0804f869 in database_log (mb=0x8804b7b0, mytid=0x0) at mupdate.c:1300
+#18998 0x0804ffe3 in cmd_set (C=0x9dd0b9b8, tag=0x9dd9b010 &quot;X1&quot;,
+   mailbox=0x9ddb1140 &quot;user.950836._TRASH&quot;,
+   server=0x9ddb5360 &quot;cyrus-be3.gazzag.com!default&quot;,
+   acl=0x88016f70 &quot;950836\tlrswipcda\t&quot;, t=SET_ACTIVE) at mupdate.c:1527
+#18999 0x0804e1f0 in docmd (c=0x9dd0b9b8) at mupdate.c:685
+#19000 0x0804f669 in thread_main (rock=0x0) at mupdate.c:1228
+#19001 0x0069b98c in start_thread () from /lib/tls/libpthread.so.0
+#19002 0x005897da in clone () from /lib/tls/libc.so.6</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="32044">jfassad@parperfeito.com.br</who>
+            <bug_when>2005-05-03 23:24:47 EDT</bug_when>
+            <thetext>Created an attachment (id=348)
+patch to replace munmap followed by mmap for a mremap
+
+replacing the munmap call followed by a mmap in map_refresh for a mremap call
+fixes the problem on FC2.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sergio Bruder">bruder@haxent.com.br</who>
+            <bug_when>2005-10-26 13:13:31 EDT</bug_when>
+            <thetext>any additional work on this particular bug? the attached patch really solves it?
+any plan to include it in the next release?</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2005-10-27 08:48:19 EDT</bug_when>
+            <thetext>Both the problem and solution appear to be GNU and/or FC specific.  At the very
+least, the use of mremap() has to be a compile-time decision, with all of the
+necessary configure foo.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Sergio Bruder">bruder@haxent.com.br</who>
+            <bug_when>2005-10-27 18:59:30 EDT</bug_when>
+            <thetext>you mean linux (the kernel) specific. Ive saw this very same problem in CentOS
+(ok, not far from a FC) and SuSE.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Wes Craig">wes@umich.edu</who>
+            <bug_when>2010-08-06 14:36:01 EDT</bug_when>
+            <thetext>Please re-open if this continues to be an issue.</thetext>
+          </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>348</attachid>
+            <date>2005-05-03 23:24 EDT</date>
+            <desc>patch to replace munmap followed by mmap for a mremap</desc>
+            <filename>map_shared-mremap.patch</filename>
+            <type>text/plain</type>
+            <size>2107</size>
+            <attacher>jfassad@parperfeito.com.br</attacher>
+            
+              <data encoding="base64">LS0tIGN5cnVzLWltYXBkLTIuMi4xMi5vcmlnL2xpYi9tYXBfc2hhcmVkLmMgICAgMjAwNS0wNC0y
+NiAwMTo0MTo1MS41ODI2NjcyMjQgLTAzMDANCisrKyBjeXJ1cy1pbWFwZC0yLjIuMTIvbGliL21h
+cF9zaGFyZWQuYyAyMDA1LTA0LTI2IDAxOjQxOjU4LjYzNTU5NTAxNiAtMDMwMA0KQEAgLTQwLDYg
+KzQwLDcgQEANCiAgKiBPVVQgT0YgT1IgSU4gQ09OTkVDVElPTiBXSVRIIFRIRSBVU0UgT1IgUEVS
+Rk9STUFOQ0UgT0YgVEhJUyBTT0ZUV0FSRS4NCiAgKg0KICAqLw0KKyNkZWZpbmUgX0dOVV9TT1VS
+Q0UNCiAjaW5jbHVkZSA8Y29uZmlnLmg+DQogI2luY2x1ZGUgPHN0ZGlvLmg+DQogI2luY2x1ZGUg
+PHN5cy90eXBlcy5oPg0KQEAgLTgzLDEyICs4NCwyNyBAQA0KDQogICAgIC8qIEFscmVhZHkgbWFw
+cGVkIGluICovDQogICAgIGlmICgqbGVuID49IG5ld2xlbikgcmV0dXJuOw0KKw0KKyAgICBpZiAo
+IW9uY2Vvbmx5KSB7DQorICAgICAgICBuZXdsZW4gPSAobmV3bGVuICsgMipTTE9QIC0gMSkgJiB+
+KFNMT1AtMSk7DQorICAgIH0NCg0KLSAgICBpZiAoKmxlbikgbXVubWFwKChjaGFyICopKmJhc2Us
+ICpsZW4pOw0KKyAgICBpZiAoKmxlbikgew0KKyAgICAgICBjb25zdCBjaGFyICpwaDsNCisgICAg
+ICAgcGggPSAoY2hhciAqKSpiYXNlOw0KKyAgICAgICAqYmFzZSA9IChjaGFyICopbXJlbWFwKCh2
+b2lkICopcGgsICpsZW4sIG5ld2xlbiwgTVJFTUFQX01BWU1PVkUpOw0KKyAgICAgICBzeXNsb2co
+TE9HX0RFQlVHLCAiTVJFTUFQIGF0IG1hcF9yZWZyZXNoOiBtcmVtYXAoJXAsICVsZCwgJWxkLCBN
+UkVNQVBfTUFZTU9WRSkgPSAlcCIsIHBoLCAqbGVuLCBuZXdsZW4sICpiYXNlKTsNCisNCisgICAg
+ICAgaWYgKCpiYXNlID09IChjaGFyICopLTEpIHsNCisgICAgICAgICAgIHN5c2xvZyhMT0dfRVJS
+LCAiSU9FUlJPUjogcmVtYXBwaW5nICVzIGZpbGUlcyVzOiAlbSIsIG5hbWUsDQorICAgICAgICAg
+ICAgICAgICAgbWJveG5hbWUgPyAiIGZvciAiIDogIiIsIG1ib3huYW1lID8gbWJveG5hbWUgOiAi
+Iik7DQorICAgICAgICAgICBzbnByaW50ZihidWYsIHNpemVvZihidWYpLCAiZmFpbGVkIHRvIG1y
+ZW1hcCAlcyBmaWxlIiwgbmFtZSk7DQorICAgICAgICAgICBmYXRhbChidWYsIEVDX0lPRVJSKTsN
+CisgICAgICAgfQ0KDQotICAgIGlmICghb25jZW9ubHkpIHsNCi0gICAgICAgbmV3bGVuID0gKG5l
+d2xlbiArIDIqU0xPUCAtIDEpICYgfihTTE9QLTEpOw0KLSAgICB9DQorICAgICAgICpsZW4gPSBu
+ZXdsZW47DQorICAgICAgIHJldHVybjsNCisgICAgfQ0KDQogICAgICpiYXNlID0gKGNoYXIgKilt
+bWFwKChjYWRkcl90KTAsIG5ld2xlbiwgUFJPVF9SRUFELCBNQVBfU0hBUkVEDQogI2lmZGVmIE1B
+UF9GSUxFDQpAQCAtOTgsNiArMTE0LDcgQEANCiB8IE1BUF9WQVJJQUJMRQ0KICNlbmRpZg0KICAg
+ICAgICAgICAgICAgICAgICAgICAgICwgZmQsIDBMKTsNCisgICAgc3lzbG9nKExPR19ERUJVRywg
+Ik1NQVAgYXQgbWFwX3JlZnJlc2g6IG1tYXAoJWxkLCAlbGQsIFBST1RfUkVBRCwgTUFQX1NIQVJF
+RCwgJWxkLCAlbGQpID0gJXAiLCAoY2FkZHJfdCkwLCBuZXdsZW4sIGZkLCAwTCwgKmJhc2UpOw0K
+ICAgICBpZiAoKmJhc2UgPT0gKGNoYXIgKiktMSkgew0KICAgICAgICBzeXNsb2coTE9HX0VSUiwg
+IklPRVJST1I6IG1hcHBpbmcgJXMgZmlsZSVzJXM6ICVtIiwgbmFtZSwNCiAgICAgICAgICAgICAg
+IG1ib3huYW1lID8gIiBmb3IgIiA6ICIiLCBtYm94bmFtZSA/IG1ib3huYW1lIDogIiIpOw0KQEAg
+LTExNSw3ICsxMzIsMTEgQEANCiBjb25zdCBjaGFyICoqYmFzZTsNCiB1bnNpZ25lZCBsb25nICps
+ZW47DQogew0KLSAgICBpZiAoKmxlbikgbXVubWFwKChjaGFyICopKmJhc2UsICpsZW4pOw0KKyAg
+ICBpZiAoKmxlbikgew0KKyAgICAgICAgaW50IHJldGFkZHI7DQorICAgICAgICByZXRhZGRyID0g
+bXVubWFwKChjaGFyICopKmJhc2UsICpsZW4pOw0KKyAgICAgICAgc3lzbG9nKExPR19ERUJVRywg
+Ik1VTk1BUCBhdCBtYXBfZnJlZTogbXVubWFwKCVwLCAlbGQpID0gJWxkIiwgKmJhc2UsICpsZW4s
+IHJldGFkZHIpOw0KKyAgICB9DQogICAgICpiYXNlID0gMDsNCiAgICAgKmxlbiA9IDA7DQogfQ==
+</data>        
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

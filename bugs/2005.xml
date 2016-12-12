@@ -1,0 +1,176 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2005</bug_id>
+          
+          <creation_ts>2003-04-06 21:48 EDT</creation_ts>
+          <short_desc>lmtp looks for sieve scripts in the wrong place</short_desc>
+          <delta_ts>2010-10-18 12:43:01 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>Sieve</component>
+          <version>2.2.x</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>bug</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jure Pecar">pegasus@nerv.eu.org</reporter>
+          <assigned_to name="Larry Greenfield">leg+cyrus@andrew.cmu.edu</assigned_to>
+          <cc>bugzilla@netgroup.com.br</cc>
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jure Pecar">pegasus@nerv.eu.org</who>
+            <bug_when>2003-04-06 21:48:07 EDT</bug_when>
+            <thetext>With fulldirhash and virtdoamin enabled in 2.2 alpha, i have user rudibn@email.si that gets placed under spool/mail/domain/D/email.si/W/user/rudibn and his sieve scripts under spool/sieve/domain/D/email.si/W/rudibn/, as expected. However, stracing lmtp upon delivery shows that it looks under spool/sieve/domain/D/email.si/Q/rudibn for his scripts, finds none, and sieve does not work at all.
+I created another user, just to verify: antileon@email.si, goes to spool/mail/domain/D/email.si/I/user/antileon, lmtp looks at spool/sieve/domain/D/email.si/S/antileon.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Jure Pecar">pegasus@nerv.eu.org</who>
+            <bug_when>2003-04-06 22:18:33 EDT</bug_when>
+            <thetext>Looking around at the lmtpd.c and mailbox.c, it looks like sometimes user.username gets passed down the dir_hash_c, and other times it&apos;s only username. 
+
+So for now i&apos;m dropping fulldirhash for my new server ... </thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Ken Murchison">ken@oceana.com</who>
+            <bug_when>2003-05-02 10:39:15 EDT</bug_when>
+            <thetext>This should be fixed by the 4/21 commit to lmtpd -- closing this bug.  Please
+reopen it if the problem persists.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Alberto Sentieri">bugzilla@netgroup.com.br</who>
+            <bug_when>2009-05-22 18:48:13 EDT</bug_when>
+            <thetext>I am trying to deliver emails to subfolders using lmtp and getting strange errors. Apparently the problems I am having are related to this bug.
+
+A regular delivery works fine, as could be seen on the attempt below:
+
+$ telnet 192.168.44.70 24
+Trying 192.168.44.70...
+Connected to 192.168.44.70 (192.168.44.70).
+Escape character is &apos;^]&apos;.
+220 localhost.localdomain LMTP Cyrus v2.3.7-Invoca-RPM-2.3.7-2.el5 ready
+lhlo truco
+250-localhost.localdomain
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-PIPELINING
+250-SIZE
+250-AUTH EXTERNAL
+250 IGNOREQUOTA
+mail from:&lt;&gt;
+250 2.1.0 ok
+rcpt to:&lt;abcd&gt;
+250 2.1.5 ok
+data
+354 go ahead
+subject: test 1
+
+testing
+.
+quit250 2.1.5 Ok
+221 2.0.0 bye
+Connection closed by foreign host.
+
+
+A subfolder delivery fails:
+
+$ telnet 192.168.44.70 24
+Trying 192.168.44.70...
+Connected to 192.168.44.70 (192.168.44.70).
+Escape character is &apos;^]&apos;.
+220 localhost.localdomain LMTP Cyrus v2.3.7-Invoca-RPM-2.3.7-2.el5 ready
+lhlo truco
+250-localhost.localdomain
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-PIPELINING
+250-SIZE
+250-AUTH EXTERNAL
+250 IGNOREQUOTA
+mail from:&lt;&gt;
+250 2.1.0 ok
+rcpt to:&lt;abcd.test1&gt;
+250 2.1.5 ok
+data
+354 go ahead
+subject: test 2
+
+testing ...
+.
+554 5.0.0 Unexpected internal error
+quit
+221 2.0.0 bye
+Connection closed by foreign host.
+
+The log file contains this information:
+
+File /var/log/maillog after a unsucessful delivery:
+
+Apr  6 12:05:46 localhost master[21710]: about to exec /usr/lib/cyrus-imapd/lmtpd
+Apr  6 12:05:46 localhost lmtp[21710]: executed
+Apr  6 12:05:46 localhost lmtp[21710]: accepted connection
+Apr  6 12:05:46 localhost lmtp[21710]: connection from bugs.mail0.xxx [192.168.44.11] preauth&apos;d as postman
+Apr  6 12:06:40 localhost lmtp[21710]: IOERROR: fstating sieve script /var/lib/imap/sieve/a/abcd.test1/defaultbc: No such file or directory
+
+
+The exact information about the version I am using is:
+
+Server version information (version inside cyradm):
+
+localhost.localdomain&gt; version
+name       : Cyrus IMAPD
+version    : v2.3.7-Invoca-RPM-2.3.7-2.el5 2006/07/10 13:46:20
+vendor     : Project Cyrus
+support-url: http://asg.web.cmu.edu/cyrus
+os         : Linux
+os-version : 2.6.18-92.1.22.el5.centos.plus
+environment: Built w/Cyrus SASL 2.1.22
+             Running w/Cyrus SASL 2.1.22
+             Built w/Sleepycat Software: Berkeley DB 4.3.29: (January  7,
+2007)
+             Running w/Sleepycat Software: Berkeley DB 4.3.29: (January  7,
+2007)
+             Built w/OpenSSL 0.9.8b 04 May 2006
+             Running w/OpenSSL 0.9.8b 04 May 2006
+             CMU Sieve 2.3
+             TCP Wrappers
+             NET-SNMP
+             mmap = shared
+             lock = fcntl
+             nonblock = fcntl
+             idle = idled
+
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

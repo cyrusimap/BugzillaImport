@@ -1,0 +1,130 @@
+<?xml version="1.0" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugzilla.cyrusimap.org/bugzilla.dtd">
+
+<bugzilla version="3.2.5.1-2"
+          urlbase="https://bugzilla.cyrusimap.org/"
+          maintainer="Dave McMurtrie &lt;dave64@andrew.cmu.edu&gt;"
+>
+
+    <bug>
+          <bug_id>2562</bug_id>
+          
+          <creation_ts>2004-11-19 14:43 EDT</creation_ts>
+          <short_desc>POP3 maildrop lock and Outlook</short_desc>
+          <delta_ts>2010-10-18 12:43:07 EDT</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>1</classification_id>
+          <classification>Unclassified</classification>
+          <product>Cyrus IMAP</product>
+          <component>POP</component>
+          <version>2.2.x</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>CLOSED</bug_status>
+          <resolution>WONTFIX</resolution>
+          
+          
+          
+          
+          <priority>P2</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>Future</target_milestone>
+          
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jan Klepal">jan.klepal@bonicom.cz</reporter>
+          <assigned_to name="Ken Murchison">murch@andrew.cmu.edu</assigned_to>
+          
+          <qa_contact name="The Cyrus Bugzilla List">cyrus-bugzilla@lists.andrew.cmu.edu</qa_contact>
+
+      
+
+      
+
+      
+          <long_desc isprivate="0">
+            <who name="Jan Klepal">jan.klepal@bonicom.cz</who>
+            <bug_when>2004-11-19 14:43:36 EDT</bug_when>
+            <thetext>After migration to Cyrus IMAP customers which use POP3 and Microsoft Outlook
+started to complain about random appearance of password dialogs. In the logs
+were lines &quot;pop3[pid] Unable to lock maildrop for someuser: Mailbox is locked by
+POP server&quot;. After while I figured that Outlook sometimes try to open mailox via
+POP3 twice so it gets &quot;-ERR [IN-USE] Unable to lock maildrop: Mailbox is locked
+by POP server&quot; error message. Unfortunately outlook doesn&apos;t wait for unlocking
+but displays dialog window with username and password and that is why customers
+complain.
+
+I was curious why customers weren&apos;t complaining about same problem before
+migration to Cyrus. That is because UW IMAP&apos;s POP3 waits for unlock instead of
+displaying error message.
+
+While googling I was unable to find any solution so I decided to write (probably
+dirty - but working :) workaround which makes Cyrus POP3 wait few seconds before
+displaying error message. Here is diff of imap/pop3d.c (version 2.2.8):
+
+*** imap/pop3d.c.orig   Tue Jun 29 18:22:31 2004
+--- imap/pop3d.c        Fri Nov 19 20:16:50 2004
+***************
+*** 1340,1345 ****
+--- 1340,1346 ----
+      char *server = NULL, *acl;
+      int r, log_level = LOG_ERR;
+      const char *statusline = NULL;
++     int open_try;
+
+      /* Translate any separators in userid
+         (use a copy since we need the original userid for AUTH to backend) */
+***************
+*** 1423,1428 ****
+--- 1424,1439 ----
+
+        r = mailbox_open_index(&amp;mboxstruct);
+        if (!r) r = mailbox_lock_pop(&amp;mboxstruct);
++
++       if(r) {
++               for(open_try=0; open_try &lt; 20; open_try++) {
++                       r = mailbox_lock_pop(&amp;mboxstruct);
++                       if(!r) break;
++                       syslog(log_level, &quot;Waiting for maildrop unlock: try %d
+of 20&quot;, open_try);
++                       usleep(500000);
++               }
++       }
++
+        if (r) {
+            mailbox_close(&amp;mboxstruct);
+            syslog(LOG_ERR, &quot;Unable to lock maildrop for %s: %s&quot;,
+
+I think it is the easiest way for those buggy clients. Maybe it could be
+configurable... Please let me know what you think about this feature.
+
+Best Regards,
+Jan Klepal</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Henrique de Moraes Holschuh">hmh@debian.org</who>
+            <bug_when>2004-11-19 17:12:59 EDT</bug_when>
+            <thetext>It has to be optional, please. 
+
+I certainly would not want to bog down a busy mail store with pop3 daemons that
+are just there waiting and wasting resources.
+
+BTW, I never heard of THAT problem with outcrook, usually it chokes and dies on
+UIDLs, not pop3 login timeouts.  Maybe it is because I refuse consecutive pop3
+logins that are less than 1 minute apart.</thetext>
+          </long_desc>
+          <long_desc isprivate="0">
+            <who name="Derrick">shadow@andrew.cmu.edu</who>
+            <bug_when>2005-04-11 02:56:33 EDT</bug_when>
+            <thetext>I&apos;m instead taking 2410; If you want to do something just add a padding and let one lock be acquired 
+before the other is dropped.
+</thetext>
+          </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>
