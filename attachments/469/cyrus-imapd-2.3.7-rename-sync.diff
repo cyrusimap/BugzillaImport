@@ -1,0 +1,71 @@
+--- cyrus-imapd-2.3.7/imap/imapd.c	2006-07-03 09:22:41.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/imapd.c	2006-10-12 16:52:10.000000000 -0400
+@@ -5109,7 +5115,7 @@
+ 
+     r = mboxlist_renamemailbox(name, text->newmailboxname,
+ 			       text->partition,
+-			       1, imapd_userid, imapd_authstate);
++			       1, imapd_userid, imapd_authstate, 0);
+     
+     (*imapd_namespace.mboxname_toexternal)(&imapd_namespace,
+ 					   name,
+@@ -5350,7 +5356,7 @@
+     if (!r) {
+ 	r = mboxlist_renamemailbox(oldmailboxname, newmailboxname, partition,
+ 				   imapd_userisadmin, 
+-				   imapd_userid, imapd_authstate);
++				   imapd_userid, imapd_authstate, 0);
+     }
+ 
+     /* If we're renaming a user, take care of changing quotaroot, ACL,
+--- cyrus-imapd-2.3.7/imap/mboxlist.c	2006-05-22 16:37:25.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/mboxlist.c	2006-10-12 16:51:23.000000000 -0400
+@@ -1047,7 +1049,7 @@
+  */
+ int mboxlist_renamemailbox(char *oldname, char *newname, char *partition, 
+ 			   int isadmin, char *userid, 
+-			   struct auth_state *auth_state)
++			   struct auth_state *auth_state, int force)
+ {
+     int r;
+     long access;
+@@ -1168,9 +1170,9 @@
+ 					  userid, auth_state, NULL, 
+-					  &newpartition, 1, 0, 0, &tid);
++					  &newpartition, 1, 0, force, &tid);
+ 	switch (r) {
+ 	case 0:
+ 	    break;
+--- cyrus-imapd-2.3.7/imap/mboxlist.h	2005-02-21 14:25:40.000000000 -0500
++++ cyrus-imapd-2.3.7+/imap/mboxlist.h	2006-10-12 16:51:32.000000000 -0400
+@@ -130,7 +132,7 @@
+ /* Rename/move a mailbox (hierarchical) */
+ int mboxlist_renamemailbox(char *oldname, char *newname, char *partition, 
+ 			   int isadmin, char *userid, 
+-			   struct auth_state *auth_state);
++			   struct auth_state *auth_state, int force);
+ 
+ /* change ACL */
+ int mboxlist_setacl(const char *name, const char *identifier,
+--- cyrus-imapd-2.3.7/imap/nntpd.c	2006-05-26 11:50:07.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/nntpd.c	2006-10-12 16:52:19.000000000 -0400
+@@ -3388,7 +3388,7 @@
+ 	     newsprefix, len, group);
+ 
+     r = mboxlist_renamemailbox(oldmailboxname, newmailboxname, NULL, 0,
+-			       newsmaster, newsmaster_authstate);
++			       newsmaster, newsmaster_authstate, 0);
+ 
+     /* XXX check body of message for useful MIME parts */
+ 
+--- cyrus-imapd-2.3.7/imap/sync_server.c	2006-06-12 14:56:42.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/sync_server.c	2006-10-12 16:52:26.000000000 -0400
+@@ -2522,7 +2522,7 @@
+     int r;
+ 
+     r = mboxlist_renamemailbox(oldmailboxname, newmailboxname, NULL,
+-                               1,sync_userid, sync_authstate);
++                               1,sync_userid, sync_authstate, 1);
+ 
+     if (r)
+         prot_printf(sync_out, "NO Rename failed %s -> %s: %s\r\n",

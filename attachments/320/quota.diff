@@ -1,0 +1,167 @@
+Index: quota.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/quota.c,v
+retrieving revision 1.57
+diff -u -r1.57 quota.c
+--- quota.c	30 Jun 2004 19:23:26 -0000	1.57
++++ quota.c	23 Dec 2004 18:13:36 -0000
+@@ -182,12 +182,8 @@
+     quotadb_close();
+     quotadb_done();
+ 
+-    if (!r) reportquota();
+-
+-    if (r) {
+-	com_err("quota", r, (r == IMAP_IOERROR) ? error_message(errno) : NULL);
+-	code = convert_code(r);
+-    }
++    if (r) code = convert_code(r);
++    else reportquota();
+ 
+     cyrus_done();
+ 
+@@ -196,9 +192,25 @@
+ 
+ void usage(void)
+ {
+-    fprintf(stderr, "usage: quota [-C <alt_config>] [-d <domain>] [-f] [prefix]...\n");
++    fprintf(stderr,
++	    "usage: quota [-C <alt_config>] [-d <domain>] [-f] [prefix]...\n");
+     exit(EC_USAGE);
+-}    
++}
++
++void errmsg(const char *fmt, const char *arg, int err)
++{
++    char buf[1024];
++    int len;
++
++    len = snprintf(buf, sizeof(buf), fmt, arg);
++    if (len < sizeof(buf))
++	len += snprintf(buf+len, sizeof(buf)-len, ": %s", error_message(err));
++    if ((err == IMAP_IOERROR) && (len < sizeof(buf)))
++	len += snprintf(buf+len, sizeof(buf)-len, ": %m");
++
++    syslog(LOG_ERR, buf);
++    fprintf(stderr, "%s\n", buf);
++}
+ 
+ struct find_rock {
+     char **roots;
+@@ -264,7 +276,7 @@
+  */
+ int buildquotalist(char *domain, char **roots, int nroots)
+ {
+-    int i;
++    int i, r;
+     char buf[MAX_MAILBOX_NAME+1];
+     struct find_rock frock;
+ 
+@@ -288,9 +300,14 @@
+     /* if we have exactly one root specified, narrow the search */
+     if (nroots == 1) strlcat(buf, roots[0], sizeof(buf));
+ 	    
+-    config_quota_db->foreach(qdb, buf, strlen(buf),
+-			     &find_p, &find_cb, &frock, NULL);
++    r = config_quota_db->foreach(qdb, buf, strlen(buf),
++				 &find_p, &find_cb, &frock, NULL);
+ 
++    if (r < 0) {
++	errmsg("failed building quota list", NULL, IMAP_IOERROR);
++	return IMAP_IOERROR;
++    }
++ 
+     return 0;
+ }
+ 
+@@ -341,7 +358,8 @@
+     if (partial && thisquota == -1) return 0;
+ 
+     r = mailbox_open_header(name, 0, &mailbox);
+-    if (!r) {
++    if (r) errmsg("failed opening header for mailbox '%s'", name, r);
++    else {
+ 	if (thisquota == -1) {
+ 	    if (mailbox.quota.root) {
+ 		r = fixquota_fixroot(&mailbox, (char *)0);
+@@ -352,7 +370,10 @@
+ 		strcmp(mailbox.quota.root, quota[thisquota].quota.root) != 0) {
+ 		r = fixquota_fixroot(&mailbox, quota[thisquota].quota.root);
+ 	    }
+-	    if (!r) r = mailbox_open_index(&mailbox);
++	    if (!r) {
++		r = mailbox_open_index(&mailbox);
++		if (r) errmsg("failed opening index for mailbox '%s'", name, r);
++	    }
+    
+ 	    if (!r) quota[thisquota].newused += mailbox.quota_mailbox_used;
+ 	}
+@@ -377,7 +398,10 @@
+     redofix = 1;
+ 
+     r = mailbox_lock_header(mailbox);
+-    if (r) return r;
++    if (r) {
++	errmsg("failed locking header for mailbox '%s'", mailbox->name, r);
++	return r;
++    }
+ 
+     printf("%s: quota root %s --> %s\n", mailbox->name,
+ 	   mailbox->quota.root ? mailbox->quota.root : "(none)",
+@@ -393,6 +417,8 @@
+ 
+     r = mailbox_write_header(mailbox);
+     (void) mailbox_unlock_header(mailbox);
++    if (r) errmsg("failed writing header for mailbox '%s'", mailbox->name, r);
++
+     return r;
+ }
+ 
+@@ -407,7 +433,11 @@
+ 	if (!quota[thisquota].deleted++) {
+ 	    printf("%s: removed\n", quota[thisquota].quota.root);
+ 	    r = quota_delete(&quota[thisquota].quota, tid);
+-	    if (r) return r;
++	    if (r) {
++		errmsg("failed deleting quotaroot '%s'",
++		       quota[thisquota].quota.root, r);
++		return r;
++	    }
+ 	    (*count)++;
+ 	    free(quota[thisquota].quota.root);
+ 	    quota[thisquota].quota.root = NULL;
+@@ -418,7 +448,11 @@
+     if (quota[thisquota].quota.used != quota[thisquota].newused) {
+ 	/* re-read the quota with the record locked */
+ 	r = quota_read(&quota[thisquota].quota, tid, 1);
+-	if (r) return r;
++	if (r) {
++	    errmsg("failed reading quotaroot '%s'",
++		   quota[thisquota].quota.root, r);
++	    return r;
++	}
+ 	(*count)++;
+     }
+     if (quota[thisquota].quota.used != quota[thisquota].newused) {
+@@ -426,7 +460,11 @@
+ 	       quota[thisquota].quota.used, quota[thisquota].newused);
+ 	quota[thisquota].quota.used = quota[thisquota].newused;
+ 	r = quota_write(&quota[thisquota].quota, tid);
+-	if (r) return r;
++	if (r) {
++	    errmsg("failed writing quotaroot '%s'",
++		   quota[thisquota].quota.root, r);
++	    return r;
++	}
+ 	(*count)++;
+     }
+ 
+@@ -477,7 +515,7 @@
+     
+     mboxlist_close();
+ 
+-    return 0;
++    return r;
+ }
+     
+ /*

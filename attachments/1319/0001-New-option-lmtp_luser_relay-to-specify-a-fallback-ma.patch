@@ -1,0 +1,82 @@
+From f12e8a17b610025cfb2cc4a9d3c781045d3bd535 Mon Sep 17 00:00:00 2001
+From: Ralf Haferkamp <rhafer@suse.de>
+Date: Mon, 8 Nov 2010 17:33:52 +0100
+Subject: [PATCH] New option "lmtp_luser_relay" to specify a fallback mailbox
+
+This patch introduces the new option "lmtp_luser_relay". Lmtpd will drop
+mail to non-existing mailboxes into this mailbox. NOTE: This must be an
+existing local mailbox name. NOT an email address!
+(Bug#2360)
+---
+ imap/lmtpengine.c |   24 +++++++++++++++++++-----
+ lib/imapoptions   |    4 ++++
+ 2 files changed, 23 insertions(+), 5 deletions(-)
+
+diff --git a/imap/lmtpengine.c b/imap/lmtpengine.c
+index 7159c34..5d8d526 100644
+--- a/imap/lmtpengine.c
++++ b/imap/lmtpengine.c
+@@ -812,6 +812,8 @@ static int process_recipient(char *addr, struct namespace *namespace,
+     address_data_t *ret = (address_data_t *) xmalloc(sizeof(address_data_t));
+     int forcedowncase = config_getswitch(IMAPOPT_LMTP_DOWNCASE_RCPT);
+     int quoted, detail;
++    char *luser_relay = NULL;
++    int has_luser_relay = 0;
+ 
+     assert(addr != NULL && msg != NULL);
+ 
+@@ -868,6 +870,13 @@ static int process_recipient(char *addr, struct namespace *namespace,
+     }
+     *dest = '\0';
+ 	
++    luser_relay = config_getstring(IMAPOPT_LMTP_LUSER_RELAY);
++    if( luser_relay ) {
++      if( !verify_user(luser_relay, NULL, NULL, ignorequota ? -1 : msg->size, msg->authstate) ) {
++          has_luser_relay = 1;
++      }
++    }
++
+     /* make a working copy of rcpt */
+     ret->user = ret->rcpt = xstrdup(rcpt);
+ 
+@@ -893,12 +902,17 @@ static int process_recipient(char *addr, struct namespace *namespace,
+     r = verify_user(ret->user, ret->domain, ret->mailbox,
+ 		    (quota_t) (ignorequota ? -1 : msg->size), msg->authstate);
+     if (r) {
+-	/* we lost */
+-	free(ret->all);
+-	free(ret->rcpt);
+-	free(ret);
+-	return r;
++	if( r == IMAP_MAILBOX_NONEXISTENT && has_luser_relay ) {
++	    ret->user = xstrdup(luser_relay);
++	} else {
++	    /* we lost */
++   	    free(ret->all);
++   	    free(ret->rcpt);
++   	    free(ret);
++   	    return r;
++	}
+     }
++
+     ret->ignorequota = ignorequota;
+ 
+     msg->rcpt[msg->rcpt_num] = ret;
+diff --git a/lib/imapoptions b/lib/imapoptions
+index 0289b34..8f994d8 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -1303,6 +1303,10 @@ product version in the capabilities */
+    interface, otherwise the user is assumed to be in the default
+    domain (if set). */
+ 
++{ "lmtp_luser_relay", NULL, STRING }
++/* Send mail to mailboxes, which do not exists, to this user. NOTE: This must
++   be an existing local mailbox name. NOT an email address! */
++
+ /*
+ .SH SEE ALSO
+ .PP
+-- 
+1.7.1
+

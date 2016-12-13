@@ -1,0 +1,127 @@
+From 1995bd335138ce099fe93ddb5582e626bcd46505 Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?G=C3=A1bor=20Gomb=C3=A1s?= <gombasg@sztaki.hu>
+Date: Tue, 8 Jan 2008 21:42:46 +0100
+Subject: [PATCH] New configuration option "outbound_address"
+
+If it is set, outbound connections (to murder backends or replicas) will
+use this address for the local side of the connection. This is needed
+when the master has multiple IP addresses but the replica is behind a
+firewall that expects a specific source address.
+
+The code is basically the same that was removed in 2.3.7 but it is not
+bound to "servername" anymore.
+---
+ imap/backend.c  |   24 +++++++++++++++++++++++-
+ lib/imapoptions |    8 +++++++-
+ lib/libconfig.c |    3 +++
+ lib/libconfig.h |    1 +
+ 4 files changed, 34 insertions(+), 2 deletions(-)
+
+diff --git a/imap/backend.c b/imap/backend.c
+index 15cab71..706e0b7 100644
+--- a/imap/backend.c
++++ b/imap/backend.c
+@@ -279,7 +279,7 @@ struct backend *backend_connect(struct backend *ret_backend, const char *server,
+     int sock = -1;
+     int r;
+     int err = -1;
+-    struct addrinfo hints, *res0 = NULL, *res;
++    struct addrinfo hints, *res0 = NULL, *res_out = NULL, *res;
+     struct sockaddr_un sunsock;
+     char buf[2048], *mechlist = NULL;
+     struct sigaction action;
+@@ -324,6 +324,16 @@ struct backend *backend_connect(struct backend *ret_backend, const char *server,
+ 	    if (!ret_backend) free(ret);
+ 	    return NULL;
+ 	}
++        /* Get addrinfo struct for local interface. */
++	if (config_outbound_addr) {
++	    err = getaddrinfo(config_outbound_addr, NULL, &hints, &res_out);
++	    if (err) {
++		syslog(LOG_ERR, "getaddrinfo(%s) failed: %s",
++		       config_outbound_addr, gai_strerror(err));
++		freeaddrinfo(res_out);
++		res_out = NULL;
++	    }
++	}
+     }
+ 
+     /* Setup timeout */
+@@ -340,6 +350,16 @@ struct backend *backend_connect(struct backend *ret_backend, const char *server,
+ 	sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+ 	if (sock < 0)
+ 	    continue;
++        /* Bind to local interface. */
++	if (res_out) {
++	    if (bind(sock, res_out->ai_addr, res_out->ai_addrlen) < 0) {
++		if (iptostring(res_out->ai_addr, res_out->ai_addrlen,
++			       buf, sizeof(buf)))
++		    strlcpy(buf, "UNKNOWN", sizeof(buf));
++		syslog(LOG_ERR, "failed to bind to address %s: %s",
++		       buf, strerror(errno));
++	    }
++	}
+ 	alarm(config_getint(IMAPOPT_CLIENT_TIMEOUT));
+ 	if (connect(sock, res->ai_addr, res->ai_addrlen) >= 0)
+ 	    break;
+@@ -349,6 +369,8 @@ struct backend *backend_connect(struct backend *ret_backend, const char *server,
+ 	sock = -1;
+     }
+ 
++    freeaddrinfo(res_out);
++
+     /* Remove timeout code */
+     alarm(0);
+     signal(SIGALRM, SIG_IGN);
+diff --git a/lib/imapoptions b/lib/imapoptions
+index 2a75477..71b0388 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -861,7 +861,13 @@ are listed with ``<none>''.
+ /* This is the hostname visible in the greeting messages of the POP,
+    IMAP and LMTP daemons. If it is unset, then the result returned
+    from gethostname(2) is used. */
+-   
++ 
++{ "outbound_address", NULL, STRING }
++/* This will be used as a local address when making outgoing connections
++   to murder backends and repliacas if the machine has multiple IP
++   addresses. If it is unset, then the default is chosen by the operating
++   system. */
++
+ { "sha1_dir", NULL, STRING }
+ /* Top level directory for SHA1 store manipulated by make_sha1. File
+    structure within this directory is one file for each user on the system,
+diff --git a/lib/libconfig.c b/lib/libconfig.c
+index 27ef38d..bbe804e 100644
+--- a/lib/libconfig.c
++++ b/lib/libconfig.c
+@@ -71,6 +71,7 @@ const char *config_filename= NULL;       /* filename of configuration file */
+ const char *config_dir = NULL;		 /* ie /var/imap */
+ const char *config_defpartition = NULL;  /* /var/spool/imap */
+ const char *config_servername= NULL;	 /* gethostname() */
++const char *config_outbound_addr = NULL; /* local address used for outgoing conns */
+ const char *config_mupdate_server = NULL;/* NULL */
+ const char *config_defdomain = NULL;     /* NULL */
+ const char *config_ident = NULL;         /* the service name */
+@@ -287,6 +288,8 @@ void config_read(const char *alt_config)
+ 	gethostname((char *) config_servername, 256);
+     }
+ 
++    config_outbound_addr = config_getstring(IMAPOPT_OUTBOUND_ADDRESS);
++
+     config_mupdate_server = config_getstring(IMAPOPT_MUPDATE_SERVER);
+ 
+     if (config_mupdate_server) {
+diff --git a/lib/libconfig.h b/lib/libconfig.h
+index 5662120..8ea422e 100644
+--- a/lib/libconfig.h
++++ b/lib/libconfig.h
+@@ -68,6 +68,7 @@ extern const char *config_filename;
+ extern const char *config_dir;
+ extern const char *config_defpartition;
+ extern const char *config_servername;
++extern const char *config_outbound_addr;
+ extern const char *config_mupdate_server;
+ extern const char *config_defdomain;
+ extern const char *config_ident;

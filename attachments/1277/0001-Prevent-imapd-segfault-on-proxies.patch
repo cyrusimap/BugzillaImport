@@ -1,0 +1,31 @@
+From 0b6f2f5abdb2815b0a2a09ec19b055a40df49b45 Mon Sep 17 00:00:00 2001
+From: Brian Awood <bawood@umich.edu>
+Date: Fri, 11 Dec 2009 21:45:10 -0500
+Subject: [PATCH] Prevent imapd segfault on proxies
+
+Some imapd process will segfault on proxies when
+a backend machine is shutdown and mechlist ends up
+null in backend_connect.
+---
+ imap/backend.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/imap/backend.c b/imap/backend.c
+index a0cb6c7..c5b2433 100644
+--- a/imap/backend.c
++++ b/imap/backend.c
+@@ -446,9 +446,9 @@ struct backend *backend_connect(struct backend *ret_backend, const char *server,
+ 
+     /* now need to authenticate to backend server,
+        unless we're doing LMTP/CSYNC on a UNIX socket (deliver/sync_client) */
+-    if ((server[0] != '/') ||
++    if (mechlist && ((server[0] != '/') ||
+ 	(strcmp(prot->sasl_service, "lmtp") &&
+-	 strcmp(prot->sasl_service, "csync"))) {
++	 strcmp(prot->sasl_service, "csync")))) {
+ 	char *mlist = xstrdup(mechlist); /* backend_auth is destructive */
+ 
+ 	if ((r = backend_authenticate(ret, prot, &mlist, userid,
+-- 
+1.7.1
+

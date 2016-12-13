@@ -1,0 +1,31 @@
+diff --git a/imap/sync_client.c b/imap/sync_client.c
+index 9a22b33..048c99f 100644
+--- a/imap/sync_client.c
++++ b/imap/sync_client.c
+@@ -1137,6 +1137,7 @@ static int mailbox_full_update(const char *mboxname)
+     modseq_t highestmodseq;
+     uint32_t uidvalidity;
+     uint32_t last_uid;
++    char *mailboxname;
+ 
+     kl = dlist_atom(NULL, cmd, mboxname);
+     sync_send_lookup(kl, sync_out);
+@@ -1252,7 +1253,8 @@ static int mailbox_full_update(const char *mboxname)
+  cleanup:
+ 
+     /* close the mailbox before sending any expunges
+-     * to avoid deadlocks */
++     * to avoid deadlocks, but save the mailbox name for logging */
++    mailboxname = xstrdup(mailbox->name);
+     mailbox_close(&mailbox);
+ 
+     /* only send expunge if we have some UIDs to expunge */
+@@ -1262,7 +1264,7 @@ static int mailbox_full_update(const char *mboxname)
+ 	r2 = sync_parse_response("EXPUNGE", sync_in, NULL);
+ 	if (r2) {
+ 	    syslog(LOG_ERR, "SYNCERROR: failed to expunge in cleanup %s",
+-		   mailbox->name);
++		   mailboxname);
+ 	}
+     }
+ 

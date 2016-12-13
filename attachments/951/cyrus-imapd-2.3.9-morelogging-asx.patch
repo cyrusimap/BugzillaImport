@@ -1,0 +1,52 @@
+diff -Naur cyrus-imapd-2.3.9.orig/imap/append.c cyrus-imapd-2.3.9/imap/append.c
+--- cyrus-imapd-2.3.9.orig/imap/append.c	2007-02-05 19:41:45.000000000 +0100
++++ cyrus-imapd-2.3.9/imap/append.c	2007-08-31 17:14:47.000000000 +0200
+@@ -654,6 +654,9 @@
+     /* ok, we've successfully added a message */
+     as->quota_used += message_index.size;
+ 
++    syslog(LOG_DEBUG, "append_fromstage: message %d added to %s",
++	   message_index.uid, mailbox->name );
++
+     return 0;
+ }
+ 
+diff -Naur cyrus-imapd-2.3.9.orig/imap/imapd.c cyrus-imapd-2.3.9/imap/imapd.c
+--- cyrus-imapd-2.3.9.orig/imap/imapd.c	2007-08-02 16:18:51.000000000 +0200
++++ cyrus-imapd-2.3.9/imap/imapd.c	2007-08-31 17:16:45.000000000 +0200
+@@ -3504,17 +3504,19 @@
+ 	if (!r) sync_log_mailbox(imapd_mailbox->name);
+     }
+ 
+-    index_closemailbox(imapd_mailbox);
+-    mailbox_close(imapd_mailbox);
+-    imapd_mailbox = 0;
+-
+     if (r) {
+ 	prot_printf(imapd_out, "%s NO %s\r\n", tag, error_message(r));
+     }
+     else {
+ 	prot_printf(imapd_out, "%s OK %s\r\n", tag,
+ 		    error_message(IMAP_OK_COMPLETED));
++	syslog(LOG_DEBUG, "cmd_expunge: user %s, mailbox %s, sequence %s",
++	       imapd_userid, imapd_mailbox->name, "''");
+     }
++
++    index_closemailbox(imapd_mailbox);
++    mailbox_close(imapd_mailbox);
++    imapd_mailbox = 0;
+ }    
+ 
+ /*
+diff -Naur cyrus-imapd-2.3.9.orig/imap/mailbox.c cyrus-imapd-2.3.9/imap/mailbox.c
+--- cyrus-imapd-2.3.9.orig/imap/mailbox.c	2007-07-20 16:21:57.000000000 +0200
++++ cyrus-imapd-2.3.9/imap/mailbox.c	2007-08-31 17:14:47.000000000 +0200
+@@ -2457,6 +2457,8 @@
+ 	*(fname->tail)++ = '/';
+ 	fname->len++;
+ 	for (msgno = 0; msgno < numdeleted; msgno++) {
++	    syslog(LOG_DEBUG, "mailbox_expunge: removing mail %s:%d",
++		   mailbox->name, deleted[msgno]);
+ 	    mailbox_message_get_fname(mailbox, deleted[msgno],
+ 				      fname->tail,
+ 				      sizeof(fname->buf) - fname->len);

@@ -1,0 +1,105 @@
+diff -ur cyrus-imapd-2.4.8/imap/append.c ../cyrus-imapd-2.4.8.modified/imap/append.c
+--- cyrus-imapd-2.4.8/imap/append.c	2011-04-13 16:35:22.000000000 +0200
++++ ../cyrus-imapd-2.4.8.modified/imap/append.c	2011-04-23 14:45:13.671147050 +0200
+@@ -163,7 +163,10 @@
+ 
+     as->mailbox = NULL;
+     r = mailbox_open_iwl(name, &as->mailbox);
+-    if (r) return r;
++    if (r) {
++     syslog(LOG_DEBUG, "append_setup: open mailbox failed %s", name);
++     return r;
++    }
+ 
+     as->myrights = cyrus_acl_myrights(auth_state, as->mailbox->acl);
+ 
+@@ -171,6 +174,12 @@
+ 	r = (as->myrights & ACL_LOOKUP) ?
+ 	  IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
+ 	mailbox_close(&as->mailbox);
++        if (r == IMAP_PERMISSION_DENIED ) { 
++	  syslog(LOG_DEBUG, "append_setup: aclcheck failed IMAP_PERMISSION_DENIED");
++        } else {
++	  syslog(LOG_DEBUG, "append_setup: aclcheck failed IMAP_MAILBOX_NONEXISTENT");
++	}
++        
+ 	return r;
+     }
+ 
+@@ -180,6 +189,7 @@
+ 	if (q.limit >= 0 && quotacheck >= 0 &&
+ 	    q.used + quotacheck > ((uquota_t) q.limit * QUOTA_UNITS)) {
+ 	    r = IMAP_QUOTA_EXCEEDED;
++            syslog(LOG_DEBUG, "append_setup: quota exceeded");
+ 	}
+     }
+     else if (r == IMAP_QUOTAROOT_NONEXISTENT) r = 0;
+@@ -199,6 +209,7 @@
+     r = mailbox_open_cache(as->mailbox);
+     if (r) {
+ 	mailbox_close(&as->mailbox);
++        syslog(LOG_DEBUG, "append_setup: could not open cachefile");
+ 	return r;
+     }
+ 
+diff -ur cyrus-imapd-2.4.8/imap/lmtpd.c ../cyrus-imapd-2.4.8.modified/imap/lmtpd.c
+--- cyrus-imapd-2.4.8/imap/lmtpd.c	2011-04-13 16:35:22.000000000 +0200
++++ ../cyrus-imapd-2.4.8.modified/imap/lmtpd.c	2011-04-23 15:10:53.244644764 +0200
+@@ -503,6 +503,10 @@
+     struct appendstate as;
+     unsigned long uid;
+     const char *notifier;
++    
++    syslog(LOG_DEBUG, "deliver_mailbox: user %s", user);
++    syslog(LOG_DEBUG, "deliver_mailbox: mailboxname %s", mailboxname);
++
+ 
+     r = append_setup(&as, mailboxname,
+ 		     authuser, authstate, acloverride ? 0 : ACL_POST, 
+@@ -701,14 +705,18 @@
+ 
+ 	tail = namebuf + strlen(namebuf);
+ 	if (mailboxname) {
+-	    strlcat(namebuf, ".", sizeof(namebuf));
+-	    strlcat(namebuf, mailboxname, sizeof(namebuf));
++	    if ( strncmp(mailboxname,namebuf,strlen(namebuf)) == 0 ) {
++	      strncpy(namebuf,mailboxname,strlen(mailboxname));
++            } else  {
++	      strlcat(namebuf, ".", sizeof(namebuf));
++	      strlcat(namebuf, mailboxname, sizeof(namebuf));
++            }
+ 
+ 	    ret2 = deliver_mailbox(md->f, mydata->content, mydata->stage,
+ 				   md->size, flag, nflags,
+ 				   mydata->authuser, mydata->authstate, md->id,
+ 				   username, mydata->notifyheader,
+-				   namebuf, quotaoverride, 0);
++				   namebuf, quotaoverride, 1);
+ 	}
+ 	if (ret2 == IMAP_MAILBOX_NONEXISTENT && mailboxname &&
+ 	    config_getswitch(IMAPOPT_LMTP_FUZZY_MAILBOX_MATCH) &&
+@@ -982,6 +990,24 @@
+     char namebuf[MAX_MAILBOX_BUFFER] = "";
+     int r = 0;
+ 
++
++    if (!user) {
++	syslog(LOG_DEBUG, "verify_user: user not set");
++    } else {
++	syslog(LOG_DEBUG, "verify_user: user %s",user);
++    }
++    if (!mailbox) {
++	syslog(LOG_DEBUG, "verify_user: mailbox not set");
++    } else {
++        syslog(LOG_DEBUG, "verify_user: mailbox %s",mailbox);
++    }
++    if ( domain && (strlen(domain) + 1 > sizeof(namebuf))) {
++	syslog(LOG_DEBUG, "verify_user: domain name longer than namebuf");
++    } else {
++	syslog(LOG_DEBUG, "verify_user: domain %s", domain);
++    }
++
++
+     if ((!user && !mailbox) ||
+ 	(domain && (strlen(domain) + 1 > sizeof(namebuf)))) {
+ 	r = IMAP_MAILBOX_NONEXISTENT;

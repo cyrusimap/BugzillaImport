@@ -1,0 +1,54 @@
+From 7f7034961dbf80a70dbba7a70f07a3bc6efba5dd Mon Sep 17 00:00:00 2001
+From: Philipp Gesang <philipp.gesang@intra2net.com>
+Date: Mon, 7 Apr 2014 10:53:52 +0200
+Subject: [PATCH 1/2] tls.c: add tls_honor_cipher_order config option to
+ override client cipher suite preferences
+
+Setting the `tls_honor_cipher_order' option makes Cyrus choose a cipher suite
+according to the order of `tls_cipher_list' instead of the client's cipher
+preferences.
+---
+ imap/tls.c      | 4 ++++
+ lib/imapoptions | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/imap/tls.c b/imap/tls.c
+index 64b67a6..fac6c6e 100644
+--- a/imap/tls.c
++++ b/imap/tls.c
+@@ -636,6 +636,7 @@ EXPORTED int     tls_init_serverengine(const char *ident,
+     const char   *s_cert_file;
+     const char   *s_key_file;
+     int    requirecert;
++    int    honor_cipher_order;
+     int    timeout;
+ 
+     if (tls_serverengine)
+@@ -671,6 +672,9 @@ EXPORTED int     tls_init_serverengine(const char *ident,
+ 	off |= SSL_OP_NO_SSLv2;
+ 	off |= SSL_OP_NO_SSLv3;
+     }
++    honor_cipher_order = config_getswitch(IMAPOPT_TLS_HONOR_CIPHER_ORDER);
++    if (honor_cipher_order)
++        off |= SSL_OP_CIPHER_SERVER_PREFERENCE;
+     SSL_CTX_set_options(s_ctx, off);
+     SSL_CTX_set_info_callback(s_ctx, apps_ssl_info_callback);
+ 
+diff --git a/lib/imapoptions b/lib/imapoptions
+index 2c477a6..ab2ee6b 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -1572,6 +1572,10 @@ product version in the capabilities */
+    for later reuse.  The maximum value is 1440 (24 hours), the
+    default.  A value of 0 will disable session caching. */
+ 
++{ "tls_honor_cipher_order", 0, SWITCH }
++/* Choose cipher suite according to the server's, not the client's
++   preferences as defined in tls_cipher_list. */
++
+ { "umask", "077", STRING }
+ /* The umask value used by various Cyrus IMAP programs. */
+ 
+-- 
+1.7.11.7
+

@@ -1,0 +1,69 @@
+From 505bdcf69e83efc0651eae034e5bd5fd554ff36e Mon Sep 17 00:00:00 2001
+From: Philipp Gesang <philipp.gesang@intra2net.com>
+Date: Mon, 7 Apr 2014 11:41:57 +0200
+Subject: [PATCH 2/2] tsl.c: add support for EC cryptography with OpenSSL
+ version 1.x
+
+Import patch by Chris Panayis from 2013-01-20:
+
+    https://lists.andrew.cmu.edu/pipermail/cyrus-devel/2013-January/002729.html
+
+NB: The `tls_ec' option is set to default to the P-256 NIST curve. This is the
+default used in OpenSSL's `s_server' tool. It ensures interoperability with
+MUAs that support only a limited set of curves, e.g. MS Outlook.
+---
+ imap/tls.c      | 15 ++++++++++++++-
+ lib/imapoptions |  4 ++++
+ 2 files changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/imap/tls.c b/imap/tls.c
+index fac6c6e..04c9fe3 100644
+--- a/imap/tls.c
++++ b/imap/tls.c
+@@ -635,6 +635,7 @@ EXPORTED int     tls_init_serverengine(const char *ident,
+     const char   *CAfile;
+     const char   *s_cert_file;
+     const char   *s_key_file;
++    const char   *ec;
+     int    requirecert;
+     int    honor_cipher_order;
+     int    timeout;
+@@ -706,7 +707,19 @@ EXPORTED int     tls_init_serverengine(const char *ident,
+ #if (OPENSSL_VERSION_NUMBER >= 0x0090800fL)
+     /* Load DH params for DHE-* key exchanges */
+     SSL_CTX_set_tmp_dh(s_ctx, load_dh_param(s_key_file, s_cert_file));
+-    /* FIXME: Load ECDH params for ECDHE suites when 0.9.9 is released */
++#endif
++
++#if (OPENSSL_VERSION_NUMBER >= 0x1000103fL)
++    ec = config_getstring(IMAPOPT_TLS_EC);
++    int openssl_nid = OBJ_sn2nid(ec);
++    if (openssl_nid != 0) {
++	EC_KEY *ecdh;
++	ecdh = EC_KEY_new_by_curve_name(openssl_nid);
++	if (ecdh != NULL) {
++	    SSL_CTX_set_tmp_ecdh(s_ctx, ecdh);
++	    EC_KEY_free(ecdh);
++	}
++    }
+ #endif
+ 
+     verify_depth = verifydepth;
+diff --git a/lib/imapoptions b/lib/imapoptions
+index ab2ee6b..bff3c98 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -1576,6 +1576,10 @@ product version in the capabilities */
+ /* Choose cipher suite according to the server's, not the client's
+    preferences as defined in tls_cipher_list. */
+ 
++{ "tls_ec", "prime256v1", STRING }
++/* Curve for use with EC cryptography; set to P-256, the default in OpenSSL's
++   s_server tool. For list of curves see: openssl ecparam -list_curves. */
++
+ { "umask", "077", STRING }
+ /* The umask value used by various Cyrus IMAP programs. */
+ 
+-- 
+1.7.11.7
+

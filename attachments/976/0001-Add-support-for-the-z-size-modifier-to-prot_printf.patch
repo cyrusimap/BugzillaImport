@@ -1,0 +1,574 @@
+From dbcb70c8942ff6b8972de0dc3498a0de4285eabe Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?G=C3=A1bor=20Gomb=C3=A1s?= <gombasg@sztaki.hu>
+Date: Tue, 8 Jan 2008 21:37:10 +0100
+Subject: [PATCH] Add support for the "z" size modifier to prot_printf()
+
+The "z" modifier means that the next operand is of type size_t, which
+may be different on 32 and 64-bit hosts. Use this modifier whenever
+the result of strlen() is passed to prot_printf().
+---
+ imap/imap_proxy.c     |    4 +-
+ imap/imapd.c          |   60 ++++++++++++++++++++++++------------------------
+ imap/mbdump.c         |    6 ++--
+ imap/mupdate-client.c |   12 +++++-----
+ imap/mupdate.c        |   10 ++++----
+ imap/saslclient.c     |    2 +-
+ imap/smmapd.c         |   10 ++++----
+ imap/sync_support.c   |    4 +-
+ imtest/imtest.c       |    2 +-
+ lib/prot.c            |   23 +++++++++++++++++-
+ timsieved/actions.c   |    2 +-
+ 11 files changed, 77 insertions(+), 58 deletions(-)
+
+diff --git a/imap/imap_proxy.c b/imap/imap_proxy.c
+index 06f6316..6ceedfb 100644
+--- a/imap/imap_proxy.c
++++ b/imap/imap_proxy.c
+@@ -864,7 +864,7 @@ void proxy_copy(const char *tag, char *sequence, char *name, int myrights,
+     }
+ 
+     /* start the append */
+-    prot_printf(s->out, "%s Append {%d+}\r\n%s", tag, strlen(name), name);
++    prot_printf(s->out, "%s Append {%zu+}\r\n%s", tag, strlen(name), name);
+     prot_printf(backend_current->out, "%s %s %s (Rfc822.peek)\r\n",
+ 		mytag, usinguid ? "Uid Fetch" : "Fetch", sequence);
+     for (/* each FETCH response */;;) {
+@@ -1058,7 +1058,7 @@ int proxy_catenate_url(struct backend *s, struct imapurl *url, FILE *f,
+ 
+     /* select the mailbox (read-only) */
+     proxy_gentag(mytag, sizeof(mytag));
+-    prot_printf(s->out, "%s Examine {%d+}\r\n%s\r\n",
++    prot_printf(s->out, "%s Examine {%zu+}\r\n%s\r\n",
+ 		mytag, strlen(url->mailbox), url->mailbox);
+     for (/* each examine response */;;) {
+ 	/* read a line */
+diff --git a/imap/imapd.c b/imap/imapd.c
+index fdae799..6dbad17 100644
+--- a/imap/imapd.c
++++ b/imap/imapd.c
+@@ -2999,11 +2999,11 @@ void cmd_append(char *tag, char *name, const char *cur_name)
+ 	    int is_active = 1;
+ 	    s->context = (void*) &is_active;
+ 	    if (imapd_mailbox) {
+-		prot_printf(s->out, "%s Localappend {%d+}\r\n%s {%d+}\r\n%s ",
++		prot_printf(s->out, "%s Localappend {%zu+}\r\n%s {%zu+}\r\n%s ",
+ 			    tag, strlen(name), name,
+ 			    strlen(imapd_mailbox->name), imapd_mailbox->name);
+ 	    } else {
+-		prot_printf(s->out, "%s Localappend {%d+}\r\n%s {%d+}\r\n%s ",
++		prot_printf(s->out, "%s Localappend {%zu+}\r\n%s {%d+}\r\n%s ",
+ 			    tag, strlen(name), name, 0, "");
+ 	    }
+ 	    if (!(r = pipe_command(s, 16384))) {
+@@ -3367,7 +3367,7 @@ void cmd_select(char *tag, char *cmd, char *name)
+ 	    return;
+ 	}
+ 
+-	prot_printf(backend_current->out, "%s %s {%d+}\r\n%s%s\r\n", tag, cmd, 
++	prot_printf(backend_current->out, "%s %s {%zu+}\r\n%s%s\r\n", tag, cmd, 
+ 		    strlen(name), name,
+ 		    imapd_condstore_client ? " (CONDSTORE)" : "");
+ 	switch (pipe_including_tag(backend_current, tag, 0)) {
+@@ -4694,7 +4694,7 @@ void cmd_copy(char *tag, char *sequence, char *name, int usinguid)
+ 	/* xxx  end of separate proxy-only code */
+ 
+ 	/* simply send the COPY to the backend */
+-	prot_printf(backend_current->out, "%s %s %s {%d+}\r\n%s\r\n",
++	prot_printf(backend_current->out, "%s %s %s {%zu+}\r\n%s\r\n",
+ 		    tag, usinguid ? "UID Copy" : "Copy",
+ 		    sequence, strlen(name), name);
+ 	pipe_including_tag(backend_current, tag, 0);
+@@ -4725,7 +4725,7 @@ void cmd_copy(char *tag, char *sequence, char *name, int usinguid)
+ 	if (r) goto done;
+ 
+ 	/* start the append */
+-	prot_printf(s->out, "%s Append {%d+}\r\n%s", tag, strlen(name), name);
++	prot_printf(s->out, "%s Append {%zu+}\r\n%s", tag, strlen(name), name);
+ 
+ 	/* append the messages */
+ 	r = index_copy_remote(imapd_mailbox, sequence, usinguid, s->out);
+@@ -4911,11 +4911,11 @@ void cmd_create(char *tag, char *name, char *partition, int localonly)
+ 		if (partition) {
+ 		    /* Send partition as an atom, since its all we accept */
+ 		    prot_printf(s->out,
+-				"%s CREATE {%d+}\r\n%s %s\r\n", 
++				"%s CREATE {%zu+}\r\n%s %s\r\n", 
+ 				tag, strlen(name), name, partition);
+ 		}
+ 		else
+-		    prot_printf(s->out, "%s CREATE {%d+}\r\n%s\r\n", 
++		    prot_printf(s->out, "%s CREATE {%zu+}\r\n%s\r\n", 
+ 				tag, strlen(name), name);
+ 		res = pipe_until_tag(s, tag, 0);
+ 	
+@@ -5064,7 +5064,7 @@ void cmd_delete(char *tag, char *name, int localonly, int force)
+ 	if (!s) r = IMAP_SERVER_UNAVAILABLE;
+ 
+ 	if (!r) {
+-	    prot_printf(s->out, "%s DELETE {%d+}\r\n%s\r\n", 
++	    prot_printf(s->out, "%s DELETE {%zu+}\r\n%s\r\n", 
+ 			tag, strlen(name), name);
+ 	    res = pipe_until_tag(s, tag, 0);
+ 
+@@ -5319,7 +5319,7 @@ void cmd_rename(char *tag, char *oldname, char *newname, char *partition)
+ 		    /* Cross Server */
+ 		    /* <tag> XFER <name> <dest server> <dest partition> */
+ 		    prot_printf(s->out,
+-				"%s XFER {%d+}\r\n%s {%d+}\r\n%s {%d+}\r\n%s\r\n", 
++				"%s XFER {%zu+}\r\n%s {%zu+}\r\n%s {%zu+}\r\n%s\r\n", 
+ 				tag, strlen(oldname), oldname,
+ 				strlen(newserver), newserver,
+ 				strlen(destpart), destpart);
+@@ -5327,7 +5327,7 @@ void cmd_rename(char *tag, char *oldname, char *newname, char *partition)
+ 	    
+ 	    } else {
+ 		/* <tag> XFER <name> <dest server> */
+-		prot_printf(s->out, "%s XFER {%d+}\r\n%s {%d+}\r\n%s\r\n", 
++		prot_printf(s->out, "%s XFER {%zu+}\r\n%s {%zu+}\r\n%s\r\n", 
+ 			    tag, strlen(oldname), oldname,
+ 			    strlen(partition), partition);
+ 	    }
+@@ -5346,7 +5346,7 @@ void cmd_rename(char *tag, char *oldname, char *newname, char *partition)
+ 		/* do MUPDATE create operations for new mailbox */
+ 	    }
+ 
+-	    prot_printf(s->out, "%s RENAME {%d+}\r\n%s {%d+}\r\n%s\r\n", 
++	    prot_printf(s->out, "%s RENAME {%zu+}\r\n%s {%zu+}\r\n%s\r\n", 
+ 			tag, strlen(oldname), oldname,
+ 			strlen(newname), newname);
+ 	    res = pipe_until_tag(s, tag, 0);
+@@ -5706,7 +5706,7 @@ void cmd_find(char *tag, char *namespace, char *pattern)
+ 	if (backend_inbox || (backend_inbox = proxy_findinboxserver())) {
+ 	    /* remote INBOX */
+ 	    prot_printf(backend_inbox->out, 
+-			"%s Lsub \"\" {%d+}\r\n%s\r\n",
++			"%s Lsub \"\" {%zu+}\r\n%s\r\n",
+ 			tag, strlen(pattern), pattern);
+ 	    pipe_lsub(backend_inbox, tag, 0, "MAILBOX");
+ 	} else {
+@@ -5801,7 +5801,7 @@ void cmd_list(char *tag, int listopts, char *reference, char *pattern)
+ 	    prot_printf(backend_inbox->out, "%s Lsub ", tag);
+ 	}
+ 	prot_printf(backend_inbox->out, 
+-		    "{%d+}\r\n%s {%d+}\r\n%s\r\n",
++		    "{%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 		    strlen(reference), reference,
+ 		    strlen(pattern), pattern);
+ 	pipe_lsub(backend_inbox, tag, 0, (listopts & LIST_LSUB) ? "LSUB" : "LIST");
+@@ -5906,12 +5906,12 @@ void cmd_changesub(char *tag, char *namespace, char *name, int add)
+ 	if (!r) {
+ 	    if (namespace) {
+ 		prot_printf(backend_inbox->out, 
+-			    "%s %s {%d+}\r\n%s {%d+}\r\n%s\r\n", 
++			    "%s %s {%zu+}\r\n%s {%zu+}\r\n%s\r\n", 
+ 			    tag, cmd, 
+ 			    strlen(namespace), namespace,
+ 			    strlen(name), name);
+ 	    } else {
+-		prot_printf(backend_inbox->out, "%s %s {%d+}\r\n%s\r\n", 
++		prot_printf(backend_inbox->out, "%s %s {%zu+}\r\n%s\r\n", 
+ 			    tag, cmd, 
+ 			    strlen(name), name);
+ 	    }
+@@ -6210,13 +6210,13 @@ void cmd_setacl(char *tag, const char *name,
+ 	} else if (!r) {
+ 	    if (rights) {
+ 		prot_printf(s->out, 
+-			    "%s Setacl {%d+}\r\n%s {%d+}\r\n%s {%d+}\r\n%s\r\n",
++			    "%s Setacl {%zu+}\r\n%s {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 			    tag, strlen(name), name,
+ 			    strlen(identifier), identifier,
+ 			    strlen(rights), rights);
+ 	    } else {
+ 		prot_printf(s->out, 
+-			    "%s Deleteacl {%d+}\r\n%s {%d+}\r\n%s\r\n",
++			    "%s Deleteacl {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 			    tag, strlen(name), name,
+ 			    strlen(identifier), identifier);
+ 	    }
+@@ -6399,7 +6399,7 @@ void cmd_getquotaroot(const char *tag, const char *name)
+ 	    imapd_check(s, 0, 0);
+ 
+ 	    if (!r) {
+-		prot_printf(s->out, "%s Getquotaroot {%d+}\r\n%s\r\n",
++		prot_printf(s->out, "%s Getquotaroot {%zu+}\r\n%s\r\n",
+ 			    tag, strlen(name), name);
+ 		pipe_including_tag(s, tag, 0);
+ 	    } else {
+@@ -6729,7 +6729,7 @@ void cmd_status(char *tag, char *name)
+ 	    imapd_check(s, 0, 0);
+ 
+ 	    if (!r) {
+-		prot_printf(s->out, "%s Status {%d+}\r\n%s ", tag,
++		prot_printf(s->out, "%s Status {%zu+}\r\n%s ", tag,
+ 			    strlen(name), name);
+ 		if (!pipe_command(s, 65536)) {
+ 		    pipe_including_tag(s, tag, 0);
+@@ -7922,7 +7922,7 @@ static int trashacl(struct protstream *pin, struct protstream *pout,
+     memset(&tmp, 0, sizeof(struct buf));
+     memset(&user, 0, sizeof(struct buf));
+ 
+-    prot_printf(pout, "ACL0 GETACL {%d+}\r\n%s\r\n",
++    prot_printf(pout, "ACL0 GETACL {%zu+}\r\n%s\r\n",
+ 		strlen(mailbox), mailbox);
+ 
+     while(1) {
+@@ -7973,7 +7973,7 @@ static int trashacl(struct protstream *pin, struct protstream *pout,
+ 
+ 		snprintf(tagbuf, sizeof(tagbuf), "ACL%d", ++i);
+ 		
+-		prot_printf(pout, "%s DELETEACL {%d+}\r\n%s {%d+}\r\n%s\r\n",
++		prot_printf(pout, "%s DELETEACL {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 			    tagbuf, strlen(mailbox), mailbox,
+ 			    strlen(user.s), user.s);
+ 		if(c == '\r') {
+@@ -8050,7 +8050,7 @@ static int dumpacl(struct protstream *pin, struct protstream *pout,
+ 
+ 	snprintf(tag, sizeof(tag), "SACL%d", tagnum++);
+ 	
+-	prot_printf(pout, "%s SETACL {%d+}\r\n%s {%d+}\r\n%s {%d+}\r\n%s\r\n",
++	prot_printf(pout, "%s SETACL {%d+}\r\n%s {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 		    tag,
+ 		    mailboxlen, mailbox,
+ 		    strlen(acl), acl,
+@@ -8169,10 +8169,10 @@ static int do_xfer_single(char *toserver, char *topart,
+     if(!r) {
+ 	if(topart) {
+ 	    /* need to send partition as an atom */
+-	    prot_printf(be->out, "LC1 LOCALCREATE {%d+}\r\n%s %s\r\n",
++	    prot_printf(be->out, "LC1 LOCALCREATE {%zu+}\r\n%s %s\r\n",
+ 			strlen(name), name, topart);
+ 	} else {
+-	    prot_printf(be->out, "LC1 LOCALCREATE {%d+}\r\n%s\r\n",
++	    prot_printf(be->out, "LC1 LOCALCREATE {%zu+}\r\n%s\r\n",
+ 			strlen(name), name);
+ 	}
+ 	r = getresult(be->in, "LC1");
+@@ -8207,7 +8207,7 @@ static int do_xfer_single(char *toserver, char *topart,
+     if(!r) {
+ 	backout_mupdate = 1;
+ 
+-	prot_printf(be->out, "D01 UNDUMP {%d+}\r\n%s ", strlen(name), name);
++	prot_printf(be->out, "D01 UNDUMP {%zu+}\r\n%s ", strlen(name), name);
+ 
+ 	r = dump_mailbox(NULL, mailboxname, path, mpath, acl,
+ 			 0, be->in, be->out, imapd_authstate);
+@@ -8253,7 +8253,7 @@ static int do_xfer_single(char *toserver, char *topart,
+ 	/* 6.5) Kick remote server to correct mupdate entry */
+ 	/* Note that we don't really care if this succeeds or not */
+ 	if (mupdate_h) {
+-	    prot_printf(be->out, "MP1 MUPDATEPUSH {%d+}\r\n%s\r\n",
++	    prot_printf(be->out, "MP1 MUPDATEPUSH {%zu+}\r\n%s\r\n",
+ 			strlen(name), name);
+ 	    rerr = getresult(be->in, "MP1");
+ 	    if(rerr) {
+@@ -8317,7 +8317,7 @@ done:
+     }
+     if(r && backout_remotebox) {
+ 	rerr = 0;
+-	prot_printf(be->out, "LD1 LOCALDELETE {%d+}\r\n%s\r\n",
++	prot_printf(be->out, "LD1 LOCALDELETE {%zu+}\r\n%s\r\n",
+ 		    strlen(name), name);
+ 	rerr = getresult(be->in, "LD1");
+  	if(rerr) {
+@@ -8520,7 +8520,7 @@ void cmd_xfer(char *tag, char *name, char *toserver, char *topart)
+ 	    if(!r) {
+ 		/* note use of + to force the setting of a nonexistant
+ 		 * quotaroot */
+-		prot_printf(be->out, "Q01 SETQUOTA {%d+}\r\n" \
++		prot_printf(be->out, "Q01 SETQUOTA {%zu+}\r\n" \
+ 			    "+%s (STORAGE %d)\r\n",
+ 			    strlen(name)+1, name, quota.limit);
+ 		r = getresult(be->in, "Q01");
+@@ -9073,7 +9073,7 @@ const char *s;
+ 
+     /* if it's too long, literal it */
+     if (*p || len >= 1024) {
+-	prot_printf(imapd_out, "{%u}\r\n%s", strlen(s), s);
++	prot_printf(imapd_out, "{%zu}\r\n%s", strlen(s), s);
+     } else {
+ 	prot_printf(imapd_out, "\"%s\"", s);
+     }
+@@ -9103,7 +9103,7 @@ const char *s;
+ 
+     /* if it's too long, literal it */
+     if (*p || len >= 1024) {
+-	prot_printf(imapd_out, "{%u}\r\n%s", strlen(s), s);
++	prot_printf(imapd_out, "{%zu}\r\n%s", strlen(s), s);
+     } else {
+ 	prot_printf(imapd_out, "\"%s\"", s);
+     }
+diff --git a/imap/mbdump.c b/imap/mbdump.c
+index 418b910..379a3c5 100644
+--- a/imap/mbdump.c
++++ b/imap/mbdump.c
+@@ -134,7 +134,7 @@ static int dump_annotations(const char *mailbox __attribute__((unused)),
+     /* Transfer all attributes for this annotation, don't transfer size
+      * separately since that can be implicitly determined */
+     prot_printf(ctx->pout,
+-		" {%ld%s}\r\nA-%s%s (%ld {%d%s}\r\n%s {%d%s}\r\n%s)",
++		" {%ld%s}\r\nA-%s%s (%ld {%zu%s}\r\n%s {%zu%s}\r\n%s)",
+ 		ename_size, (!ctx->tag ? "+" : ""),
+ 		userid, entry,
+ 		attrib->modifiedsince,
+@@ -178,7 +178,7 @@ static int dump_file(int first, int sync,
+ 
+     /* send: name, size, and contents */
+     if (first) {
+-	prot_printf(pout, " {%d}\r\n", strlen(ftag));
++	prot_printf(pout, " {%zu}\r\n", strlen(ftag));
+ 
+ 	if (sync) {
+ 	    /* synchronize */
+@@ -194,7 +194,7 @@ static int dump_file(int first, int sync,
+ 	prot_printf(pout, "%s {%lu%s}\r\n",
+ 		    ftag, len, (sync ? "+" : ""));
+     } else {
+-	prot_printf(pout, " {%d%s}\r\n%s {%lu%s}\r\n",
++	prot_printf(pout, " {%zu%s}\r\n%s {%lu%s}\r\n",
+ 		    strlen(ftag), (sync ? "+" : ""),
+ 		    ftag, len, (sync ? "+" : ""));
+     }
+diff --git a/imap/mupdate-client.c b/imap/mupdate-client.c
+index 25afcd7..ff671ca 100644
+--- a/imap/mupdate-client.c
++++ b/imap/mupdate-client.c
+@@ -181,7 +181,7 @@ int mupdate_activate(mupdate_handle *handle,
+     }
+ 
+     prot_printf(handle->conn->out,
+-		"X%u ACTIVATE {%d+}\r\n%s {%d+}\r\n%s {%d+}\r\n%s\r\n", 
++		"X%u ACTIVATE {%zu+}\r\n%s {%zu+}\r\n%s {%zu+}\r\n%s\r\n", 
+ 		handle->tagn++, strlen(mailbox), mailbox, 
+ 		strlen(server), server, strlen(acl), acl);
+ 
+@@ -213,7 +213,7 @@ int mupdate_reserve(mupdate_handle *handle,
+     }
+ 
+     prot_printf(handle->conn->out,
+-		"X%u RESERVE {%d+}\r\n%s {%d+}\r\n%s\r\n",
++		"X%u RESERVE {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 		handle->tagn++, strlen(mailbox), mailbox, 
+ 		strlen(server), server);
+ 
+@@ -245,7 +245,7 @@ int mupdate_deactivate(mupdate_handle *handle,
+     }
+ 
+     prot_printf(handle->conn->out,
+-		"X%u DEACTIVATE {%d+}\r\n%s {%d+}\r\n%s\r\n",
++		"X%u DEACTIVATE {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 		handle->tagn++, strlen(mailbox), mailbox, 
+ 		strlen(server), server);
+ 
+@@ -270,7 +270,7 @@ int mupdate_delete(mupdate_handle *handle,
+     if (!handle->saslcompleted) return MUPDATE_NOAUTH;
+ 
+     prot_printf(handle->conn->out,
+-		"X%u DELETE {%d+}\r\n%s\r\n", handle->tagn++, 
++		"X%u DELETE {%zu+}\r\n%s\r\n", handle->tagn++, 
+ 		strlen(mailbox), mailbox);
+ 
+     ret = mupdate_scarf(handle, mupdate_scarf_one, NULL, 1, &response);
+@@ -339,7 +339,7 @@ int mupdate_find(mupdate_handle *handle, const char *mailbox,
+     if(!handle || !mailbox || !target) return MUPDATE_BADPARAM;
+ 
+     prot_printf(handle->conn->out,
+-		"X%u FIND {%d+}\r\n%s\r\n", handle->tagn++, 
++		"X%u FIND {%zu+}\r\n%s\r\n", handle->tagn++, 
+ 		strlen(mailbox), mailbox);
+ 
+     memset(&(handle->mailboxdata_buf), 0, sizeof(handle->mailboxdata_buf));
+@@ -372,7 +372,7 @@ int mupdate_list(mupdate_handle *handle, mupdate_callback callback,
+ 
+     if(prefix) {
+ 	prot_printf(handle->conn->out,
+-		    "X%u LIST {%d+}\r\n%s\r\n", handle->tagn++,
++		    "X%u LIST {%zu+}\r\n%s\r\n", handle->tagn++,
+ 		    strlen(prefix), prefix);
+     } else {
+ 	prot_printf(handle->conn->out,
+diff --git a/imap/mupdate.c b/imap/mupdate.c
+index 721e8f7..a06c89f 100644
+--- a/imap/mupdate.c
++++ b/imap/mupdate.c
+@@ -1711,19 +1711,19 @@ void cmd_find(struct conn *C, const char *tag, const char *mailbox,
+     pthread_mutex_unlock(&mailboxes_mutex); /* UNLOCK */
+ 
+     if (m && m->t == SET_ACTIVE) {
+-	prot_printf(C->pout, "%s MAILBOX {%d+}\r\n%s {%d+}\r\n%s {%d+}\r\n%s\r\n",
++	prot_printf(C->pout, "%s MAILBOX {%zu+}\r\n%s {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 		    tag,
+ 		    strlen(m->mailbox), m->mailbox,
+ 		    strlen(m->server), m->server,
+ 		    strlen(m->acl), m->acl);
+     } else if (m && m->t == SET_RESERVE) {
+-	prot_printf(C->pout, "%s RESERVE {%d+}\r\n%s {%d+}\r\n%s\r\n",
++	prot_printf(C->pout, "%s RESERVE {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 		    tag,
+ 		    strlen(m->mailbox), m->mailbox,
+ 		    strlen(m->server), m->server);
+     } else if (send_delete) {
+ 	/* not found, if needed, send a delete */
+-	prot_printf(C->pout, "%s DELETE {%d+}\r\n%s\r\n",
++	prot_printf(C->pout, "%s DELETE {%zu+}\r\n%s\r\n",
+ 		    tag, strlen(mailbox), mailbox);
+     }
+     
+@@ -1766,14 +1766,14 @@ static int sendupdate(char *name,
+ 	    switch (m->t) {
+ 	    case SET_ACTIVE:
+ 		prot_printf(C->pout,
+-			    "%s MAILBOX {%d+}\r\n%s {%d+}\r\n%s {%d+}\r\n%s\r\n",
++			    "%s MAILBOX {%zu+}\r\n%s {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 			    C->streaming,
+ 			    strlen(m->mailbox), m->mailbox,
+ 			    strlen(m->server), m->server,
+ 			    strlen(m->acl), m->acl);
+ 		break;
+ 	    case SET_RESERVE:
+-		prot_printf(C->pout, "%s RESERVE {%d+}\r\n%s {%d+}\r\n%s\r\n",
++		prot_printf(C->pout, "%s RESERVE {%zu+}\r\n%s {%zu+}\r\n%s\r\n",
+ 			    C->streaming,
+ 			    strlen(m->mailbox), m->mailbox,
+ 			    strlen(m->server), m->server);
+diff --git a/imap/saslclient.c b/imap/saslclient.c
+index e35f166..c502d7a 100644
+--- a/imap/saslclient.c
++++ b/imap/saslclient.c
+@@ -251,7 +251,7 @@ int saslclient(sasl_conn_t *conn, struct sasl_cmd_t *sasl_cmd,
+ 
+ 	/* send to server */
+ 	if (sendliteral) {
+-	    prot_printf(pout, "{%d+}\r\n", strlen(base64));
++	    prot_printf(pout, "{%zu+}\r\n", strlen(base64));
+ 	    prot_flush(pout);
+ 	}
+ 	prot_printf(pout, "%s", base64);
+diff --git a/imap/smmapd.c b/imap/smmapd.c
+index 2938e21..fead7fc 100644
+--- a/imap/smmapd.c
++++ b/imap/smmapd.c
+@@ -448,17 +448,17 @@ int begin_handling(void)
+             break;
+ 
+ 	case 0:
+-	    prot_printf(map_out, "%d:OK %s,", 3+strlen(key), key);
++	    prot_printf(map_out, "%zu:OK %s,", 3+strlen(key), key);
+ 	    break;
+ 
+ 	case IMAP_MAILBOX_NONEXISTENT:
+-	    prot_printf(map_out, "%d:NOTFOUND %s,",
++	    prot_printf(map_out, "%zu:NOTFOUND %s,",
+ 			9+strlen(error_message(r)), error_message(r));
+ 	    break;
+ 
+ 	case IMAP_QUOTA_EXCEEDED:
+ 	    if (!config_getswitch(IMAPOPT_LMTP_OVER_QUOTA_PERM_FAILURE)) {
+-		prot_printf(map_out, "%d:TEMP %s,", strlen(error_message(r))+5,
++		prot_printf(map_out, "%zu:TEMP %s,", strlen(error_message(r))+5,
+ 			    error_message(r));
+ 		break;
+ 	    }
+@@ -466,11 +466,11 @@ int begin_handling(void)
+ 
+ 	default:
+ 	    if (errstring)
+-		prot_printf(map_out, "%d:PERM %s (%s),",
++		prot_printf(map_out, "%zu:PERM %s (%s),",
+ 			    5+strlen(error_message(r))+3+strlen(errstring),
+ 			    error_message(r), errstring);
+ 	    else
+-		prot_printf(map_out, "%d:PERM %s,",
++		prot_printf(map_out, "%zu:PERM %s,",
+ 			    5+strlen(error_message(r)), error_message(r));
+ 	    break;
+ 	}
+diff --git a/imap/sync_support.c b/imap/sync_support.c
+index b3bc329..2413b30 100644
+--- a/imap/sync_support.c
++++ b/imap/sync_support.c
+@@ -187,7 +187,7 @@ void sync_printstring(struct protstream *out, const char *s)
+ 
+     /* if it's too long, literal it */
+     if (*p || len >= 1024) {
+-	prot_printf(out, "{%u+}\r\n%s", strlen(s), s);
++	prot_printf(out, "{%zu+}\r\n%s", strlen(s), s);
+     } else {
+ 	prot_printf(out, "\"%s\"", s);
+     }
+@@ -220,7 +220,7 @@ void sync_printastring(struct protstream *out, const char *s)
+ 
+     /* if it's too long, literal it */
+     if (*p || len >= 1024) {
+-	prot_printf(out, "{%u+}\r\n%s", strlen(s), s);
++	prot_printf(out, "{%zu+}\r\n%s", strlen(s), s);
+     } else {
+ 	prot_printf(out, "\"%s\"", s);
+     }
+diff --git a/imtest/imtest.c b/imtest/imtest.c
+index d1cb6b6..b23f946 100644
+--- a/imtest/imtest.c
++++ b/imtest/imtest.c
+@@ -1780,7 +1780,7 @@ static int append_msg(char *mbox, int size)
+ {
+     int lup;
+     
+-    prot_printf(pout,"A003 APPEND %s (\\Seen) {%u}\r\n",mbox,size+strlen(HEADERS));
++    prot_printf(pout,"A003 APPEND %s (\\Seen) {%zu}\r\n",mbox,size+strlen(HEADERS));
+     /* do normal header foo */
+     prot_printf(pout,HEADERS);
+     
+diff --git a/lib/prot.c b/lib/prot.c
+index 83631e5..393725a 100644
+--- a/lib/prot.c
++++ b/lib/prot.c
+@@ -876,8 +876,8 @@ int prot_write(struct protstream *s, const char *buf, unsigned len)
+ 
+ /*
+  * Stripped-down version of printf() that works on protection streams
+- * Only understands '%lld', '%llu', '%ld', '%lu', '%d', %u', '%s',
+- * '%c', and '%%' in the format string.
++ * Only understands '%lld', '%llu', '%ld', '%lu', '%zd', '%zu',
++ * '%d', %u', '%s', '%c', and '%%' in the format string.
+  */
+ int prot_printf(struct protstream *s, const char *fmt, ...)
+ {
+@@ -943,6 +943,25 @@ int prot_printf(struct protstream *s, const char *fmt, ...)
+ 	    }
+ 	    break;
+ 
++	case 'z':
++	    switch (*++percent) {
++	    case 'd':
++		l = va_arg(pvar, ssize_t);
++		snprintf(buf, sizeof(buf), "%ld", l);
++		prot_write(s, buf, strlen(buf));
++		break;
++
++	    case 'u':
++		ul = va_arg(pvar, size_t);
++		snprintf(buf, sizeof(buf), "%lu", ul);
++		prot_write(s, buf, strlen(buf));
++		break;
++
++	    default:
++		abort();
++	    }
++	    break;
++
+ 	case 'd':
+ 	    i = va_arg(pvar, int);
+ 	    snprintf(buf, sizeof(buf), "%d", i);
+diff --git a/timsieved/actions.c b/timsieved/actions.c
+index 2996c9e..5070887 100644
+--- a/timsieved/actions.c
++++ b/timsieved/actions.c
+@@ -373,7 +373,7 @@ int putscript(struct protstream *conn, mystring_t *name, mystring_t *data,
+ 
+   if (result != TIMSIEVE_OK) {
+       if (errstr && *errstr) { 
+-	  prot_printf(conn, "NO {%d}\r\n%s\r\n", strlen(errstr), errstr);
++	  prot_printf(conn, "NO {%zu}\r\n%s\r\n", strlen(errstr), errstr);
+ 	  free(errstr);
+       } else {
+ 	  if (errstr) free(errstr);

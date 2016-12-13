@@ -1,0 +1,201 @@
+Index: doc/install.html
+===================================================================
+RCS file: /cvs/src/sasl/doc/install.html,v
+retrieving revision 1.17
+diff -u -r1.17 install.html
+--- doc/install.html	7 Jan 2004 19:11:19 -0000	1.17
++++ doc/install.html	19 Mar 2004 18:49:39 -0000
+@@ -74,7 +74,7 @@
+   </li>
+   </ul></li>
+ <li>If you are using an auxprop plugin, will you be using SASLdb (and
+-if so, Berkeley DB [recommended], GDBM, or NDBM?) or an SQL backend
++if so, Berkeley DB [recommended], GDBM, or NDBM?), LDAP or an SQL backend
+ (Postgres? MySQL?).</li>
+ <li>If you are using saslauthd, what module will you be using?  LDAP?
+ Kerberos?  PAM?</li>
+@@ -105,6 +105,10 @@
+ building and using SASL.  Currently we support <a href=http://postgresql.org>
+ PostgreSQL</a> v7.2 (or higher) and <a href=http://mysql.org>MySQL</a>.
+ 
++<p>If you are using LDAPDB, you'll need SASL enabled OpenLDAP libraries.  <a
++href="http://www.openldap.org">OpenLDAP</a> 2.1.27 (or higher) or 2.2.6 (or
++higher) is support.</p>
++
+ <p>For Kerberos support, you'll need the kerberos libraries.  At CMU, the
+ version we use comes from <a href="http://www.pdc.kth.se/kth-krb/">here</a>.
+ 
+@@ -139,10 +143,19 @@
+ <tt>--disable-krb4</tt>, <tt>--disable-gssapi</tt>,
+ <tt>--disable-plain</tt>, and <tt>--disable-anon</tt> respecively.
+ 
+-<p>If you are using an SQL auxprop plugin, you may want to specify one
+-or more of <tt>--enable-sql</tt>, <tt>--with-mysql=PATH</tt>, and
+-<tt>--with-pgsql=PATH</tt>, note that PATH in the later two should be
+-replaced with the path where you installed the necessary client libraries.
++<p>If you are using an SQL auxprop plugin, you may want to specify one or more
++of <tt>--enable-sql</tt>, <tt>--with-mysql=PATH</tt>, and
++<tt>--with-pgsql=PATH</tt>, note that PATH in the later two should be replaced
++with the path where you installed the necessary client libraries.
++
++<p>If you are using LDAPDB auxprop plugin, you will need to specify
++<tt>--enable-ldapdb</tt> and <tt>--with-ldap=PATH</tt>.  <b>Warning:</b> LDAPDB
++auxprop plugin (and LDAP enabled saslauthd) introduces a circular dependency
++between OpenLDAP and SASL.  I.e., you must have OpenLDAP already built when
++building LDAPDB in SASL.  In order for LDAPDB to work at runtime, you must have
++OpenLDAP already built with SASL support. One way to solve this issue is to
++build Cyrus SASL first without ldap support, then build OpenLDAP, and then come
++back to SASL and build LDAPDB.</p>
+ 
+ <p>Given the myriad of ways that Berkeley DB can be installed on a system,
+ people useing it may want to look at the <tt>--with-bdb-libdir</tt> and
+Index: doc/options.html
+===================================================================
+RCS file: /cvs/src/sasl/doc/options.html,v
+retrieving revision 1.28
+diff -u -r1.28 options.html
+--- doc/options.html	7 Jan 2004 16:35:07 -0000	1.28
++++ doc/options.html	19 Mar 2004 18:50:09 -0000
+@@ -45,6 +45,44 @@
+ file</TD><TD><tt>/etc/krb5.keytab</tt> (system dependant)</TD>
+ </TR>
+ <TR>
++<TD>ldapdb_uri</TD><TD>LDAPDB plugin</TD>
++<TD>ldap server uri, you can specify a space-separated list of URIs - 
++ldapi:// or ldaps://ldap1/ ldaps://ldap2/</TD>
++<TD>none</TD>
++</TR>
++<TR>
++<TD>ldapdb_id</TD><TD>LDAPDB plugin</TD>
++<TD>ldap SASL authentication id</TD>
++<TD>none</TD>
++</TR>
++<TR>
++<TD>ldapdb_mech</TD><TD>LDAPDB plugin</TD>
++<TD>ldap SASL mechanism for authentication</TD>
++<TD>none</TD>
++</TR>
++<TR>
++<TD>ldapdb_pw</TD><TD>LDAPDB plugin</TD>
++<TD>ldap password for SASL authentication id</TD>
++<TD>none</TD>
++</TR>
++<TR>
++<TD>ldapdb_rc</TD><TD>LDAPDB plugin</TD>
++<TD>The filename specified here will be put into the server's LDAPRC
++environment variable, and libldap-specific config options may be set
++in that ldaprc file.  The main purpose behind this option is to allow
++a client TLS certificate to be configured, so that SASL/EXTERNAL may
++be used between the SASL server and the LDAP server. This is the most
++optimal way to use this plugin when the servers are on separate machines.</TD>
++<TD>none</TD>
++</TR>
++<TR>
++<TD>ldapdb_starttls</TD><TD>LDAPDB plugin</TD>
++<TD>Use StartTLS.  This option may be set to 'try' or 'demand'.  
++When set to "try" any failure in StartTLS is ignored. 
++When set to "demand" then any failure aborts the connection.</TD>
++<TD>none</TD>
++</TR>
++<TR>
+ <TD>log_level</TD><TD>SASL Library</TD>
+ <TD><b>Numeric</b> Logging Level (see <TT>SASL_LOG_*</TT> in <tt>sasl.h</tt>
+ for values and descriptions</TD>
+@@ -234,6 +272,65 @@
+      <tt>SELECT password FROM auth WHERE username = '%u'</tt>
+ </pre>
+ is a valid value for <tt>sql_select</tt>.
++
++<h2>Notes on LDAPDB auxprop options</h2>
++
++<p>
++</p>
++
++<p>Unlike other LDAP-enabled plugins for other services that are common
++on the web, this plugin does not require you to configure DN search
++patterns to map usernames to LDAP DNs. This plugin requires SASL name
++mapping to be configured on the target slapd. This approach keeps the
++LDAP-specific configuration details in one place, the slapd.conf, and
++makes the configuration of remote services much simpler.</p>
++
++<p>This plugin is not for use with slapd itself. When OpenLDAP is
++built with SASL support, slapd uses its own internal auxprop module.
++By default, without configuring anything else, slapd will fail to load
++the ldapdb module when it's present. This is as it should be. If you
++don't like the "auxpropfunc: error -7" message that is sent to syslog
++by slapd, you can stop it by creating /usr/lib/sasl2/slapd.conf with:
++
++    <pre>auxprop_plugin: slapd</pre>
++
++which will force the SASL library to ignore all other auxprop modules.</p>
++
++<h3>Examples:</h3>
++
++<pre>
++ldapdb_uri: ldap://ldap.example.com
++ldapdb_id: root
++ldapdb_pw: secret
++ldapdb_mech: DIGEST-MD5
++</pre>
++
++<p>The LDAP server must be configured to map the SASL authcId "root" into a DN
++that has proxy authorization privileges to every account that is allowed to
++login to this server. (See the OpenLDAP Admin Guide section 10 for
++details.)</p>
++
++<pre>
++ldapdb_uri: ldapi://
++ldapdb_mech: EXTERNAL
++</pre>
++
++<p>This configuration assumes an LDAP server is on the same server that is
++using SASL and the underlying OS is *NIX based (ldapi:// requires UNIX domain
++sockets).  This is fast and secure, and needs no username or password to be
++stored.  The slapd.conf will need to map these usernames to LDAP DNs:
++
++<pre>
++sasl-regexp uidNumber=(.*)\\+gidNumber=(.*),cn=peercred,cn=external,cn=auth
++    ldap:///dc=example,dc=com??sub?(&(uidNumber=$1)(gidNumber=$2))
++</pre>
++
++<pre>
++sasl-regexp uid=(.*),cn=external,cn=auth
++    ldap:///dc=example,dc=com??sub?(uid=$1)
++</pre>
++
++</p>
+ 
+ <hr>
+ Back to the <A href=index.html>index</a>
+Index: doc/readme.html
+===================================================================
+RCS file: /cvs/src/sasl/doc/readme.html,v
+retrieving revision 1.12
+diff -u -r1.12 readme.html
+--- doc/readme.html	1 Oct 2003 19:07:56 -0000	1.12
++++ doc/readme.html	19 Mar 2004 18:50:12 -0000
+@@ -31,7 +31,7 @@
+ </ul>
+ 
+ The library also supports storing user secrets in either a hash
+-database (e.g. Berkeley DB, gdbm, ndbm), or in a SQL database 
++database (e.g. Berkeley DB, gdbm, ndbm), LDAP, or in a SQL database 
+ (MySQL, Postgres).
+ 
+ 
+Index: doc/sysadmin.html
+===================================================================
+RCS file: /cvs/src/sasl/doc/sysadmin.html,v
+retrieving revision 1.48
+diff -u -r1.48 sysadmin.html
+--- doc/sysadmin.html	7 Jan 2004 16:35:07 -0000	1.48
++++ doc/sysadmin.html	19 Mar 2004 18:50:16 -0000
+@@ -327,7 +327,7 @@
+ for information related to authentication and authorization to all be looked
+ up at once from a directory during the authentication process.  SASL Plugins
+ internally take advantage of this to do password lookups in directories
+-such as the SASLdb or a SQL database.  Applications can look up arbitrary properties through them.<p>
++such as the SASLdb, LDAP or a SQL database.  Applications can look up arbitrary properties through them.<p>
+ 
+ Note that this means that if your password database is in a SASLdb, and
+ you wish to use it for plaintext password lookups through the sasldb, you

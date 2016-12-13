@@ -1,0 +1,476 @@
+Index: man/master.8
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/man/master.8,v
+retrieving revision 1.12
+diff -u -r1.12 master.8
+--- man/master.8	8 Dec 2004 18:05:04 -0000	1.12
++++ man/master.8	13 Dec 2004 18:58:08 -0000
+@@ -146,15 +146,6 @@
+ The environment variable \fBCYRUS_VERBOSE\fR can be set to log additional
+ debugging information. Setting the value to 1 results in base level logging. 
+ Setting it higher results in more log messages being generated.
+-.SH BUGS
+-Services do not always go away silently when removed through a SIGHUP.  If
+-there are workers of the removed service still running, messages to syslog
+-about broken pipes and accept() failures are to be expected.
+-.PP
+-The in-memory list of services is not cleaned up ever, so a Cyrus master
+-daemon that has been sent an extremely high amount of SIGHUP signals to
+-add/remove/modify services will lose performance eventually.  Restarting
+-Cyrus master fixes this.
+ .SH FILES
+ .TP
+ .B /etc/cyrus.conf, /etc/imapd.conf, /var/run/cyrus-master.pid
+Index: master/master.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/master/master.c,v
+retrieving revision 1.99
+diff -u -r1.99 master.c
+--- master/master.c	8 Dec 2004 18:05:05 -0000	1.99
++++ master/master.c	13 Dec 2004 18:58:08 -0000
+@@ -1309,10 +1309,11 @@
+     int prefork = masterconf_getint(e, "prefork", 0);
+     int babysit = masterconf_getswitch(e, "babysit", 0);
+     int maxforkrate = masterconf_getint(e, "maxforkrate", 0);
+-    char *listen = xstrdup(masterconf_getstring(e, "listen", NULL));
+-    char *proto = xstrdup(masterconf_getstring(e, "proto", "tcp"));
+-    char *max = xstrdup(masterconf_getstring(e, "maxchild", "-1"));
++    const char *listen = masterconf_getstring(e, "listen", NULL);
++    const char *proto = masterconf_getstring(e, "proto", "tcp");
++    const char *max = masterconf_getstring(e, "maxchild", "-1");
+     rlim_t maxfds = (rlim_t) masterconf_getint(e, "maxfds", 256);
++    int reconfig = 0;
+     int i, j;
+ 
+     if(babysit && prefork == 0) prefork = 1;
+@@ -1331,11 +1332,16 @@
+ 	fatal(buf, EX_CONFIG);
+     }
+ 
+-    /* see if we have an existing entry for this service */
++    /* see if we have an existing entry that can be reused */
+     for (i = 0; i < nservices; i++) {
++	/* skip non-primary instances */
+ 	if (Services[i].associate > 0)
+ 	    continue;
+-	if (Services[i].name && !strcmp(Services[i].name, name)) break;
++	/* must have empty/same service name, listen and proto */
++	if ((!Services[i].name || !strcmp(Services[i].name, name)) &&
++	    (!Services[i].listen || !strcmp(Services[i].listen, listen)) &&
++	    (!Services[i].proto || !strcmp(Services[i].proto, proto)))
++	    break;
+     }
+ 
+     /* we have duplicate service names in the config file */
+@@ -1350,63 +1356,8 @@
+ 
+ 	fatal(buf, EX_CONFIG);
+     }
+-
+-    if ((i < nservices) &&
+-	!strcmp(Services[i].listen, listen) &&
+-	!strcmp(Services[i].proto, proto)) {
+-
+-	/* we found an existing entry and the port paramters are the same */
+-	Services[i].exec = tokenize(cmd);
+-	if (!Services[i].exec) fatal("out of memory", EX_UNAVAILABLE);
+-
+-	/* is this service actually there? */
+-	if (!verify_service_file(Services[i].exec)) {
+-	    char buf[1024];
+-	    snprintf(buf, sizeof(buf),
+-		     "cannot find executable for service '%s'", name);
+-
+-	    /* if it is not, we're misconfigured, die. */
+-	    fatal(buf, EX_CONFIG);
+-	}
+-
+-	Services[i].maxforkrate = maxforkrate;
+- 	Services[i].maxfds = maxfds;
+-
+-	if (!strcmp(Services[i].proto, "tcp") ||
+-	    !strcmp(Services[i].proto, "tcp4") ||
+-	    !strcmp(Services[i].proto, "tcp6")) {
+-	    Services[i].desired_workers = prefork;
+-	    Services[i].babysit = babysit;
+-	    Services[i].max_workers = atoi(max);
+-	    if (Services[i].max_workers == -1) {
+-		Services[i].max_workers = INT_MAX;
+-	    }
+-	} else {
+-	    /* udp */
+-	    if (prefork > 1) prefork = 1;
+-	    Services[i].desired_workers = prefork;
+-	    Services[i].max_workers = 1;
+-	}
+  
+-	for (j = 0; j < nservices; j++) {
+-	    if (Services[j].associate > 0 &&
+-		Services[j].name && !strcmp(Services[j].name, name)) {
+-		Services[j].maxforkrate = Services[i].maxforkrate;
+-		Services[j].exec = Services[i].exec;
+-		Services[j].desired_workers = Services[i].desired_workers;
+-		Services[j].babysit = Services[i].babysit;
+-		Services[j].max_workers = Services[i].max_workers;
+-	    }
+-	}
+-
+-	if (verbose > 2)
+-	    syslog(LOG_DEBUG, "reconfig: service '%s' (%s, %s:%s, %d, %d)",
+-		   Services[i].name, cmd,
+-		   Services[i].proto, Services[i].listen,
+-		   Services[i].desired_workers,
+-		   Services[i].max_workers);
+-    }
+-    else {
++    if (i == nservices) {
+ 	/* either we don't have an existing entry or we are changing
+ 	 * the port parameters, so create a new service
+ 	 */
+@@ -1416,69 +1367,70 @@
+ 	    Services = xrealloc(Services, 
+ 			       (allocservices+=5) * sizeof(struct service));
+ 	}
++	memset(&Services[nservices++], 0, sizeof(struct service));
+ 
+-	Services[nservices].name = xstrdup(name);
+-	Services[nservices].listen = listen;
+-	Services[nservices].proto = proto;
+-	Services[nservices].exec = tokenize(cmd);
+-	if (!Services[nservices].exec) fatal("out of memory", EX_UNAVAILABLE);
+-
+-	/* is this service actually there? */
+-	if (!verify_service_file(Services[i].exec)) {
+-	    char buf[1024];
+-	    snprintf(buf, sizeof(buf),
+-		     "cannot find executable for service '%s'", name);
+-
+-	    /* if it is not, we're misconfigured, die. */
+-	    fatal(buf, EX_CONFIG);
+-	}
+-
+-	Services[nservices].socket = 0;
+-	Services[nservices].saddr = NULL;
+-
+-	Services[nservices].ready_workers = 0;
+-
+- 	Services[nservices].maxfds = maxfds;
+-	Services[nservices].maxforkrate = maxforkrate;
+-
+-	if(!strcmp(Services[nservices].proto, "tcp") ||
+-	   !strcmp(Services[nservices].proto, "tcp4") ||
+-	   !strcmp(Services[nservices].proto, "tcp6")) {
+-	    Services[nservices].desired_workers = prefork;
+-	    Services[nservices].babysit = babysit;
+-	    Services[nservices].max_workers = atoi(max);
+-	    if (Services[nservices].max_workers == -1) {
+-		Services[nservices].max_workers = INT_MAX;
+-	    }
+-	} else {
+-	    if (prefork > 1) prefork = 1;
+-	    Services[nservices].desired_workers = prefork;
+-	    Services[nservices].max_workers = 1;
+-	}
+-	
+-	memset(Services[nservices].stat, 0, sizeof(Services[nservices].stat));
++	Services[i].last_interval_start = time(NULL);
++    }
++    else if (Services[i].listen) reconfig = 1;
+ 
+-	Services[nservices].last_interval_start = time(NULL);
+-	Services[nservices].interval_forks = 0;
+-	Services[nservices].forkrate = 0;
+-	
+-	Services[nservices].nforks = 0;
+-	Services[nservices].nactive = 0;
+-	Services[nservices].nconnections = 0;
+-	Services[nservices].associate = 0;
++    if (!Services[i].name) Services[i].name = xstrdup(name);
++    if (!Services[i].listen) Services[i].listen = xstrdup(listen);
++    if (!Services[i].proto) Services[i].proto = xstrdup(proto);
++
++    Services[i].exec = tokenize(cmd);
++    if (!Services[i].exec) fatal("out of memory", EX_UNAVAILABLE);
++
++    /* is this service actually there? */
++    if (!verify_service_file(Services[i].exec)) {
++	char buf[1024];
++	snprintf(buf, sizeof(buf),
++		 "cannot find executable for service '%s'", name);
+ 	
+-	if (verbose > 2)
+-	    syslog(LOG_DEBUG, "add: service '%s' (%s, %s:%s, %d, %d, %d)",
+-		   Services[nservices].name, cmd,
+-		   Services[nservices].proto, Services[nservices].listen,
+-		   Services[nservices].desired_workers,
+-		   Services[nservices].max_workers,
+-		   (int) Services[nservices].maxfds);
++	/* if it is not, we're misconfigured, die. */
++	fatal(buf, EX_CONFIG);
++    }
+ 
+-	nservices++;
++    Services[i].maxforkrate = maxforkrate;
++    Services[i].maxfds = maxfds;
++
++    if (!strcmp(Services[i].proto, "tcp") ||
++	!strcmp(Services[i].proto, "tcp4") ||
++	!strcmp(Services[i].proto, "tcp6")) {
++	Services[i].desired_workers = prefork;
++	Services[i].babysit = babysit;
++	Services[i].max_workers = atoi(max);
++	if (Services[i].max_workers == -1) {
++	    Services[i].max_workers = INT_MAX;
++	}
++    } else {
++	/* udp */
++	if (prefork > 1) prefork = 1;
++	Services[i].desired_workers = prefork;
++	Services[i].max_workers = 1;
++    }
++ 
++    if (reconfig) {
++	/* reconfiguring an existing service, update any other instances */
++	for (j = 0; j < nservices; j++) {
++	    if (Services[j].associate > 0 && Services[j].listen &&
++		Services[j].name && !strcmp(Services[j].name, name)) {
++		Services[j].maxforkrate = Services[i].maxforkrate;
++		Services[j].exec = Services[i].exec;
++		Services[j].desired_workers = Services[i].desired_workers;
++		Services[j].babysit = Services[i].babysit;
++		Services[j].max_workers = Services[i].max_workers;
++	    }
++	}
+     }
+ 
+-    free(max);
++    if (verbose > 2)
++	syslog(LOG_DEBUG, "%s: service '%s' (%s, %s:%s, %d, %d, %d)",
++	       reconfig ? "reconfig" : "add",
++	       Services[i].name, cmd,
++	       Services[i].proto, Services[i].listen,
++	       Services[i].desired_workers,
++	       Services[i].max_workers,
++	       (int) Services[i].maxfds);
+ }
+ 
+ void add_event(const char *name, struct entry *e, void *rock)
+@@ -1599,38 +1551,35 @@
+ 		       Services[i].name, Services[i].socket,
+ 		       Services[i].stat[0], Services[i].stat[1]);
+ 
+-	    /* Only free the service info once */
++	    /* Only free the service info on the primary */
+ 	    if(Services[i].associate == 0) {
+-		free(Services[i].name);
+ 		free(Services[i].listen);
+ 		free(Services[i].proto);
+ 	    }
+-	    Services[i].name = NULL;
++	    Services[i].listen = NULL;
++	    Services[i].proto = NULL;
+ 	    Services[i].desired_workers = 0;
+-	    Services[i].nforks = 0;
+-	    Services[i].nactive = 0;
+-	    Services[i].nconnections = 0;
+-
+-	    /* close all listeners */
+-	    if (Services[i].socket > 0) {
+-		shutdown(Services[i].socket, SHUT_RDWR);
+-		close(Services[i].socket);
+-	    }
+-	    Services[i].socket = 0;
+-	    Services[i].saddr = NULL;
+ 
+-	    if (Services[i].stat[0] > 0) close(Services[i].stat[0]);
+-	    if (Services[i].stat[1] > 0) close(Services[i].stat[1]);
+-	    memset(Services[i].stat, 0, sizeof(Services[i].stat));
+-
+-	    /* remove service from all children */
++	    /* send SIGHUP to all children */
+ 	    for (j = 0 ; j < child_table_size ; j++ ) {
+ 		c = ctable[j];
+ 		while (c != NULL) {
+-		    if (c->si == i) c->si = SERVICE_NONE;
++		    if ((c->si == i) &&
++			(c->service_state != SERVICE_STATE_DEAD)) {
++			kill(c->pid, SIGHUP);
++		    }
+ 		    c = c->next;
+ 		}
+ 	    }
++	    sleep(1); /* allow time for children to receive signal
++			 so accept() doesn't fail with EBADF */
++
++	    /* close all listeners */
++	    if (Services[i].socket > 0) {
++		shutdown(Services[i].socket, SHUT_RDWR);
++		close(Services[i].socket);
++	    }
++	    Services[i].socket = 0;
+ 	}
+ 	else if (Services[i].exec && !Services[i].socket) {
+ 	    /* initialize new services */
+@@ -2008,6 +1957,27 @@
+ 		       "Applying babysitter.",
+ 		       Services[i].name);
+ 		spawn_service(i);
++	    } else if (!Services[i].exec /* disabled */ &&
++		       Services[i].name /* not yet removed */ &&
++		       Services[i].nactive == 0) {
++		if (verbose > 2)
++		    syslog(LOG_DEBUG, "remove: service %s pipe %d %d",
++			   Services[i].name,
++			   Services[i].stat[0], Services[i].stat[1]);
++
++		/* Only free the service info on the primary */
++		if (Services[i].associate == 0) {
++		    free(Services[i].name);
++		}
++		Services[i].name = NULL;
++		Services[i].nforks = 0;
++		Services[i].nactive = 0;
++		Services[i].nconnections = 0;
++		Services[i].associate = 0;
++
++		if (Services[i].stat[0] > 0) close(Services[i].stat[0]);
++		if (Services[i].stat[1] > 0) close(Services[i].stat[1]);
++		memset(Services[i].stat, 0, sizeof(Services[i].stat));
+ 	    }
+ 	}
+ 
+Index: master/master.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/master/master.h,v
+retrieving revision 1.12
+diff -u -r1.12 master.h
+--- master/master.h	9 Dec 2004 17:54:57 -0000	1.12
++++ master/master.h	13 Dec 2004 18:58:08 -0000
+@@ -20,7 +20,6 @@
+ 
+     /* communication info */
+     int socket;			/* client/child communication channel */
+-    struct sockaddr *saddr;
+     int stat[2];		/* master/child communication channel */
+ 
+     /* limits */
+Index: master/service.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/master/service.c,v
+retrieving revision 1.52
+diff -u -r1.52 service.c
+--- master/service.c	13 Sep 2004 22:13:04 -0000	1.52
++++ master/service.c	13 Dec 2004 18:58:08 -0000
+@@ -78,7 +78,9 @@
+ static int use_count = 0;
+ static int verbose = 0;
+ static volatile int gotalrm = 0;
++static volatile int gothup = 0;
+ static int lockfd = -1;
++static int newfile = 0;
+ 
+ void notify_master(int fd, int msg)
+ {
+@@ -182,10 +184,10 @@
+ 	alockinfo.l_type = F_WRLCK;
+ 	while ((rc = fcntl(lockfd, F_SETLKW, &alockinfo)) < 0 && 
+ 	       errno == EINTR &&
+-	       !gotalrm)
++	       !gotalrm && !gothup)
+ 	    /* noop */;
+ 	
+-	if (rc < 0 && gotalrm) {
++	if (rc < 0 && (gotalrm || gothup)) {
+ 	    if (MESSAGE_MASTER_ON_EXIT) 
+ 		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(0);
+@@ -241,7 +243,15 @@
+     }
+ }
+ 
+-int setsigalrm(void)
++static void sighup(int sig)
++{
++    /* syslog(LOG_DEBUG, "got signal %d", sig); */
++    if (sig == SIGHUP) {
++	gothup = 1;
++    }
++}
++
++int sighandler_setup(void)
+ {
+     struct sigaction action;
+     
+@@ -256,6 +266,11 @@
+ 	syslog(LOG_ERR, "installing SIGALRM handler: sigaction: %m");
+ 	return -1;
+     }
++    action.sa_handler = sighup;
++    if (sigaction(SIGHUP, &action, NULL) < 0) {
++	syslog(LOG_ERR, "installing SIGHUP handler: sigaction: %m");
++	return -1;
++    }
+ 
+     return 0;
+ }
+@@ -422,17 +437,18 @@
+     start_size = sbuf.st_size;
+     start_mtime = sbuf.st_mtime;
+ 
++    if (sighandler_setup() < 0) {
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	service_abort(EX_OSERR);
++    }
++
+     getlockfd(service, id);
+     for (;;) {
+ 	/* ok, listen to this socket until someone talks to us */
+ 
+ 	if (use_count > 0) {
+ 	    /* we want to time out after 60 seconds, set an alarm */
+-	    if (setsigalrm() < 0) {
+-		if (MESSAGE_MASTER_ON_EXIT) 
+-		    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+-		service_abort(EX_OSERR);
+-	    }
+ 	    gotalrm = 0;
+ 	    alarm(reuse_timeout);
+ 	}
+@@ -441,13 +457,13 @@
+ 	lockaccept();
+ 
+ 	fd = -1;
+-	while (fd < 0 && !gotalrm) { /* loop until we succeed */
++	while (fd < 0 && !gotalrm && !gothup) { /* loop until we succeed */
+ 	    /* check current process file inode, size and mtime */
+ 	    stat(path, &sbuf);
+ 	    if (sbuf.st_ino != start_ino || sbuf.st_size != start_size ||
+ 		sbuf.st_mtime != start_mtime) {
+ 		syslog(LOG_INFO, "process file has changed");
+-		gotalrm = 1;
++		newfile = 1;
+ 		break;
+ 	    }
+ 
+@@ -501,8 +517,8 @@
+ 	/* unlock */
+ 	unlockaccept();
+ 
+-	if (fd < 0 && gotalrm) {
+-	    /* timed out */
++	if (fd < 0 && (gotalrm || gothup || newfile)) {
++	    /* timed out, caught SIGHUP, or new process file */
+ 	    if (MESSAGE_MASTER_ON_EXIT) 
+ 		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(0);
+@@ -557,7 +573,8 @@
+ 	service_main(newargc, newargv, envp);
+ 	/* if we returned, we can service another client with this process */
+ 
+-	if (use_count >= max_use) {
++	if (gothup || use_count >= max_use) {
++	    /* caught SIGHUP or exceeded max use count */
+ 	    break;
+ 	}
+ 

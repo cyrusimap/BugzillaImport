@@ -1,0 +1,206 @@
+--- sieve/message.h
++++ sieve/message.h	2004/01/16 14:05:45
+@@ -70,6 +70,8 @@
+ 	    /* addr, fromaddr, subj - freed! */
+ 	    sieve_send_response_context_t send;
+ 	    sieve_autorespond_context_t autoresp;
++	    time_t start;
++	    time_t end;
+ 	} vac;
+ 	struct {
+ 	    const char *flag;
+--- sieve/script.c
++++ sieve/script.c	2004/01/16 14:01:43
+@@ -39,6 +39,7 @@
+ #include <sys/types.h>
+ #include <unistd.h>
+ #include <assert.h>
++#include <time.h>
+ 
+ #include "xmalloc.h"
+ 
+@@ -81,6 +82,13 @@
+ 	} else {
+ 	    return 0;
+ 	}
++    } else if (!strcmp("vacation-period", req)) {
++       if (s->interp.vacation) {
++           s->support.vacation_period = 1;
++           return 1;
++       } else {
++           return 0;
++       }
+     } else if (!strcmp("imapflags", req)) {
+ 	if (s->interp.markflags->flag) {
+ 	    s->support.imapflags = 1;
+@@ -668,6 +676,36 @@
+ 		ret = makehash(hash, a->u.vac.send.addr,
+ 			       a->u.vac.send.msg);
+ 
++                if (ret == SIEVE_OK && ((a->u.vac.start != (time_t) -1) ||
++                            (a->u.vac.end != (time_t) -1)) ){
++                    /* Check the time intervall */
++                    time_t now, gmt_now;
++                    now = time(NULL);
++                    gmt_now = mktime(gmtime(&now));
++                    if(gmt_now != (time_t) -1){
++                        if(a->u.vac.start == (time_t) -1){
++                            if(gmt_now < a->u.vac.end){
++                                ret = SIEVE_OK;
++                            }else{
++                                ret = SIEVE_DONE;
++                            } 
++                        }else if(a->u.vac.end == (time_t) -1){
++                            if(gmt_now > a->u.vac.start){
++                                ret = SIEVE_OK;
++                            }else{
++                                ret = SIEVE_DONE;
++                            } 
++                        }else if((gmt_now > a->u.vac.start) &&
++                                 (gmt_now < a->u.vac.end)){
++                            ret = SIEVE_OK;
++                        }else{
++                            ret = SIEVE_DONE;
++                        }
++                    }else{
++                        ret = SIEVE_DONE;
++                    }
++                }
++
+ 		if (ret == SIEVE_OK) {
+ 		    a->u.vac.autoresp.hash = hash;
+ 		    a->u.vac.autoresp.len = HASHSIZE;
+--- sieve/script.h
++++ sieve/script.h	2004/01/16 13:30:30
+@@ -43,6 +43,7 @@
+ 	int reject         : 1;
+ 	int envelope       : 1;
+ 	int vacation       : 1;
++	int vacation_period : 1;
+ 	int imapflags      : 1;
+ 	int notify         : 1;
+ 	int regex          : 1;
+--- sieve/sieve-lex.l
++++ sieve/sieve-lex.l	2004/01/16 13:31:15
+@@ -113,6 +113,9 @@
+ <INITIAL>:high		return HIGH;
+ <INITIAL>:message	return MESSAGE;
+ <INITIAL>vacation	return VACATION;
++<INITIAL>vacation-period       return VACATION_PERIOD;
++<INITIAL>:start         return START;
++<INITIAL>:end           return END;
+ <INITIAL>:days		return DAYS;
+ <INITIAL>:addresses	return ADDRESSES;
+ <INITIAL>:subject	return SUBJECT;
+--- sieve/sieve.y
++++ sieve/sieve.y	2004/01/16 13:34:05
+@@ -34,6 +34,7 @@
+ #include <assert.h>
+ #include <string.h>
+ #include <ctype.h>
++#include <time.h>
+ #include "xmalloc.h"
+ #include "comparator.h"
+ #include "interp.h"
+@@ -52,6 +53,8 @@
+     stringlist_t *addresses;
+     char *subject;
+     int mime;
++    time_t start;
++    time_t end;
+ };
+ 
+ struct htags {
+@@ -154,6 +157,7 @@
+ %token ALL LOCALPART DOMAIN USER DETAIL
+ %token DAYS ADDRESSES SUBJECT MIME
+ %token METHOD ID OPTIONS LOW NORMAL HIGH ANY MESSAGE
++%token VACATION_PERIOD START END
+ 
+ %type <cl> commands command action elsif block
+ %type <sl> stringlist strings
+@@ -363,6 +367,47 @@
+ 					yyerror("duplicate :mime"); 
+ 					YYERROR; }
+ 				   else { $$->mime = MIME; } }
++        | vtags START STRING     { if (!parse_script->support.vacation_period) {
++                                     yyerror("vacation-period not required");
++                                     YYERROR;
++                                   }
++                                   if ( $$->start != (time_t) -1){
++                                     yyerror("duplicate :start");
++                                     YYERROR;
++                                   } else {
++                                     struct tm start_tm;
++                                     memset(&start_tm,0,sizeof(struct tm));
++                                     if(! strptime($3, "%Y-%m-%d %H:%M", 
++                                            &start_tm)){ 
++                                        yyerror("invalid start date");
++                                        YYERROR;
++                                     }
++                                     $$->start = mktime(&start_tm);
++                                   }
++                                 }
++        | vtags END STRING       { if (!parse_script->support.vacation_period) {
++                                     yyerror("vacation-period not required");
++                                     YYERROR;
++                                   }
++                                   if ( $$->end != (time_t) -1){
++                                     yyerror("duplicate :end");
++                                     YYERROR;
++                                   } else {
++                                     struct tm end_tm;
++                                     time_t end;
++                                     memset(&end_tm,0,sizeof(struct tm));
++                                     if(! strptime($3, "%Y-%m-%d %H:%M",
++                                            &end_tm)){
++                                        yyerror("invalid end date");
++                                        YYERROR;
++                                     }
++                                     end = mktime(&end_tm);
++                                     if($$->start > end){
++                                        yyerror("end date before start date");
++                                        YYERROR;
++                                     }
++                                     $$->end = end;
++                                   } }
+ 	;
+ 
+ stringlist: '[' strings ']'      { $$ = $2; }
+@@ -640,6 +685,8 @@
+ 	ret->u.v.days = v->days;
+ 	ret->u.v.mime = v->mime;
+ 	ret->u.v.addresses = v->addresses; v->addresses = NULL;
++        ret->u.v.start = v->start;
++        ret->u.v.end = v->end;
+ 	free_vtags(v);
+ 	ret->u.v.message = reason;
+     }
+@@ -738,6 +785,8 @@
+     r->addresses = NULL;
+     r->subject = NULL;
+     r->mime = -1;
++    r->start = (time_t) -1;
++    r->end = (time_t) -1;
+ 
+     return r;
+ }
+--- sieve/tree.h
++++ sieve/tree.h	2004/01/16 14:05:37
+@@ -29,6 +29,7 @@
+ #define TREE_H
+ 
+ #include "comparator.h"
++#include <time.h>
+ 
+ /* abstract syntax tree for sieve */
+ typedef struct Stringlist stringlist_t;
+@@ -105,6 +106,8 @@
+ 	    stringlist_t *addresses;
+ 	    char *message;
+ 	    int mime;
++	    time_t start;
++	    time_t end;
+ 	} v;
+ 	struct { /* it's a notify action */
+ 	    char *method;

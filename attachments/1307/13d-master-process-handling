@@ -1,0 +1,256 @@
+From: Henrique de Moraes Holschuh <hmh@debian.org>
+Subject: Fixes process (child) handling in Cyrus master
+
+Origin: vendor, Debian Cyrus IMAPd 2.1.16-7 (2004-08-07), 2.3.16-1
+
+* Allows Cyrus master to process all pending child messages once per
+  loop, which fixes a DoS situation if there is too much message churn
+  in a slower box.  If the pending messages never get processed,
+  eventually master stops spawning the service or handling connections.
+
+  It seems that the problem this patch fixes has also been reported in
+  Cyrus IMAP 2.2.12 by Earl Shannon, and Jules Agee actually tried to
+  get the fix from Debian integrated upstream.
+
+  Jules Agee described the problem quite well in a private message:
+
+     "The problem occurs when the child message queue is very backed up.
+     A child process dies with several messages in the queue. reap_child
+     marks it's state in the child table as dead and decrements the
+     number of ready_workers.  Then the janitor process removes that
+     child's entry from the child table.  When master finally gets
+     around to processing all the messages in the child message queue,
+     it has no idea where the message came from because the child's
+     entry has already been removed from the ctable.  So it creates a
+     new ctable entry, marking the child process state as unknown,
+     assuming the message is from a child process that's still alive.
+     When master finishes processing the messages from that long-dead
+     child, it again (an inaccurately) decrements the count of
+     ready_workers.
+
+     The easiest solution in my opinion is to make sure master stays
+     caught up with messages from its children by processing all child
+     messages on each loop.  After all, it's the duty of a parent."
+
+  Kenneth Murchison reported that they couldn't reproduce it in CMU.
+  However, it is clearly something that depends on pathological loads
+  and kernel behaviour to trigger.
+
+  This fix is a trade off: we risk increasing latency to hand off
+  connections/spawn new services (because we're in a loop processing
+  child messages).  If the messages never stop coming, or come in
+  extremely large bursts, master will backlog connections.  If syslog()
+  or memory allocations in the message processing codepaths introduce
+  large latencies, the cost of processing messages can get too high
+  and master will backlog connections.  Note: this *CAN* happen, and
+  in fact it did happen to Jules until he reduced the amount of data
+  going to syslog in master/master.c:process_msg().
+
+  Reported-analysed-and-tested-by: Jules Agee <julesa@pcf.com>.
+
+* Fix message handling from expired children (new)
+
+  It is possible that the kernel will delay message delivery a lot more
+  than signal delivery in a overload situation.  The message delivery
+  delay can get large enough for master to have already expired a dead
+  child from its children table when a message arrives.  There is a bug
+  in the state machine design: it readded such children to the table as
+  being in an unknown state (as described by Jules Agee), which ends up
+  causing bad accounting of ready_workers.
+
+  Fix the state machine to assume messages from unknown children are
+  from long dead children and add them back to the child table in DEAD
+  state.
+
+* Fix connection accounting when child dies before its messages
+  have been processed (new)
+
+  When processing messages from dead or long-dead children, explicitly
+  ignore AVAILABLE/UNAVAILABLE messages (to document it as a normal
+  codepath -- the code would already do it, but through a codepath
+  marked as "should not happen").  For CONNECTION/CONNECTION_MULTI
+  messages from dead or long-dead children, just do connection accouting
+  but don't touch children accounting (as we already accounted for the
+  worker's death when we processed its SIGCHLD).
+
+Index: cyrus-imapd-2.3-pkg/master/master.c
+===================================================================
+--- cyrus-imapd-2.3-pkg.orig/master/master.c
++++ cyrus-imapd-2.3-pkg/master/master.c
+@@ -898,7 +898,6 @@ void reap_child(void)
+ 		} 
+ 	    } else {
+ 	    	/* children from spawn_schedule (events) or
+-		 * children that messaged us before being registered or
+ 		 * children of services removed by reread_conf() */
+ 		if (c->service_state != SERVICE_STATE_READY) {
+ 		    syslog(LOG_WARNING,
+@@ -910,17 +909,11 @@ void reap_child(void)
+ 	    c->service_state = SERVICE_STATE_DEAD;
+ 	    c->janitor_deadline = time(NULL) + 2;
+ 	} else {
+-	    /* weird. Are we multithreaded now? we don't know this child */
+-	    syslog(LOG_WARNING,
+-		   "receiving signals from unregistered child %d. Handling it anyway",
++	    /* Are we multithreaded now? we don't know this child */
++	    syslog(LOG_ERR,
++		   "received SIGCHLD from unknown child pid %d, ignoring",
+ 		   pid);
+-	    c = get_centry();
+-	    c->pid = pid;
+-	    c->service_state = SERVICE_STATE_DEAD;
+-	    c->janitor_deadline = time(NULL) + 2;
+-	    c->si = SERVICE_NONE;
+-	    c->next = ctable[pid % child_table_size];
+-	    ctable[pid % child_table_size] = c;
++	    /* FIXME: is this something we should take lightly? */
+ 	}
+ 	if (verbose && c && (c->si != SERVICE_NONE))
+ 	    syslog(LOG_DEBUG, "service %s now has %d ready workers\n", 
+@@ -1073,6 +1066,36 @@ void sighandler_setup(void)
+     }
+ }
+ 
++/*
++ * Receives a message from a service.
++ *
++ * Returns zero if all goes well
++ * 1 if no msg available
++ * 2 if bad message received (incorrectly sized)
++ * -1 on error (errno set)
++ */
++int read_msg(int fd, struct notify_message *msg)
++{
++    ssize_t r;
++    size_t off = 0;
++    int s = sizeof(struct notify_message);
++
++    while (s > 0) {
++        do
++            r = read(fd, msg + off, s);
++        while ((r == -1) && (errno == EINTR));
++        if (r <= 0) break;
++        s -= r;
++        off += r;
++    }
++    if ( ((r == 0) && (off == 0)) ||
++         ((r == -1) && (errno == EAGAIN)) )
++        return 1;
++    if (r == -1) return -1;
++    if (s != 0) return 2;
++    return 0;
++}
++
+ void process_msg(const int si, struct notify_message *msg) 
+ {
+     struct centry *c;
+@@ -1085,13 +1108,21 @@ void process_msg(const int si, struct no
+     
+     /* Did we find it? */
+     if (!c || c->pid != msg->service_pid) {
+-	syslog(LOG_WARNING, "service %s pid %d: while trying to process message 0x%x: not registered yet", 
+-	       SERVICENAME(s->name), msg->service_pid, msg->message);
+-	/* resilience paranoia. Causes small performance loss when used */
++	/* If we don't know about the child, that means it has expired from
++	 * the child list, due to large message delivery delays.  This is
++	 * indeed possible, although it is rare (Debian bug report).
++	 *
++	 * Note that this analysis depends on master's single-threaded
++	 * nature */
++	syslog(LOG_WARNING,
++		"service %s pid %d: receiving messages from long dead children",
++	       SERVICENAME(s->name), msg->service_pid);
++	/* re-add child to list */
+ 	c = get_centry();
+ 	c->si = si;
+ 	c->pid = msg->service_pid;
+-	c->service_state = SERVICE_STATE_UNKNOWN;
++	c->service_state = SERVICE_STATE_DEAD;
++	c->janitor_deadline = time(NULL) + 2;
+ 	c->next = ctable[c->pid % child_table_size];
+ 	ctable[c->pid % child_table_size] = c;
+     }
+@@ -1153,6 +1184,11 @@ void process_msg(const int si, struct no
+ 	    c->service_state = SERVICE_STATE_READY;
+ 	    s->ready_workers++;
+ 	    break;
++
++	case SERVICE_STATE_DEAD:
++	    /* echoes from the past... just ignore */
++	    break;
++
+ 	default:
+ 	    /* Shouldn't get here */
+ 	    break;
+@@ -1183,6 +1219,11 @@ void process_msg(const int si, struct no
+ 	    c->service_state = SERVICE_STATE_BUSY;
+ 	    s->ready_workers--;
+ 	    break;
++
++	case SERVICE_STATE_DEAD:
++	    /* echoes from the past... just ignore */
++	    break;
++
+ 	default:
+ 	    /* Shouldn't get here */
+ 	    break;
+@@ -1216,6 +1257,12 @@ void process_msg(const int si, struct no
+ 	    c->service_state = SERVICE_STATE_BUSY;
+ 	    s->nconnections++;
+ 	    s->ready_workers--;
++
++	case SERVICE_STATE_DEAD:
++	    /* echoes from the past... do the accounting */
++	    s->nconnections++;
++	    break;
++
+ 	default:
+ 	    /* Shouldn't get here */
+ 	    break;
+@@ -1250,6 +1297,12 @@ void process_msg(const int si, struct no
+ 		   "service %s pid %d in UNKNOWN state: serving one more multi-threaded connection, forced to READY state",
+ 		   SERVICENAME(s->name), c->pid);
+ 	    break;
++
++	case SERVICE_STATE_DEAD:
++	    /* echoes from the past... do the accounting */
++	    s->nconnections++;
++	    break;
++
+ 	default:
+ 	    /* Shouldn't get here */
+ 	    break;
+@@ -1412,7 +1465,7 @@ void add_service(const char *name, struc
+ 	Services[i].desired_workers = prefork;
+ 	Services[i].babysit = babysit;
+ 	Services[i].max_workers = atoi(max);
+-	if (Services[i].max_workers == -1) {
++	if (Services[i].max_workers < 0) {
+ 	    Services[i].max_workers = INT_MAX;
+ 	}
+     } else {
+@@ -2072,13 +2125,19 @@ int main(int argc, char **argv)
+ 	    int j;
+ 
+ 	    if (FD_ISSET(x, &rfds)) {
+-		r = read(x, &msg, sizeof(msg));
+-		if (r != sizeof(msg)) {
+-		    syslog(LOG_ERR, "got incorrectly sized response from child: %x", i);
++		while ((r = read_msg(x, &msg)) == 0)
++		    process_msg(i, &msg);
++
++		if (r == 2) {
++		    syslog(LOG_ERR,
++			"got incorrectly sized response from child: %x", i);
++		    continue;
++		}
++		if (r < 0) {
++		    syslog(LOG_ERR,
++			"error while receiving message from child %x: %m", i);
+ 		    continue;
+ 		}
+-		
+-		process_msg(i, &msg);
+ 	    }
+ 
+ 	    if (Services[i].exec &&

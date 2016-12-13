@@ -1,0 +1,255 @@
+diff -r -u cyrus-imapd-svn/configure.in cyrus-imapd-svn.srs/configure.in
+--- cyrus-imapd-svn/configure.in	2010-01-06 18:01:26.000000000 +0100
++++ cyrus-imapd-svn.srs/configure.in	2010-06-03 13:59:41.000000000 +0200
+@@ -412,6 +412,25 @@
+ 
+ AC_SUBST(SIEVE_SUBDIRS)
+ 
++dnl
++dnl see if we're compiling with SRS
++dnl
++SRS_CPPFLAGS=""
++ENABLE_SRS=no
++AC_ARG_ENABLE(srs,
++    [  --enable-srs            enable SRS support],
++    ENABLE_SRS=$enableval)
++if test "$ENABLE_SRS" != no; then
++    AC_CHECK_HEADER([srs2.h],,
++        [AC_MSG_ERROR([cannot find SRS headers])])
++    AC_CHECK_LIB(srs2, srs_forward,,
++        [AC_MSG_ERROR([cannot find SRS lib])])
++    SRS_CPPFLAGS="-lsrs2"
++    AC_DEFINE(USE_SRS,[],[Build with SRS?])
++fi
++
++AC_SUBST(SRS_CPPFLAGS)
++
+ dnl for et routines
+ AC_FUNC_CHECK(strerror,AC_DEFINE(HAS_STRERROR,[],[Do we have strerror()?]),
+               AC_DEFINE(NEED_SYS_ERRLIST,[],[Do we have a sys_errlist?]))
+diff -r -u cyrus-imapd-svn/imap/lmtpd.c cyrus-imapd-svn.srs/imap/lmtpd.c
+--- cyrus-imapd-svn/imap/lmtpd.c	2010-05-25 22:59:19.000000000 +0200
++++ cyrus-imapd-svn.srs/imap/lmtpd.c	2010-06-03 14:02:40.000000000 +0200
+@@ -205,6 +205,9 @@
+ 
+ 	/* setup sieve support */
+ 	sieve_interp = setup_sieve();
++#ifdef USE_SRS
++	sieve_srs_init();
++#endif
+ #else
+ 	if (dupelim)
+ #endif
+@@ -947,6 +950,9 @@
+ 	mupdate_disconnect(&mhandle);
+     } else {
+ #ifdef USE_SIEVE
++#ifdef USE_SRS
++	sieve_srs_free();
++#endif
+ 	sieve_interp_free(&sieve_interp);
+ #else
+ 	if (dupelim)
+diff -r -u cyrus-imapd-svn/imap/lmtp_sieve.c cyrus-imapd-svn.srs/imap/lmtp_sieve.c
+--- cyrus-imapd-svn/imap/lmtp_sieve.c	2010-01-06 18:01:35.000000000 +0100
++++ cyrus-imapd-svn.srs/imap/lmtp_sieve.c	2010-06-04 13:30:39.000000000 +0200
+@@ -53,6 +53,9 @@
+ #include <string.h>
+ #include <syslog.h>
+ #include <time.h>
++#ifdef USE_SRS
++#include <srs2.h>
++#endif
+ #include <sys/types.h>
+ #include <sys/wait.h>
+ 
+@@ -303,6 +306,101 @@
+     return sm_stat;	/* sendmail exit value */
+ }
+ 
++#ifdef USE_SRS
++
++static srs_t *srs_engine = NULL;
++
++#define SRS_INIT_FAIL_UNLESS(x)                 \
++    if ((srs_status = (x)) != SRS_SUCCESS) {    \
++        goto END;                               \
++    }
++
++void sieve_srs_init(void) {
++    const char *srs_domain = config_getstring(IMAPOPT_SRS_DOMAIN);
++    char *saved_secrets = NULL;
++    int srs_status = SRS_SUCCESS;
++
++    if (!srs_engine && srs_domain && *srs_domain) {
++        /* SRS enabled and not yet initialized */
++        int srs_alwaysrewrite = config_getswitch(IMAPOPT_SRS_ALWAYSREWRITE);
++        int srs_hashlength = config_getint(IMAPOPT_SRS_HASHLENGTH);
++        const char *srs_separator = config_getstring(IMAPOPT_SRS_SEPARATOR);
++        const char *srs_secrets = config_getstring(IMAPOPT_SRS_SECRETS);
++
++        SRS_INIT_FAIL_UNLESS(srs_set_malloc((srs_malloc_t)xmalloc, (srs_realloc_t)xrealloc, (srs_free_t)free));
++
++        srs_engine = srs_new();
++        SRS_INIT_FAIL_UNLESS(srs_set_alwaysrewrite(srs_engine, srs_alwaysrewrite));
++
++        if (srs_hashlength > 0)
++            SRS_INIT_FAIL_UNLESS(srs_set_hashlength(srs_engine, srs_hashlength));
++        if (srs_separator)
++            SRS_INIT_FAIL_UNLESS(srs_set_separator(srs_engine, srs_separator[0]));
++
++        if (srs_secrets) {
++            char *secret = NULL;
++
++            saved_secrets = xstrdup(srs_secrets);
++            secret = strtok(saved_secrets, ", \t\r\n");
++            while (secret) {
++                SRS_INIT_FAIL_UNLESS(srs_add_secret(srs_engine, secret));
++                secret = strtok(NULL, ", \t\r\n");
++            }
++        }
++    }
++
++  END:
++    if (saved_secrets)
++        free(saved_secrets);
++
++    if (srs_status != SRS_SUCCESS) {
++        sieve_srs_free();
++
++        syslog(LOG_ERR, "sieve SRS configuration error: %s", srs_strerror(srs_status));
++    }
++}
++
++void sieve_srs_free(void) {
++    if (srs_engine) {
++        srs_free(srs_engine);
++        srs_engine = NULL;
++    }
++}
++
++/**
++ * Performs SRS forward rewriting.
++ * If rewriting failed, or SRS is disabled, NULL pointer is returned. Otherwise
++ * caller is responsible of freeing the resulting address.
++ *
++ * @param return_path   address to rewrite
++ * @return rewritten address, or NULL
++ */
++static char *sieve_srs_forward(char *return_path) {
++    const char *srs_domain = config_getstring(IMAPOPT_SRS_DOMAIN);
++    char *srs_return_path = NULL;
++    int srs_status;
++
++    if (!srs_engine) {
++        /* SRS not enabled */
++        return NULL;
++    }
++
++    srs_status = srs_forward_alloc(srs_engine, &srs_return_path,
++        return_path, srs_domain);
++
++    if (srs_status != SRS_SUCCESS) {
++        syslog(LOG_ERR, "sieve SRS forward failed (%s, %s): %s",
++            return_path, srs_domain, srs_strerror(srs_status));
++        if (srs_return_path) {
++            free(srs_return_path);
++            srs_return_path = NULL;
++        }
++    }
++
++    return srs_return_path;
++}
++
++#endif
+ static int send_forward(const char *forwardto,
+ 			char *return_path,
+ 			struct protstream *file)
+@@ -313,12 +411,20 @@
+     char buf[1024];
+     pid_t sm_pid;
+     int body = 0, skip;
++#ifdef USE_SRS
++    char *srs_return_path = NULL;
++#endif
+ 
+     smbuf[0] = "sendmail";
+     smbuf[1] = "-i";		/* ignore dots */
+     if (return_path && *return_path) {
+ 	smbuf[2] = "-f";
++#ifdef USE_SRS
++	srs_return_path = sieve_srs_forward(return_path);
++	smbuf[3] = srs_return_path ? srs_return_path : return_path;
++#else
+ 	smbuf[3] = return_path;
++#endif
+     } else {
+ 	smbuf[2] = "-f";
+ 	smbuf[3] = "<>";
+@@ -328,6 +434,13 @@
+     smbuf[6] = NULL;
+     sm_pid = open_sendmail(smbuf, &sm);
+ 	
++#ifdef USE_SRS
++    if (srs_return_path) {
++	free(srs_return_path);
++	srs_return_path = NULL;
++    }
++
++#endif
+     if (sm == NULL) {
+ 	return -1;
+     }
+diff -r -u cyrus-imapd-svn/imap/lmtp_sieve.h cyrus-imapd-svn.srs/imap/lmtp_sieve.h
+--- cyrus-imapd-svn/imap/lmtp_sieve.h	2010-01-06 18:01:35.000000000 +0100
++++ cyrus-imapd-svn.srs/imap/lmtp_sieve.h	2010-06-03 14:02:31.000000000 +0200
+@@ -51,5 +51,10 @@
+ sieve_interp_t *setup_sieve(void);
+ int run_sieve(const char *user, const char *domain, const char *mailbox,
+ 	      sieve_interp_t *interp, deliver_data_t *mydata);
++#ifdef USE_SRS
++
++void sieve_srs_init(void);
++void sieve_srs_free(void);
++#endif
+ 
+ #endif /* LMTP_SIEVE_H */
+diff -r -u cyrus-imapd-svn/imap/Makefile.in cyrus-imapd-svn.srs/imap/Makefile.in
+--- cyrus-imapd-svn/imap/Makefile.in	2010-04-22 19:29:53.000000000 +0200
++++ cyrus-imapd-svn.srs/imap/Makefile.in	2010-06-03 13:46:38.000000000 +0200
+@@ -60,7 +60,7 @@
+ CYRUS_GROUP=@cyrus_group@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+-CPPFLAGS = -I.. -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @SIEVE_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
++CPPFLAGS = -I.. -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @SRS_CPPFLAGS@ @SIEVE_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
+ IMAP_LIBS = @IMAP_LIBS@ @LIB_RT@
+ SIEVE_OBJS = @SIEVE_OBJS@
+ SIEVE_LIBS = @SIEVE_LIBS@
+diff -r -u cyrus-imapd-svn/lib/imapoptions cyrus-imapd-svn.srs/lib/imapoptions
+--- cyrus-imapd-svn/lib/imapoptions	2010-04-19 21:54:25.000000000 +0200
++++ cyrus-imapd-svn.srs/lib/imapoptions	2010-06-03 13:53:04.000000000 +0200
+@@ -1085,6 +1085,23 @@
+ { "sql_usessl", 0, SWITCH }
+ /* If enabled, a secure connection will be made to the SQL server. */
+ 
++{ "srs_alwaysrewrite", 0,  SWITCH }
++/* If true, perform SRS rewriting for ALL forwarding, even when not required. */
++
++{ "srs_domain", NULL, STRING }
++/* The domain to use in rewritten addresses. This must point only to machines
++   which know the encoding secret used by this system. When present, SRS is
++   enabled. */
++
++{ "srs_hashlength", 0, INT }
++/* The hash length to generate in a rewritten address. */
++
++{ "srs_secrets", NULL, STRING }
++/* A list of secrets with which to generate addresses. */
++
++{ "srs_separator", NULL, STRING }
++/* The separator to appear immediately after SRS[01] in rewritten addresses. */
++
+ { "srvtab", "", STRING }
+ /* The pathname of \fIsrvtab\fR file containing the server's private
+    key.  This option is passed to the SASL library and overrides its

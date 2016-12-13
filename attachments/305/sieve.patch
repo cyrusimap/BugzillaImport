@@ -1,0 +1,751 @@
+Index: bc_dump.c
+===================================================================
+RCS file: /cvs/src/sieve/bc_dump.c,v
+retrieving revision 1.2
+diff -u -r1.2 bc_dump.c
+--- bc_dump.c	22 Oct 2003 18:03:23 -0000	1.2
++++ bc_dump.c	18 Aug 2004 14:06:11 -0000
+@@ -150,16 +150,16 @@
+ 	
+     case BC_ADDRESS:
+     case BC_ENVELOPE:
+-	printf("%d: %s (\n",ip++,
+-	       d->data[ip].op == BC_ADDRESS ? "ADDRESS" : "ENVELOPE");
++	printf("%d: %s (\n",ip,
++	       d->data[ip++].op == BC_ADDRESS ? "ADDRESS" : "ENVELOPE");
+ 	print_spaces(level*4);
+ 	if (d->data[ip].value == B_COUNT || d->data[ip].value == B_VALUE)
+ 	{
+ 	    printf("      MATCH:%d RELATION: %d COMP: %d TYPE: %d HEADERS:\n", 
+-		   d->data[ip].value, d->data[ip+1].value, d->data[ip+2].value, d->data[ip+3].value);
++		   d->data[ip].value, d->data[ip+1].value, d->data[ip+2].value, d->data[ip+3].str);
+ 	} else {
+ 	    printf("      MATCH:%d COMP:%d TYPE:%d HEADERS:\n",
+-		   d->data[ip].value,d->data[ip+1].value,d->data[ip+3].value);
++		   d->data[ip].value,d->data[ip+1].value,d->data[ip+3].str);
+ 	}
+ 	ip+=4;
+ 	ip = dump_sl(d,ip,level); ip++;
+@@ -168,6 +168,16 @@
+ 	ip = dump_sl(d,ip,level);
+ 	break;
+ 
++    case BC_VIRUSTEST:
++    case BC_SPAMTEST:
++	printf("%d: %s(\n",ip,
++	       (d->data[ip++].op == BC_SPAMTEST) ? "SPAMTEST" : "VIRUSTEST");
++	print_spaces(level*4);
++	printf("      MATCH: %d  RELATION: %d  COMP: %d STRING: \"%s\"\n", 
++	   d->data[ip].value, d->data[ip+1].value,d->data[ip+2].value,d->data[ip+4].str);
++	ip+=4;
++	break;
++	
+     default:
+ 	printf("%d: TEST(%d)\n",ip,d->data[ip].op);
+ 	break;
+Index: bc_emit.c
+===================================================================
+RCS file: /cvs/src/sieve/bc_emit.c,v
+retrieving revision 1.2
+diff -u -r1.2 bc_emit.c
+--- bc_emit.c	22 Oct 2003 18:03:24 -0000	1.2
++++ bc_emit.c	18 Aug 2004 14:06:11 -0000
+@@ -299,6 +299,43 @@
+ 	break;
+     }
+     
++    case BC_VIRUSTEST:
++    case BC_SPAMTEST:
++    {
++	int ret;
++	int len;
++	/* Drop match type */
++	if(write_int(fd, bc->data[(*codep)].value) == -1)
++	    return -1;
++	wrote += sizeof(int);
++	(*codep)++;
++	/*drop comparator */
++	if(write_int(fd, bc->data[(*codep)].value) == -1)
++	    return -1;
++	wrote += sizeof(int);
++	(*codep)++;    
++	/*now drop relation*/
++	if(write_int(fd, bc->data[(*codep)].value) == -1)
++	    return -1;
++	wrote += sizeof(int);
++	(*codep)++;
++
++	/* Now drop string */
++	len = bc->data[(*codep)].len;
++	if(write_int(fd, len) == -1) return -1;
++	wrote += sizeof(int);
++	(*codep)++;
++	if(write(fd, bc->data[(*codep)].str, len) == -1) return -1;
++	wrote += len;
++
++	ret = align_string(fd,len);
++	if(ret == -1) return -1;
++	wrote += ret;
++
++	(*codep)++;
++	break;
++    }
++    
+     default:
+ 	/* Unknown testcode? */
+ 	return -1;
+Index: bc_eval.c
+===================================================================
+RCS file: /cvs/src/sieve/bc_eval.c,v
+retrieving revision 1.7
+diff -u -r1.7 bc_eval.c
+--- bc_eval.c	29 Jul 2004 15:42:31 -0000	1.7
++++ bc_eval.c	18 Aug 2004 14:06:12 -0000
+@@ -312,6 +312,7 @@
+     int list_len; /* for allof/anyof/exists */
+     int list_end; /* for allof/anyof/exists */
+     int address=0;/*to differentiate between address and envelope*/
++    int virus=0;/*to differentiate between spam and virus*/
+     comparator_t * comp=NULL;
+     void * comprock=NULL;
+     int op= ntohl(bc[i].op);
+@@ -707,6 +708,79 @@
+ 
+ 	/* Update IP */
+ 	i=(ntohl(bc[datai+1].value)/4);
++	
++	break;
++    }
++    case BC_VIRUSTEST:
++    	virus=1;
++    case BC_SPAMTEST:/*10*/
++    {
++	const char *val;
++
++	const char *data_val=NULL;
++
++	int match=ntohl(bc[i+1].value);
++	int relation=ntohl(bc[i+2].value);
++	int comparator=ntohl(bc[i+3].value);
++	int isReg = (match==B_REGEX);
++	int ctag = 0;
++	regex_t *reg;
++	char errbuf[100]; /* Basically unused, regexps tested at compile */ 
++
++	i = unwrap_string(bc, i+4, &data_val, NULL);
++
++	/* set up variables needed for compiling regex */
++	if (isReg)
++	{
++	    if (comparator== B_ASCIICASEMAP)
++	    {
++		ctag= REG_EXTENDED | REG_NOSUB | REG_ICASE;
++	    }
++	    else
++	    {
++		ctag= REG_EXTENDED | REG_NOSUB;
++	    }
++     
++	}
++	
++	/*find the correct comparator fcn*/
++	comp=lookup_comp(comparator, match, relation, &comprock);
++
++	if(!comp) {
++	    res = SIEVE_RUN_ERROR;
++	    break;
++	}
++
++	if (virus) {
++	    if (interp->getvirustest(m, &val) != SIEVE_OK)
++		break;
++	} else {
++	    if (interp->getspamtest(m, &val) != SIEVE_OK)
++		break;
++	}
++
++#if VERBOSE
++	printf ("val %s match %d relation %d comparator %d data_val %s i= %d\n", val, match , relation, comparator, data_val, i);
++#endif
++	    
++	if (isReg) {
++	    reg= bc_compile_regex(data_val, ctag, errbuf,
++				  sizeof(errbuf));
++	    if (!reg)
++	    {
++		/* Oops */
++		res=-1;
++		goto alldone;
++	    }
++	    
++	    res |= comp(val, (const char *)reg,
++			comprock);
++	    free(reg);
++	} else {
++	    res |= comp(val, data_val, comprock);
++	}
++	
++	/* Update IP */
+ 	
+ 	break;
+     }
+Index: bc_generate.c
+===================================================================
+RCS file: /cvs/src/sieve/bc_generate.c,v
+retrieving revision 1.3
+diff -u -r1.3 bc_generate.c
+--- bc_generate.c	11 Aug 2004 18:43:15 -0000	1.3
++++ bc_generate.c	18 Aug 2004 14:06:12 -0000
+@@ -355,6 +355,28 @@
+ 	if (codep == -1) return -1;
+      
+ 	break;
++    case VIRUSTEST:
++    case SPAMTEST:
++	/* (BC_SPAMTEST | BC_VIRUSTEST) { c: comparator } ( STRING )
++	*/
++      
++	if(!atleast(retval,codep + 1)) return -1;
++
++	retval->data[codep++].op = (t->type == SPAMTEST)
++	    ? BC_SPAMTEST : BC_VIRUSTEST;
++      
++	/* comparator */
++	codep = bc_comparator_generate(codep, retval,
++				       t->u.sv.comptag,
++				       t->u.sv.relation,
++				       t->u.sv.comparator);
++	if (codep == -1) return -1;
++
++	if(!atleast(retval,codep+2)) return -1;
++      
++	retval->data[codep++].len = strlen(t->u.sv.s);
++	retval->data[codep++].str = t->u.sv.s;
++	break;
+     default:
+ 	return -1;
+       
+Index: bytecode.h
+===================================================================
+RCS file: /cvs/src/sieve/bytecode.h,v
+retrieving revision 1.3
+diff -u -r1.3 bytecode.h
+--- bytecode.h	22 Jun 2004 16:54:54 -0000	1.3
++++ bytecode.h	18 Aug 2004 14:06:12 -0000
+@@ -28,8 +28,8 @@
+ 
+ 
+ /* for debugging*/
+-#define DUMPCODE 0
+-#define VERBOSE 0
++#define DUMPCODE 1
++#define VERBOSE 1
+ 
+ /*for finding correctly aligned bytes on strings*/
+ /* bump to the next multiple of 4 bytes */
+@@ -116,7 +116,9 @@
+     BC_ALLOF,
+     BC_ADDRESS,
+     BC_ENVELOPE,  /* require envelope*/
+-    BC_HEADER    
++    BC_HEADER,
++    BC_SPAMTEST, /* require spamtest */
++    BC_VIRUSTEST /* require virustest */
+ };
+ 
+ /* currently one enum so as to help determine where values are being misused.
+Index: interp.c
+===================================================================
+RCS file: /cvs/src/sieve/interp.c,v
+retrieving revision 1.22
+diff -u -r1.22 interp.c
+--- interp.c	14 May 2002 16:51:50 -0000	1.22
++++ interp.c	18 Aug 2004 14:06:12 -0000
+@@ -57,6 +57,8 @@
+     i->getsize = NULL;
+     i->getheader = NULL;
+     i->getenvelope = NULL;
++    i->getspamtest = NULL;
++    i->getvirustest = NULL;
+     i->vacation = NULL;
+     i->notify = NULL;
+ 
+@@ -71,6 +73,7 @@
+ 
+ static const char *sieve_extensions = "fileinto reject envelope vacation"
+                                       " imapflags notify subaddress relational"
++                                      " spamtest virustest"
+ #ifdef ENABLE_REGEX
+ " regex";
+ #else
+@@ -160,6 +163,18 @@
+ int sieve_register_envelope(sieve_interp_t *interp, sieve_get_envelope *f)
+ {
+     interp->getenvelope = f;
++    return SIEVE_OK;
++}
++
++int sieve_register_spamtest(sieve_interp_t *interp, sieve_get_spamtest *f)
++{
++    interp->getspamtest = f;
++    return SIEVE_OK;
++}
++
++int sieve_register_virustest(sieve_interp_t *interp, sieve_get_virustest *f)
++{
++    interp->getvirustest = f;
+     return SIEVE_OK;
+ }
+ 
+Index: interp.h
+===================================================================
+RCS file: /cvs/src/sieve/interp.h,v
+retrieving revision 1.7
+diff -u -r1.7 interp.h
+--- interp.h	10 Mar 2002 02:58:09 -0000	1.7
++++ interp.h	18 Aug 2004 14:06:12 -0000
+@@ -39,6 +39,8 @@
+     sieve_get_size *getsize;
+     sieve_get_header *getheader;
+     sieve_get_envelope *getenvelope;
++    sieve_get_spamtest *getspamtest;
++    sieve_get_virustest *getvirustest;
+ 
+     sieve_parse_error *err;
+ 
+Index: script.c
+===================================================================
+RCS file: /cvs/src/sieve/script.c,v
+retrieving revision 1.62
+diff -u -r1.62 script.c
+--- script.c	15 Jul 2004 15:02:51 -0000	1.62
++++ script.c	18 Aug 2004 14:06:12 -0000
+@@ -114,6 +114,20 @@
+     } else if (!strcmp("comparator-i;ascii-numeric", req)) {
+ 	s->support.i_ascii_numeric = 1;
+ 	return 1;
++    } else if (!strcmp("spamtest", req)) {
++	if (s->interp.getspamtest) {
++            s->support.spamtest = 1;
++            return 1;
++	} else {
++	    return 0;
++	}
++    } else if (!strcmp("virustest", req)) {
++	if (s->interp.getspamtest) {
++            s->support.virustest = 1;
++            return 1;
++	} else {
++	    return 0;
++	}
+     }
+     return 0;
+ }
+Index: script.h
+===================================================================
+RCS file: /cvs/src/sieve/script.h,v
+retrieving revision 1.11
+diff -u -r1.11 script.h
+--- script.h	22 Oct 2003 18:50:30 -0000	1.11
++++ script.h	18 Aug 2004 14:06:12 -0000
+@@ -49,6 +49,8 @@
+ 	int subaddress     : 1;
+ 	int relational     : 1;
+ 	int i_ascii_numeric: 1;
++	int spamtest       : 1;
++	int virustest      : 1;
+     } support;
+ 
+     void *script_context;
+Index: sieve-lex.l
+===================================================================
+RCS file: /cvs/src/sieve/sieve-lex.l,v
+retrieving revision 1.20
+diff -u -r1.20 sieve-lex.l
+--- sieve-lex.l	7 Jun 2002 20:04:49 -0000	1.20
++++ sieve-lex.l	18 Aug 2004 14:06:12 -0000
+@@ -89,6 +89,8 @@
+ <INITIAL>address	return ADDRESS;
+ <INITIAL>envelope	return ENVELOPE;
+ <INITIAL>header		return HEADER;
++<INITIAL>spamtest	return SPAMTEST;
++<INITIAL>virustest	return VIRUSTEST;
+ <INITIAL>not		return NOT;
+ <INITIAL>size		return SIZE;
+ <INITIAL>reject		return REJCT;
+Index: sieve.y
+===================================================================
+RCS file: /cvs/src/sieve/sieve.y,v
+retrieving revision 1.32
+diff -u -r1.32 sieve.y
+--- sieve.y	29 Jun 2004 20:29:26 -0000	1.32
++++ sieve.y	18 Aug 2004 14:06:12 -0000
+@@ -82,6 +82,12 @@
+     int priority;
+ };
+ 
++struct svtags {
++    int comptag;
++    char *comparator;
++    int relation;
++};
++
+ static commandlist_t *ret;
+ static sieve_script_t *parse_script;
+ static int check_reqs(stringlist_t *sl);
+@@ -89,6 +95,7 @@
+ 			     stringlist_t *sl, stringlist_t *pl);
+ static test_t *build_header(int t, struct htags *h,
+ 			    stringlist_t *sl, stringlist_t *pl);
++static test_t *build_svtest(int t, struct svtags *sv, char *s);
+ static commandlist_t *build_vacation(int t, struct vtags *h, char *s);
+ static commandlist_t *build_notify(int t, struct ntags *n);
+ static commandlist_t *build_denotify(int t, struct dtags *n);
+@@ -107,6 +114,9 @@
+ static struct dtags *new_dtags(void);
+ static struct dtags *canon_dtags(struct dtags *d);
+ static void free_dtags(struct dtags *d);
++static struct svtags *new_svtags(void);
++static struct svtags *canon_svtags(struct svtags *sv);
++static void free_svtags(struct svtags *sv);
+ 
+ static int verify_stringlist(stringlist_t *sl, int (*verify)(char *));
+ static int verify_mailbox(char *s);
+@@ -119,6 +129,7 @@
+ #ifdef ENABLE_REGEX
+ static int verify_regex(char *s, int cflags);
+ static int verify_regexs(stringlist_t *sl, char *comp);
++static int verify_regexstring(char *s, char *comp);
+ #endif
+ static int verify_utf8(char *s);
+ 
+@@ -141,6 +152,7 @@
+     struct htags *htag;
+     struct ntags *ntag;
+     struct dtags *dtag;
++    struct svtags *svtag;
+ }
+ 
+ %token <nval> NUMBER
+@@ -149,7 +161,7 @@
+ %token REJCT FILEINTO REDIRECT KEEP STOP DISCARD VACATION REQUIRE
+ %token SETFLAG ADDFLAG REMOVEFLAG MARK UNMARK
+ %token NOTIFY DENOTIFY
+-%token ANYOF ALLOF EXISTS SFALSE STRUE HEADER NOT SIZE ADDRESS ENVELOPE
++%token ANYOF ALLOF EXISTS SFALSE STRUE HEADER NOT SIZE ADDRESS ENVELOPE SPAMTEST VIRUSTEST
+ %token COMPARATOR IS CONTAINS MATCHES REGEX COUNT VALUE OVER UNDER
+ %token GT GE LT LE EQ NE
+ %token ALL LOCALPART DOMAIN USER DETAIL
+@@ -159,7 +171,7 @@
+ %type <cl> commands command action elsif block
+ %type <sl> stringlist strings
+ %type <test> test
+-%type <nval> comptag relcomp sizetag addrparttag addrorenv
++%type <nval> comptag relcomp sizetag addrparttag addrorenv spamorvirus
+ %type <testl> testlist tests
+ %type <htag> htags
+ %type <aetag> aetags
+@@ -167,6 +179,7 @@
+ %type <ntag> ntags
+ %type <dtag> dtags
+ %type <nval> priority
++%type <svtag> svtags
+ 
+ %%
+ 
+@@ -405,8 +418,6 @@
+ 					 yyerror("unable to find a compatible comparator");
+ 					 YYERROR; } 
+ 				 }
+-
+-
+         | addrorenv aetags stringlist stringlist
+ 				 { 
+ 				     if (($1 == ADDRESS) &&
+@@ -428,6 +439,21 @@
+ 					 yyerror("unable to find a compatible comparator");
+ 					 YYERROR; } 
+ 				 }
++	| spamorvirus svtags STRING
++				{ 
++				     $2 = canon_svtags($2);
++#ifdef ENABLE_REGEX
++				     if ($2->comptag == REGEX)
++				     {
++					 if (!(verify_regexstring($3, $2->comparator)))
++					 { YYERROR; }
++				     }
++#endif
++				     $$ = build_svtest($1, $2, $3);
++				     if ($$ == NULL) {
++					 yyerror("unable to find a compatible comparator");
++					 YYERROR; } 
++				}
+ 
+ 	| NOT test		 { $$ = new_test(NOT); $$->u.t = $2; }
+ 	| SIZE sizetag NUMBER    { $$ = new_test(SIZE); $$->u.sz.t = $2;
+@@ -442,6 +468,15 @@
+ 	                         }
+ 
+ 	;
++spamorvirus: SPAMTEST		 {if (!parse_script->support.spamtest)
++                                     { yyerror("spamtest not required"); YYERROR; }
++				  else {$$ = SPAMTEST;}
++				 }
++	| VIRUSTEST		 {if (!parse_script->support.virustest)
++	                              {yyerror("virustest not required"); YYERROR;}
++	                          else{$$ = VIRUSTEST;}
++	                         }
++	;
+ 
+ aetags: /* empty */              { $$ = new_aetags(); }
+         | aetags addrparttag	 { $$ = $1;
+@@ -494,6 +529,32 @@
+ 				     $$->comparator = $3; } }
+         ;
+ 
++svtags: /* empty */              { $$ = new_svtags(); }
++	| svtags comptag         { $$ = $1;
++				   if ($$->comptag != -1) { 
++			yyerror("duplicate comparator type tag"); YYERROR; }
++				   else { $$->comptag = $2; } }
++	| svtags VALUE STRING{ $$ = $1;
++				   if ($$->comptag != -1) {
++			               yyerror("duplicate comparator type tag"); YYERROR; }
++				   else {
++				   if (!parse_script->support.relational) {
++				        yyerror("relational not required");
++				        YYERROR; }
++				   $$->comptag = VALUE;
++				   $$->relation = verify_relat($3);
++				   if ($$->relation==-1) 
++				     {YYERROR; /*vr called yyerror()*/ }
++				   } }
++        | svtags COMPARATOR STRING { $$ = $1;
++	                             if ($$->comparator != NULL) { 
++			yyerror("duplicate comparator tag"); YYERROR; }
++				     else if (!strcmp($3, "i;ascii-numeric") &&
++				    !parse_script->support.i_ascii_numeric) {
++			yyerror("comparator-i;ascii-numeric not required");
++			YYERROR; }
++				   else { $$->comparator = $3; } }
++	;
+ 
+ addrparttag: ALL                 { $$ = ALL; }
+ 	| LOCALPART		 { $$ = LOCALPART; }
+@@ -530,8 +591,6 @@
+ 				   }
+ 				   $$ = VALUE; }
+ 	;
+-
+-
+ sizetag: OVER			 { $$ = OVER; }
+ 	| UNDER			 { $$ = UNDER; }
+ 	;
+@@ -678,6 +737,23 @@
+     return ret;
+ }
+ 
++static test_t *build_svtest(int t, struct svtags *sv, char *s)
++{
++    test_t *ret = new_test(t);
++
++    assert((t == SPAMTEST) || (t == VIRUSTEST));
++
++    if (ret) {
++	ret->u.sv.comptag=sv->comptag;
++	ret->u.sv.relation=sv->relation;
++	ret->u.sv.comparator=strdup(sv->comparator);
++	ret->u.sv.s = s;
++	free_svtags(sv);
++
++    }
++    return ret;
++}
++
+ static struct aetags *new_aetags(void)
+ {
+     struct aetags *r = (struct aetags *) xmalloc(sizeof(struct aetags));
+@@ -815,6 +891,31 @@
+     free(d);
+ }
+ 
++static struct svtags *new_svtags(void)
++{
++    struct svtags *r = (struct svtags *) xmalloc(sizeof(struct svtags));
++
++    r->comptag = r->relation=-1;
++    r->comparator=NULL;
++
++    return r;
++}
++
++static struct svtags *canon_svtags(struct svtags *sv)
++{
++    if (sv->comparator == NULL) {
++        sv->comparator = xstrdup("i;ascii-casemap");
++    }
++    if (sv->comptag == -1) { sv->comptag = IS; }
++    return sv;
++}
++
++static void free_svtags(struct svtags *sv)
++{
++    free(sv->comparator);
++    free(sv);
++}
++
+ static int verify_stringlist(stringlist_t *sl, int (*verify)(char *))
+ {
+     for (; sl != NULL && verify(sl->s); sl = sl->next) ;
+@@ -993,6 +1094,17 @@
+ 	return 1;
+     }
+     return 0;
++}
++
++static int verify_regexstring(char *s, char *comp)
++{
++    int cflags = REG_EXTENDED | REG_NOSUB;
++ 
++    if (!strcmp(comp, "i;ascii-casemap")) {
++	cflags |= REG_ICASE;
++    }
++
++    return verify_regex(s, cflags);
+ }
+ #endif
+ 
+Index: sieve_interface.h
+===================================================================
+RCS file: /cvs/src/sieve/sieve_interface.h,v
+retrieving revision 1.19
+diff -u -r1.19 sieve_interface.h
+--- sieve_interface.h	22 Oct 2003 18:50:30 -0000	1.19
++++ sieve_interface.h	18 Aug 2004 14:06:12 -0000
+@@ -52,6 +52,10 @@
+ typedef int sieve_get_envelope(void *message_context, 
+ 			       const char *field,
+ 			       const char ***contents);
++typedef int sieve_get_spamtest(void *message_context, 
++			       const char **val);
++typedef int sieve_get_virustest(void *message_context, 
++			       const char **val);
+ 
+ typedef struct sieve_vacation {
+     int min_response;		/* 0 -> defaults to 3 */
+@@ -129,6 +133,8 @@
+ int sieve_register_size(sieve_interp_t *interp, sieve_get_size *f);
+ int sieve_register_header(sieve_interp_t *interp, sieve_get_header *f);
+ int sieve_register_envelope(sieve_interp_t *interp, sieve_get_envelope *f);
++int sieve_register_spamtest(sieve_interp_t *interp, sieve_get_spamtest *f);
++int sieve_register_virustest(sieve_interp_t *interp, sieve_get_virustest *f);
+ 
+ typedef int sieve_parse_error(int lineno, const char *msg, 
+ 			      void *interp_context,
+Index: sievec.c
+===================================================================
+RCS file: /cvs/src/sieve/sievec.c,v
+retrieving revision 1.5
+diff -u -r1.5 sievec.c
+--- sievec.c	11 Mar 2004 15:23:20 -0000	1.5
++++ sievec.c	18 Aug 2004 14:06:12 -0000
+@@ -264,6 +264,18 @@
+ 	return TIMSIEVE_FAIL;
+     }
+ 
++    res = sieve_register_spamtest(i, (sieve_get_spamtest *) &foo);
++    if (res != SIEVE_OK) {
++	syslog(LOG_ERR, "sieve_register_spamtest() returns %d\n", res);
++	return TIMSIEVE_FAIL;
++    }
++  
++    res = sieve_register_virustest(i, (sieve_get_virustest *) &foo);
++    if (res != SIEVE_OK) {
++	syslog(LOG_ERR, "sieve_register_virustest() returns %d\n", res);
++	return TIMSIEVE_FAIL;
++    }
++  
+     rewind(stream);
+ 
+     *errstr = (char *) xmalloc(20 * sizeof(char));
+Index: test.c
+===================================================================
+RCS file: /cvs/src/sieve/test.c,v
+retrieving revision 1.23
+diff -u -r1.23 test.c
+--- test.c	16 Jun 2004 13:50:46 -0000	1.23
++++ test.c	18 Aug 2004 14:06:12 -0000
+@@ -48,6 +48,7 @@
+ #include "comparator.h"
+ #include "tree.h"
+ #include "sieve.h"
++#include "libspamc.h"
+ 
+ #define HEADERCACHESIZE 1019
+ 
+@@ -285,6 +286,24 @@
+     }
+ }
+ 
++int getspamtest(void *v, const char **val)
++{
++    message_data_t *m = (message_data_t *) v;
++
++    *val = "33";
++
++    return SIEVE_OK;
++}
++
++int getvirustest(void *v, const char **val)
++{
++    message_data_t *m = (message_data_t *) v;
++
++    *val = "22";
++
++    return SIEVE_OK;
++}
++
+ message_data_t *new_msg(FILE *msg, int size, char *name)
+ {
+     int i;
+@@ -770,6 +789,18 @@
+     res = sieve_register_envelope(i, &getenvelope);
+     if (res != SIEVE_OK) {
+ 	printf("sieve_register_envelope() returns %d\n", res);
++	exit(1);
++    }
++
++    res = sieve_register_spamtest(i, &getspamtest);
++    if (res != SIEVE_OK) {
++	printf("sieve_register_spamtest() returns %d\n", res);
++	exit(1);
++    }
++
++    res = sieve_register_virustest(i, &getvirustest);
++    if (res != SIEVE_OK) {
++	printf("sieve_register_virustest() returns %d\n", res);
+ 	exit(1);
+     }
+ 
+Index: tree.h
+===================================================================
+RCS file: /cvs/src/sieve/tree.h,v
+retrieving revision 1.8
+diff -u -r1.8 tree.h
+--- tree.h	22 Oct 2003 18:50:30 -0000	1.8
++++ tree.h	18 Aug 2004 14:06:12 -0000
+@@ -81,6 +81,13 @@
+ 	    int t; /* tag */
+ 	    int n; /* param */
+ 	} sz;
++	struct { /* it's a spam or virus test */
++	    int comptag;
++	    char * comparator;
++	    int relation;
++	    void *comprock;
++	    char *s;
++	} sv;
+     } u;
+ };
+ 

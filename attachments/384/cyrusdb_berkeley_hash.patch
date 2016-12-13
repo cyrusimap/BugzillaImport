@@ -1,0 +1,219 @@
+Index: cyrusdb.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb.c,v
+retrieving revision 1.9
+diff -u -r1.9 cyrusdb.c
+--- cyrusdb.c	20 Jan 2004 01:11:03 -0000	1.9
++++ cyrusdb.c	13 Oct 2005 00:56:30 -0000
+@@ -65,6 +65,8 @@
+ #ifdef HAVE_BDB
+     &cyrusdb_berkeley,
+     &cyrusdb_berkeley_nosync,
++    &cyrusdb_berkeley_hash,
++    &cyrusdb_berkeley_hash_nosync,
+ #endif
+     &cyrusdb_flat,
+     &cyrusdb_skiplist,
+Index: cyrusdb.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb.h,v
+retrieving revision 1.29
+diff -u -r1.29 cyrusdb.h
+--- cyrusdb.h	11 Mar 2004 18:36:44 -0000	1.29
++++ cyrusdb.h	13 Oct 2005 00:56:30 -0000
+@@ -183,6 +183,8 @@
+  * if libcyrus was not built with support for them */
+ extern struct cyrusdb_backend cyrusdb_berkeley;
+ extern struct cyrusdb_backend cyrusdb_berkeley_nosync;
++extern struct cyrusdb_backend cyrusdb_berkeley_hash;
++extern struct cyrusdb_backend cyrusdb_berkeley_hash_nosync;
+ extern struct cyrusdb_backend cyrusdb_flat;
+ extern struct cyrusdb_backend cyrusdb_skiplist;
+ extern struct cyrusdb_backend cyrusdb_quotalegacy;
+Index: cyrusdb_berkeley.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb_berkeley.c,v
+retrieving revision 1.9
+diff -u -r1.9 cyrusdb_berkeley.c
+--- cyrusdb_berkeley.c	17 Nov 2004 15:41:31 -0000	1.9
++++ cyrusdb_berkeley.c	13 Oct 2005 00:56:30 -0000
+@@ -362,7 +362,17 @@
+     return 0;
+ }
+ 
+-static int myopen(const char *fname, int flags, struct db **ret)
++static int open_btree(const char *fname, int flags, struct db **ret)
++{
++    return myopen(fname, DB_BTREE, flags, ret);
++}
++
++static int open_hash(const char *fname, int flags, struct db **ret)
++{
++    return myopen(fname, DB_HASH, flags, ret);
++}
++
++static int myopen(const char *fname, DBTYPE type, int flags, struct db **ret)
+ {
+     DB *db = NULL;
+     int r;
+@@ -380,9 +390,9 @@
+     /* xxx set comparator! */
+ 
+ #if DB_VERSION_MAJOR == 4 && DB_VERSION_MINOR >= 1
+-    r = db->open(db, NULL, fname, NULL, DB_BTREE, dbflags | DB_AUTO_COMMIT, 0664);
++    r = db->open(db, NULL, fname, NULL, type, dbflags | DB_AUTO_COMMIT, 0664);
+ #else
+-    r = db->open(db, fname, NULL, DB_BTREE, dbflags, 0664);
++    r = db->open(db, fname, NULL, type, dbflags, 0664);
+ #endif
+ 
+     if (r != 0) {
+@@ -957,7 +967,7 @@
+     &mysync,
+     &myarchive,
+ 
+-    &myopen,
++    &open_hash,
+     &myclose,
+ 
+     &fetch,
+@@ -983,7 +993,59 @@
+     &mysync,
+     &myarchive,
+ 
+-    &myopen,
++    &open_hash,
++    &myclose,
++
++    &fetch,
++    &fetchlock,
++    &foreach,
++    &create_nosync,
++    &store_nosync,
++    &delete_nosync,
++
++    &commit_nosync,
++    &abort_txn,
++
++    NULL,
++    NULL
++};
++
++struct cyrusdb_backend cyrusdb_hash_berkeley = 
++{
++    "berkeley_hash",		/* name */
++
++    &init,
++    &done,
++    &mysync,
++    &myarchive,
++
++    &open_hash,
++    &myclose,
++
++    &fetch,
++    &fetchlock,
++    &foreach,
++    &create,
++    &store,
++    &delete,
++
++    &commit_txn,
++    &abort_txn,
++    
++    NULL,
++    NULL
++};
++
++struct cyrusdb_backend cyrusdb_berkeley_hash_nosync = 
++{
++    "berkeley-hash-nosync",	/* name */
++
++    &init,
++    &done,
++    &mysync,
++    &myarchive,
++
++    &open_hash,
+     &myclose,
+ 
+     &fetch,
+Index: imapoptions
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/imapoptions,v
+retrieving revision 1.33
+diff -u -r1.33 imapoptions
+--- imapoptions	2 Jun 2005 15:47:59 -0000	1.33
++++ imapoptions	13 Oct 2005 00:56:30 -0000
+@@ -144,7 +144,7 @@
+    affect LMTP delivery of messages directly to mailboxes via
+    plus-addressing. */
+ 
+-{ "annotation_db", "skiplist", STRINGLIST("berkeley", "skiplist")}
++{ "annotation_db", "skiplist", STRINGLIST("berkeley", "berkeley-hash", "skiplist")}
+ /* The cyrusdb backend to use for mailbox annotations. */
+ 
+ { "auth_mech", "unix", STRINGLIST("unix", "pts", "krb", "krb5")}
+@@ -195,7 +195,7 @@
+ { "deleteright", "c", STRING }
+ /* The right that a user needs to delete a mailbox. */
+ 
+-{ "duplicate_db", "berkeley-nosync", STRINGLIST("berkeley", "berkeley-nosync", "skiplist")}
++{ "duplicate_db", "berkeley-nosync", STRINGLIST("berkeley", "berkeley-nosync", "berkeley-hash", "berkeley-hash-nosync", "skiplist")}
+ /* The cyrusdb backend to use for the duplicate delivery suppression
+    and sieve. */
+ 
+@@ -459,7 +459,7 @@
+    messages larger than \fImaxmessagesize\fR bytes.  If set to 0, this
+    will allow messages of any size (the default). */
+ 
+-{ "mboxlist_db", "skiplist", STRINGLIST("flat", "berkeley", "skiplist")}
++{ "mboxlist_db", "skiplist", STRINGLIST("flat", "berkeley", "berkeley-hash", "skiplist")}
+ /* The cyrusdb backend to use for the mailbox list. */
+ 
+ # xxx badly worded
+@@ -662,7 +662,7 @@
+ /* Unix domain socket that ptloader listens on.
+    (defaults to configdir/ptclient/ptsock) */
+ 
+-{ "ptscache_db", "berkeley", STRINGLIST("berkeley", "skiplist")}
++{ "ptscache_db", "berkeley", STRINGLIST("berkeley", "berkeley-hash", "skiplist")}
+ /* The cyrusdb backend to use for the pts cache. */
+ 
+ { "ptscache_timeout", 10800, INT }
+@@ -679,7 +679,7 @@
+    strip the default realm from the userid (this does not affect the stripping
+    of realms specified by the afspts_localrealms option) */
+ 
+-{ "quota_db", "quotalegacy", STRINGLIST("flat", "berkeley", "skiplist", "quotalegacy")}
++{ "quota_db", "quotalegacy", STRINGLIST("flat", "berkeley", "berkeley-hash", "skiplist", "quotalegacy")}
+ /* The cyrusdb backend to use for quotas. */
+ 
+ { "quotawarn", 90, INT }
+@@ -737,7 +737,7 @@
+ /* The mechanism used by the server to verify plaintext passwords. 
+    Possible values include "auxprop", "saslauthd", and "pwcheck". */
+ 
+-{ "seenstate_db", "skiplist", STRINGLIST("flat", "berkeley", "skiplist")}
++{ "seenstate_db", "skiplist", STRINGLIST("flat", "berkeley", "berkeley-hash", "skiplist")}
+ /* The cyrusdb backend to use for the seen state. */
+ 
+ { "sendmail", "/usr/lib/sendmail", STRING }
+@@ -794,7 +794,7 @@
+    key.  This option is passed to the SASL library and overrides its
+    default setting. */
+ 
+-{ "subscription_db", "flat", STRINGLIST("flat", "berkeley", "skiplist")}
++{ "subscription_db", "flat", STRINGLIST("flat", "berkeley", "berkeley-hash", "skiplist")}
+ /* The cyrusdb backend to use for the subscriptions list. */
+ 
+ { "syslog_prefix", NULL, STRING }
+@@ -815,7 +815,7 @@
+    have filenames with the hashed value of the certificate (see
+    openssl(XXX)). */
+ 
+-{ "tlscache_db", "berkeley-nosync", STRINGLIST("berkeley", "berkeley-nosync", "skiplist")}
++{ "tlscache_db", "berkeley-nosync", STRINGLIST("berkeley", "berkeley-nosync", "berkeley-hash", "berkeley-hash-nosync", "skiplist")}
+ /* The cyrusdb backend to use for the TLS cache. */
+ 
+ { "tls_cert_file", NULL, STRING }

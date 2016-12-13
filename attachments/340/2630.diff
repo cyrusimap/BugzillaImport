@@ -1,0 +1,54 @@
+Index: ChangeLog
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/sasl/ChangeLog,v
+retrieving revision 1.715
+diff -u -r1.715 ChangeLog
+--- ChangeLog	15 Mar 2005 13:33:29 -0000	1.715
++++ ChangeLog	11 Apr 2005 05:06:40 -0000
+@@ -1,3 +1,9 @@
++2005-04-11  Derrick Brashear <shadow@andrew.cmu.edu>
++	* sasldb/Makefile.am, config/sasldb.m4: work around HP-UX make's
++	  inability to have pipes in $(shell ...) by setting 
++	  LOCAL_SASL_DB_BACKEND_STATIC at the same time as
++	  SASL_DB_BACKEND_STATIC.
++	
+ 2005-03-15  Alexey Melnikov <alexey.melnikov@isode.com>
+ 	* lib/dlopen.c: log the reason for opendir() failure
+ 	  when loading plugin.
+Index: config/sasldb.m4
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/sasl/config/sasldb.m4,v
+retrieving revision 1.19
+diff -u -r1.19 sasldb.m4
+--- config/sasldb.m4	8 Oct 2003 20:35:27 -0000	1.19
++++ config/sasldb.m4	11 Apr 2005 05:03:59 -0000
+@@ -133,10 +133,13 @@
+       SASL_STATIC_OBJS="$SASL_STATIC_OBJS $SASL_DB_BACKEND_STATIC"
+     fi
+ fi
++
++LOCAL_SASL_DB_BACKEND_STATIC=`echo $(SASL_DB_BACKEND_STATIC) | sed -e "s%\.\./sasldb/%%g"`
+ AC_SUBST(SASL_DB_UTILS)
+ AC_SUBST(SASL_DB_MANS)
+ AC_SUBST(SASL_DB_BACKEND)
+ AC_SUBST(SASL_DB_BACKEND_STATIC)
++AC_SUBST(LOCAL_SASL_DB_BACKEND_STATIC)
+ AC_SUBST(SASL_DB_INC)
+ AC_SUBST(SASL_DB_LIB)
+ ])
+Index: sasldb/Makefile.am
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/sasl/sasldb/Makefile.am,v
+retrieving revision 1.27
+diff -u -r1.27 Makefile.am
+--- sasldb/Makefile.am	24 Oct 2004 20:05:22 -0000	1.27
++++ sasldb/Makefile.am	11 Apr 2005 05:04:32 -0000
+@@ -58,8 +58,6 @@
+ libsasldb_la_DEPENDENCIES = $(SASL_DB_BACKEND)
+ libsasldb_la_LIBADD = $(SASL_DB_BACKEND) 
+ 
+-LOCAL_SASL_DB_BACKEND_STATIC := $(shell echo $(SASL_DB_BACKEND_STATIC) | sed -e "s%\.\./sasldb/%%g")
+-
+ # Prevent make dist stupidity
+ libsasldb_a_SOURCES =
+ EXTRA_libsasldb_a_SOURCES =

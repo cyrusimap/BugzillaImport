@@ -1,0 +1,275 @@
+	    Protocol for Third-Party Authentication Server
+
+		   Copyright 2002 Sun Microsystems
+
+		       Version 1.0, 2002-Apr-30
+
+			   by Chris Newman
+
+
+1. Introduction
+
+The purpose of this protocol is to provide functional separation
+between an Internet server for a protocol such as IMAP, POP or SMTP
+and a custom authentication server.  The inital target is to add this
+facility to Sun ONE Messaging Server's Messaging Multiplexor which
+provides IMAP and POP proxy service.
+
+The Internet server will parse whatever protocol is used by the end
+user to provide authentication information (typically username and
+password often via SASL) and transmit that information to the
+authentication server.  The Internet server will optionally look up
+the username and provide a subset of LDAP attributes in the user entry
+to the authentication server (if the Internet server does not perform
+an LDAP lookup, then the authentication server is responsible to
+provide all necessary attributes for correct operation of the Internet
+server).  The authentication server will perform the actual
+authentication and then may return information back to the server,
+such as a replay username and password for use by proxy servers as
+well as any relevant LDAP attributes.
+
+The initial version has no authentication or security services and is
+intended for use via the localhost (loopback) interface to restrict
+access.  This is a text protocol using the UTF-8 charset (RFC 2279)
+with lines separated by CRLF.
+
+Each request consists of a header line, defined attributes, a blank
+line and optional LDAP attributes.  Multiple requests are permitted on
+a single TCP/IP connection.  Multiple requests may be streamed without
+waiting for a response, however if multiple requests have been sent
+and the TCP sending window is full, the requester MUST read responses
+as they become available to prevent a deadlock.  The authentication
+server MUST generate the responses in the order requested.  The
+requestor terminates the session by closing the connection.
+
+
+2. Design Goals
+
+Because this is an extremely security sensitive service, it is
+important to maximize the simplicity in order to minimize the chances
+of introducing a buffer overflow or other security problem.  As a
+result, this does not use existing complex syntaxes such as XML or
+message headers.  It is however, important to have extensibility to
+support additional authentication mechanisms and complex policy.  Thus
+an attribute-value model similar to that provided by an LDAP entry is
+used.
+
+
+3. Greeting
+
+When the Internet server first connects to the authentication server,
+the authentication server must transmit a greeting to the Internet
+server.  The greeting communicates features that the authentication
+server supports.  The greeting itself begins with the string
+"authserver" followed by a space, a header (as defined in section 4)
+and a set of capability attributes.  The defined attributes are:
+
+version
+
+This is a string describing the build number, version and vendor of
+the authentication server suitable for logging to a log file to
+diagnose problems.  This MAY be used to workaround bugs in a
+particular release of an auth server, but MUST NOT be used to
+determine the availability of a protocol feature.
+
+
+4. Header Line
+
+The header line of the protocol contains three ASCII-encoded decimal numbers:
+
+a. the number of octets in this request/response/greeting.  The header
+line and the CRLF on the header line are excluded from the count.  All
+other CRLF characters are included in the count, including the blank
+line between defined attributes and LDAP attributes in the
+request/response.
+
+b. the number of attributes in this request (including defined
+attributes and LDAP attributes).
+
+c. the number of values in this request (this may be larger than the
+number of attributes if any attribute is multi-valued).
+
+The header line provides a number of sanity checks to validate the
+protocol and permits pre-allocation of data storage by the receiver.
+In all cases, the last two characters of data of size specified by (a)
+must be CRLF.  (c) must be equal to or greater than (b).
+
+
+5. Defined Attributes
+
+The defined attribute names are all lower-case US-ASCII, upper-case is
+not permitted in the names.  Attribute names are followed by a space
+and the attribute value.  Unknown attributes are ignored.  Multi-value
+attributes are represented by multiple-lines where the second and
+subsequent values are on lines beginning with a space.  All defined
+attributes are single-valued unless otherwise noted.
+
+saslmech
+
+The name of the SASL (RFC 2222) mechanism used.  The mechanism PLAIN
+(RFC 2595) is the default if this attribute is not provided.  Note
+that plaintext login commands such as the POP3 USER/PASS commands or
+the IMAP4 LOGIN command are equivalent to the PLAIN mechanism and use
+the same label.
+
+authname
+
+This is the authentication user name (the name whose
+password/credentials are provided) in traditional "user@domain"
+syntax.  If this is present, the client has requested proxy
+authentication.  Authname represents the administrator's username
+while "username" represents the user to login as.
+
+username
+
+This is the user name (or login name) provided by the end user in
+traditional "user@domain" syntax.
+
+password
+
+For the "PLAIN" SASL mechanism, this is the password provided by the user.
+
+localaddr
+
+This is the IP address and port (space separated) to which the client
+connected (future IPv6 support will use standard IPv6 hex/colon
+syntax).
+
+remoteaddr
+
+This is the IP address and port (space separated) of the client in
+dotted-decimal syntax (future IPv6 support will use standard IPv6
+hex/colon syntax).
+
+seclevel
+
+This is the security level of the connection (usually provided by
+SSL/TLS).  0 is unencrypted.  1 is integrity-protected only.  Other
+numbers represent the key size of the encryption algorithm used
+(40/56/64 = export crippled, 112/128/168 = traditional, 256/512 for
+large AES keys).
+
+service
+
+This is the SASL/GSSAPI service name for the protocol in question.
+Service names are defined at:
+ 
+  http://www.iana.org/assignments/gssapi-service-names
+
+This has values such as "imap", "pop" and "smtp".
+
+lang
+
+This is the RFC 3066 language tag of the client.  If omitted,
+"i-default" must be assumed.  This may be used to localize the errtext
+responses.
+
+Additional attributes will be added to support other SASL mechanisms
+and criteria in the future.
+
+
+6. LDAP attributes
+
+If the Internet server configuration is set up to do the initial user
+lookup in LDAP, it may also include a list of LDAP attributes to pass
+to the authentication server.  These attributes are represented with
+the same syntax as the defined attribute section, but there is a blank
+line between the defined attribute section and the LDAP attribute
+section.
+
+
+7. Response
+
+A response has the same syntax as the request, with different defined
+attributes.  Any values supplied in the LDAP attribute section replace
+values from the request.  See the iPlanet Messaging Server Schema
+Guide for meanings of LDAP attributes to iPlanet Messaging Server
+components.  The defined attributes follow:
+
+errcode
+
+This is a numeric error code describing the reason for an
+authentication failure.  This is mandatory.  See Appendix A for a list
+of error codes.
+
+errtext
+
+This is UTF-8 text describing the authentication error, suitable for
+reply to the end user.
+
+replayauth
+
+If the Internet server is a proxy, this is the administrative user
+name used for proxy authentication to the backend server.
+
+replayuser
+
+If the Internet server is a proxy, this is the user name to replay to
+the backend.
+
+replaypass
+
+If the Internet server is a proxy, this is the password to replay to
+the backend.
+
+
+8. Formal Syntax
+
+This is the formal syntax for the protocol.  This uses ABNF as defined
+in RFC 2234, including the core rules in Appendix A.
+
+ACHAR       = %x21-7E
+UTF8-DATA   = <any UTF-8 character excluding NUL, CR and LF>
+
+datasize    = 1*DIGIT
+numattrs    = 1*DIGIT
+numvals     = 1*DIGIT
+header      = datasize SP numattrs SP numvals CRLF
+attrval     = 1*ACHAR SP *UTF8-DATA CRLF *(SP *UTF8-DATA CRLF)
+defattrval  = 1*attrval
+LDAPattrval = *attrval
+greeting    = "authserver" SP header 1*attrval   ; case-sensitive
+request     = header defattrval CRLF LDAPattrval
+response    = header defattrval CRLF LDAPattrval
+serverproto = greeting 1*response
+clientproto = *request
+
+9. Security Considerations
+
+Because this is a security sensitive protocol, it is recommended the
+protocol parsers be extremely strict with respect to checking for
+invalid protocol data and fail the operation if anything is
+unexpected, especially if the length or counts in the header line
+don't match the actual data provided.  The exception to this rule is
+that unknown attributes should be ignored to permit future
+extensibility.
+
+If a protocol transcript option for debugging is offered, it should
+suppress values of the password, replaypass and any LDAP attribute
+name ending in the word "Password".
+
+
+A. Appendix A - Error codes
+
+#define SASL_OK          0   /* successful result */
+#define SASL_FAIL       -1   /* generic failure */
+#define SASL_NOMEM      -2   /* memory shortage failure */
+#define SASL_BUFOVER    -3   /* overflowed buffer */
+#define SASL_NOMECH     -4   /* mechanism not supported */
+#define SASL_BADPROT    -5   /* bad protocol / cancel */
+#define SASL_NOTDONE    -6   /* can't request info until later in exchange */
+#define SASL_BADPARAM   -7   /* invalid parameter supplied */
+#define SASL_TRYAGAIN   -8   /* transient failure (e.g., weak key) */
+#define SASL_BADMAC     -9   /* integrity check failed */
+#define SASL_BADAUTH    -13  /* authentication failure */
+#define SASL_NOAUTHZ    -14  /* authorization failure */
+#define SASL_TOOWEAK    -15  /* mechanism too weak for this user */
+#define SASL_ENCRYPT    -16  /* encryption needed to use mechanism */
+#define SASL_TRANS      -17  /* One time use of a plaintext password will
+                                enable requested mechanism for user */
+#define SASL_EXPIRED    -18  /* passphrase expired, has to be reset */
+#define SASL_DISABLED   -19  /* account disabled */
+#define SASL_NOUSER     -20  /* user not found */
+#define SASL_BADVERS    -23  /* version mismatch with plug-in */
+#define SASL_UNAVAIL    -24  /* remote authentication server unavailable */
+#define SASL_NOVERIFY   -26  /* user exists, but no verifier for user */

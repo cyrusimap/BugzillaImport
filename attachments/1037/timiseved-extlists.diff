@@ -1,0 +1,401 @@
+diff -cr original/lib/imapoptions patched/lib/imapoptions
+*** original/lib/imapoptions	2008-10-08 17:18:12.000000000 +0000
+--- patched/lib/imapoptions	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 919,925 ****
+     user's scripts reside on a remote server (in a Murder).
+     Otherwise, timsieved will proxy traffic to the remote server. */
+  
+! { "sieve_extensions", "fileinto reject vacation imapflags notify envelope relational regex subaddress copy", BITFIELD("fileinto", "reject", "vacation", "imapflags", "notify", "include", "envelope", "body", "relational", "regex", "subaddress", "copy") }
+  /* Space-separated list of Sieve extensions allowed to be used in
+     sieve scripts, enforced at submission by timsieved(8).  Any
+     previously installed script will be unaffected by this option and
+--- 919,925 ----
+     user's scripts reside on a remote server (in a Murder).
+     Otherwise, timsieved will proxy traffic to the remote server. */
+  
+! { "sieve_extensions", "fileinto reject vacation imapflags notify envelope relational regex subaddress copy", BITFIELD("fileinto", "reject", "vacation", "imapflags", "notify", "include", "envelope", "body", "relational", "regex", "subaddress", "copy", "extlists") }
+  /* Space-separated list of Sieve extensions allowed to be used in
+     sieve scripts, enforced at submission by timsieved(8).  Any
+     previously installed script will be unaffected by this option and
+diff -cr original/sieve/interp.c patched/sieve/interp.c
+*** original/sieve/interp.c	2008-03-24 20:08:46.000000000 +0000
+--- patched/sieve/interp.c	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 145,150 ****
+--- 145,153 ----
+  	    strlcat(extensions, " subaddress", sizeof(extensions));
+  	if (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_COPY)
+  	    strlcat(extensions, " copy", sizeof(extensions));
++         if (//i->extlists &&
++ 	    (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_EXTLISTS))
++ 	    strlcat(extensions, " extlists", sizeof(extensions));
+      }
+  
+      return extensions;
+diff -cr original/sieve/script.c patched/sieve/script.c
+*** original/sieve/script.c	2008-03-24 20:08:46.000000000 +0000
+--- patched/sieve/script.c	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 165,170 ****
+--- 165,174 ----
+  	       (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_COPY)) {
+  	s->support.copy = 1;
+  	return 1;
++     } else if (!strcmp("extlists", req) &&
++ 	       (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_EXTLISTS)) {
++ 	s->support.extlists = 1;
++ 	return 1;
+      }
+      return 0;
+  }
+diff -cr original/sieve/script.h patched/sieve/script.h
+*** original/sieve/script.h	2008-03-24 20:08:46.000000000 +0000
+--- patched/sieve/script.h	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 72,77 ****
+--- 72,78 ----
+  	int i_ascii_numeric: 1;
+  	int include        : 1;
+  	int copy           : 1;
++ 	int extlists       : 1;
+      } support;
+  
+      void *script_context;
+diff -cr original/sieve/sieve-lex.c patched/sieve/sieve-lex.c
+*** original/sieve/sieve-lex.c	2008-10-17 12:56:20.000000000 +0000
+--- patched/sieve/sieve-lex.c	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 375,381 ****
+  	*yy_cp = '\0'; \
+  	(yy_c_buf_p) = yy_cp;
+  
+! #define YY_NUM_RULES 78
+! #define YY_END_OF_BUFFER 79
+  /* This struct is not used in this scanner,
+     but its presence is necessary. */
+diff -cr original/sieve/sieve-lex.l patched/sieve/sieve-lex.l
+*** original/sieve/sieve-lex.l	2008-03-24 20:08:46.000000000 +0000
+--- patched/sieve/sieve-lex.l	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 160,165 ****
+--- 160,166 ----
+  <INITIAL>:global	return GLOBAL;
+  <INITIAL>return		return RETURN;
+  <INITIAL>:copy		return COPY;
++ <INITIAL>:list          return LIST;
+  <INITIAL>[ \t\n\r] ;	/* ignore whitespace */
+  <INITIAL>#.* ;		/* ignore hash comments */
+  <INITIAL>"/*"([^\*]|\*[^\/])*\*?"*/" ;	/* ignore bracket comments */
+diff -cr original/sieve/sieve.y patched/sieve/sieve.y
+*** original/sieve/sieve.y	2008-10-02 13:36:56.000000000 +0000
+--- patched/sieve/sieve.y	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 66,71 ****
+--- 66,76 ----
+      /* definitions */
+      extern int addrparse(void);
+  
++ struct rtags {
++   char copy;
++   char extlists;
++ };
++ 
+  struct vtags {
+      int days;
+      stringlist_t *addresses;
+***************
+*** 79,84 ****
+--- 84,90 ----
+      char *comparator;
+      int comptag;
+      int relation;
++     char extlists;
+  };
+  
+  struct aetags {
+***************
+*** 86,91 ****
+--- 92,98 ----
+      char *comparator;
+      int comptag;
+      int relation;
++     char extlists;
+  };
+  
+  struct btags {
+***************
+*** 124,130 ****
+  static commandlist_t *build_notify(int t, struct ntags *n);
+  static commandlist_t *build_denotify(int t, struct dtags *n);
+  static commandlist_t *build_fileinto(int t, int c, char *f);
+! static commandlist_t *build_redirect(int t, int c, char *a);
+  static struct aetags *new_aetags(void);
+  static struct aetags *canon_aetags(struct aetags *ae);
+  static void free_aetags(struct aetags *ae);
+--- 131,139 ----
+  static commandlist_t *build_notify(int t, struct ntags *n);
+  static commandlist_t *build_denotify(int t, struct dtags *n);
+  static commandlist_t *build_fileinto(int t, int c, char *f);
+! static commandlist_t *build_redirect(int t, struct rtags *c, char *a);
+! static struct rtags *new_rtags(void);
+! static void free_rtags(struct rtags *r);
+  static struct aetags *new_aetags(void);
+  static struct aetags *canon_aetags(struct aetags *ae);
+  static void free_aetags(struct aetags *ae);
+***************
+*** 174,179 ****
+--- 183,189 ----
+      commandlist_t *cl;
+      struct vtags *vtag;
+      struct aetags *aetag;
++     struct rtags *rtags;
+      struct htags *htag;
+      struct btags *btag;
+      struct ntags *ntag;
+***************
+*** 194,200 ****
+  %token DAYS ADDRESSES SUBJECT FROM HANDLE MIME
+  %token METHOD ID OPTIONS LOW NORMAL HIGH ANY MESSAGE
+  %token INCLUDE PERSONAL GLOBAL RETURN
+! %token COPY
+  
+  %type <cl> commands command action elsif block
+  %type <sl> stringlist strings
+--- 204,210 ----
+  %token DAYS ADDRESSES SUBJECT FROM HANDLE MIME
+  %token METHOD ID OPTIONS LOW NORMAL HIGH ANY MESSAGE
+  %token INCLUDE PERSONAL GLOBAL RETURN
+! %token COPY LIST
+  
+  %type <cl> commands command action elsif block
+  %type <sl> stringlist strings
+***************
+*** 203,208 ****
+--- 213,219 ----
+  %type <testl> testlist tests
+  %type <htag> htags
+  %type <aetag> aetags
++ %type <rtags> rtags
+  %type <btag> btags
+  %type <vtag> vtags
+  %type <ntag> ntags
+***************
+*** 256,262 ****
+  				     YYERROR; /* vm should call yyerror() */
+  				   }
+  	                           $$ = build_fileinto(FILEINTO, $2, $3); }
+! 	| REDIRECT copy STRING   { if (!verify_address($3)) {
+  				     YYERROR; /* va should call yyerror() */
+  				   }
+  	                           $$ = build_redirect(REDIRECT, $2, $3); }
+--- 267,273 ----
+  				     YYERROR; /* vm should call yyerror() */
+  				   }
+  	                           $$ = build_fileinto(FILEINTO, $2, $3); }
+! 	| REDIRECT rtags STRING   { if (!verify_address($3)) {
+  				     YYERROR; /* va should call yyerror() */
+  				   }
+  	                           $$ = build_redirect(REDIRECT, $2, $3); }
+***************
+*** 347,352 ****
+--- 358,384 ----
+  	| GLOBAL		 { $$ = GLOBAL; }
+  	;
+  
++ rtags: /* empty */		 { $$ = new_rtags(); }
++ 	| rtags COPY		 { $$ = $1;
++                                    if (!parse_script->support.copy) {
++ 				     yyerror("copy MUST be enabled with \"require\"");
++ 				     YYERROR;
++ 				   } else
++ 				   if ($$->copy != 0) {
++ 					yyerror("duplicate :copy"); YYERROR; }
++ 				   else {$$->copy = 1;}
++                                  }
++ 	| rtags LIST		 { $$ = $1;
++ 				   if (!parse_script->support.extlists) {
++ 				     yyerror("extlists MUST be enabled with \"require\"");
++ 				     YYERROR;
++ 				   } else
++ 				   if ($$->extlists != 0) {
++ 					yyerror("duplicate :list"); YYERROR; }
++ 				   else {$$->extlists = 1;}
++ 				 }
++ 	;
++ 
+  ntags: /* empty */		 { $$ = new_ntags(); }
+  	| ntags ID STRING	 { if ($$->id != NULL) { 
+  					yyerror("duplicate :method"); YYERROR; }
+***************
+*** 564,569 ****
+--- 596,608 ----
+  			yyerror("comparator-i;ascii-numeric MUST be enabled with \"require\"");
+  			YYERROR; }
+  				   else { $$->comparator = $3; } }
++ 	| aetags LIST		{ $$ = $1;
++                	            	  if ($$->extlists != 0) {
++ 			yyerror("duplicate :list"); YYERROR; }
++ 				  else if (!parse_script->support.extlists) {
++ 				    yyerror("extlists MUST be enabled with \"require\"");
++ 				    YYERROR; }
++ 				  else { $$->extlists = 1; } }
+  	;
+  
+  htags: /* empty */		 { $$ = new_htags(); }
+***************
+*** 587,592 ****
+--- 626,637 ----
+  			 yyerror("comparator-i;ascii-numeric MUST be enabled with \"require\"");  YYERROR; }
+  				   else { 
+  				     $$->comparator = $3; } }
++ 	| htags LIST		  { $$ = $1;
++ 				   if ($$->extlists != 0) {
++ 			yyerror("duplicate :list"); YYERROR; }
++ 				   else if (!parse_script->support.extlists) {
++ 			yyerror("extlists MUST be enabled with \"require\""); YYERROR; }
++ 				   else { $$->extlists = 1; } }
+          ;
+  
+  btags: /* empty */		 { $$ = new_btags(); }
+***************
+*** 749,754 ****
+--- 794,800 ----
+  	ret->u.ae.sl = sl;
+  	ret->u.ae.pl = pl;
+  	ret->u.ae.addrpart = ae->addrtag;
++ 	ret->u.ae.extlists = ae->extlists;
+  	free_aetags(ae);
+  
+      }
+***************
+*** 768,773 ****
+--- 814,820 ----
+  	ret->u.h.comparator=xstrdup(h->comparator);
+  	ret->u.h.sl = sl;
+  	ret->u.h.pl = pl;
++ 	ret->u.h.extlists = h->extlists;
+  	free_htags(h);
+      }
+      return ret;
+***************
+*** 863,887 ****
+      return ret;
+  }
+  
+! static commandlist_t *build_redirect(int t, int copy, char *address)
+  {
+      commandlist_t *ret = new_command(t);
+  
+      assert(t == REDIRECT);
+  
+      if (ret) {
+! 	ret->u.r.copy = copy;
+  	ret->u.r.address = address;
+      }
+      return ret;
+  }
+  
+  static struct aetags *new_aetags(void)
+  {
+      struct aetags *r = (struct aetags *) xmalloc(sizeof(struct aetags));
+  
+      r->addrtag = r->comptag = r->relation=-1;
+      r->comparator=NULL;
+  
+      return r;
+  }
+--- 910,952 ----
+      return ret;
+  }
+  
+! static commandlist_t *build_redirect(int t, struct rtags* r, char *address)
+  {
+      commandlist_t *ret = new_command(t);
+  
+      assert(t == REDIRECT);
+  
+      if (ret) {
+! 	ret->u.r.copy = r->copy;
+! 	ret->u.r.extlists = r->extlists;
+  	ret->u.r.address = address;
++ 	free(r);
+      }
+      return ret;
+  }
+  
++ static struct rtags *new_rtags(void)
++ {
++     struct rtags *r = (struct rtags *) xmalloc(sizeof(struct rtags));
++ 
++     r->extlists = 0;
++     r->copy = 0;
++ 
++     return r;
++ }
++ 
++ static void free_rtags(struct rtags *r)
++ {
++     free(r);
++ }
++ 
+  static struct aetags *new_aetags(void)
+  {
+      struct aetags *r = (struct aetags *) xmalloc(sizeof(struct aetags));
+  
+      r->addrtag = r->comptag = r->relation=-1;
+      r->comparator=NULL;
++     r->extlists = 0;
+  
+      return r;
+  }
+***************
+*** 907,913 ****
+      struct htags *r = (struct htags *) xmalloc(sizeof(struct htags));
+  
+      r->comptag = r->relation= -1;
+!     
+      r->comparator = NULL;
+  
+      return r;
+--- 972,978 ----
+      struct htags *r = (struct htags *) xmalloc(sizeof(struct htags));
+  
+      r->comptag = r->relation= -1;
+!     r->extlists = 0;
+      r->comparator = NULL;
+  
+      return r;
+diff -cr original/sieve/tree.h patched/sieve/tree.h
+*** original/sieve/tree.h	2008-03-24 20:08:47.000000000 +0000
+--- patched/sieve/tree.h	2008-10-26 15:10:09.000000000 +0000
+***************
+*** 82,87 ****
+--- 82,88 ----
+  	    char * comparator;
+  	    int relation;
+  	    void *comprock;
++ 	    char extlists;
+  	    stringlist_t *sl;
+  	    stringlist_t *pl;
+  	} h;
+***************
+*** 89,94 ****
+--- 90,96 ----
+  	    int comptag;
+  	    char * comparator;
+  	    int relation; 
++ 	    char extlists;
+  	    void *comprock;
+  	    stringlist_t *sl;
+  	    stringlist_t *pl;
+***************
+*** 139,144 ****
+--- 141,147 ----
+  	struct { /* it's a redirect action */
+  	    char *address;
+  	    int copy;
++ 	    char extlists;
+  	} r;
+  	struct { /* it's a vacation action */
+  	    char *subject;

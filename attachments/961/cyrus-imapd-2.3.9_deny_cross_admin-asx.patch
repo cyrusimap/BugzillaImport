@@ -1,0 +1,37 @@
+this patch deny a domain admin to impersonate 
+a user of another domain
+
+diff -rNu cyrus-imapd-2.3.9.orig/imap/global.c cyrus-imapd-2.3.9/imap/global.c
+--- cyrus-imapd-2.3.9.orig/imap/global.c	2007-03-30 20:51:00.000000000 +0200
++++ cyrus-imapd-2.3.9/imap/global.c	2007-11-06 19:05:15.000000000 +0100
+@@ -525,6 +525,7 @@
+     struct auth_state *authstate;
+     int userisadmin = 0;
+     char *realm;
++    char *user_realm;
+ 
+     /* check if remote realm */
+     if ((!config_virtdomains || *val) &&
+@@ -569,6 +570,21 @@
+ 	   if we're an admin or if we've allowed ACL proxy logins */
+ 	int use_acl = ctx->use_acl && config_getswitch(IMAPOPT_LOGINUSEACL);
+ 
++        /* ASX: We want to deny a domain admin trying to impersonate
++           a user from another domain. We need to check if both,
++           requested_user and auth_identity are in the same domain */
++
++        realm = strchr(auth_identity, '@');
++        user_realm = strchr(requested_user, '@');
++        if (userisadmin && realm!=NULL && 
++            (user_realm==NULL || 
++             strncasecmp(user_realm, realm, strlen(realm))!=0)) {
++            sasl_seterror(conn, 0, "user %s is not allowed to proxy user %s in a different domain",
++                          auth_identity, user_realm);
++            auth_freestate(authstate);
++            return SASL_BADAUTH;
++        }
++
+ 	if (userisadmin ||
+ 	    (use_acl && acl_ok(requested_user, authstate)) ||
+ 	    (ctx->proxy_servers &&
+

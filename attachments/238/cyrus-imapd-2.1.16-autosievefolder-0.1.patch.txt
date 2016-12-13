@@ -1,0 +1,111 @@
+--- cyrus-imapd-2.1.16/imap/lmtpd.c	2003-10-01 21:20:37.000000000 +0300
++++ cyrus-imapd-2.1.16-0.2/imap/lmtpd.c	2003-11-25 11:29:25.394566000 +0200
+@@ -148,6 +148,9 @@
+ struct lmtp_func mylmtp = { &deliver, &verify_user, &shut_down,
+ 			    &spoolfile, &removespool, 0, 1, 0 };
+ 
++static int autosieve_subfolder(char *userid, struct auth_state *auth_state,
++			       char *subfolder);
++
+ static void logdupelem();
+ static void usage();
+ static void setup_sieve();
+@@ -692,6 +695,19 @@
+                           sd->username, mdata->notifyheader,
+                           fc->mailbox, quotaoverride, 0);
+ 
++    if (ret == IMAP_MAILBOX_NONEXISTENT) {
++    /* if "plus" folder under INBOX, then try to create it */
++        ret = autosieve_subfolder(sd->username, sd->authstate, fc->mailbox);
++
++        if (!ret)
++           ret = deliver_mailbox(md->data, mdata->stage, md->size,
++                          fc->imapflags->flag, fc->imapflags->nflags,
++                          sd->username, sd->authstate, md->id,
++                          sd->username, mdata->notifyheader,
++                          fc->mailbox, quotaoverride, 0);
++
++    }
++
+     if (ret == 0) {
+ 
+ 	snmp_increment(SIEVE_FILEINTO, 1);
+@@ -1498,3 +1559,78 @@
+ 
+     append_removestage(stage);
+ }
++
++
++#define SEP '|'
++
++static int autosieve_subfolder(char *userid, struct auth_state *auth_state,
++                              char *subfolder) {
++    char foldername [MAX_MAILBOX_NAME+1];
++    char f [MAX_MAILBOX_NAME+1];
++    const char *subf ;
++    char *p, *q, *next_subf, *mbox;
++    int len, r;
++    int createsievefolder = 0;
++
++  
++   /* Check if subfolder is NULL */ 
++   if(subfolder == NULL) 
++      return IMAP_MAILBOX_NONEXISTENT; 
++
++   if ((subfolder[0] != 'i' && subfolder[0] != 'I') ||
++                 strncasecmp(subfolder, "inbox", 5) ||
++              subfolder[5] != lmtpd_namespace.hier_sep)
++       return IMAP_MAILBOX_NONEXISTENT;
++
++
++   if (config_getswitch("anysievefolder", NULL))
++       createsievefolder = 1;
++   else if ((subf = config_getstring("autosievefolders", NULL)) != NULL) {
++            /*
++             * mbox contains only the subfolder to be created name
++             */
++             mbox = strchr(subfolder, (int) lmtpd_namespace.hier_sep); 
++             mbox++;
++
++             /* Roll through subf */
++             next_subf = (char *) subf;
++             while (*next_subf) {
++                   for (p = next_subf ; isspace((int) *p) || *p == SEP ; p++);
++                   for (next_subf = p ; *next_subf && *next_subf != SEP ; next_subf++);
++                   for (q = next_subf ; q > p && (isspace((int) *q) || *q == SEP || !*q); q--);
++      
++                   if (!*p) continue;
++      
++                   len = q - p + 1;
++                   strncpy(f, p, len);
++                   f[len] = '\0';
++      
++                   if (!strcmp(f, mbox)) {
++                       createsievefolder = 1;
++		       break;
++                   }
++             }              
++        }
++
++   if (createsievefolder) {
++       /* Translate any separators in user */
++       if (userid) mboxname_hiersep_tointernal(&lmtpd_namespace, userid);
++   
++       r = (*lmtpd_namespace.mboxname_tointernal) (&lmtpd_namespace,
++                                              subfolder, userid, foldername);
++       if (!r)
++           r = mboxlist_createmailbox(foldername, MAILBOX_FORMAT_NORMAL, NULL,
++                                          1, userid, auth_state, 0, 0, 0);
++       if (!r) {
++           mboxlist_changesub(foldername, userid, auth_state, 1, 1);
++           syslog(LOG_DEBUG, "Ondemand subfolder: User %s, subfolder %s creation succeeded.",
++                                                  userid, foldername);
++           return 0;
++       } else {
++           syslog(LOG_ERR, "Requested subfolder: User %s, subfolder %s creation failed. %s",
++                                                 userid, foldername,error_message(r));
++           return r;
++       }
++   } else 
++       return IMAP_MAILBOX_NONEXISTENT;
++}

@@ -1,0 +1,821 @@
+diff -ru /home/hmh/src/debian/upstream-cvs/cyrus-imapd/acconfig.h cyrus-imapd/acconfig.h
+--- /home/hmh/src/debian/upstream-cvs/cyrus-imapd/acconfig.h	2003-08-18 08:59:58.000000000 -0300
++++ cyrus-imapd/acconfig.h	2003-09-22 12:34:45.000000000 -0300
+@@ -248,6 +248,11 @@
+ 
+ /* compile time options; think carefully before modifying */
+ enum {
++    /* should we send an UNAVAILABLE message to master when
++     * a service is exiting (master is already going to be 
++     * informed of the exit by the SIGCHLD signal anyway) ? */
++    MESSAGE_MASTER_ON_EXIT = 0,
++
+     /* should a hierarchical rename stop on error? */
+     RENAME_STOP_ON_ERROR = 1,
+ 
+Only in /home/hmh/src/debian/upstream-cvs/cyrus-imapd: cmulocal
+diff -ru /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/master.c cyrus-imapd/master/master.c
+--- /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/master.c	2003-09-05 11:19:37.000000000 -0300
++++ cyrus-imapd/master/master.c	2003-09-22 12:59:19.000000000 -0300
+@@ -124,14 +124,29 @@
+ };
+ static struct event *schedule = NULL;
+ 
++enum {
++    SERVICE_STATE_UNKNOWN = 0,  /* duh */
++    SERVICE_STATE_INIT    = 1,  /* Service forked - UNUSED */
++    SERVICE_STATE_READY   = 2,  /* Service told us it is ready */
++    				/* or it just forked and has not talked to us yet */
++    SERVICE_STATE_BUSY    = 3,  /* Service told us it is not ready */
++    SERVICE_STATE_DEAD    = 4   /* We received a sigchld from this service */
++};
++
+ struct centry {
+     pid_t pid;
++    int service_state;		/* SERVICE_STATE_* */
++    time_t janitor_deadline;	/* cleanup deadline */
+     struct service *s;
+     struct centry *next;
+ };
+ static struct centry *ctable[child_table_size];
+ static struct centry *cfreelist;
+ 
++static int janitor_frequency = 1;	/* Janitor sweeps per second */
++static int janitor_position;		/* Entry to begin at in next sweep */
++static struct timeval janitor_mark;	/* Last time janitor did a sweep */
++
+ void limit_fds(rlim_t);
+ void schedule_event(struct event *a);
+ 
+@@ -243,6 +258,8 @@
+     t = cfreelist;
+     cfreelist = cfreelist->next;
+ 
++    t->janitor_deadline = 0;
++
+     return t;
+ }
+ 
+@@ -453,7 +470,7 @@
+ 
+     switch (pid = fork()) {
+     case -1:
+-	syslog(LOG_CRIT, "can't fork process to run startup");
++	syslog(LOG_CRIT, "can't fork process to run startup: %m");
+ 	fatal("can't run startup", 1);
+ 	break;
+ 	
+@@ -462,7 +479,7 @@
+ 	if(pidfd != -1) close(pidfd);
+ 
+ 	if (become_cyrus() != 0) {
+-	    syslog(LOG_ERR, "can't change to the cyrus user");
++	    syslog(LOG_ERR, "can't change to the cyrus user: %m");
+ 	    exit(1);
+ 	}
+ 
+@@ -474,7 +491,7 @@
+ 	syslog(LOG_ERR, "can't exec %s for startup: %m", path);
+ 	exit(EX_OSERR);
+ 	
+-    default:
++    default: /* parent */
+ 	if (waitpid(pid, &status, 0) < 0) {
+ 	    syslog(LOG_ERR, "waitpid(): %m");
+ 	} else if (status != 0) {
+@@ -513,7 +530,6 @@
+     static char name_env[100];
+     struct centry *c;
+     time_t now = time(NULL);
+-    int msg;
+     
+     /* update our fork rate */
+     if(now - s->last_interval_start >= FORKRATE_INTERVAL) {
+@@ -598,9 +614,6 @@
+ 
+ 	execv(path, s->exec);
+ 	syslog(LOG_ERR, "couldn't exec %s: %m", path);
+-	if (write(STATUS_FD, &msg, sizeof(msg)) != sizeof(msg)) {
+-	    syslog(LOG_ERR, "unable to tell master %x: %m", msg);
+-	}
+ 	exit(EX_OSERR);
+ 
+     default:			/* parent */
+@@ -612,6 +625,7 @@
+ 	/* add to child table */
+ 	c = get_centry();
+ 	c->pid = p;
++	c->service_state = SERVICE_STATE_READY;
+ 	c->s = s;
+ 	c->next = ctable[p % child_table_size];
+ 	ctable[p % child_table_size] = c;
+@@ -701,6 +715,7 @@
+ 		/* add to child table */
+ 		c = get_centry();
+ 		c->pid = p;
++		c->service_state = SERVICE_STATE_READY;
+ 		c->s = NULL;
+ 		c->next = ctable[p % child_table_size];
+ 		ctable[p % child_table_size] = c;
+@@ -742,48 +757,162 @@
+ 
+ 	/* account for the child */
+ 	c = ctable[pid % child_table_size];
++	while (c && c->pid != pid) c = c->next;
++	
+ 	if (c && c->pid == pid) {
+-	    /* first thing in the linked list */
++	    /* paranoia */
++	    switch (c->service_state) {
++	    case SERVICE_STATE_READY:
++	    case SERVICE_STATE_BUSY:
++	    case SERVICE_STATE_UNKNOWN:
++	    case SERVICE_STATE_DEAD:
++		break;
++	    default:
++		syslog(LOG_CRIT, 
++		       "service %s pid %d in ILLEGAL STATE: exited. Serious software bug or memory corruption detected!",
++		       c->s->name, pid);
++	    }
++	    if (c->s) {
++	        /* update counters for known services */
++		switch (c->service_state) {
++		case SERVICE_STATE_READY:
++		    c->s->nactive--;
++		    c->s->ready_workers--;
++		    if (WIFSIGNALED(status) ||
++			(WIFEXITED(status) && WEXITSTATUS(status))) {
++			syslog(LOG_WARNING, 
++			       "service %s pid %d in READY state: terminated abnormally",
++			       c->s->name, pid);
++		    }
++		    break;
++
++		case SERVICE_STATE_DEAD:
++		    /* uh? either we got duplicate signals, or we are now MT */
++		    syslog(LOG_WARNING, 
++			   "service %s pid %d in DEAD state: receiving duplicate signals", 
++			   c->s->name, pid);
++		    break;
++
++		case SERVICE_STATE_BUSY:
++		    c->s->nactive--;
++		    if (WIFSIGNALED(status) ||
++			(WIFEXITED(status) && WEXITSTATUS(status))) {
++			    syslog(LOG_DEBUG,
++				   "service %s pid %d in BUSY state: terminated abnormally",
++				    c->s->name, pid);
++		    }
++		    break;
++
++		case SERVICE_STATE_UNKNOWN:
++		    c->s->nactive--;
++		    syslog(LOG_WARNING,
++			   "service %s pid %d in UNKNOWN state: exited",
++			   c->s->name, pid);
++		    break;
++		} 
++	    } else {
++	    	/* children from spawn_schedule (events) or children that messaged us before being registered */
++		if (c->service_state != SERVICE_STATE_READY) {
++		    syslog(LOG_ERR,
++			   "unknown service pid %d in state %d: exited (maybe using a service as an event?)",
++			   pid, c->service_state);
++		}
++	    }
++	    c->service_state = SERVICE_STATE_DEAD;
++	    c->janitor_deadline = time(NULL) + 2;
++	} else {
++	    /* weird. Are we multithreaded now? we don't know this child */
++	    syslog(LOG_WARNING,
++		   "receiving signals from unregistered child %d. Handling it anyway",
++		   pid);
++	    c = get_centry();
++	    c->pid = pid;
++	    c->service_state = SERVICE_STATE_DEAD;
++	    c->janitor_deadline = time(NULL) + 2;
++	    c->s = NULL;
++	    c->next = ctable[pid % child_table_size];
++	    ctable[pid % child_table_size] = c;
++	}
++    if (verbose && c && c->s)
++	syslog(LOG_DEBUG, "service %s now has %d ready workers\n", 
++	       c->s->name, c->s->ready_workers);
+ 
+-	    /* decrement active count for service */
+-	    if (c->s) c->s->nactive--;
++    }
++}
+ 
+-	    ctable[pid % child_table_size] = c->next;
+-	    c->next = cfreelist;
+-	    cfreelist = c;
++void init_janitor(void)
++{
++    struct event *evt = (struct event *) malloc(sizeof(struct event));
++
++    if (!evt) fatal("out of memory", EX_UNAVAILABLE);
++    memset(evt, 0, sizeof(struct event));
++
++    gettimeofday(&janitor_mark, NULL);
++    janitor_position = 0;
++
++    evt->name = "janitor periodic wakeup call";
++    evt->period = 10;
++    evt->mark = time(NULL) + 2;
++    schedule_event(evt);
++}
++
++void child_janitor(void)
++{
++    int i;
++    struct centry **p;
++    struct centry *c;
++    struct timeval rightnow;
++    time_t now;
++
++    now = time(NULL);
++
++    /* Estimate the number of entries to clean up in this sweep */
++    gettimeofday(&rightnow, NULL);
++    if (rightnow.tv_sec > janitor_mark.tv_sec + 1) {
++	/* overflow protection */
++	i = child_table_size;
++    } else {
++	double n;
++    
++	n = child_table_size * janitor_frequency * 
++	    (double) ((rightnow.tv_sec - janitor_mark.tv_sec) * 1000000 +
++	              rightnow.tv_usec - janitor_mark.tv_usec ) / 1000000;
++	if (n < child_table_size) {
++	    i = n;
+ 	} else {
+-	    /* not the first thing in the linked list */
++	    i = child_table_size;
++	}
++    }
+ 
+-	    while (c->next) {
+-		if (c->next->pid == pid) break;
+-		c = c->next;
+-	    }
+-	    if (c->next) {
+-		struct centry *t;
+-
+-		t = c->next;
+-		/* decrement active count for service */
+-		if (t->s) t->s->nactive--;
+-
+-		c->next = t->next; /* remove node */
+-		t->next = cfreelist; /* add to freelist */
+-		cfreelist = t;
++    while (i-- > 0) {
++	p = &ctable[janitor_position++];
++	janitor_position = janitor_position % child_table_size;
++	while (*p) {
++	    c = *p;
++	    if (c->service_state == SERVICE_STATE_DEAD) {
++		if (c->janitor_deadline < now) {
++		    *p = c->next;
++		    c->next = cfreelist;
++		    cfreelist = c;
++		} else {
++		    p = &((*p)->next);
++		}
+ 	    } else {
+-		/* yikes! don't know about this child! */
+-		syslog(LOG_ERR, "process %d not recognized", pid);
++		p = &((*p)->next);
+ 	    }
+ 	}
+     }
++    gettimeofday(&janitor_mark, NULL);
+ }
+ 
+-static int gotsigchld = 0;
++static volatile int gotsigchld = 0;
+ 
+ void sigchld_handler(int sig __attribute__((unused)))
+ {
+     gotsigchld = 1;
+ }
+ 
+-static int gotsighup = 0;
++static volatile int gotsighup = 0;
+ 
+ void sighup_handler(int sig __attribute__((unused)))
+ {
+@@ -858,29 +987,176 @@
+     }
+ }
+ 
+-void process_msg(struct service *s, int msg)
++void process_msg(struct service *s, struct notify_message *msg)
+ {
+-    switch (msg) {
++    struct centry * c;
++
++    /* Search hash table with linked list for pid */
++    c = ctable[msg->service_pid % child_table_size];
++    while (c && c->pid != msg->service_pid) c = c->next;
++
++    /* Did we find it? */
++    if (!c || c->pid != msg->service_pid) {
++	syslog(LOG_WARNING, "service %s pid %d: while trying to process message 0x%x: not registered yet", 
++			s->name, msg->service_pid, msg->message);
++	/* resilience paranoia. Causes small performance loss when used */
++	c = get_centry();
++	c->s = s;
++	c->pid = msg->service_pid;
++	c->service_state = SERVICE_STATE_UNKNOWN;
++	c->next = ctable[c->pid % child_table_size];
++	ctable[c->pid % child_table_size] = c;
++    }
++
++    /* paranoia */
++    switch (c->service_state) {
++    case SERVICE_STATE_UNKNOWN:
++	syslog(LOG_WARNING, 
++	       "service %s pid %d in UNKNOWN state: processing message 0x%x",
++	       s->name, c->pid, msg->message);
++	break;
++    case SERVICE_STATE_READY:
++    case SERVICE_STATE_BUSY:
++    case SERVICE_STATE_DEAD:
++	break;
++    default:
++	syslog(LOG_CRIT,
++	       "service %s pid %d in ILLEGAL state: detected. Serious software bug or memory corruption uncloaked while processing message 0x%x from child!",
++	       s->name, c->pid, msg->message);
++	syslog(LOG_DEBUG,
++	       "service %s pid %d in ILLEGAL state: forced to valid UNKNOWN state",
++	       s->name, c->pid);
++	c->service_state = SERVICE_STATE_UNKNOWN;
++	break;
++    }
++
++    /* process message, according to state machine */
++    switch (msg->message) {
+     case MASTER_SERVICE_AVAILABLE:
+-	s->ready_workers++;
++	switch (c->service_state) {
++	case SERVICE_STATE_READY:
++	    /* duplicate message? */
++	    syslog(LOG_WARNING,
++		   "service %s pid %d in READY state: sent available message but it is already ready",
++		   s->name, c->pid);
++	    break;
++
++	case SERVICE_STATE_UNKNOWN:
++	    /* since state is unknwon, error in non-DoS way, i.e.
++	     * we don't increment ready_workers */
++	    syslog(LOG_DEBUG,
++		   "service %s pid %d in UNKNOWN state: now available and in READY state",
++	    s->name, c->pid);
++	    c->service_state = SERVICE_STATE_READY;
++	    break;
++
++	case SERVICE_STATE_BUSY:
++	    if (verbose) 
++		syslog(LOG_DEBUG,
++		       "service %s pid %d in BUSY state: now available and in READY state",
++		       s->name, c->pid);
++	    c->service_state = SERVICE_STATE_READY;
++	    s->ready_workers++;
++	    break;
++	}
+ 	break;
+ 
+     case MASTER_SERVICE_UNAVAILABLE:
+-	s->ready_workers--;
++	switch (c->service_state) {
++	case SERVICE_STATE_BUSY:
++	    /* duplicate message? */
++	    syslog(LOG_WARNING,
++		   "service %s pid %d in BUSY state: sent unavailable message but it is already busy",
++		   s->name, c->pid);
++	    break;
++
++	case SERVICE_STATE_UNKNOWN:
++	    syslog(LOG_DEBUG,
++		   "service %s pid %d in UNKNOWN state: now unavailable and in BUSY state",
++		   s->name, c->pid);
++	    c->service_state = SERVICE_STATE_BUSY;
++	    break;
++
++	case SERVICE_STATE_READY:
++	    if (verbose)
++		syslog(LOG_DEBUG,
++		       "service %s pid %d in READY state: now unavailable and in BUSY state",
++		       s->name, c->pid);
++	    c->service_state = SERVICE_STATE_BUSY;
++	    s->ready_workers--;
++	    break;
++	}
+ 	break;
+ 
+     case MASTER_SERVICE_CONNECTION:
+-	s->nconnections++;
++	switch (c->service_state) {
++	case SERVICE_STATE_BUSY:
++	    s->nconnections++;
++	    if (verbose)
++		syslog(LOG_DEBUG,
++		       "service %s pid %d in BUSY state: now serving connection",
++		       s->name, c->pid);
++	    break;
++
++	case SERVICE_STATE_UNKNOWN:
++	    s->nconnections++;
++	    c->service_state = SERVICE_STATE_BUSY;
++	    syslog(LOG_DEBUG,
++		   "service %s pid %d in UNKNOWN state: now in BUSY state and serving connection",
++		   s->name, c->pid);
++	    break;
++
++	case SERVICE_STATE_READY:
++	    syslog(LOG_ERR, 
++		   "service %s pid %d in READY state: reported new connection, forced to BUSY state",
++		   s->name, c->pid);
++	    /* be resilient on face of a bogon source, so lets err to the side
++	     * of non-denial-of-service */
++	    c->service_state = SERVICE_STATE_BUSY;
++	    s->nconnections++;
++	    s->ready_workers--;
++	}
+ 	break;
+-	
++
++    case MASTER_SERVICE_CONNECTION_MULTI:
++	switch (c->service_state) {
++	case SERVICE_STATE_READY:
++	    s->nconnections++;
++	    if (verbose)
++		syslog(LOG_DEBUG, 
++		       "service %s pid %d in READY state: serving one more multi-threaded connection",
++		       s->name, c->pid);
++	    break;
++
++	case SERVICE_STATE_BUSY:
++	    syslog(LOG_ERR, 
++		   "service %s pid %d in BUSY state: serving one more multi-threaded connection, forced to READY state",
++		   s->name, c->pid);
++	    /* be resilient on face of a bogon source, so lets err to the side
++	     * of non-denial-of-service */
++	    c->service_state = SERVICE_STATE_READY;
++	    s->nconnections++;
++	    s->ready_workers++;
++	    break;
++
++	case SERVICE_STATE_UNKNOWN:
++	    s->nconnections++;
++	    c->service_state = SERVICE_STATE_READY;
++	    syslog(LOG_ERR,
++		   "service %s pid %d in UNKNOWN state: serving one more multi-threaded connection, forced to READY state",
++		   s->name, c->pid);
++	    break;
++	}
++	break;
++
+     default:
+-	syslog(LOG_ERR, "unrecognized message for service '%s': %x", 
+-	       s->name, msg);
++	syslog(LOG_CRIT, "service %s pid %d: Software bug: unrecognized message 0x%x", 
++	       s->name, c->pid, msg->message);
+ 	break;
+     }
+ 
+     if (verbose)
+-	syslog(LOG_DEBUG, "service %s now has %d workers\n", 
++	syslog(LOG_DEBUG, "service %s now has %d ready workers\n", 
+ 	       s->name, s->ready_workers);
+ }
+ 
+@@ -1269,7 +1545,7 @@
+ 
+     p = getenv("CYRUS_VERBOSE");
+     if (p) verbose = atoi(p) + 1;
+-    while ((opt = getopt(argc, argv, "p:l:Dd")) != EOF) {
++    while ((opt = getopt(argc, argv, "p:l:Ddj:")) != EOF) {
+ 	switch (opt) {
+ 	case 'l':
+             /* user defined listen queue backlog */
+@@ -1291,6 +1567,12 @@
+ 		fatal("Unable to be both debug and daemon mode", EX_CONFIG);
+ 	    close_std = 0;
+ 	    break;
++	case 'j':
++	    /* Janitor frequency */
++	    janitor_frequency = atoi(optarg);
++	    if(janitor_frequency < 1)
++		fatal("The janitor period must be at least 1 second", EX_CONFIG);
++	    break;
+ 	default:
+ 	    break;
+ 	}
+@@ -1440,7 +1722,7 @@
+ 	    }
+ 	    
+ 	    /* Write PID */
+-	    snprintf(buf, sizeof(buf), "%lu\n", (unsigned long)getpid());
++	    snprintf(buf, sizeof(buf), "%lu\n", (unsigned long int) getpid());
+ 	    if(lseek(pidfd, 0, SEEK_SET) == -1 ||
+ 	       ftruncate(pidfd, 0) == -1 ||
+ 	       write(pidfd, buf, strlen(buf)) == -1) {
+@@ -1501,14 +1783,23 @@
+ 		   Services[i].stat[0], Services[i].stat[1]);
+     }
+ 
+-    if (become_cyrus_early) become_cyrus();
++    if (become_cyrus_early) {
++	if (become_cyrus() != 0) {
++	    syslog(LOG_ERR, "can't change to the cyrus user: %m");
++	    exit(1);
++	}
++    }
++
++    /* init ctable janitor */
++    init_janitor();
+ 
+     /* ok, we're going to start spawning like mad now */
+     syslog(LOG_NOTICE, "ready for work");
+ 
+     for (;;) {
+-	int r, i, msg, maxfd;
++	int r, i, maxfd;
+ 	struct timeval tv, *tvptr;
++	struct notify_message msg;
+ 	time_t now = time(NULL);
+ #if HAVE_UCDSNMP
+ 	int blockp = 0;
+@@ -1615,13 +1906,13 @@
+ 	    int j;
+ 
+ 	    if (FD_ISSET(x, &rfds)) {
+-		r = read(x, &msg, sizeof(int));
+-		if (r != sizeof(int)) {
+-		    syslog(LOG_ERR, "got weird response from child: %x", i);
++		r = read(x, &msg, sizeof(msg));
++		if (r != sizeof(msg)) {
++		    syslog(LOG_ERR, "got incorrectly sized response from child: %x", i);
+ 		    continue;
+ 		}
+-		
+-		process_msg(&Services[i], msg);
++
++		process_msg(&Services[i], &msg);
+ 	    }
+ 
+ 	    if (Services[i].nactive < Services[i].max_workers) {
+@@ -1640,5 +1931,6 @@
+ 		}
+ 	    }
+ 	}
++	child_janitor();
+     }
+ }
+diff -ru /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/service.c cyrus-imapd/master/service.c
+--- /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/service.c	2003-05-29 07:41:51.000000000 -0300
++++ cyrus-imapd/master/service.c	2003-09-22 13:21:17.000000000 -0300
+@@ -74,13 +74,16 @@
+ /* number of times this service has been used */
+ static int use_count = 0;
+ static int verbose = 0;
+-static int gotalrm = 0;
++static volatile int gotalrm = 0;
+ static int lockfd = -1;
+ 
+ void notify_master(int fd, int msg)
+ {
+-    if (verbose) syslog(LOG_DEBUG, "telling master %d", msg);
+-    if (write(fd, &msg, sizeof(msg)) != sizeof(msg)) {
++    struct notify_message notifymsg;
++    if (verbose) syslog(LOG_DEBUG, "telling master %x", msg);
++    notifymsg.message = msg;
++    notifymsg.service_pid = getpid();
++    if (write(fd, &notifymsg, sizeof(notifymsg)) != sizeof(notifymsg)) {
+ 	syslog(LOG_ERR, "unable to tell master %x: %m", msg);
+     }
+ }
+@@ -179,14 +182,16 @@
+ 	    /* noop */;
+ 	
+ 	if (rc < 0 && gotalrm) {
+-	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	    if (MESSAGE_MASTER_ON_EXIT) 
++		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(0);
+ 	    return -1;
+ 	}
+ 
+ 	if (rc < 0) {
+ 	    syslog(LOG_ERR, "fcntl: F_SETLKW: error getting accept lock: %m");
+-	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	    if (MESSAGE_MASTER_ON_EXIT) 
++		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(EX_OSERR);
+ 	    return -1;
+ 	}
+@@ -214,7 +219,8 @@
+ 	if (rc < 0) {
+ 	    syslog(LOG_ERR, 
+ 		   "fcntl: F_SETLKW: error releasing accept lock: %m");
+-	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	    if (MESSAGE_MASTER_ON_EXIT) 
++		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(EX_OSERR);
+ 	    return -1;
+ 	}
+@@ -362,7 +368,8 @@
+ 				       fdflags | FD_CLOEXEC);
+     if (fdflags == -1) {
+ 	syslog(LOG_ERR, "unable to set close on exec: %m");
+-	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+     }
+     fdflags = fcntl(STATUS_FD, F_GETFD, 0);
+@@ -370,7 +377,8 @@
+ 				       fdflags | FD_CLOEXEC);
+     if (fdflags == -1) {
+ 	syslog(LOG_ERR, "unable to set close on exec: %m");
+-	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+     }
+ 
+@@ -378,12 +386,14 @@
+     if (getsockopt(LISTEN_FD, SOL_SOCKET, SO_TYPE,
+ 		   (char *) &soctype, &typelen) < 0) {
+ 	syslog(LOG_ERR, "getsockopt: SOL_SOCKET: failed to get type: %m");
+-	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+     }
+ 
+     if (service_init(newargc, newargv, envp) != 0) {
+-	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+     }
+ 
+@@ -394,7 +404,8 @@
+ 	if (use_count > 0) {
+ 	    /* we want to time out after 60 seconds, set an alarm */
+ 	    if (setsigalrm() < 0) {
+-		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++		if (MESSAGE_MASTER_ON_EXIT) 
++		    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 		service_abort(EX_OSERR);
+ 	    }
+ 	    gotalrm = 0;
+@@ -428,13 +439,14 @@
+ 			
+ 		    default:
+ 			syslog(LOG_ERR, "accept failed: %m");
+-			notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++			    if (MESSAGE_MASTER_ON_EXIT) 
++				notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 			service_abort(EX_OSERR);
+ 		    }
+ 		}
+ 	    } else {
+ 		/* udp */
+-		struct sockaddr_in from;
++		struct sockaddr_storage from;
+ 		socklen_t fromlen;
+ 		char ch;
+ 		int r;
+@@ -444,7 +456,8 @@
+ 			     (struct sockaddr *) &from, &fromlen);
+ 		if (r == -1) {
+ 		    syslog(LOG_ERR, "recvfrom failed: %m");
+-		    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++		    if (MESSAGE_MASTER_ON_EXIT) 
++			notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 		    service_abort(EX_OSERR);
+ 		}
+ 		fd = LISTEN_FD;
+@@ -456,13 +469,15 @@
+ 
+ 	if (fd < 0 && gotalrm) {
+ 	    /* timed out */
+-	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	    if (MESSAGE_MASTER_ON_EXIT) 
++		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(0);
+ 	}
+ 	if (fd < 0) {
+ 	    /* how did this happen? - we might have caught a signal. */
+ 	    syslog(LOG_ERR, "accept() failed but we didn't catch it?");
+-	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	    if (MESSAGE_MASTER_ON_EXIT) 
++		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(EX_SOFTWARE);
+ 	}
+ 
+diff -ru /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/service.h cyrus-imapd/master/service.h
+--- /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/service.h	2003-02-13 21:54:32.000000000 -0200
++++ cyrus-imapd/master/service.h	2003-09-22 12:40:05.000000000 -0300
+@@ -51,7 +51,8 @@
+ enum {
+     MASTER_SERVICE_AVAILABLE = 0x01,
+     MASTER_SERVICE_UNAVAILABLE = 0x02,
+-    MASTER_SERVICE_CONNECTION = 0x03
++    MASTER_SERVICE_CONNECTION = 0x03,
++    MASTER_SERVICE_CONNECTION_MULTI = 0x04
+ };
+ 
+ extern int service_init(int argc, char **argv, char **envp);
+@@ -64,4 +65,9 @@
+     REUSE_TIMEOUT = 60
+ };
+ 
++struct notify_message {
++    int message;
++    pid_t service_pid;
++};
++
+ #endif
+diff -ru /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/service-thread.c cyrus-imapd/master/service-thread.c
+--- /home/hmh/src/debian/upstream-cvs/cyrus-imapd/master/service-thread.c	2003-09-09 17:31:15.000000000 -0300
++++ cyrus-imapd/master/service-thread.c	2003-09-22 12:44:27.000000000 -0300
+@@ -1,4 +1,4 @@
+-/* service-thread.c -- skeleton for Cyrus service; calls the real main
++/* service.c -- skeleton for Cyrus service; calls the real main
+  *
+  * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
+  *
+@@ -76,8 +76,11 @@
+ 
+ void notify_master(int fd, int msg)
+ {
+-    if (verbose) syslog(LOG_DEBUG, "telling master %d", msg);
+-    if (write(fd, &msg, sizeof(msg)) != sizeof(msg)) {
++    struct notify_message notifymsg;
++    if (verbose) syslog(LOG_DEBUG, "telling master %x", msg);
++    notifymsg.message = msg;
++    notifymsg.service_pid = getpid();
++    if (write(fd, &notifymsg, sizeof(notifymsg)) != sizeof(notifymsg)) {
+ 	syslog(LOG_ERR, "unable to tell master %x: %m", msg);
+     }
+ }
+@@ -232,7 +235,8 @@
+ 				       fdflags | FD_CLOEXEC);
+     if (fdflags == -1) {
+ 	syslog(LOG_ERR, "unable to set close on exec: %m");
+-	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+     }
+     fdflags = fcntl(STATUS_FD, F_GETFD, 0);
+@@ -240,12 +244,14 @@
+ 				       fdflags | FD_CLOEXEC);
+     if (fdflags == -1) {
+ 	syslog(LOG_ERR, "unable to set close on exec: %m");
+-	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+     }
+ 
+     if (service_init(newargc, newargv, envp) != 0) {
+-	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++	if (MESSAGE_MASTER_ON_EXIT) 
++	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+     }
+ 
+@@ -272,7 +278,8 @@
+ 		    break;
+ 		default:
+ 		    syslog(LOG_ERR, "accept failed: %m");
+-		    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++		    if (MESSAGE_MASTER_ON_EXIT) 
++			notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 		    service_abort(EX_OSERR);
+ 		}
+ 	    }
+@@ -290,13 +297,14 @@
+ 	syslog(LOG_DEBUG, "accepted connection");
+ 
+ 	use_count++;
+-	notify_master(STATUS_FD, MASTER_SERVICE_CONNECTION);
++	notify_master(STATUS_FD, MASTER_SERVICE_CONNECTION_MULTI);
+ 	if (service_main_fd(fd, newargc, newargv, envp) < 0) {
+ 	    break;
+ 	}
+     }
+ 
+-    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++    if (MESSAGE_MASTER_ON_EXIT) 
++	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+     service_abort(0);
+     return 0;
+ }
+Only in /home/hmh/src/debian/upstream-cvs/cyrus-imapd: sieve

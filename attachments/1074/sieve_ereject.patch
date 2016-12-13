@@ -1,0 +1,532 @@
+diff -rc cyrus-imapd-2.3.14/imap/lmtp_sieve.c cyrus-imapd-2.3.14-patched/imap/lmtp_sieve.c
+*** cyrus-imapd-2.3.14/imap/lmtp_sieve.c	2009-02-09 05:01:57.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/imap/lmtp_sieve.c	2009-05-28 18:35:57.000000000 +0000
+***************
+*** 459,465 ****
+  	return SIEVE_FAIL;
+      }
+  }
+! 
+  static int sieve_fileinto(void *ac, 
+  			  void *ic __attribute__((unused)),
+  			  void *sc, 
+--- 459,470 ----
+  	return SIEVE_FAIL;
+      }
+  }
+! static int sieve_ereject(void *ac, 
+! 			void *ic __attribute__((unused)), 
+! 			void *sc, void *mc, const char **errmsg)
+! {
+!   sieve_reject(ac, ic, sc, mc, errmsg);
+! }
+  static int sieve_fileinto(void *ac, 
+  			  void *ic __attribute__((unused)),
+  			  void *sc, 
+***************
+*** 737,742 ****
+--- 742,752 ----
+  	syslog(LOG_ERR, "sieve_register_reject() returns %d\n", res);
+  	fatal("sieve_register_reject()", EC_SOFTWARE);
+      }
++     res = sieve_register_ereject(interp, &sieve_ereject);
++     if (res != SIEVE_OK) {
++ 	syslog(LOG_ERR, "sieve_register_ereject() returns %d\n", res);
++ 	fatal("sieve_register_ereject()", EC_SOFTWARE);
++     }
+      res = sieve_register_fileinto(interp, &sieve_fileinto);
+      if (res != SIEVE_OK) {
+  	syslog(LOG_ERR, "sieve_register_fileinto() returns %d\n", res);
+diff -rc cyrus-imapd-2.3.14/lib/imapoptions cyrus-imapd-2.3.14-patched/lib/imapoptions
+*** cyrus-imapd-2.3.14/lib/imapoptions	2009-03-06 03:52:55.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/lib/imapoptions	2009-05-28 18:31:18.000000000 +0000
+***************
+*** 931,937 ****
+     user's scripts reside on a remote server (in a Murder).
+     Otherwise, timsieved will proxy traffic to the remote server. */
+  
+! { "sieve_extensions", "fileinto reject vacation imapflags notify envelope relational regex subaddress copy", BITFIELD("fileinto", "reject", "vacation", "imapflags", "notify", "include", "envelope", "body", "relational", "regex", "subaddress", "copy") }
+  /* Space-separated list of Sieve extensions allowed to be used in
+     sieve scripts, enforced at submission by timsieved(8).  Any
+     previously installed script will be unaffected by this option and
+--- 931,936 ----
+     user's scripts reside on a remote server (in a Murder).
+     Otherwise, timsieved will proxy traffic to the remote server. */
+  
+! { "sieve_extensions", "fileinto reject vacation imapflags notify envelope relational regex subaddress copy", BITFIELD("fileinto", "reject", "ereject", "vacation", "imapflags", "notify", "include", "envelope", "body", "relational", "regex", "subaddress", "copy") }
+  /* Space-separated list of Sieve extensions allowed to be used in
+     sieve scripts, enforced at submission by timsieved(8).  Any
+***************
+*** 179,184 ****
+--- 185,197 ----
+      return SIEVE_OK;
+  }
+  
++ int sieve_register_ereject(sieve_interp_t *interp, sieve_callback *f)
++ {
++     interp->ereject = f;
++ 
++     return SIEVE_OK;
++ }
++ 
+  int sieve_register_fileinto(sieve_interp_t *interp, sieve_callback *f)
+  {
+      interp->fileinto = f;
+diff -rc cyrus-imapd-2.3.14/sieve/interp.h cyrus-imapd-2.3.14-patched/sieve/interp.h
+*** cyrus-imapd-2.3.14/sieve/interp.h	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/interp.h	2009-05-28 17:57:57.000000000 +0000
+***************
+*** 50,56 ****
+  
+  struct sieve_interp {
+      /* standard callbacks for actions */
+!     sieve_callback *redirect, *discard, *reject, *fileinto, *keep;
+      sieve_callback *notify;
+      sieve_vacation_t *vacation;
+  
+--- 50,56 ----
+  
+  struct sieve_interp {
+      /* standard callbacks for actions */
+!     sieve_callback *redirect, *discard, *reject, *fileinto, *keep, *ereject;
+      sieve_callback *notify;
+      sieve_vacation_t *vacation;
+  
+diff -rc cyrus-imapd-2.3.14/sieve/message.c cyrus-imapd-2.3.14-patched/sieve/message.c
+*** cyrus-imapd-2.3.14/sieve/message.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/message.c	2009-05-28 18:09:37.000000000 +0000
+***************
+*** 82,87 ****
+--- 82,88 ----
+  	    a->a == ACTION_KEEP ||
+  	    a->a == ACTION_REDIRECT ||
+  	    a->a == ACTION_REJECT ||
++ 	    a->a == ACTION_EREJECT ||
+  	    a->a == ACTION_VACATION ||
+  	    a->a == ACTION_SETFLAG ||
+  	    a->a == ACTION_ADDFLAG ||
+***************
+*** 104,110 ****
+      a->next =  NULL;
+      return 0;
+  }
+! 
+  /* fileinto message m into mailbox 
+   *
+   * incompatible with: reject
+--- 105,113 ----
+      a->next =  NULL;
+      return 0;
+  }
+! int do_ereject(action_list_t *a, const char *msg) {
+!   do_reject(a, msg);
+! }
+  /* fileinto message m into mailbox 
+   *
+   * incompatible with: reject
+***************
+*** 117,123 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+--- 120,127 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+***************
+*** 148,154 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+--- 152,159 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+***************
+*** 176,182 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	if (a->a == ACTION_KEEP) /* don't bother doing it twice */
+  	    return 0;
+--- 181,188 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	if (a->a == ACTION_KEEP) /* don't bother doing it twice */
+  	    return 0;
+***************
+*** 246,251 ****
+--- 252,258 ----
+      while (a != NULL) {
+  	b = a;
+  	if (a->a == ACTION_REJECT ||
++ 	    a->a == ACTION_EREJECT ||
+  	    a->a == ACTION_VACATION) /* vacation can't be used twice */
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+***************
+*** 283,289 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+--- 290,297 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+***************
+*** 311,317 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+--- 319,326 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+***************
+*** 339,345 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+--- 348,355 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+***************
+*** 368,374 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+--- 378,385 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+***************
+*** 396,402 ****
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+--- 407,414 ----
+      /* see if this conflicts with any previous actions taken on this message */
+      while (a != NULL) {
+  	b = a;
+! 	if (a->a == ACTION_REJECT ||
+! 	    a->a == ACTION_EREJECT)
+  	    return SIEVE_RUN_ERROR;
+  	a = a->next;
+      }
+diff -rc cyrus-imapd-2.3.14/sieve/message.h cyrus-imapd-2.3.14-patched/sieve/message.h
+*** cyrus-imapd-2.3.14/sieve/message.h	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/message.h	2009-05-28 17:58:26.000000000 +0000
+***************
+*** 66,72 ****
+      ACTION_MARK,
+      ACTION_UNMARK,
+      ACTION_NOTIFY,
+!     ACTION_DENOTIFY
+  } action_t;
+  
+  /* information */
+--- 66,73 ----
+      ACTION_MARK,
+      ACTION_UNMARK,
+      ACTION_NOTIFY,
+!     ACTION_DENOTIFY,
+!     ACTION_EREJECT
+  } action_t;
+  
+  /* information */
+diff -rc cyrus-imapd-2.3.14/sieve/script.c cyrus-imapd-2.3.14-patched/sieve/script.c
+*** cyrus-imapd-2.3.14/sieve/script.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/script.c	2009-05-28 18:17:27.000000000 +0000
+***************
+*** 92,97 ****
+--- 92,105 ----
+  	} else {
+  	    return 0;
+  	}
++     } else if (!strcmp("ereject", req)) {
++ 	if (s->interp.ereject &&
++ 	    (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_EREJECT)) {
++ 	    s->support.ereject = 1;
++ 	    return 1;
++ 	} else {
++ 	    return 0;
++ 	}
+      } else if (!strcmp("envelope", req)) {
+  	if (s->interp.getenvelope &&
+  	    (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_ENVELOPE)) {
+***************
+*** 478,483 ****
+--- 490,496 ----
+      switch(action)
+  	{
+  	case ACTION_REJECT: return "Reject";
++ 	case ACTION_EREJECT : return "Ereject";
+  	case ACTION_FILEINTO: return "Fileinto";
+  	case ACTION_KEEP: return "Keep";
+  	case ACTION_REDIRECT: return "Redirect";
+***************
+*** 731,736 ****
+--- 744,764 ----
+  	errmsg = NULL;
+  	implicit_keep = implicit_keep && !a->cancel_keep;
+  	switch (a->a) {
++ 	case ACTION_EREJECT:
++ 	    if (!interp->ereject)
++ 		return SIEVE_INTERNAL_ERROR;
++ 	    ret = interp->ereject(&a->u.rej,
++ 				 interp->interp_context,
++ 				 script_context,
++ 				 message_context,
++ 				 &errmsg);
++ 	    
++ 	    if (ret == SIEVE_OK)
++ 		snprintf(actions_string+strlen(actions_string),
++ 			 sizeof(actions_string)-strlen(actions_string), 
++ 			 "Rejected with: %s\n", a->u.rej.msg);
++ 
++ 	    break;
+  	case ACTION_REJECT:
+  	    if (!interp->reject)
+  		return SIEVE_INTERNAL_ERROR;
+diff -rc cyrus-imapd-2.3.14/sieve/script.h cyrus-imapd-2.3.14-patched/sieve/script.h
+*** cyrus-imapd-2.3.14/sieve/script.h	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/script.h	2009-05-28 17:59:34.000000000 +0000
+***************
+*** 72,77 ****
+--- 72,78 ----
+  	int i_ascii_numeric: 1;
+  	int include        : 1;
+  	int copy           : 1;
++         int ereject        : 1;
+      } support;
+  
+      void *script_context;
+diff -rc cyrus-imapd-2.3.14/sieve/sievec.c cyrus-imapd-2.3.14-patched/sieve/sievec.c
+*** cyrus-imapd-2.3.14/sieve/sievec.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sievec.c	2009-05-28 18:12:12.000000000 +0000
+***************
+*** 214,219 ****
+--- 214,224 ----
+  	syslog(LOG_ERR, "sieve_register_reject() returns %d\n", res);
+  	return TIMSIEVE_FAIL;
+      }
++     res = sieve_register_ereject(i, (sieve_callback *) &foo);
++     if (res != SIEVE_OK) {
++ 	syslog(LOG_ERR, "sieve_register_ereject() returns %d\n", res);
++ 	return TIMSIEVE_FAIL;
++     }
+      res = sieve_register_fileinto(i, (sieve_callback *) &foo);
+      if (res != SIEVE_OK) {
+  	syslog(LOG_ERR, "sieve_register_fileinto() returns %d\n", res);
+diff -rc cyrus-imapd-2.3.14/sieve/sieved.c cyrus-imapd-2.3.14-patched/sieve/sieved.c
+*** cyrus-imapd-2.3.14/sieve/sieved.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieved.c	2009-05-28 20:51:21.000000000 +0000
+***************
+*** 377,382 ****
+--- 377,386 ----
+  	    i = unwrap_string(d, i, &data, &len);
+  	    printf("REJECT {%d}%s\n", len, data);
+  	    break;
++ 	case B_EREJECT: /*21*/
++ 	    i = unwrap_string(d, i, &data, &len);
++ 	    printf("EREJECT {%d}%s\n", len, data);
++ 	    break;
+  
+  	case B_FILEINTO: /*19*/
+  	    copy = ntohl(d[i++].value);
+diff -rc cyrus-imapd-2.3.14/sieve/sieve_interface.h cyrus-imapd-2.3.14-patched/sieve/sieve_interface.h
+*** cyrus-imapd-2.3.14/sieve/sieve_interface.h	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieve_interface.h	2009-05-28 18:00:11.000000000 +0000
+***************
+*** 150,155 ****
+--- 150,156 ----
+  int sieve_register_redirect(sieve_interp_t *interp, sieve_callback *f);
+  int sieve_register_discard(sieve_interp_t *interp, sieve_callback *f);
+  int sieve_register_reject(sieve_interp_t *interp, sieve_callback *f);
++ int sieve_eregister_reject(sieve_interp_t *interp, sieve_callback *f);
+  int sieve_register_fileinto(sieve_interp_t *interp, sieve_callback *f);
+  int sieve_register_keep(sieve_interp_t *interp, sieve_callback *f);
+  int sieve_register_vacation(sieve_interp_t *interp, sieve_vacation_t *v);
+diff -rc cyrus-imapd-2.3.14/sieve/sieve-lex.l cyrus-imapd-2.3.14-patched/sieve/sieve-lex.l
+*** cyrus-imapd-2.3.14/sieve/sieve-lex.l	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieve-lex.l	2009-05-28 17:50:32.000000000 +0000
+***************
+*** 111,116 ****
+--- 111,117 ----
+  <INITIAL>not		return NOT;
+  <INITIAL>size		return SIZE;
+  <INITIAL>reject		return REJCT;
++ <INITIAL>ereject        return EREJCT;
+  <INITIAL>fileinto	return FILEINTO;
+  <INITIAL>redirect	return REDIRECT;
+  <INITIAL>keep		return KEEP;
+*** cyrus-imapd-2.3.14/sieve/sieve.y	2008-10-02 13:36:56.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieve.y	2009-05-28 17:51:19.000000000 +0000
+***************
+*** 183,189 ****
+  %token <nval> NUMBER
+  %token <sval> STRING
+  %token IF ELSIF ELSE
+! %token REJCT FILEINTO REDIRECT KEEP STOP DISCARD VACATION REQUIRE
+  %token SETFLAG ADDFLAG REMOVEFLAG MARK UNMARK
+  %token NOTIFY DENOTIFY
+  %token ANYOF ALLOF EXISTS SFALSE STRUE HEADER NOT SIZE ADDRESS ENVELOPE BODY
+--- 192,198 ----
+  %token <nval> NUMBER
+  %token <sval> STRING
+  %token IF ELSIF ELSE
+! %token EREJCT REJCT FILEINTO REDIRECT KEEP STOP DISCARD VACATION REQUIRE
+  %token SETFLAG ADDFLAG REMOVEFLAG MARK UNMARK
+  %token NOTIFY DENOTIFY
+  %token ANYOF ALLOF EXISTS SFALSE STRUE HEADER NOT SIZE ADDRESS ENVELOPE BODY
+***************
+*** 239,245 ****
+  	| ELSE block             { $$ = $2; }
+  	;
+  
+! action: REJCT STRING             { if (!parse_script->support.reject) {
+  				     yyerror("reject MUST be enabled with \"require\"");
+  				     YYERROR;
+  				   }
+--- 249,264 ----
+  	| ELSE block             { $$ = $2; }
+  	;
+  
+! action: EREJCT STRING            { if (!parse_script->support.ereject) {
+! 				     yyerror("ereject MUST be enabled with \"require\"");
+! 				     YYERROR;
+! 				   }
+! 				   if (!verify_utf8($2)) {
+! 				     YYERROR; /* vu should call yyerror() */
+! 				   }
+! 				   $$ = new_command(EREJCT);
+! 				   $$->u.str = $2; }
+!         | REJCT STRING           { if (!parse_script->support.reject) {
+  				     yyerror("reject MUST be enabled with \"require\"");
+  				     YYERROR;
+  				   }
+*** cyrus-imapd-2.3.14/sieve/test.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/test.c	2009-05-28 18:13:32.000000000 +0000
+***************
+*** 431,436 ****
+--- 431,442 ----
+      return (*force_fail ? SIEVE_FAIL : SIEVE_OK);
+  }
+  
++ int ereject(void *ac, void *ic, void *sc __attribute__((unused)),
++ 	    void *mc, const char **errmsg __attribute__((unused)))
++ {
++   reject(ac, ic, sc, mc, errmsg);
++ }
++ 
+  int fileinto(void *ac, void *ic, void *sc __attribute__((unused)),
+  	     void *mc, const char **errmsg __attribute__((unused)))
+  {
+***************
+*** 841,846 ****
+--- 847,857 ----
+  	printf("sieve_register_reject() returns %d\n", res);
+  	exit(1);
+      }
++     res = sieve_register_reject(i, &ereject);
++     if (res != SIEVE_OK) {
++ 	printf("sieve_register_ereject() returns %d\n", res);
++ 	exit(1);
++     }
+      res = sieve_register_fileinto(i, &fileinto);
+      if (res != SIEVE_OK) {
+  	printf("sieve_register_fileinto() returns %d\n", res);
+diff -rc cyrus-imapd-2.3.14/timsieved/scripttest.c cyrus-imapd-2.3.14-patched/timsieved/scripttest.c
+*** cyrus-imapd-2.3.14/timsieved/scripttest.c	2008-03-24 20:20:57.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/timsieved/scripttest.c	2009-05-28 18:28:37.000000000 +0000
+***************
+*** 123,128 ****
+--- 123,133 ----
+  	syslog(LOG_ERR, "sieve_register_reject() returns %d\n", res);
+  	return TIMSIEVE_FAIL;
+      }
++     res = sieve_register_ereject(interp, (sieve_callback *) &foo);
++     if (res != SIEVE_OK) {
++ 	syslog(LOG_ERR, "sieve_register_ereject() returns %d\n", res);
++ 	return TIMSIEVE_FAIL;
++     }
+      res = sieve_register_fileinto(interp, (sieve_callback *) &foo);
+      if (res != SIEVE_OK) {
+  	syslog(LOG_ERR, "sieve_register_fileinto() returns %d\n", res);
+*** cyrus-imapd-2.3.14/imap/lmtpstats.snmp	2008-04-04 12:46:35.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/imap/lmtpstats.snmp	2009-05-28 21:28:58.000000000 +0000
+***************
+*** 107,112 ****
+--- 107,113 ----
+  C,SIEVE_REDIRECT        ,"sieve redirects",auto
+  C,SIEVE_DISCARD         ,"sieve discards",auto
+  C,SIEVE_REJECT          ,"sieve rejects",auto
++ C,SIEVE_EREJECT         ,"sieve erejects",auto
+  C,SIEVE_FILEINTO        ,"sieve fileintos",auto
+  C,SIEVE_KEEP            ,"sieve messages kept",auto
+  C,SIEVE_NOTIFY          ,"sieve notifications sent",auto

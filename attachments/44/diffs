@@ -1,0 +1,4410 @@
+? diffs
+? out.c
+? out.h
+? THOUGHTS
+? lib/cyrusdb_skiptwo.c
+Index: configure.in
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/configure.in,v
+retrieving revision 1.231
+diff -u -r1.231 configure.in
+--- configure.in	2002/05/26 00:59:44	1.231
++++ configure.in	2002/06/14 17:05:04
+@@ -238,6 +238,9 @@
+ AC_CHECK_HEADERS(sys/resource.h)
+ AC_CHECK_FUNCS(setrlimit)
+ 
++dnl for detaching terminal
++AC_CHECK_FUNCS(daemon setsid)
++
+ AC_EGREP_HEADER(socklen_t, sys/socket.h, AC_DEFINE(HAVE_SOCKLEN_T))
+ AC_EGREP_HEADER(rlim_t, sys/resource.h, AC_DEFINE(HAVE_RLIM_T))
+ 
+Index: doc/install-perf.html
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/doc/install-perf.html,v
+retrieving revision 1.5
+diff -u -r1.5 install-perf.html
+--- install-perf.html	2002/02/13 17:10:13	1.5
++++ install-perf.html	2002/06/14 17:05:04
+@@ -44,6 +44,7 @@
+ 
+ <p>We run with it enabled and it doesn't significantly impact our
+ performance.</p>
++
+ </li>
+ 
+ <li><tt><b>/var/spool/mqueue</b></tt> - Sendmail can be pretty
+@@ -64,6 +65,15 @@
+ see the Listen queue drop counter increasing quickly. For example,
+ under Solaris, look at the variable tcpListenDrop (from <tt>netstat
+ -sP tcp</tt>).</li>
++
++<li><b>Database recovery.</b> If restarting the server takes a long
++time due to the <tt>cyrusdb</tt> database recovery procedure (this is
++usually true if you have a large number of deliveries) you should look
++into shortening the interval between checkpoints, controlled by the
++<tt>cyrusdb</tt> event in <tt>/etc/cyrus.conf</tt>.  We run
++checkpoints every 10 minutes; the current suggested install interval
++is 30 minutes.
++</li>
+ </ul>
+ 
+ <p>In general, there's no magic bullet for performance. It depends
+Index: imap/acapmbox.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/acapmbox.c,v
+retrieving revision 1.31
+diff -u -r1.31 acapmbox.c
+--- acapmbox.c	2002/05/25 19:57:43	1.31
++++ acapmbox.c	2002/06/14 17:05:04
+@@ -105,9 +105,9 @@
+ 	strcat(postaddr, "@");
+ 	strcat(postaddr, server);
+     } else {
+-	const char *postspec = config_getstring("postspec", NULL);
+-	const char *BB = config_getstring("postuser", "bb");
+-
++	const char *postspec = config_getstring(IMAPOPT_POSTSPEC);
++	const char *BB = config_getstring(IMAPOPT_POSTUSER);
++     
+ 	if (postspec) {
+ 	    snprintf(postaddr, sizeof(postaddr), postspec, name);
+ 	} else {
+@@ -176,7 +176,7 @@
+     const char *authprog;
+     sasl_callback_t *cb;
+     
+-    acapserver = config_getstring("acap_server", NULL);
++    acapserver = config_getstring(IMAPOPT_ACAP_SERVER);
+     if (!acapserver) return NULL;
+ 
+     if (cached_conn) {
+@@ -197,21 +197,21 @@
+     cached_conn = (acapmbox_handle_t *) xmalloc(sizeof(acapmbox_handle_t));
+     cached_conn->conn = NULL;
+     
+-    user = config_getstring("acap_username", NULL);
++    user = config_getstring(IMAPOPT_ACAP_USERNAME);
+     if (user == NULL) {
+ 	syslog(LOG_ERR, "unable to find option acap_username");
+ 	return cached_conn;
+     }
+ 
+-    authprog = config_getstring("acap_getauth", NULL);
++    authprog = config_getstring(IMAPOPT_ACAP_GETAUTH);
+     if (authprog) {
+ 	system(authprog);
+     }
+ 
+     cb = mysasl_callbacks(user,
+-			  config_getstring("acap_authname", user),
+-			  config_getstring("acap_realm", NULL),
+-			  config_getstring("acap_password", NULL));
++			  config_getstring(IMAPOPT_ACAP_AUTHNAME),
++			  config_getstring(IMAPOPT_ACAP_REALM),
++			  config_getstring(IMAPOPT_ACAP_PASSWORD));
+     snprintf(str, sizeof(str), "acap://%s@%s/", user, acapserver);
+     r = acap_conn_connect(str, cb, &(cached_conn->conn));
+     free_callbacks(cb);
+Index: imap/collectnews.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/collectnews.c,v
+retrieving revision 1.26
+diff -u -r1.26 collectnews.c
+--- collectnews.c	2001/02/22 19:27:16	1.26
++++ collectnews.c	2002/06/14 17:05:04
+@@ -100,10 +100,10 @@
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+-    newsprefix = config_getstring("newsprefix", 0);
++    newsprefix = config_getstring(IMAPOPT_NEWSPREFIX);
+     if (newsprefix) newsprefixlen = strlen(newsprefix);
+     
+-    if (!config_getstring("partition-news", 0)) {
++    if (!config_getstring(IMAPOPT_PARTITIONNEWS)) {
+ 	fatal("partition-news option not specified in configuration file",
+ 	      EC_CONFIG);
+     }
+Index: imap/config.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/config.c,v
+retrieving revision 1.50
+diff -u -r1.50 config.c
+--- config.c	2002/05/25 19:57:43	1.50
++++ config.c	2002/06/14 17:05:04
+@@ -1,4 +1,4 @@
+-/* config.c -- Configuration routines
++/* config.c -- common initialization & configuration
+  * Copyright (c) 1998-2000 Carnegie Mellon University.  All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+@@ -77,15 +77,21 @@
+ static struct configlist *configlist;
+ static int nconfiglist;
+ 
+-
+ /* variables accessible to the external world */
+ const char *config_filename;     /* filename of configuration file */
+ 
++<<<<<<< config.c
++const char *config_dir;		 /* ie /var/imap */
++const char *config_defpartition; /* /var/spool/imap */
++const char *config_servername;	 /* gethostname() */
++int config_hashimapspool;	 /* f */
++=======
+ const char *config_dir;		           /* ie /var/imap */
+ const char *config_defpartition;           /* /var/spool/imap */
+ const char *config_newsspool;	           /* /var/spool/news */
+ const char *config_servername;	           /* gethostname() */
+ const char *config_mupdate_server = NULL;  /* NULL */
++>>>>>>> 1.50
+ 
+ int config_hashimapspool;	           /* f */
+ 
+@@ -106,14 +112,15 @@
+     config_read(alt_config);
+ 
+     /* Look up configdirectory config option */
+-    config_dir = config_getstring("configdirectory", (char *)0);
++    config_dir = config_getstring(IMAPOPT_CONFIGDIRECTORY);
+     if (!config_dir) {
+ 	fatal("configdirectory option not specified in configuration file",
+ 	      EC_CONFIG);
+     }
+ 
+     /* Look up default partition */
+-    config_defpartition = config_getstring("defaultpartition", "default");
++    config_defpartition = config_getstring(IMAPOPT_DEFAULTPARTITION);
++    /* check defaultpartition for reasonable-ness */
+     for (p = (char *)config_defpartition; *p; p++) {
+ 	if (!isalnum((unsigned char) *p))
+ 	  fatal("defaultpartition option contains non-alphanumeric character",
+@@ -127,21 +134,18 @@
+     }
+ 
+     /* Look up umask */
+-    val = config_getstring("umask", "077");
++    val = config_getstring(IMAPOPT_UMASK);
+     while (*val) {
+ 	if (*val >= '0' && *val <= '7') umaskval = umaskval*8 + *val - '0';
+ 	val++;
+     }
+     umask(umaskval);
+ 
+-    /* Look up news spool */
+-    config_newsspool = config_getstring("newsspool", 0);
+-
+     /* look up mailbox hashing */
+-    config_hashimapspool = config_getswitch("hashimapspool", 0);
++    config_hashimapspool = config_getswitch(IMAPOPT_HASHIMAPSPOOL);
+ 
+     /* look up the hostname we should present to the user */
+-    config_servername = config_getstring("servername", 0);
++    config_servername = config_getstring(IMAPOPT_SERVERNAME);
+     if (!config_servername) {
+ 	config_servername = xmalloc(sizeof(char) * 256);
+ 	gethostname((char *) config_servername, 256);
+@@ -152,6 +156,8 @@
+     return 0;
+ }
+ 
++<<<<<<< config.c
++=======
+ int config_changeident(const char *ident)
+ {
+     closelog();
+@@ -297,6 +303,7 @@
+     }
+ }
+ 
++>>>>>>> 1.47
+ /* this is a wrapper to call the cyrus configuration from SASL */
+ int mysasl_config(void *context __attribute__((unused)), 
+ 		  const char *plugin_name,
+@@ -309,7 +316,7 @@
+ 
+     if (!strcmp(option, "srvtab")) { 
+ 	/* we don't transform srvtab! */
+-	*result = config_getstring(option, NULL);
++	*result = config_getstring(IMAPOPT_SRVTAB);
+     } else {
+ 	*result = NULL;
+ 
+@@ -319,14 +326,14 @@
+ 	    strlcat(opt, plugin_name, sl);
+ 	    strlcat(opt, "_", sl);
+ 	    strlcat(opt, option, sl);
+-	    *result = config_getstring(opt, NULL);
++	    *result = config_getoverflowstring(opt);
+ 	}
+ 
+ 	if (*result == NULL) {
+ 	    /* try without the plugin name */
+ 	    strlcpy(opt, "sasl_", sl);
+ 	    strlcat(opt, option, sl);
+-	    *result = config_getstring(opt, NULL);
++	    *result = config_getoverflowstring(opt);
+ 	}
+     }
+ 
+@@ -345,15 +352,20 @@
+ {
+     static sasl_security_properties_t ret;
+ 
++<<<<<<< config.c
++    ret.maxbufsize = 4000;
++    ret.min_ssf = config_getint(IMAPOPT_SASL_MINIMUM_LAYER);
++=======
+     ret.maxbufsize = PROT_BUFSIZE;
+     ret.min_ssf = config_getint("sasl_minimum_layer", 0);	
++>>>>>>> 1.50
+ 				/* minimum allowable security strength */
+-    ret.max_ssf = config_getint("sasl_maximum_layer", 256);
++    ret.max_ssf = config_getint(IMAPOPT_SASL_MAXIMUM_LAYER);
+ 				/* maximum allowable security strength */
+ 
+     ret.security_flags = flags;
+     /* ret.security_flags |= SASL_SEC_NOPLAINTEXT; */
+-    if (!config_getswitch("allowanonymouslogin", 0)) {
++    if (!config_getswitch(IMAPOPT_ALLOWANONYMOUSLOGIN)) {
+ 	ret.security_flags |= SASL_SEC_NOANONYMOUS;
+     }
+     ret.property_names = NULL;
+@@ -362,12 +374,16 @@
+     return &ret;
+ }
+ 
+-/* true if 'authstate' is in 'val' */
+-static int isa(struct auth_state *authstate, const char *opt)
++/* true if 'authstate' is in 'opt' or 'service_opt' */
++int config_authisa(struct auth_state *authstate, enum imapopt opt)
+ {
+     char buf[1024];
+-    const char *val = config_getstring(opt, "");
++    const char *val = config_getstring(opt);
+ 
++    if (!val) {
++	/* no such option */
++	return 0;
++    }
+     while (*val) {
+ 	char *p;
+ 	
+@@ -381,34 +397,6 @@
+ 	val = p;
+ 	while (*val && isspace((int) *val)) val++;
+     }
+-    return 0;
+-}
+-
+-/* 
+- * check 'service_class' and 'class'
+- */
+-int authisa(struct auth_state *authstate, 
+-	    const char *service, 
+-	    const char *class)
+-{
+-    char buf[512];
+-
+-    if (!authstate) {
+-	/* not authenticated? */
+-	return 0;
+-    }
+-
+-    /* 'class' */
+-    if (isa(authstate, class)) {
+-	return 1;
+-    }
+-
+-    /* 'service_class' */
+-    snprintf(buf, sizeof(buf), "%s_%s", service, class);
+-    if (isa(authstate, buf)) {
+-	return 1;
+-    }
+-    
+     return 0;
+ }
+ 
+Index: imap/deliver.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/deliver.c,v
+retrieving revision 1.164
+diff -u -r1.164 deliver.c
+--- deliver.c	2002/05/25 19:57:44	1.164
++++ deliver.c	2002/06/14 17:05:04
+@@ -261,7 +261,7 @@
+ 
+     config_init(alt_config, "deliver");
+ 
+-    sockaddr = config_getstring("lmtpsocket", NULL);
++    sockaddr = config_getstring(IMAPOPT_LMTPSOCKET);
+     if (!sockaddr) {	
+ 	strcpy(buf, config_dir);
+ 	strcat(buf, "/socket/lmtp");
+@@ -344,7 +344,7 @@
+     if (mailbox) ml = strlen(mailbox);
+     if (numusers == 0) {
+ 	/* just deliver to mailbox 'mailbox' */
+-	const char *BB = config_getstring("postuser", "");
++	const char *BB = config_getstring(IMAPOPT_POSTUSER);
+ 	txn->rcpt[0].addr = (char *) xmalloc(ml + strlen(BB) + 2); /* leaks! */
+ 	sprintf(txn->rcpt[0].addr, "%s+%s", BB, mailbox);
+     } else {
+Index: imap/idle_idled.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/idle_idled.c,v
+retrieving revision 1.9
+diff -u -r1.9 idle_idled.c
+--- idle_idled.c	2002/01/18 22:58:47	1.9
++++ idle_idled.c	2002/06/14 17:05:04
+@@ -96,7 +96,7 @@
+      * NOTE: if used, a period of zero disables IDLE
+      */
+     if (idle_period == -1) {
+-      idle_period = config_getint("imapidlepoll", 60);
++      idle_period = config_getint(IMAPOPT_IMAPIDLEPOLL);
+       if (idle_period < 0) idle_period = 0;
+     }
+ 
+@@ -108,7 +108,7 @@
+     mailbox_set_updatenotifier(idle_notify);
+ 
+     idle_remote.sun_family = AF_UNIX;
+-    idle_sock = config_getstring("idlesocket", NULL);
++    idle_sock = config_getstring(IMAPOPT_IDLESOCKET);
+     if (idle_sock) {	
+ 	strcpy(idle_remote.sun_path, idle_sock);
+     }
+Index: imap/idle_poll.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/idle_poll.c,v
+retrieving revision 1.5
+diff -u -r1.5 idle_poll.c
+--- idle_poll.c	2001/11/19 21:32:44	1.5
++++ idle_poll.c	2002/06/14 17:05:05
+@@ -65,7 +65,7 @@
+ {
+     /* get polling period */
+     if (idle_period == -1) {
+-      idle_period = config_getint("imapidlepoll", 60);
++      idle_period = config_getint(IMAPOPT_IMAPIDLEPOLL);
+       if (idle_period < 0) idle_period = 0;
+     }
+ 
+Index: imap/idled.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/idled.c,v
+retrieving revision 1.9
+diff -u -r1.9 idled.c
+--- idled.c	2002/02/19 18:50:11	1.9
++++ idled.c	2002/06/14 17:05:05
+@@ -287,7 +287,7 @@
+     sprintf(shutdownfilename, "%s/msg/shutdown", config_dir);
+ 
+     /* Set inactivity timer (convert from minutes to seconds) */
+-    idle_timeout = config_getint("timeout", 30);
++    idle_timeout = config_getint(IMAPOPT_TIMEOUT);
+     if (idle_timeout < 30) idle_timeout = 30;
+     idle_timeout *= 60;
+ 
+@@ -311,7 +311,7 @@
+ 
+     /* bind it to a local file */
+     local.sun_family = AF_UNIX;
+-    idle_sock = config_getstring("idlesocket", NULL);
++    idle_sock = config_getstring(IMAPOPT_IDLESOCKET);
+     if (idle_sock) {	
+ 	strcpy(local.sun_path, idle_sock);
+     }
+Index: imap/imapconf.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/imapconf.h,v
+retrieving revision 1.15
+diff -u -r1.15 imapconf.h
+--- imapconf.h	2002/04/05 18:51:54	1.15
++++ imapconf.h	2002/06/14 17:05:05
+@@ -44,16 +44,21 @@
+ #define INCLUDED_IMAPCONF_H
+ 
+ #include <sasl/sasl.h>
++#include "imapopt.h"
+ #include "auth.h"
+ 
+-extern int config_init(const char *alt_config, const char *ident);
+-extern const char *config_getstring(const char *key, const char *def);
+-extern int config_getint(const char *key, int def);
+-extern int config_getswitch(const char *key, int def);
++/* imap configuration functions (config.c) */
++extern int config_read(const char *alt_config, const char *servicename);
++
++/* these will assert() if they're called on the wrong type of
++   option (imapopt.c) */
++extern const char *config_getstring(enum imapopt opt);
++extern int config_getint(enum imapopt opt);
++extern int config_getswitch(enum imapopt opt);
+ extern const char *config_partitiondir(const char *partition);
+-extern int config_changeident(const char *ident);
++extern const char *config_getoverflowstring(const char *key);
+ 
+-/* sasl configuration */
++/* sasl configuration (config.c) */
+ extern int mysasl_config(void *context,
+ 			 const char *plugin_name,
+ 			 const char *option,
+@@ -86,24 +91,28 @@
+ #endif
+ 
+ /* check if `authstate' is a valid member of class */
+-extern int authisa(struct auth_state *authstate, 
+-		   const char *service, const char *class);
++extern int config_authisa(struct auth_state *authstate, 
++			  enum imapopt opt);
+ 
+ /* Values of mandatory options */
+ extern const char *config_filename;
+ 
+ extern const char *config_dir;
+ extern const char *config_defpartition;
+-extern const char *config_newsspool;
+-
+ extern const char *config_servername;
++<<<<<<< imapconf.h
++=======
+ extern const char *config_mupdate_server;
+ 
++>>>>>>> 1.15
+ extern int config_hashimapspool;
+ 
+-void config_scanpartition( void (*proc)() );
++/* signal handling (signals.c) */
+ 
++<<<<<<< imapconf.h
++=======
+ /* signal handling (signals.c) */
++>>>>>>> 1.14
+ typedef void shutdownfn(int);
+ 
+ void signals_add_handlers(void);
+Index: imap/imapd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.397
+diff -u -r1.397 imapd.c
+--- imapd.c	2002/06/07 02:05:32	1.397
++++ imapd.c	2002/06/14 17:05:07
+@@ -294,7 +294,7 @@
+     /* check if remote realm */
+     if ((realm = strchr(auth_identity, '@'))!=NULL) {
+ 	realm++;
+-	val = config_getstring("loginrealms", "");
++	val = config_getstring(IMAPOPT_LOGINREALMS);
+ 	while (*val) {
+ 	    if (!strncasecmp(val, realm, strlen(realm)) &&
+ 		(!val[strlen(realm)] || isspace((int) val[strlen(realm)]))) {
+@@ -314,16 +314,25 @@
+     imapd_authstate = auth_newstate(auth_identity, NULL);
+ 
+     /* ok, is auth_identity an admin? */
+-    imapd_userisadmin = authisa(imapd_authstate, "imap", "admins");
++    imapd_userisadmin = config_authisa(imapd_authstate, IMAPOPT_ADMINS);
+ 
+     if (alen != rlen || strncmp(auth_identity, requested_user, alen)) {
+ 	/* we want to authenticate as a different user; we'll allow this
+ 	   if we're an admin or if we've allowed ACL proxy logins */
+-	int use_acl = config_getswitch("loginuseacl", 0);
++	int use_acl = config_getswitch(IMAPOPT_LOGINUSEACL);
+ 
+ 	if (imapd_userisadmin ||
++<<<<<<< imapd.c
++<<<<<<< imapd.c
++	    (use_acl && acl_ok(requested_user, auth_identity)) ||
++	    config_authisa(imapd_authstate, IMAPOPT_PROXYSERVERS)) {
++=======
++	    (use_acl && acl_ok(requested_user, auth_identity, imapd_authstate)) ||
++=======
+ 	    (use_acl && acl_ok(requested_user, imapd_authstate)) ||
++>>>>>>> 1.354
+ 	    authisa(imapd_authstate, "imap", "proxyservers")) {
++>>>>>>> 1.344
+ 	    /* proxy ok! */
+ 
+ 	    imapd_userisadmin = 0;	/* no longer admin */
+@@ -501,8 +510,6 @@
+     int r;
+     int opt;
+ 
+-    config_changeident("imapd");
+-    
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+     setproctitle_init(argc, argv, envp);
+ 
+@@ -650,7 +657,7 @@
+     proc_register("imapd", imapd_clienthost, NULL, NULL);
+ 
+     /* Set inactivity timer */
+-    timeout = config_getint("timeout", 30);
++    timeout = config_getint(IMAPOPT_TIMEOUT);
+     if (timeout < 30) timeout = 30;
+     prot_settimeout(imapd_in, timeout*60);
+     prot_setflushonread(imapd_in, imapd_out);
+@@ -1703,7 +1710,7 @@
+ 
+     /* possibly disallow login */
+     if ((imapd_starttls_done == 0) &&
+-	(config_getswitch("allowplaintext", 1) == 0) &&
++	(config_getswitch(IMAPOPT_ALLOWPLAINTEXT) == 0) &&
+ 	strcmp(canon_user, "anonymous") != 0) {
+ 	eatline(imapd_in, ' ');
+ 	prot_printf(imapd_out, "%s NO Login only available under a layer\r\n",
+@@ -1727,7 +1734,7 @@
+     passwd = passwdbuf.s;
+ 
+     if (!strcmp(canon_user, "anonymous")) {
+-	if (config_getswitch("allowanonymouslogin", 0)) {
++	if (config_getswitch(IMAPOPT_ALLOWANONYMOUSLOGIN)) {
+ 	    passwd = beautify_string(passwd);
+ 	    if (strlen(passwd) > 500) passwd[500] = '\0';
+ 	    syslog(LOG_NOTICE, "login: %s anonymous %s",
+@@ -1776,7 +1783,7 @@
+ 	       canon_user, imapd_starttls_done ? "+TLS" : "", 
+ 	       reply ? reply : "");
+ 
+-	plaintextloginpause = config_getint("plaintextloginpause", 0);
++	plaintextloginpause = config_getint(IMAPOPT_PLAINTEXTLOGINPAUSE);
+ 	if (plaintextloginpause != 0 && !imapd_starttls_done) {
+ 	    /* Apply penalty only if not under layer */
+ 	    sleep(plaintextloginpause);
+@@ -1784,7 +1791,7 @@
+     }
+     
+     imapd_authstate = auth_newstate(canon_user, (char *)0);
+-    val = config_getstring("admins", "");
++    val = config_getstring(IMAPOPT_ADMINS);
+     while (*val) {
+ 	for (p = (char *)val; *p && !isspace((int) *p); p++);
+ 	strlcpy(buf, val, p - val);
+@@ -2119,7 +2126,7 @@
+ 
+     /* spit out our ID string.
+        eventually this might be configurable. */
+-    if (config_getswitch("imapidresponse", 1)) {
++    if (config_getswitch(IMAPOPT_IMAPIDRESPONSE)) {
+ 	id_response(imapd_out);
+ 	prot_printf(imapd_out, ")\r\n");
+     }
+@@ -2242,9 +2249,17 @@
+     if (tls_enabled("imap")) {
+ 	prot_printf(imapd_out, " STARTTLS");
+     }
+-    if (!imapd_starttls_done && !config_getswitch("allowplaintext", 1)) {
++    if (!imapd_starttls_done && !config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
+ 	prot_printf(imapd_out, " LOGINDISABLED");
+     }
++<<<<<<< imapd.c
++    acapserver = config_getstring(IMAPOPT_ACAP_SERVER);
++    if (acapserver != NULL) {
++	prot_printf(imapd_out, " ACAP=acap://%s%s/", 
++		    acapserver, global_dataset);
++    }
++=======
++>>>>>>> 1.344
+ 
+     if(config_mupdate_server) {
+ 	prot_printf(imapd_out, " MUPDATE=mupdate://%s/", config_mupdate_server);
+@@ -2567,7 +2582,7 @@
+ 		prot_printf(imapd_out, "* NO [ALERT] %s\r\n",
+ 			    error_message(IMAP_NO_OVERQUOTA));
+ 	    }
+-	    else if (usage > config_getint("quotawarn", 90)) {
++	    else if (usage > config_getint(IMAPOPT_QUOTAWARN)) {
+ 		int usageint = (int) usage;
+ 		prot_printf(imapd_out, "* NO [ALERT] ");
+ 		prot_printf(imapd_out, error_message(IMAP_NO_CLOSEQUOTA),
+@@ -3558,7 +3573,7 @@
+ 				   localonly, localonly);
+ 
+ 	if (r == IMAP_PERMISSION_DENIED && !strcasecmp(name, "INBOX") &&
+-	    (autocreatequota = config_getint("autocreatequota", 0))) {
++	    (autocreatequota = config_getint(IMAPOPT_AUTOCREATEQUOTA))) {
+ 
+ 	    /* Auto create */
+ 	    r = mboxlist_createmailbox(mailboxname, 0,
+@@ -3986,7 +4001,7 @@
+     /* Ignore the reference argument?
+        (the behavior in 1.5.10 & older) */
+     if (ignorereference == 0) {
+-	ignorereference = config_getswitch("ignorereference", 0);
++	ignorereference = config_getswitch(IMAPOPT_IGNOREREFERENCE);
+     }
+ 
+     /* Reset state in mstringdata */
+@@ -4026,6 +4041,25 @@
+ 	/* Translate any separators in pattern */
+ 	mboxname_hiersep_tointernal(&imapd_namespace, pattern);
+ 
++<<<<<<< imapd.c
++	if (listopts & LIST_LSUB) {
++	    int force = config_getswitch(IMAPOPT_ALLOWALLSUBSCRIBE);
++
++	    (*imapd_namespace.mboxlist_findsub)(&imapd_namespace, pattern,
++						imapd_userisadmin, imapd_userid,
++						imapd_authstate, lsubdata,
++						&listopts, force);
++	    lsubdata((char *)0, 0, 0, &listopts);
++	}
++	else if (listopts & LIST_SUBSCRIBED) {
++	    int force = config_getswitch(IMAPOPT_ALLOWALLSUBSCRIBE);
++
++	    (*imapd_namespace.mboxlist_findsub)(&imapd_namespace, pattern,
++						imapd_userisadmin, imapd_userid,
++						imapd_authstate, listdata,
++						&listopts, force);
++	    listdata((char *)0, 0, 0, &listopts);
++=======
+ 	/* Check to see if we should only list the personal namespace */
+ 	if (!strcmp(pattern, "*") && config_getint("foolstupidclients", 0)) {
+ 	    if (buf) free(buf);
+@@ -4045,6 +4079,7 @@
+ 	    (*findsub)(&imapd_namespace, pattern,
+ 		       imapd_userisadmin, imapd_userid, imapd_authstate,
+ 		       listdata, &listopts, force);
++>>>>>>> 1.397
+ 	}
+ 	else {
+ 	    (*findall)(&imapd_namespace, pattern,
+@@ -4070,7 +4105,7 @@
+ {
+     int r;
+     char mailboxname[MAX_MAILBOX_NAME+1];
+-    int force = config_getswitch("allowallsubscribe", 0);
++    int force = config_getswitch(IMAPOPT_ALLOWALLSUBSCRIBE);
+ 
+     if (namespace) lcase(namespace);
+     if (!namespace || !strcmp(namespace, "mailbox")) {
+@@ -4761,6 +4796,12 @@
+ void cmd_netscrape(char *tag)
+ {
+     const char *url;
++<<<<<<< imapd.c
++    /* so tempting, and yet ... */
++    /* url = "http://random.yahoo.com/ryl/"; */
++    url = config_getstring(IMAPOPT_NETSCAPEURL);
++=======
++>>>>>>> 1.397
+ 
+     url = config_getstring("netscapeurl", NULL);
+ 
+@@ -5179,7 +5220,11 @@
+ 	eatline(imapd_in, c);
+ 	goto freeargs;
+     }
++<<<<<<< imapd.c
+ 
++    prot_printf(imapd_out, "%s NO setting annotations not supported\r\n", tag);
++=======
++
+     /* administrators only please */
+     if (!imapd_userisadmin) {
+ 	r = IMAP_PERMISSION_DENIED;
+@@ -5189,7 +5234,10 @@
+ 	r = annotatemore_store(entryatts, &imapd_namespace, imapd_userisadmin,
+ 			       imapd_userid, imapd_authstate);
+     }
++>>>>>>> 1.397
+ 
++<<<<<<< imapd.c
++=======
+     if (r) {
+ 	prot_printf(imapd_out, "%s NO %s\r\n", tag, error_message(r));
+     } else {
+@@ -5197,6 +5245,7 @@
+ 		    error_message(IMAP_OK_COMPLETED));
+     }
+ 
++>>>>>>> 1.397
+   freeargs:
+     if (entryatts) freeentryatts(entryatts);
+     return;
+@@ -7196,6 +7245,18 @@
+     lastname[matchlen] = '\0';
+     nonexistent = 0;
+ 
++<<<<<<< imapd.c
++    /* See if subscribed mailbox exists */
++    if ((listopts & LIST_SUBSCRIBED) &&
++	config_getswitch(IMAPOPT_ALLOWALLSUBSCRIBE)) {
++	/* convert "INBOX" to "user.<userid>" */
++	if (!strncasecmp(lastname, "inbox", 5))
++	    sprintf(mboxname, "user.%s%s", imapd_userid, lastname+5);
++	else
++	    strcpy(mboxname, lastname);
++	nonexistent = mboxlist_lookup(mboxname, NULL, NULL, NULL);
++    }
++=======
+     /* Now we need to see if this mailbox exists */
+     /* first convert "INBOX" to "user.<userid>" */
+     if (!strncasecmp(lastname, "inbox", 5))
+@@ -7208,6 +7269,7 @@
+ 				  NULL, NULL, NULL, NULL);
+     if(!nonexistent && (mbtype & MBTYPE_RESERVE))
+ 	nonexistent = IMAP_MAILBOX_RESERVED;
++>>>>>>> 1.397
+ 
+     if (!name[matchlen]) {
+ 	lastnamedelayed = 1;
+Index: imap/imapopt.c
+===================================================================
+RCS file: imapopt.c
+diff -N imapopt.c
+--- /dev/null	Tue May  5 16:32:27 1998
++++ imapopt.c	Fri Jun 14 13:05:07 2002
+@@ -0,0 +1,224 @@
++#include "imapopt.h"
++
++struct imapopt_s {
++    enum imapopt opt;  
++    const char *optname;
++    union {
++	char *s;
++	int i;
++	int b;
++    } val;
++    enum opttype t;
++};
++
++/* this defines "imapopts", the array of legal options indexed by
++   the option number as defined in imapopt.h */
++#include "imapopt-autogen.c"
++
++/* for options that aren't listed above */
++struct configlist {
++    char *key;
++    char *value;
++};
++
++static struct configlist *configlist;
++static int nconfiglist;
++
++#define CONFIGLISTGROWSIZE 30 /* 100 */
++
++/* imap configuration functions (config.c) */
++int config_read(const char *alt_config, const char *servicename)
++{
++    FILE *infile;
++    int lineno = 0;
++    int alloced = 0;
++    char buf[4096];
++    int opt;
++    char *p, *q, *key;
++    int snlen = servicename ? strlen(servicename) : 0;
++
++    /* read in config file */
++    infile = fopen(alt_config ? alt_config : CONFIG_FILENAME, "r");
++    if (!infile) {
++	strcpy(buf, CYRUS_PATH);
++	strcat(buf, alt_config ? alt_config : CONFIG_FILENAME);
++	infile = fopen(buf, "r");
++    }
++    if (!infile) {
++	sprintf(buf, "can't open configuration file %s: %s",
++		alt_config ? alt_config : CONFIG_FILENAME,
++		error_message(errno));
++	fatal(buf, EC_CONFIG);
++    }
++
++    while (fgets(buf, sizeof(buf), infile)) {
++	lineno++;
++
++	if (buf[strlen(buf)-1] == '\n') buf[strlen(buf)-1] = '\0';
++	for (p = buf; *p && isspace((int) *p); p++);
++	if (!*p || *p == '#') continue;
++
++	key = p;
++	while (*p && (isalnum((int) *p) || *p == '-' || *p == '_')) {
++	    if (isupper((unsigned char) *p)) *p = tolower((unsigned char) *p);
++	    p++;
++	}
++	if (*p != ':') {
++	    sprintf(buf,
++		    "invalid option name on line %d of configuration file",
++		    lineno);
++	    fatal(buf, EC_CONFIG);
++	}
++	*p++ = '\0';
++
++	while (*p && isspace((int) *p)) p++;
++
++	/* remove trailing whitespace */
++	for (q = p + strlen(p) - 1; q > p && isspace((int) *q); q--) {
++	    *q = '\0';
++	}
++	
++	if (!*p) {
++	    sprintf(buf, "empty option value on line %d of configuration file",
++		    lineno);
++	    fatal(buf, EC_CONFIG);
++	}
++
++	/* look for service_ prefix, skip over it if it exists */
++	if (servicename && !strncmp(key, servicename, snlen) 
++	                && key[snlen] == '_') {
++	    /* skip service_ prefix */
++	    key += snlen + 1;
++	}
++
++	/* look for the corresponding entry in imapopts */
++	for (opt = IMAPOPT_ZERO; opt < IMAPOPT_LAST; opt++) {
++	    if (!strcmp(imapopts[opt].optname, key)) {
++		break;
++	    }
++	}
++
++	if (opt < IMAPOPT_LAST) {
++	    /* this is a known option */
++	    switch (imapopts[opt].t) {
++	    case STRING:
++		imapopts[opt].val.s = xstrdup(p);
++		break;
++
++	    case INT:
++	    {
++		long val;
++		char *ptr;
++
++		val = strtol(p, &ptr, 0);
++		if (!ptr || *ptr != '\0') {
++		    /* error during conversion */
++		    sprintf(buf, "non-integer value for %s in line %d",
++			    imapopts[opt].optname, lineno);
++		    fatal(buf, EC_CONFIG);
++		}
++		
++		imapopts[opt].val.i = val;
++		break;
++	    }
++	    case SWITCH:
++	    {
++		int val;
++
++		if (*p == '0' || *p == 'n' ||
++		    (*p == 'o' && p[1] == 'f') || *p == 'f') {
++		    return 0;
++		}
++		else if (*p == '1' || *p == 'y' ||
++			 (*p == 'o' && p[1] == 'n') || *p == 't') {
++		    return 1;
++		}
++		else {
++		    /* error during conversion */
++		    sprintf(buf, "non-switch value for %s in line %d",
++			    imapopts[opt].optname, lineno);
++		    fatal(buf, EC_CONFIG);
++		}
++		break;
++	    }
++	    case NOTOPT:
++		abort();
++	    }
++	} else {
++	    /* otherwise, put it into the overflow list */
++	    if (nconfiglist == alloced) {
++		alloced += CONFIGLISTGROWSIZE;
++		configlist = (struct configlist *)
++		    xrealloc(configlist, alloced * sizeof(struct configlist));
++	    }
++	    
++	    configlist[nconfiglist].key = xstrdup(key);
++	    configlist[nconfiglist].value = xstrdup(p);
++	    nconfiglist++;
++	}
++    }
++    fclose(infile);
++
++    /* expand configuration values {config_opt} */
++    for (;;) {
++	int didwork = 0;
++
++	for (opt = IMAPOPT_ZERO; opt < IMAPOPT_LAST; opt++) {
++	    
++	    /* has a {...} in it ... */
++
++	    /* replacement option has a {...}, do nothing */
++	}
++
++	if (!didwork) {
++	    break;
++	}
++    }
++}
++
++const char *config_getstring(enum imapopt opt)
++{
++    assert(opt > IMAPOPT_ZERO && opt < IMAPOPT_LAST);
++    assert(imapopts[opt].t == STRING);
++
++    return imapopts[opt].val.s;
++}
++
++int config_getint(enum imapopt opt)
++{
++    assert(opt > IMAPOPT_ZERO && opt < IMAPOPT_LAST);
++    assert(imapopts[opt].t == INT);
++
++    return imapopts[opt].val.i;
++}
++
++int config_getswitch(enum imapopt opt)
++{
++    assert(opt > IMAPOPT_ZERO && opt < IMAPOPT_LAST);
++    assert(imapopts[opt].t == SWITCH);
++
++    return imapopts[opt].val.s;
++}
++
++const char *config_getoverflowstring(const char *key)
++{
++    int opt;
++
++    for (opt = 0; opt < nconfiglist; opt++) {
++	if (*key == configlist[opt].key[0] &&
++	    !strcmp(key, configlist[opt].key))
++	  return configlist[opt].value;
++    }
++    return NULL;
++}
++
++const char *config_partitiondir(const char *partition)
++{
++    char buf[80];
++
++    if (strlen(partition) > 70) return 0;
++    strcpy(buf, "partition-");
++    strcat(buf, partition);
++
++    return config_getoverflowstring(buf);
++}
+Index: imap/imapoptions
+===================================================================
+RCS file: imapoptions
+diff -N imapoptions
+--- /dev/null	Tue May  5 16:32:27 1998
++++ imapoptions	Fri Jun 14 13:05:07 2002
+@@ -0,0 +1,369 @@
++/*
++.TH IMAPD.CONF 5 "Project Cyrus" CMU
++.\" 
++.\" Copyright (c) 1998-2002 Carnegie Mellon University.  All rights reserved.
++.\"
++.\" Redistribution and use in source and binary forms, with or without
++.\" modification, are permitted provided that the following conditions
++.\" are met:
++.\"
++.\" 1. Redistributions of source code must retain the above copyright
++.\"    notice, this list of conditions and the following disclaimer. 
++.\"
++.\" 2. Redistributions in binary form must reproduce the above copyright
++.\"    notice, this list of conditions and the following disclaimer in
++.\"    the documentation and/or other materials provided with the
++.\"    distribution.
++.\"
++.\" 3. The name "Carnegie Mellon University" must not be used to
++.\"    endorse or promote products derived from this software without
++.\"    prior written permission. For permission or any other legal
++.\"    details, please contact  
++.\"      Office of Technology Transfer
++.\"      Carnegie Mellon University
++.\"      5000 Forbes Avenue
++.\"      Pittsburgh, PA  15213-3890
++.\"      (412) 268-4387, fax: (412) 268-7395
++.\"      tech-transfer@andrew.cmu.edu
++.\"
++.\" 4. Redistributions of any form whatsoever must retain the following
++.\"    acknowledgment:
++.\"    "This product includes software developed by Computing Services
++.\"     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++.\"
++.\" CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++.\" THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++.\" AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++.\" FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++.\" AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++.\" OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++.\" 
++.SH NAME
++imapd.conf \- IMAP configuration file
++.SH DESCRIPTION
++\fB/etc/imapd.conf\fR 
++is the configuration file for the Cyrus IMAP server.  It defines
++local parameters for IMAP. 
++.PP
++Each line of the \fB/etc/imapd.conf\fR file has the form
++.IP
++\fIoption\fR: \fIvalue\fR
++.PP
++where \fIoption\fR is the name of the configuration option being set
++and \fIvalue\fR is the value that the configuration option is being
++set to.
++.PP
++Blank lines and lines beginning with ``#'' are ignored.
++.PP
++For boolean options, the values ``yes'', ``on'', ``t'', and ``1'' turn the
++option on, the values ``no'', ``off'', ``f'', and ``0'' turn the option off.
++.SH FIELD DESCRIPTIONS
++.PP
++The sections below detail options that can be placed in the
++\fB/etc/imapd.conf\fR file, and show each option's default value.
++Some options have no default value, these are listed with
++``<no default>''.  Some options default to the empty string, these
++are listed with ``<none>''.
++*/
++
++# OPTIONS
++
++{ "acap_authname", NULL, STRING }
++
++{ "acap_getauth", NULL, STRING }
++
++{ "acap_password", NULL, STRING }
++
++{ "acap_realm", NULL, STRING }
++
++{ "acap_server", NULL, STRING }
++
++{ "acap_server", NULL, STRING }
++
++{ "acap_username", NULL, STRING }
++
++{ "admins", "", STRING }
++/* The list of userids with administrative rights.  Separate each userid
++with a space.  Sites using Kerberos authentication may use
++separate "admin" instances.
++.PP
++Note that accounts used by users should not be administrators.  Administrative 
++accounts should not receive mail.  That is, if user "jbRo" is a user reading
++mail, he should not also be in the admins line.  Some problems may occur
++otherwise, most notably  the ability of administrators to create top-level
++mailboxes visible to users, but not writable by users. */
++
++{ "configdirectory", NULL, STRING } 
++   /* The pathname of the IMAP configuration directory.  This field is
++      required. */
++
++{ "defaultacl", "anyone lrs", STRING }
++/* The Access Control List (ACL) placed on a newly-created (non-user) 
++   mailbox that does not have a parent mailbox. */
++
++{ "defaultpartition", "default", STRING } 
++   /* The partition name used by default for new mailboxes. */
++
++{ "deleteright", "c", STRING }
++/* The right that a user needs to delete a mailbox. */
++
++{ "idlesocket", "{configdirectory}/socket/idle", STRING }
++/* Unix domain socket that idled listens on. */
++
++{ "lmtpsocket", "{configdirectory}/socket/lmtp", STRING }
++/* Unix domain socket that lmtpd listens on, used by deliver(8). */
++
++{ "loginrealms", "", STRING }
++/* The list of remote realms whose users may log in using cross-realm
++   authentications.  Seperate each realm name by a space.  (A
++   cross-realm identity is considered any identity returned by SASL
++   with an "@" in it.) */
++
++{ "newsprefix", 0, STRING }
++/* Prefix to be prepended to newsgroup names to make the corresponding
++   IMAP mailbox names. */
++
++{ "newsspool", 0, STRING }
++/* The pathname of the news spool directory.  Only used if the
++   \fBpartition-news\fR configuration option is set. */
++
++{ "notifysocket", "{configdirectory}/socket/notify", STRING }
++/* Unix domain socket that the new mail notification daemon listens on. */
++
++# { "partition-news", 0, STRING }
++
++{ "postmaster", "postmaster", STRING }
++/* Username that is used as the 'From' address in rejection MDNs produced
++   by sieve. */
++
++{ "postspec", NULL, STRING }
++
++{ "postuser", "", STRING }
++/* Userid used to deliver messages to shared folders.  For example, if
++   set to "bb", email sent to "bb+shared.blah" would be delivered to
++   the "shared.blah" folder.  By default, an email address of
++   "+shared.blah" would be used. */
++
++{ "proxy_authname", "proxy", STRING }
++
++{ "proxy_realm", NULL, STRING }
++
++{ "proxyservers", NULL, STRING }
++/* A list of users and groups that are allowed to proxy for other
++   users, seperated by spaces.  Any user listed in this will be
++   allowed to login for any other user: use with caution. */
++
++{ "sendmail", "/usr/lib/sendmail", STRING }
++/* The pathname of the sendmail executable.  Sieve invokes sendmail
++   for sending rejections, redirects and vacation responses. */
++
++{ "servername", NULL, STRING }
++/* This is the hostname visible in the greeting messages of the POP,
++   IMAP and LMTP daemons. If it is unset, then the result returned
++   from gethostname(2) is used. */
++
++{ "sharedprefix", "Shared Folders", STRING }
++/* If using the alternate IMAP namespace, the prefix for the shared
++   namespace.  The hierarchy delimiter will be automatically appended. */
++
++{ "sievedir", "/usr/sieve", STRING }
++/* If sieveusehomedir is false, this directory is searched for Sieve
++   scripts. */
++
++{ "srvtab", "", STRING }
++/* The pathname of \fIsrvtab\fR file containing the server's private
++   key.  This option is passed to the SASL library and overrides its
++   default setting. */
++
++{ "tls_ca_file", NULL, STRING }
++/* File containing one or more Certificate Authority (CA) certificates. */
++
++{ "tls_ca_path", NULL, STRING }
++/* Path to directory with certificates of CAs.  This directory must
++   have filenames with the hashed value of the certificate (see
++   openssl(XXX)). */
++
++{ "tls_cert_file", NULL, STRING }
++/* File containing the certificate presented for server authentication
++   during STARTTLS.  A value of "disabled" will disable SSL/TLS. */
++
++{ "tls_key_file", NULL, STRING }
++/* File containing the private key belonging to the server
++   certificate.  A value of "disabled" will disable SSL/TLS. */
++
++{ "umask", "077", STRING }
++/* The umask value used by various Cyrus IMAP programs. */
++
++{ "userprefix", "Other Users", STRING }
++/* If using the alternate IMAP namespace, the prefix for the other users
++   namespace.  The hierarchy delimiter will be automatically appended. */
++
++{ "proxy_password", NULL, STRING }
++
++{ "acap_retry_timeout", 60, INT }
++
++{ "autocreatequota", 0, INT }
++/* If nonzero, normal users may create their own IMAP accounts by
++   creating the mailbox INBOX.  The user's quota is set to the value
++   if it is positive, otherwise the user has unlimited quota. */
++
++{ "imapidlepoll", 60, INT }
++/* The interval (in seconds) for polling the mailbox for changes while
++   running the IDLE command.  This option is used when idled can not
++   be contacted or when polling is used exclusively.  The minimum
++   value is 1.  A value of 0 will disable polling (and disable IDLE if
++   polling is the only method available). */
++
++{ "maxmessagesize", 0, INT }
++/* Maximum incoming LMTP message size.  If non-zero, lmtpd will reject
++   messages larger than \fImaxmessagesize\fR bytes.  The default is to
++   allow messages of any size. */
++
++{ "plaintextloginpause", 0, INT }
++/* Number of seconds to pause after a successful plaintext login.  For
++   systems that support strong authentication, this permits users to
++   perceive a cost of using plaintext passwords.  (This does not
++   effect the use of PLAIN in SASL authentications.) */
++
++{ "popexpiretime", -1, INT }
++/* The number of days advertised as being the minimum a message may be
++   left on the POP server before it is deleted (via the CAPA command,
++   defined in the POP3 Extension Mechanism, which some clients may
++   support).  "NEVER", the default, may be specified with a negative
++   number.  The Cyrus POP3 server never deletes mail, no matter what
++   the value of this parameter is.  However, if a site implements a
++   less liberal policy, it needs to change this parameter
++   accordingly. */
++
++{ "popminpoll", 0, INT }
++/* Set the minimum amount of time the server forces users to wait
++   between successive POP logins, in minutes.  The default is 0. */
++
++{ "poptimeout", 10, INT }
++/* Set the length of the POP server's inactivity autologout timer,
++   in minutes.  The minimum value is 10, the default. */
++
++{ "quotawarn", 90, INT }
++/* The percent of quota utilization over which the server generates
++   warnings. */
++
++{ "sasl_maximum_layer", 256, INT }
++/* Maximum SSF (security strength factor) that the server will allow a
++   client to negotiate. */
++
++{ "sasl_minimum_layer", 0, INT }
++/* The minimum SSF that the server will allow a client to negotiate.
++   A value of 1 requires integrity protection; any higher value
++   requires some amount of encryption. */
++
++{ "timeout", 30, INT }
++/* The length of the IMAP server's inactivity autologout timer,
++   in minutes.  The minimum value is 30, the default. */
++
++{ "tls_session_timeout", 1440, INT }
++/* The length of time (in minutes) that a TLS session will be cached
++   for later reuse.  The maximum value is 1440 (24 hours), the
++   default.  A value of 0 will disable session caching. */
++
++{ "allowallsubscribe", 0, SWITCH }
++
++{ "allowanonymouslogin", 0, SWITCH }
++/* Permit logins by the user "anonymous" using any password.  Also
++   allows use of the SASL ANONYMOUS mechanism. */
++
++{ "allowplaintext", 1, SWITCH }
++/* Allow the use of the SASL PLAIN mechanism. */
++
++{ "altnamespace", 0, SWITCH }
++/*
++Use the alternate IMAP namespace, where personal folders reside at the
++same level in the hierarchy as INBOX.
++.br
++.sp
++This option ONLY applies where interaction takes place with the
++client/user.  Currently this is limited to the IMAP protocol (imapd)
++and Sieve scripts (lmtpd).  This option does NOT apply to admin tools
++such as cyradm (admins ONLY), reconstruct, quota, etc., NOR does it
++affect LMTP delivery of messages directly to mailboxes via plus-addressing.
++*/
++
++{ "duplicatesuppression", 1, SWITCH }
++/* If enabled, lmtpd will suppress delivery of a message to a mailbox if
++a message with the same message-id (or resent-message-id) is recorded
++as having already been delivered to the mailbox.  Records the mailbox
++and message-id/resent-message-id of all successful deliveries.
++.br
++.sp
++Note that duplicate delivery suppression is required for Sieve.
++Disabling duplicate delivery suppression will also disable Sieve, and
++as such should only be disabled for performance reasons. */
++
++{ "hashimapspool", 0, SWITCH }
++/* If enabled, the partitions will also be hashed, in addition to the
++   hashing done on configuration directories.  This is recommended if
++   one partition has a very bushy mailbox tree. */
++
++{ "ignorereference", 0, SWITCH }
++
++{ "imapidresponse", 1, SWITCH }
++/* If enabled, the server responds to an ID command with a parameter
++   list containing: version, vendor, support-url, os, os-version,
++   command, arguments, environment.  Otherwise the server returns NIL. */
++
++{ "loginuseacl", 0, SWITCH }
++/* If enabled, any authentication identity which has \fBa\fR rights on a
++   user's INBOX may log in as that user. */
++
++{ "reject8bit", 0, SWITCH }
++/* If enabled, lmtpd rejects messages with 8-bit characters in the
++   headers.  Otherwise, 8-bit characters are changed to `X'.  (A
++   proper soultion to non-ASCII characters in headers is offered by
++   RFC 2047 and its predecessors.) */
++
++{ "sieveusehomedir", 0, SWITCH }
++/* If enabled, lmtpd will look for Sieve scripts in user's home
++   directories: ~user/.sieve. */
++
++{ "singleinstancestore", 1, SWITCH }
++/* If enabled, lmtpd attempts to only write one copy of a message per
++   partition and create hard links, resulting in a potentially large
++   disk savings. */
++
++{ "unixhierarchysep", 0, SWITCH }
++   /* Use the UNIX separator character '/' for delimiting levels of
++      mailbox hierarchy.  The default is to use the netnews separator
++      character '.'. */
++
++{ "netscapeurl", "http://andrew2.andrew.cmu.edu/cyrus/imapd/netscape-admin.html", STRING }
++/* If enabled at compile time, this specifies a URL to reply when
++   Netscape asks the server where the mail administration HTTP server
++   is.  The default is a site at CMU with a hopefully informative
++   message; administrators should set this to a local resource with
++   some information of greater use. */
++
++{ "sieve_maxscriptsize", 32, INT }
++/* Maximum size (in kilobytes) any sieve script can be, enforced at
++   submission by timsieved(8). */
++
++{ "sieve_maxscripts", 5, INT }
++/* Maximum number of sieve scripts any user may have, enforced at
++   submission by timsieved(8). */
++
++# next few commented out since we want to pass 'em through
++# to libsasl
++# { "sasl_pwcheck_method", "sasldb", STRING }
++/* The mechanism used by the server to verify plaintext passwords.
++   Possible values include "sasldb", "saslauthd", and "pwcheck". */
++
++# { "sasl_auto_transition", 0, SWITCH }
++/* If enabled, the SASL library will automatically create authentication
++   secrets when given a plaintext password.  See the SASL documentation. */
++
++/* 
++.SH SEE ALSO
++.PP
++\fBimapd(8)\fR, \fBpop3d(8)\fR, \fBlmtpd(8)\fR, \fBtimsieved(8)\fR,
++\fBidled(8)\fR, \fBdeliver(8)\fR, \fBmaster(8)\fR
++*/
++
+Index: imap/lmtpd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/lmtpd.c,v
+retrieving revision 1.98
+diff -u -r1.98 lmtpd.c
+--- lmtpd.c	2002/06/03 18:22:26	1.98
++++ lmtpd.c	2002/06/14 17:05:07
+@@ -194,7 +194,7 @@
+     /* check if remote realm */
+     if ((realm = strchr(auth_identity, '@'))!=NULL) {
+ 	realm++;
+-	val = config_getstring("loginrealms", "");
++	val = config_getstring(IMAPOPT_LOGINREALMS);
+ 	while (*val) {
+ 	    if (!strncasecmp(val, realm, strlen(realm)) &&
+ 		(!val[strlen(realm)] || isspace((int) val[strlen(realm)]))) {
+@@ -215,7 +215,7 @@
+      * for now only admins can do lmtp from another machine
+      */
+     authstate = auth_newstate(auth_identity, NULL);
+-    allowed = authisa(authstate, "lmtp", "admins");
++    allowed = config_authisa(authstate, IMAPOPT_ADMINS);
+     auth_freestate(authstate);
+     
+     if (!allowed) {
+@@ -240,7 +240,6 @@
+ {
+     int r;
+ 
+-    config_changeident("lmtpd");
+     if (geteuid() == 0) return 1;
+     
+     signals_set_shutdown(&shut_down);
+@@ -248,9 +247,9 @@
+     signal(SIGPIPE, SIG_IGN);
+ 
+ #ifdef USE_SIEVE
+-    sieve_usehomedir = config_getswitch("sieveusehomedir", 0);
++    sieve_usehomedir = config_getswitch(IMAPOPT_SIEVEUSEHOMEDIR);
+     if (!sieve_usehomedir) {
+-	sieve_dir = config_getstring("sievedir", "/usr/sieve");
++	sieve_dir = config_getstring(IMAPOPT_SIEVEDIR);
+     } else {
+ 	sieve_dir = NULL;
+     }
+@@ -262,8 +261,8 @@
+     setup_sieve();
+ #endif /* USE_SIEVE */
+ 
+-    singleinstance = config_getswitch("singleinstancestore", 1);
+-    BB = config_getstring("postuser", BB);
++    singleinstance = config_getswitch(IMAPOPT_SINGLEINSTANCESTORE);
++    BB = config_getstring(IMAPOPT_POSTUSER);
+ 
+     if ((r = sasl_server_init(mysasl_cb, "Cyrus")) != SASL_OK) {
+ 	syslog(LOG_ERR, "SASL failed initializing: sasl_server_init(): %s", 
+@@ -271,12 +270,23 @@
+ 	return EC_SOFTWARE;
+     }
+ 
++<<<<<<< lmtpd.c
++    dupelim = config_getswitch(IMAPOPT_DUPLICATESUPPRESSION);
++    if (dupelim) {
++	/* initialize duplicate delivery database */
++	if (duplicate_init(NULL, 0) != 0) {
++	    syslog(LOG_ERR, 
++		   "lmtpd: unable to init duplicate delivery database\n");
++	    dupelim = 0;
++	}
++=======
+     dupelim = config_getswitch("duplicatesuppression", 1);
+     /* initialize duplicate delivery database */
+     if (duplicate_init(NULL, 0) != 0) {
+ 	syslog(LOG_ERR, 
+ 	       "lmtpd: unable to init duplicate delivery database\n");
+ 	dupelim = have_dupdb = 0;
++>>>>>>> 1.98
+     }
+ 
+     /* so we can do mboxlist operations */
+@@ -419,6 +429,15 @@
+     }
+ }
+ 
++<<<<<<< lmtpd.c
++#define DEFAULT_SENDMAIL ("/usr/lib/sendmail")
++#define DEFAULT_POSTMASTER ("postmaster")
++
++#define SENDMAIL (config_getstring(IMAPOPT_SENDMAIL))
++#define POSTMASTER (config_getstring(IMAPOPT_POSTMASTER))
++
++=======
++>>>>>>> 1.87
+ static int global_outgoing_count = 0;
+ 
+ pid_t open_sendmail(const char *argv[], FILE **sm)
+@@ -790,13 +809,27 @@
+ 			void *mc __attribute__((unused)),
+ 			const char **errmsg __attribute__((unused)))
+ {
++<<<<<<< lmtpd.c
++    sieve_notify_context_t *nc = (sieve_notify_context_t *) ac;
++    script_data_t *sd = (script_data_t *) script_context;
++
++    snmp_increment(SIEVE_NOTIFY, 1);
++=======
+     const char *notifier = config_getstring("sievenotifier", NULL);
+ 
+     if (notifier) {
+ 	sieve_notify_context_t *nc = (sieve_notify_context_t *) ac;
+ 	script_data_t *sd = (script_data_t *) script_context;
+ 	int nopt = 0;
++>>>>>>> 1.98
+ 
++<<<<<<< lmtpd.c
++    notify("SIEVE",
++	   nc->priority,
++	   sd->username,
++	   NULL,
++	   nc->message);
++=======
+ 	snmp_increment(SIEVE_NOTIFY, 1);
+ 
+ 	/* count options */
+@@ -806,6 +839,7 @@
+ 	       "SIEVE", nc->priority, sd->username, NULL,
+ 	       nopt, nc->options, nc->message);
+     }
++>>>>>>> 1.98
+     
+     return SIEVE_OK;
+ }
+Index: imap/lmtpengine.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/lmtpengine.c,v
+retrieving revision 1.75
+diff -u -r1.75 lmtpengine.c
+--- lmtpengine.c	2002/06/06 00:12:34	1.75
++++ lmtpengine.c	2002/06/14 17:05:08
+@@ -1230,11 +1230,27 @@
+ #endif
+     cd.starttls_done = 0;
+ 
++<<<<<<< lmtpengine.c
++    max_msgsize = config_getint(IMAPOPT_MAXMESSAGESIZE);
++    if (!max_msgsize) max_msgsize = INT_MAX;
++=======
+     sprintf(shutdownfilename, "%s/msg/shutdown", config_dir);
+     max_msgsize = config_getint("maxmessagesize", INT_MAX);
++>>>>>>> 1.64
+ 
+     msg_new(&msg);
+ 
++<<<<<<< lmtpengine.c
++    if (sasl_server_new("lmtp", NULL, NULL, NULL,
++			NULL, NULL, 0, &cd.conn) != SASL_OK) {
++	fatal("SASL failed initializing: sasl_server_new()", EC_TEMPFAIL);
++    }
++
++    /* set my allowable security properties */
++    secflags = SASL_SEC_NOANONYMOUS;
++    if (!config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
++	secflags |= SASL_SEC_NOPLAINTEXT;
++=======
+     /* don't leak old connections */
+     if(saslprops.iplocalport) {
+ 	free(saslprops.iplocalport);
+@@ -1243,6 +1259,7 @@
+     if(saslprops.ipremoteport) {
+ 	free(saslprops.ipremoteport);
+ 	saslprops.ipremoteport = NULL;
++>>>>>>> 1.64
+     }
+ 
+     /* determine who we're talking to */
+@@ -2071,6 +2088,7 @@
+     char *in;
+     const char *out;
+     unsigned int inlen, outlen;
++    char *mechavail;
+     const char *mechusing;
+     unsigned b64len;
+     char localip[60], remoteip[60];
+@@ -2099,11 +2117,26 @@
+     r = sasl_setprop(conn->saslconn, SASL_IPLOCALPORT, localip);
+     if (r != SASL_OK) return AUTH_ERROR;
+     r = sasl_setprop(conn->saslconn, SASL_IPREMOTEPORT, remoteip);
++<<<<<<< lmtpengine.c
++    if (r != SASL_OK) return r;
++
++    strcpy(buf, conn->host);
++    p = strchr(buf, '.');
++    *p = '\0';
++    strcat(buf, "_mechs");
++    mechavail = config_getoverflowstring(buf);
++    if (!mechavail) mechavail = conn->mechs;
++=======
+     if (r != SASL_OK) return AUTH_ERROR;
++>>>>>>> 1.64
+ 
+     /* we now do the actual SASL exchange */
++<<<<<<< lmtpengine.c
++    r = sasl_client_start(conn->saslconn, mechavail,
++=======
+     r = sasl_client_start(conn->saslconn, 
+ 			  conn->mechs,
++>>>>>>> 1.64
+ 			  NULL, &out, &outlen, &mechusing);
+     if ((r != SASL_OK) && (r != SASL_CONTINUE))
+ 	return AUTH_ERROR;
+Index: imap/lmtpproxyd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/lmtpproxyd.c,v
+retrieving revision 1.42
+diff -u -r1.42 lmtpproxyd.c
+--- lmtpproxyd.c	2002/06/03 18:22:26	1.42
++++ lmtpproxyd.c	2002/06/14 17:05:08
+@@ -175,7 +175,7 @@
+     /* check if remote realm */
+     if ((realm = strchr(auth_identity, '@'))!=NULL) {
+ 	realm++;
+-	val = config_getstring("loginrealms", "");
++	val = config_getstring(IMAPOPT_LOGINREALMS);
+ 	while (*val) {
+ 	    if (!strncasecmp(val, realm, strlen(realm)) &&
+ 		(!val[strlen(realm)] || isspace((int) val[strlen(realm)]))) {
+@@ -196,7 +196,7 @@
+      * for now only admins can do lmtp from another machine
+      */
+     authstate = auth_newstate(auth_identity, NULL);
+-    allowed = authisa(authstate, "lmtp", "admins");
++    allowed = config_authisa(authstate, IMAPOPT_ADMINS);
+     auth_freestate(authstate);
+     
+     if (!allowed) {
+@@ -218,26 +218,53 @@
+ {
+     int r;
+ 
++<<<<<<< lmtpproxyd.c
++=======
+     config_changeident("lmtpproxyd");
++>>>>>>> 1.42
+     if (geteuid() == 0) return 1;
+     
+     signals_set_shutdown(&shut_down);
+     signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
++<<<<<<< lmtpproxyd.c
++#ifdef USE_SIEVE
++    sieve_dir = config_getstring(IMAPOPT_SIEVEDIR);
++    mylmtp.addheaders = xmalloc(80);
++    snprintf(mylmtp.addheaders, 80, "X-Sieve: %s\r\n", SIEVE_VERSION);
++
++    /* setup sieve support */
++    setup_sieve();
++#endif /* USE_SIEVE */
++=======
+     BB = config_getstring("postuser", BB);
++>>>>>>> 1.37
+ 
++    BB = config_getstring(IMAPOPT_POSTUSER);
++
+     if ((r = sasl_server_init(mysasl_cb, "Cyrus")) != SASL_OK) {
+ 	syslog(LOG_ERR, "SASL failed initializing: sasl_server_init(): %s", 
+ 	       sasl_errstring(r, NULL, NULL));
+ 	return EC_SOFTWARE;
+     }
+ 
++<<<<<<< lmtpproxyd.c
++    dupelim = config_getswitch(IMAPOPT_DUPLICATESUPPRESSION);
++    if (dupelim) {
++	/* initialize duplicate delivery database */
++	if (duplicate_init(NULL, 0) != 0) {
++	    syslog(LOG_ERR, 
++		   "deliver: unable to init duplicate delivery database\n");
++	    dupelim = 0;
++	}
++=======
+     r = sasl_client_init(NULL);
+     if(r != 0) {
+ 	syslog(LOG_ERR, "could not initialize client-side SASL: %s",
+ 	       sasl_errstring(r, NULL, NULL));
+ 	return EC_SOFTWARE;
++>>>>>>> 1.37
+     }
+ 
+     /* Set namespace */
+@@ -293,6 +320,440 @@
+ 	    usage();
+ 	}
+     }
++<<<<<<< lmtpproxyd.c
++
++    snmp_increment(TOTAL_CONNECTIONS, 1);
++    snmp_increment(ACTIVE_CONNECTIONS, 1);
++
++    lmtpmode(&mylmtp, deliver_in, deliver_out, 0);
++    shut_down(0);
++
++    return 0;
++}
++
++/* called if 'service_init()' was called but not 'service_main()' */
++void service_abort(void)
++{
++    duplicate_done();
++
++    mboxlist_close();
++    mboxlist_done();
++}
++
++#ifdef USE_SIEVE
++static char *make_sieve_db(const char *user)
++{
++    static char buf[MAX_MAILBOX_PATH];
++
++    buf[0] = '.';
++    buf[1] = '\0';
++    strcat(buf, user);
++    strcat(buf, ".sieve.");
++
++    return buf;
++}
++
++/* gets the header "head" from msg. */
++static int getheader(void *v, const char *phead, const char ***body)
++{
++    message_data_t *m = ((mydata_t *) v)->m;
++
++    if (phead==NULL) return SIEVE_FAIL;
++    *body = msg_getheader(m, phead);
++
++    if (*body) {
++	return SIEVE_OK;
++    } else {
++	return SIEVE_FAIL;
++    }
++}
++
++static int getsize(void *mc, int *size)
++{
++    message_data_t *m = ((mydata_t *) mc)->m;
++
++    *size = msg_getsize(m);
++    return SIEVE_OK;
++}
++
++/* we use the temp field in message_data to avoid having to malloc memory
++   to return, and we also can't expose our the receipients to the message */
++int getenvelope(void *mc, const char *field, const char ***contents)
++{
++    mydata_t *mydata = (mydata_t *) mc;
++    message_data_t *m = mydata->m;
++
++    if (!strcasecmp(field, "from")) {
++	*contents = mydata->temp;
++	mydata->temp[0] = m->return_path;
++	mydata->temp[1] = NULL;
++	return SIEVE_OK;
++    } else if (!strcasecmp(field, "to")) {
++	*contents = mydata->temp;
++	mydata->temp[0] = msg_getrcptall(m, mydata->cur_rcpt);
++	mydata->temp[1] = NULL;
++	return SIEVE_OK;
++    } else {
++	*contents = NULL;
++	return SIEVE_FAIL;
++    }
++}
++
++#define DEFAULT_SENDMAIL ("/usr/lib/sendmail")
++#define DEFAULT_POSTMASTER ("postmaster")
++
++#define SENDMAIL (config_getstring(IMAPOPT_SENDMAIL))
++#define POSTMASTER (config_getstring(IMAPOPT_POSTMASTER))
++
++static char *month[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
++                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
++
++static char *wday[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
++
++static int global_outgoing_count = 0;
++
++pid_t open_sendmail(const char *argv[], FILE **sm)
++{
++    int fds[2];
++    FILE *ret;
++    pid_t p;
++
++    pipe(fds);
++    if ((p = fork()) == 0) {
++	/* i'm the child! run sendmail! */
++	close(fds[1]);
++	/* make the pipe be stdin */
++	dup2(fds[0], 0);
++	execv(SENDMAIL, (char **) argv);
++
++	/* if we're here we suck */
++	printf("451 deliver: didn't exec?!?\r\n");
++	fatal("couldn't exec", EC_TEMPFAIL);
++    }
++    /* i'm the parent */
++    close(fds[0]);
++    ret = fdopen(fds[1], "w");
++    *sm = ret;
++
++    return p;
++}
++
++/* sendmail_errstr.  create a descriptive message given 'sm_stat': 
++   the exit code from wait() from sendmail.
++
++   not thread safe, but probably ok */
++static char *sendmail_errstr(int sm_stat)
++{
++    static char errstr[200];
++
++    if (WIFEXITED(sm_stat)) {
++	snprintf(errstr, sizeof errstr,
++		 "Sendmail process terminated normally, exit status %d\n",
++		 WEXITSTATUS(sm_stat));
++    } else if (WIFSIGNALED(sm_stat)) {
++	snprintf(errstr, sizeof errstr,
++		"Sendmail process terminated abnormally, signal = %d %s\n",
++		WTERMSIG(sm_stat), 
++#ifdef WCOREDUMP
++		WCOREDUMP(sm_stat) ? " -- core file generated" :
++#endif
++		"");
++    } else if (WIFSTOPPED(sm_stat)) {
++	snprintf(errstr, sizeof errstr,
++		 "Sendmail process stopped, signal = %d\n",
++		WTERMSIG(sm_stat));
++    } else {
++	return NULL;
++    }
++    
++    return errstr;
++}
++
++int send_rejection(const char *origid,
++		   const char *rejto,
++		   const char *origreceip, 
++		   const char *mailreceip, 
++		   const char *reason, 
++		   struct protstream *file)
++{
++    FILE *sm;
++    const char *smbuf[6];
++    char buf[8192], *namebuf;
++    int i, sm_stat;
++    time_t t;
++    struct tm *tm;
++    long gmtoff;
++    int gmtnegative = 0;
++    pid_t sm_pid, p;
++
++    smbuf[0] = "sendmail";
++    smbuf[1] = "-f";
++    smbuf[2] = "<>";
++    smbuf[3] = "--";
++    smbuf[4] = rejto;
++    smbuf[5] = NULL;
++    sm_pid = open_sendmail(smbuf, &sm);
++    if (sm == NULL) {
++	return -1;
++    }
++
++    t = time(NULL);
++    p = getpid();
++    snprintf(buf, sizeof(buf), "<cmu-sieve-%d-%d-%d@%s>", p, (int) t, 
++	     global_outgoing_count++, config_servername);
++    
++    namebuf = make_sieve_db(mailreceip);
++    duplicate_mark(buf, strlen(buf), namebuf, strlen(namebuf), t);
++    fprintf(sm, "Message-ID: %s\r\n", buf);
++
++    tm = localtime(&t);
++    gmtoff = gmtoff_of(tm, t);
++    if (gmtoff < 0) {
++	gmtoff = -gmtoff;
++	gmtnegative = 1;
++    }
++    gmtoff /= 60;
++    fprintf(sm, "Date: %s, %02d %s %4d %02d:%02d:%02d %c%.2lu%.2lu\r\n",
++	    wday[tm->tm_wday], 
++	    tm->tm_mday, month[tm->tm_mon], tm->tm_year + 1900,
++	    tm->tm_hour, tm->tm_min, tm->tm_sec,
++            gmtnegative ? '-' : '+', gmtoff / 60, gmtoff % 60);
++
++    fprintf(sm, "X-Sieve: %s\r\n", SIEVE_VERSION);
++    fprintf(sm, "From: Mail Sieve Subsystem <%s>\r\n", POSTMASTER);
++    fprintf(sm, "To: <%s>\r\n", rejto);
++    fprintf(sm, "MIME-Version: 1.0\r\n");
++    fprintf(sm, "Content-Type: "
++	    "multipart/report; report-type=disposition-notification;"
++	    "\r\n\tboundary=\"%d/%s\"\r\n", (int) p, config_servername);
++    fprintf(sm, "Subject: Automatically rejected mail\r\n");
++    fprintf(sm, "Auto-Submitted: auto-replied (rejected)\r\n");
++    fprintf(sm, "\r\nThis is a MIME-encapsulated message\r\n\r\n");
++
++    /* this is the human readable status report */
++    fprintf(sm, "--%d/%s\r\n\r\n", (int) p, config_servername);
++    fprintf(sm, "Your message was automatically rejected by Sieve, a mail\r\n"
++	    "filtering language.\r\n\r\n");
++    fprintf(sm, "The following reason was given:\r\n%s\r\n\r\n", reason);
++
++    /* this is the MDN status report */
++    fprintf(sm, "--%d/%s\r\n"
++	    "Content-Type: message/disposition-notification\r\n\r\n",
++	    (int) p, config_servername);
++    fprintf(sm, "Reporting-UA: %s; Cyrus %s/%s\r\n",
++	    config_servername, CYRUS_VERSION, SIEVE_VERSION);
++    if (origreceip)
++	fprintf(sm, "Original-Recipient: rfc822; %s\r\n", origreceip);
++    fprintf(sm, "Final-Recipient: rfc822; %s\r\n", mailreceip);
++    fprintf(sm, "Original-Message-ID: %s\r\n", origid);
++    fprintf(sm, "Disposition: "
++	    "automatic-action/MDN-sent-automatically; deleted\r\n");
++    fprintf(sm, "\r\n");
++
++    /* this is the original message */
++    fprintf(sm, "--%d/%s\r\nContent-Type: message/rfc822\r\n\r\n",
++	    (int) p, config_servername);
++    prot_rewind(file);
++    while ((i = prot_read(file, buf, sizeof(buf))) > 0) {
++	fwrite(buf, i, 1, sm);
++    }
++    fprintf(sm, "\r\n\r\n");
++    fprintf(sm, "--%d/%s--\r\n", (int) p, config_servername);
++
++    fclose(sm);
++    while (waitpid(sm_pid, &sm_stat, 0) < 0);
++
++    return sm_stat;	/* sendmail exit value */
++}
++
++int send_forward(char *forwardto, char *return_path, struct protstream *file)
++{
++    FILE *sm;
++    const char *smbuf[6];
++    int i, sm_stat;
++    char buf[1024];
++    pid_t sm_pid;
++
++    smbuf[0] = "sendmail";
++    if (return_path != NULL) {
++	smbuf[1] = "-f";
++	smbuf[2] = return_path;
++    } else {
++	smbuf[1] = "-f";
++	smbuf[2] = "<>";
++    }
++    smbuf[3] = "--";
++    smbuf[4] = forwardto;
++    smbuf[5] = NULL;
++    sm_pid = open_sendmail(smbuf, &sm);
++	
++    if (sm == NULL) {
++	return -1;
++    }
++
++    prot_rewind(file);
++
++    while ((i = prot_read(file, buf, sizeof(buf))) > 0) {
++	fwrite(buf, i, 1, sm);
++    }
++
++    fclose(sm);
++    while (waitpid(sm_pid, &sm_stat, 0) < 0);
++
++    return sm_stat;	/* sendmail exit value */
++}
++
++
++static
++int sieve_redirect(void *ac, void *ic, void *sc, void *mc, const char **errmsg)
++{
++    sieve_redirect_context_t *rc = (sieve_redirect_context_t *) ac;
++    script_data_t *sd = (script_data_t *) sc;
++    message_data_t *m = ((mydata_t *) mc)->m;
++    char buf[8192], *sievedb = NULL;
++    int res;
++
++    /* if we have a msgid, we can track our redirects */
++    if (m->id) {
++	snprintf(buf, sizeof(buf), "%s-%s", m->id, rc->addr);
++	sievedb = make_sieve_db(sd->username);
++
++	/* ok, let's see if we've redirected this message before */
++	if (duplicate_check(buf, strlen(buf), sievedb, strlen(sievedb)))
++	    return SIEVE_OK;
++    }
++
++    if ((res = send_forward(rc->addr, m->return_path, m->data)) == 0) {
++	/* mark this message as redirected */
++	if (sievedb) duplicate_mark(buf, strlen(buf), 
++				    sievedb, strlen(sievedb), time(NULL));
++
++	snmp_increment(SIEVE_REDIRECT, 1);
++	return SIEVE_OK;
++    } else {
++	if (res == -1) {
++	    *errmsg = "Could not spawn sendmail process";
++	} else {
++	    *errmsg = sendmail_errstr(res);
++	}
++	return SIEVE_FAIL;
++    }
++}
++
++static
++int sieve_discard(void *ac, void *ic, void *sc, void *mc, const char **errmsg)
++{
++    snmp_increment(SIEVE_DISCARD, 1);
++
++    /* ok, we won't file it */
++    return SIEVE_OK;
++}
++
++static
++int sieve_reject(void *ac, void *ic, void *sc, void *mc, const char **errmsg)
++{
++    sieve_reject_context_t *rc = (sieve_reject_context_t *) ac;
++    script_data_t *sd = (script_data_t *) sc;
++    message_data_t *md = ((mydata_t *) mc)->m;
++    const char **body;
++    const char *origreceip;
++    int res;
++
++    if (md->return_path == NULL) {
++	/* return message to who?!? */
++	*errmsg = "No return-path for reply";
++	return SIEVE_FAIL;
++    }
++    
++    body = msg_getheader(md, "original-recipient");
++    origreceip = body ? body[0] : NULL;
++    if ((res = send_rejection(md->id, md->return_path, 
++			      origreceip, sd->username,
++			      rc->msg, md->data)) == 0) {
++	snmp_increment(SIEVE_REJECT, 1);
++	return SIEVE_OK;
++    } else {
++	if (res == -1) {
++	    *errmsg = "Could not spawn sendmail process";
++	} else {
++	    *errmsg = sendmail_errstr(res);
++	}
++	return SIEVE_FAIL;
++    }
++}
++
++static
++int sieve_fileinto(void *ac, void *ic, void *sc, void *mc, const char **errmsg)
++{
++    sieve_fileinto_context_t *fc = (sieve_fileinto_context_t *) ac;
++    script_data_t *sd = (script_data_t *) sc;
++    mydata_t *mdata = (mydata_t *) mc;
++    message_data_t *md = mdata->m;
++    int ret;
++    char *mailboxname = fc->mailbox;
++    char namebuf[MAX_MAILBOX_NAME];
++
++    if (sd->username && !strncasecmp(mailboxname, "INBOX", 5)) {
++	/* canonicalize mailbox */
++	snprintf(namebuf, sizeof namebuf,
++		 "%s+user.%s%s", BB, sd->username, mailboxname + 5);
++    } else {
++	snprintf(namebuf, sizeof namebuf, "%s+%s", BB, mailboxname);
++    }
++
++    /* deliver as the user who owns the script */
++    ret = adddest(mdata, namebuf, sd->username);
++    snmp_increment(SIEVE_FILEINTO, 1);
++
++    if (!ret) {
++	return SIEVE_OK;
++    } else {
++	return SIEVE_FAIL;
++    }
++}
++
++static
++int sieve_keep(void *ac, void *ic, void *sc, void *mc, const char **errmsg)
++{
++    sieve_keep_context_t *kc = (sieve_keep_context_t *) ac;
++    script_data_t *sd = (script_data_t *) sc;
++    mydata_t *mydata = (mydata_t *) mc;
++    message_data_t *md = mydata->m;
++    char namebuf[MAX_MAILBOX_NAME];
++    int ret = 1;
++
++    if (sd->mailboxname) {
++	snprintf(namebuf, sizeof(namebuf), 
++		 "%s+%s", sd->username, sd->mailboxname);
++    } else {
++	snprintf(namebuf, sizeof(namebuf), "%s", sd->username);
++    }
++
++    snmp_increment(SIEVE_KEEP, 1);
++    return SIEVE_OK;
++}
++
++static int sieve_notify(void *ac,
++			void *interp_context, 
++			void *script_context,
++			void *mc,
++			const char **errmsg)
++{
++    sieve_notify_context_t *nc = (sieve_notify_context_t *) ac;
++    script_data_t *sd = (script_data_t *) script_context;
++
++    snmp_increment(SIEVE_NOTIFY, 1);
++
++    notify("SIEVE",
++	   nc->priority,
++	   sd->username,
++	   NULL,
++	   nc->message);
++    
++    return SIEVE_OK;
++}
++=======
++>>>>>>> 1.37
+ 
+     /* get a connection to the mupdate server */
+     r = 0;
+Index: imap/mailbox.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.133
+diff -u -r1.133 mailbox.c
+--- mailbox.c	2002/05/28 15:55:05	1.133
++++ mailbox.c	2002/06/14 17:05:09
+@@ -120,6 +120,7 @@
+     "resent-from",
+     "newsgroups",
+     "followup-to",
++    /* xxx want X-Priority for Mozilla: */
+ };
+ int mailbox_num_cache_header =
+   sizeof(mailbox_cache_header_name)/sizeof(char *);
+@@ -153,7 +154,7 @@
+     struct stat sbuf;
+ 
+     /* if not configured to do acap do nothing */
+-    if (config_getstring("acap_server", NULL)==NULL) return 0;
++    if (config_getstring(IMAPOPT_ACAP_SERVER) == NULL) return 0;
+ 
+     if ((s = socket(AF_UNIX, SOCK_DGRAM, 0)) == -1) {
+ 	return IMAP_IOERROR;
+Index: imap/mboxlist.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/mboxlist.c,v
+retrieving revision 1.196
+diff -u -r1.196 mboxlist.c
+--- mboxlist.c	2002/06/03 19:39:29	1.196
++++ mboxlist.c	2002/06/14 17:05:09
+@@ -115,15 +115,7 @@
+ 
+     assert(partition && pathp);
+ 
+-    partitionlen = strlen(partition);
+-
+-    if (partitionlen > sizeof(optionbuf)-11) {
+-	return IMAP_PARTITION_UNKNOWN;
+-    }
+-    strcpy(optionbuf, "partition-");
+-    strcat(optionbuf, partition);
+-    
+-    root = config_getstring(optionbuf, (char *)0);
++    root = config_partitiondir(partition);
+     if (!root) {
+ 	return IMAP_PARTITION_UNKNOWN;
+     }
+@@ -144,7 +136,7 @@
+ 
+ static const int get_deleteright(void)
+ {
+-    const char *r = config_getstring("deleteright", "c");
++    const char *r = config_getstring(IMAPOPT_DELETERIGHT);
+ 
+     return cyrus_acl_strtomask(r);
+ }
+@@ -294,7 +286,7 @@
+     strcpy(optionbuf, "partition-");
+     strcpy(optionbuf + 10, partition);
+     
+-    root = config_getstring(optionbuf, (char *)0);
++    root = config_partitiondir(partition);
+     if (!root) {
+ 	return IMAP_PARTITION_UNKNOWN;
+     }
+@@ -455,7 +447,7 @@
+ 	     * Nobody else starts with any access to same.
+ 	     */
+ 	    identifier = xstrdup(name+5);
+-	    if (config_getswitch("unixhierarchysep", 0)) {
++	    if (config_getswitch(IMAPOPT_UNIXHIERARCHYSEP)) {
+ 		/*
+ 		 * The mailboxname is now in the internal format,
+ 		 * so we we need to change DOTCHARs back to '.'
+@@ -470,7 +462,7 @@
+ 	    free(identifier);
+ 	} else {
+ 	    defaultacl = identifier = 
+-		xstrdup(config_getstring("defaultacl", "anyone lrs"));
++		xstrdup(config_getstring(IMAPOPT_DEFAULTACL));
+ 	    for (;;) {
+ 		while (*identifier && isspace((int) *identifier)) identifier++;
+ 		rights = identifier;
+@@ -575,8 +567,7 @@
+ 
+     if (!(mbtype & MBTYPE_REMOTE)) {
+ 	/* Get partition's path */
+-	sprintf(buf, "partition-%s", newpartition);
+-	root = config_getstring(buf, (char *)0);
++	root = config_partitiondir(newpartition);
+ 	if (!root) {
+ 	    r = IMAP_PARTITION_UNKNOWN;
+ 	    goto done;
+@@ -1053,19 +1044,60 @@
+ 	}
+     }
+ 
++<<<<<<< mboxlist.c
++<<<<<<< mboxlist.c
++    if (!r && !partitionmove) {
++	/* 3. open ACAP connection if necessary */
++	acapmbox_handle_t *acaphandle = acapmbox_get_handle();
++
++	/* 5. ACAP make the new entry, set as reserved */
++	acapmbox_new(&mboxdata, NULL, newname);
++	r = acapmbox_create(acaphandle, &mboxdata);
++	if (r != ACAP_OK) {
++	    goto done;
++	}
++	acap_madenew = 1;
++=======
++    if (!r && !partitionmove && mupdate_server) {
++	/* Reserve new name in MUPDATE */
++	char buf[MAX_PARTITION_LEN + HOSTNAME_SIZE + 2];
++	sprintf(buf, "%s!%s", config_servername, newpartition);
++	
++	r = mupdate_connect(mupdate_server, NULL, &mupdate_h, NULL);
++	if(r) {
++	    syslog(LOG_ERR,
++		   "can not connect to mupdate server for reservation on '%s'",
++		   newname);
++	    goto done;
++	}
++	
++	/* reserve the mailbox in MUPDATE */
++	r = mupdate_reserve(mupdate_h, newname, buf);
++=======
+     /* 3. Open mupdate connection and reserve new name (if needed) */ 
+     if(!r && config_mupdate_server) {	
+ 	r = mupdate_connect(config_mupdate_server, NULL, &mupdate_h, NULL);
++>>>>>>> 1.196
+ 	if(r) {
+ 	    syslog(LOG_ERR,
+ 		   "can not connect to mupdate server for rename of '%s'",
+ 		   newname);
+ 	    goto done;
+ 	}
++<<<<<<< mboxlist.c
++	
++	madenew = 1;
++    } else if(!r && partitionmove && mupdate_server) {
++	/* commit the update to MUPDATE */
++	char buf[MAX_PARTITION_LEN + HOSTNAME_SIZE + 2];
++	sprintf(buf, "%s!%s", config_servername, newpartition);
++>>>>>>> 1.171
++=======
+ 	if (!partitionmove) {
+ 	    /* Reserve new name in MUPDATE */
+ 	    char buf[MAX_PARTITION_LEN + HOSTNAME_SIZE + 2];
+ 	    sprintf(buf, "%s!%s", config_servername, newpartition);
++>>>>>>> 1.196
+ 
+ 	    r = mupdate_reserve(mupdate_h, newname, buf);
+ 	    if(r) {
+@@ -1263,11 +1295,19 @@
+ 		   "MUPDATE: can't delete mailbox entry '%s'", oldname);
+ 	}
+     }
++<<<<<<< mboxlist.c
++=======
+ 
+     if(oldopen) mailbox_close(&oldmailbox);
++>>>>>>> 1.196
++
++<<<<<<< mboxlist.c
++    if(mupdate_server) mupdate_disconnect(&mupdate_h);
+ 
++=======
+     if(config_mupdate_server) mupdate_disconnect(&mupdate_h);
+ 
++>>>>>>> 1.196
+     /* free memory */
+     if (newacl) free(newacl);	/* we're done with the new ACL */
+     if (newpartition) free(newpartition);
+@@ -1390,9 +1430,31 @@
+ 	}
+     }
+ 
++    /* ok, make the change */
++    mboxent = mboxlist_makeentry(mbtype, partition, newacl);
++
++    r = DB->store(mbdb, name, strlen(name), mboxent, strlen(mboxent), &tid);
++    switch (r) {
++    case 0:
++	break;
++    case CYRUSDB_AGAIN:
++	goto retry;
++    default:
++	syslog(LOG_ERR, "DBERROR: error updating acl %s: %s",
++	       name, cyrusdb_strerror(r));
++	r = IMAP_IOERROR;
++	goto done;
++    }
++
++<<<<<<< mboxlist.c
++    if (!(mbtype & MBTYPE_REMOTE)) {
++	/* open & lock mailbox header */
++        r = mailbox_open_header_path(name, path, acl, NULL, &mailbox, 0);
++=======
+     if(!r) {
+ 	/* ok, change the database */
+ 	mboxent = mboxlist_makeentry(mbtype, partition, newacl);
++>>>>>>> 1.196
+ 
+ 	do {
+ 	    r = DB->store(mbdb, name, strlen(name),
+@@ -1406,6 +1468,13 @@
+ 	}
+     }
+ 
++  done:
++    if (mboxent) free(mboxent);
++
++<<<<<<< mboxlist.c
++    if (r) {
++	int r2;
++=======
+     /* 4. Change backup copy (cyrus.header) */
+     /* we already have it locked from above */
+     if (!r && !(mbtype & MBTYPE_REMOTE)) {
+@@ -1413,6 +1482,7 @@
+ 	mailbox.acl = xstrdup(newacl);
+ 	r = mailbox_write_header(&mailbox);
+     }
++>>>>>>> 1.196
+ 
+     /* 5. Commit transaction */
+     if (!r) {
+Index: imap/mboxname.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/mboxname.c,v
+retrieving revision 1.25
+diff -u -r1.25 mboxname.c
+--- mboxname.c	2002/01/24 16:39:28	1.25
++++ mboxname.c	2002/06/14 17:05:09
+@@ -307,14 +307,15 @@
+ 
+     assert(namespace != NULL);
+ 
+-    namespace->hier_sep = config_getswitch("unixhierarchysep", 0) ? '/' : '.';
+-    namespace->isalt = !force_std && config_getswitch("altnamespace", 0);
++    namespace->hier_sep = config_getswitch(IMAPOPT_UNIXHIERARCHYSEP) ? 
++      '/' : '.';
++    namespace->isalt = !force_std && config_getswitch(IMAPOPT_ALTNAMESPACE);
+ 
+     if (namespace->isalt) {
+ 	/* alternate namespace */
+ 	strcpy(namespace->prefix[NAMESPACE_INBOX], "");
+ 
+-	prefix = config_getstring("userprefix", "Other Users");
++	prefix = config_getstring(IMAPOPT_USERPREFIX);
+ 	if (!prefix || strlen(prefix) == 0 ||
+ 	    strlen(prefix) >= MAX_NAMESPACE_PREFIX ||
+ 	    strchr(prefix,namespace->hier_sep) != NULL)
+@@ -322,7 +323,7 @@
+ 	sprintf(namespace->prefix[NAMESPACE_USER], "%.*s%c",
+ 		MAX_NAMESPACE_PREFIX-1, prefix, namespace->hier_sep);
+ 
+-	prefix = config_getstring("sharedprefix", "Shared Folders");
++	prefix = config_getstring(IMAPOPT_SHAREDPREFIX);
+ 	if (!prefix || strlen(prefix) == 0 ||
+ 	    strlen(prefix) >= MAX_NAMESPACE_PREFIX ||
+ 	    strchr(prefix, namespace->hier_sep) != NULL ||
+@@ -465,7 +466,7 @@
+     int ucs4;
+     int unixsep;
+ 
+-    unixsep = config_getswitch("unixhierarchysep", 0);
++    unixsep = config_getswitch(IMAPOPT_UNIXHIERARCHYSEP);
+ 
+     if (strlen(name) > MAX_MAILBOX_NAME) return IMAP_MAILBOX_BADNAME;
+     for (i = 0; i < NUM_BADMBOXPATTERNS; i++) {
+Index: imap/message.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/message.c,v
+retrieving revision 1.88
+diff -u -r1.88 message.c
+--- message.c	2000/12/26 21:35:41	1.88
++++ message.c	2002/06/14 17:05:10
+@@ -228,7 +228,7 @@
+     int r = 0;
+     int n;
+     int sawcr = 0, sawnl;
+-    int reject8bit = config_getswitch("reject8bit", 0);
++    int reject8bit = config_getswitch(IMAPOPT_REJECT8BIT);
+     int inheader = 1, blankline = 1;
+ 
+     while (size) {
+Index: imap/mupdate.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/mupdate.c,v
+retrieving revision 1.60
+diff -u -r1.60 mupdate.c
+--- mupdate.c	2002/06/03 18:22:26	1.60
++++ mupdate.c	2002/06/14 17:05:11
+@@ -316,8 +316,6 @@
+     int r;
+     int opt;
+ 
+-    config_changeident("mupdate");
+-    
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+     /* set signal handlers */
+@@ -798,13 +796,129 @@
+     return 0;
+ }
+ 
++<<<<<<< mupdate.c
++/* mailbox name MUST be first, since it is the key */
++struct mbent {
++    char mailbox[MAX_MAILBOX_NAME];
++    char server[MAX_MAILBOX_NAME];
++    enum settype t;
++    char acl[1];
++};
++
++static FILE *dblog;
++
++/* this depends on mailbox name being first */
++static int mycmp(const void *v1, const void *v2)
++{
++    return strcmp((const char *) v1, (const char *) v2);
++}
++
++/* read from disk
++ database must be unlocked. */
++=======
+ /* read from disk database must be unlocked. */
++>>>>>>> 1.52
+ void database_init()
+ {
+     pthread_mutex_lock(&mailboxes_mutex); /* LOCK */
++<<<<<<< mupdate.c
++
++    mailboxes = skiplist_new(20, 0.5, &mycmp);
++    snprintf(dbname, sizeof dbname, "%s/%s", config_dir, "mupdate.log");
++    db = fopen(dbname, "r");
++    if (db != NULL) {
++	while (!feof(db)) {
++	    int c;
++	    struct mbent m, *mptr;
++	    int i = 0;
++
++	    c = fgetc(db);
++	    if (c == 'A') m.t = SET_ACTIVE;
++	    else if (c == 'R') m.t = SET_RESERVE;
++	    else if (c == 'D') m.t = SET_DELETE;
++	    else if (c == -1) break;
++	    else abort();
++
++	    /* skip after \t */
++	    while ((c = fgetc(db)) > 0) {
++		if (c == '\t') break;
++	    }
++	    if (c < 0) break;
++
++	    while ((c = fgetc(db)) > 0) {
++		if (c == '\n' || c == '\t') break;
++		m.mailbox[i++] = c;
++		assert(i != MAX_MAILBOX_NAME);
++	    }
++	    m.mailbox[i] = '\0';
++
++	    switch (m.t) {
++	    case SET_ACTIVE:
++	    {
++		char *acl = NULL;
++		int aclalloc = 0;
++
++		i = 0;
++		while ((c = fgetc(db)) > 0) {
++		    if (c == '\n' || c == '\t') break;
++		    m.server[i++] = c;
++		    assert(i != MAX_MAILBOX_NAME);
++		}
++		m.server[i] = '\0';
++
++		assert(c == '\t');
++		i = 0;
++		while ((c = fgetc(db)) > 0) {
++		    if (c == '\n' || c == '\t') break;
++		    if (i == aclalloc) {
++			acl = xrealloc(acl, aclalloc += 500);
++		    }
++		    acl[i++] = c;
++		}
+ 
++		mptr = xmalloc(sizeof(struct mbent) + (i + 1));
++		memcpy(mptr, &m, sizeof(struct mbent));
++		memcpy(mptr->acl, acl, i);
++		mptr->acl[i] = '\0';
++		if (acl) free(acl);
++
++		sinsert(mailboxes, mptr);
++		break;
++	    }
++	    case SET_RESERVE:
++		i = 0;
++		while ((c = fgetc(db)) > 0) {
++		    if (c == '\n' || c == '\t') break;
++		    m.server[i++] = c;
++		    assert(i != MAX_MAILBOX_NAME);
++		}
++		m.server[i] = '\0';
++
++		mptr = xmalloc(sizeof(struct mbent));
++		memcpy(mptr, &m, sizeof(struct mbent));
++		sinsert(mailboxes, mptr);
++		break;
++	    case SET_DELETE:
++		sdelete(mailboxes, &m);
++		break;
++	    }
++	}
++
++	fclose(db);
++    }
++=======
++>>>>>>> 1.52
++
++<<<<<<< mupdate.c
++    dblog = fopen(dbname, "a");
++    if (dblog == NULL) {
++	syslog(LOG_CRIT, "unable to open logfile %s: %m", dbname);
++	abort();
++    }
++=======
+     mboxlist_init(0);
+     mboxlist_open(NULL);
++>>>>>>> 1.52
+ 
+     pthread_mutex_unlock(&mailboxes_mutex); /* UNLOCK */
+ }
+@@ -831,6 +945,13 @@
+ 	   mailbox can have! */
+ 	abort();
+     }
++    if (fflush(dblog) < 0) {
++	syslog(LOG_ERR, "fflush mupdate log: %m");
++    }
++<<<<<<< mupdate.c
++    if (fsync(fileno(dblog)) < 0) {
++	syslog(LOG_ERR, "fsync mupdate log: %m");
++=======
+ }
+ 
+ /* lookup in database. database must be locked */
+@@ -858,6 +979,7 @@
+ 	else out = mpool_malloc(pool, sizeof(struct mbent) + strlen(acl));
+ 	out->t = SET_ACTIVE;
+ 	strcpy(out->acl, acl);
++>>>>>>> 1.52
+     }
+ 
+     out->mailbox = (pool) ? mpool_strdup(pool, name) : xstrdup(name);
+Index: imap/notify_unix.c
+===================================================================
+RCS file: notify_unix.c
+diff -N notify_unix.c
+--- /dev/null	Tue May  5 16:32:27 1998
++++ notify_unix.c	Fri Jun 14 13:05:11 2002
+@@ -0,0 +1,95 @@
++/* notify_unix.c -- Module to send notifications to Unix socket-based server
++ *    Copyright (c) 2000-2001, Jeremy Howard, j@howard.fm
++ */
++
++
++#include <stdio.h>
++#include <sys/types.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <sys/time.h>
++#include <errno.h>
++#include <string.h>
++#include <unistd.h>
++#include <syslog.h>
++#include <fcntl.h>
++#include "imapconf.h"
++#include "retry.h"
++#include "notify.h"
++
++const char *notify_method_desc = "unix";
++
++#define FNAME_NOTIFY_SOCK "/socket/notify"
++
++void notify(const char *class,
++	    const char *instance,
++	    const char *user,
++	    const char *mailbox,
++	    const char *message)
++{
++    char buf[80];
++    const char *notify_sock;
++    struct sockaddr myname;
++
++    int   sock, addrlen, cnt;
++    fd_set read_template, write_template; 
++    struct timeval wait; 
++
++    int fdflags;
++    struct iovec iov[20];
++    int num_iov;
++
++    sock = socket(AF_UNIX, SOCK_STREAM, 0);
++    if (sock < 0) {
++	syslog(LOG_ERR, "notify_unix: socket(): %m");
++	return;
++    }
++
++    myname.sa_family = AF_UNIX;
++    notify_sock = config_getstring(IMAPOPT_NOTIFYSOCKET);
++    if (notify_sock) {	
++	strcpy(myname.sa_data, notify_sock);
++    }
++    else {
++	strcpy(myname.sa_data, config_dir);
++	strcat(myname.sa_data, FNAME_NOTIFY_SOCK);
++    }
++    addrlen = strlen(myname.sa_data) + sizeof(myname.sa_family);
++    
++    /* put us in non-blocking mode */
++    fdflags = fcntl(sock, F_GETFD, 0);
++    if (fdflags != -1) fdflags = fcntl(sock, F_SETFL, O_NONBLOCK | fdflags);
++    if (fdflags == -1) { 
++	syslog(LOG_ERR, 
++	       "notify_unix: setting socket to nonblocking: fcntl(): %m");
++	close(sock); 
++	return; 
++    }
++
++    if (connect( sock, &myname, addrlen) < 0) {
++	syslog(LOG_ERR, "notify_unix: connect(): %m");
++	return;
++    }
++
++    /*  . . . . .  */
++
++    num_iov = 0;
++
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, (char*) class);
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, "\n");
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, (char*) instance);
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, "\n");
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, (char*) user);
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, "\n");
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, (char*) mailbox);
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, "\n");
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, (char*) message);
++    WRITEV_ADDSTR_TO_IOVEC(iov, num_iov, "\n");
++    cnt = retry_writev(sock, iov, num_iov);
++
++    if (cnt < 0) {
++	syslog(LOG_ERR, "notify_unix: retry_writev(): %m");
++    }
++
++    close(sock);
++}
+Index: imap/pop3d.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/pop3d.c,v
+retrieving revision 1.122
+diff -u -r1.122 pop3d.c
+--- pop3d.c	2002/06/03 18:22:27	1.122
++++ pop3d.c	2002/06/14 17:05:11
+@@ -312,7 +312,6 @@
+     int r;
+     int opt;
+ 
+-    config_changeident("pop3d");
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+     setproctitle_init(argc, argv, envp);
+ 
+@@ -434,7 +433,7 @@
+     proc_register("pop3d", popd_clienthost, NULL, NULL);
+ 
+     /* Set inactivity timer */
+-    timeout = config_getint("poptimeout", 10);
++    timeout = config_getint(IMAPOPT_POPTIMEOUT);
+     if (timeout < 10) timeout = 10;
+     prot_settimeout(popd_in, timeout*60);
+     prot_setflushonread(popd_in, popd_out);
+@@ -545,7 +544,7 @@
+ 	fatal("Cannot get client's IP address", EC_OSERR);
+     }
+ 
+-    srvtab = config_getstring("srvtab", "");
++    srvtab = config_getstring(IMAPOPT_SRVTAB);
+ 
+     strcpy(instance, "*");
+     r = krb_recvauth(0L, 0, &ticket, "pop", instance,
+@@ -1036,7 +1035,7 @@
+ 
+     /* possibly disallow USER */
+     if (!(kflag || popd_starttls_done ||
+-	  config_getswitch("allowplaintext", 1))) {
++	  config_getswitch(IMAPOPT_ALLOWPLAINTEXT))) {
+ 	prot_printf(popd_out,
+ 		    "-ERR [AUTH] USER command only available under a layer\r\n");
+ 	return;
+@@ -1107,7 +1106,7 @@
+ #endif
+ 
+     if (!strcmp(popd_userid, "anonymous")) {
+-	if (config_getswitch("allowanonymouslogin", 0)) {
++	if (config_getswitch(IMAPOPT_ALLOWANONYMOUSLOGIN)) {
+ 	    pass = beautify_string(pass);
+ 	    if (strlen(pass) > 500) pass[500] = '\0';
+ 	    syslog(LOG_NOTICE, "login: %s anonymous %s",
+@@ -1137,11 +1136,18 @@
+ 	return;
+     }
+     else {
++<<<<<<< pop3d.c
++	syslog(LOG_NOTICE, "login: %s %s plaintext %s",
++	       popd_clienthost, popd_userid, reply ? reply : "");
++	plaintextloginpause = config_getint(IMAPOPT_PLAINTEXTLOGINPAUSE);
++	if (plaintextloginpause != 0) {
++=======
+ 	syslog(LOG_NOTICE, "login: %s %s plaintext%s %s", popd_clienthost,
+ 	       popd_userid, popd_starttls_done ? "+TLS" : "", 
+ 	       reply ? reply : "");
+ 
+ 	if ((plaintextloginpause = config_getint("plaintextloginpause", 0))!=0) {
++>>>>>>> 1.122
+ 	    sleep(plaintextloginpause);
+ 	}
+     }
+@@ -1153,8 +1159,8 @@
+ void
+ cmd_capa()
+ {
+-    int minpoll = config_getint("popminpoll", 0) * 60;
+-    int expire = config_getint("popexpiretime", -1);
++    int minpoll = config_getint(IMAPOPT_POPMINPOLL) * 60;
++    int expire = config_getint(IMAPOPT_POPEXPIRETIME);
+     unsigned mechcount;
+     const char *mechlist;
+ 
+@@ -1185,7 +1191,8 @@
+     prot_printf(popd_out, "RESP-CODES\r\n");
+     prot_printf(popd_out, "AUTH-RESP-CODE\r\n");
+ 
+-    if (kflag || popd_starttls_done || config_getswitch("allowplaintext", 1)) {
++    if (kflag || popd_starttls_done || 
++	config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
+ 	prot_printf(popd_out, "USER\r\n");
+     }
+     
+@@ -1382,8 +1389,8 @@
+ 	return 1;
+     }
+ 
+-    if ((minpoll = config_getint("popminpoll", 0)) &&
+-	mboxstruct.pop3_last_login + 60*minpoll > popd_login_time) {
++    if ((minpoll = config_getint(IMAPOPT_POPMINPOLL)) &&
++	mboxstruct.pop3_last_login + 60 * minpoll > popd_login_time) {
+ 	prot_printf(popd_out,
+ 	    "-ERR [LOGIN-DELAY] Logins must be at least %d minute%s apart\r\n",
+ 		    minpoll, minpoll > 1 ? "s" : "");
+Index: imap/pop3proxyd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/pop3proxyd.c,v
+retrieving revision 1.41
+diff -u -r1.41 pop3proxyd.c
+--- pop3proxyd.c	2002/06/03 18:22:27	1.41
++++ pop3proxyd.c	2002/06/14 17:05:12
+@@ -168,7 +168,6 @@
+ {
+     int r;
+ 
+-    config_changeident("pop3d");
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+     setproctitle_init(argc, argv, envp);
+ 
+@@ -286,7 +285,7 @@
+     proc_register("pop3d", popd_clienthost, NULL, NULL);
+ 
+     /* Set inactivity timer */
+-    timeout = config_getint("poptimeout", 10);
++    timeout = config_getint(IMAPOPT_POPTIMEOUT);
+     if (timeout < 10) timeout = 10;
+     prot_settimeout(popd_in, timeout*60);
+     prot_setflushonread(popd_in, popd_out);
+@@ -418,7 +417,7 @@
+ 	fatal("Cannot get client's IP address", EC_OSERR);
+     }
+ 
+-    srvtab = config_getstring("srvtab", "");
++    srvtab = config_getstring(IMAPOPT_SRVTAB);
+ 
+     strcpy(instance, "*");
+     r = krb_recvauth(0L, 0, &ticket, "pop", instance,
+@@ -568,10 +567,8 @@
+ 	return;
+     }
+ 
+-    tls_cert = (char *)config_getstring("tls_pop3_cert_file",
+-					config_getstring("tls_cert_file", ""));
+-    tls_key = (char *)config_getstring("tls_pop3_key_file",
+-				       config_getstring("tls_key_file", ""));
++    tls_cert = config_getstring(IMAPOPT_TLS_CERT_FILE);
++    tls_key = config_getstring(IMAPOPT_TLS_KEY_FILE);
+ 
+     result=tls_init_serverengine("pop3",
+ 				 5,        /* depth to verify */
+@@ -741,7 +738,7 @@
+ 
+     /* possibly disallow USER */
+     if (!(kflag || popd_starttls_done ||
+-	  config_getswitch("allowplaintext", 1))) {
++	  config_getswitch(IMAPOPT_ALLOWPLAINTEXT))) {
+ 	prot_printf(popd_out,
+ 		    "-ERR [AUTH] USER command only available under a layer\r\n");
+ 	return;
+@@ -801,7 +798,7 @@
+ #endif
+ 
+     if (!strcmp(popd_userid, "anonymous")) {
+-	if (config_getswitch("allowanonymouslogin", 0)) {
++	if (config_getswitch(IMAPOPT_ALLOWANONYMOUSLOGIN)) {
+ 	    pass = beautify_string(pass);
+ 	    if (strlen(pass) > 500) pass[500] = '\0';
+ 	    syslog(LOG_NOTICE, "login: %s anonymous %s",
+@@ -831,11 +828,17 @@
+ 	return;
+     }
+     else {
++<<<<<<< pop3proxyd.c
++	syslog(LOG_NOTICE, "login: %s %s plaintext %s",
++	       popd_clienthost, popd_userid, reply ? reply : "");
++	plaintextloginpause = config_getint(IMAPOPT_PLAINTEXTLOGINPAUSE);
++=======
+ 	syslog(LOG_NOTICE, "login: %s %s plaintext%s %s", popd_clienthost,
+ 	       popd_userid, popd_starttls_done ? "+TLS" : "", 
+ 	       reply ? reply : "");
+ 
+ 	plaintextloginpause = config_getint("plaintextloginpause", 0);
++>>>>>>> 1.41
+ 	if (plaintextloginpause) sleep(plaintextloginpause);
+     }
+ 
+@@ -848,8 +851,8 @@
+ void
+ cmd_capa()
+ {
+-    int minpoll = config_getint("popminpoll", 0) * 60;
+-    int expire = config_getint("popexpiretime", -1);
++    int minpoll = config_getint(IMAPOPT_POPMINPOLL) * 60;
++    int expire = config_getint(IMAPOPT_POPEXPIRETIME);
+     unsigned mechcount;
+     const char *mechlist;
+ 
+@@ -880,7 +883,8 @@
+     prot_printf(popd_out, "RESP-CODES\r\n");
+     prot_printf(popd_out, "AUTH-RESP-CODE\r\n");
+ 
+-    if (kflag || popd_starttls_done || config_getswitch("allowplaintext", 1)) {
++    if (kflag || popd_starttls_done || 
++	config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
+ 	prot_printf(popd_out, "USER\r\n");
+     }
+     
+@@ -1101,16 +1105,17 @@
+     const char *mechusing;
+     unsigned b64len;
+     char localip[60], remoteip[60];
++    char *availmechs;
+     const char *pass;
+ 
+     strcpy(optstr, hostname);
+     p = strchr(optstr, '.');
+     if (p) *p = '\0';
+     strcat(optstr, "_password");
+-    pass = config_getstring(optstr, NULL);
++    pass = config_getoverflowstring(optstr);
+     cb = mysasl_callbacks(popd_userid, 
+-			  config_getstring("proxy_authname", "proxy"),
+-			  config_getstring("proxy_realm", NULL),
++			  config_getstring(IMAPOPT_PROXY_AUTHNAME),
++			  config_getstring(IMAPOPT_PROXY_REALM),
+ 			  pass);
+ 
+     r = sasl_client_new("pop", hostname, NULL, NULL,
+@@ -1154,10 +1159,11 @@
+     p = strchr(buf, '.');
+     *p = '\0';
+     strcat(buf, "_mechs");
++    availmechs = config_getoverflowstring(buf);
++    if (!availmechs) availmechs = "KERBEROS_V4"; /* xxx */
+ 
+     /* we now do the actual SASL exchange */
+-    r = sasl_client_start(backend_saslconn, 
+-			  config_getstring(buf, "KERBEROS_V4"),
++    r = sasl_client_start(backend_saslconn, availmechs,
+ 			  NULL, &out, &outlen, &mechusing);
+     if ((r != SASL_OK) && (r != SASL_CONTINUE)) {
+ 	return r;
+Index: imap/proxyd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/proxyd.c,v
+retrieving revision 1.128
+diff -u -r1.128 proxyd.c
+--- proxyd.c	2002/06/07 15:42:15	1.128
++++ proxyd.c	2002/06/14 17:05:13
+@@ -629,6 +629,201 @@
+     }
+ }
+ 
++<<<<<<< proxyd.c
++<<<<<<< proxyd.c
++static int mysasl_getauthline(struct protstream *p, char *tag,
++			      char **line, unsigned int *linelen)
++{
++    char buf[2096];
++    char *str = (char *) buf;
++    
++    if (!prot_fgets(str, sizeof(buf), p)) {
++	return SASL_FAIL;
++    }
++    if (!strncmp(str, tag, strlen(tag))) {
++	str += strlen(tag) + 1;
++	if (!strncasecmp(str, "OK ", 3)) { return SASL_OK; }
++	if (!strncasecmp(str, "NO ", 3)) { return SASL_BADAUTH; }
++	return SASL_FAIL; /* huh? */
++    } else if (str[0] == '+' && str[1] == ' ') {
++	unsigned buflen;
++	str += 2; /* jump past the "+ " */
++
++	buflen = strlen(str) + 1;
++
++	*line = xmalloc(buflen);
++	if (*str != '\r') {	/* decode it */
++	    int r;
++	    
++	    r = sasl_decode64(str, strlen(str), *line, buflen, linelen);
++	    if (r != SASL_OK) {
++		return r;
++	    }
++	    
++	    return SASL_CONTINUE;
++	} else {		/* blank challenge */
++	    *line = NULL;
++	    *linelen = 0;
++
++	    return SASL_CONTINUE;
++	}
++    } else {
++	/* huh??? */
++	return SASL_FAIL;
++    }
++}
++
++extern sasl_callback_t *mysasl_callbacks(const char *username,
++					 const char *authname,
++					 const char *realm,
++					 const char *password);
++void free_callbacks(sasl_callback_t *in);
++
++static int proxy_authenticate(struct backend *s)
++{
++    int r;
++    sasl_security_properties_t *secprops = NULL;
++    struct sockaddr_in saddr_l, saddr_r;
++    char remoteip[60], localip[60];
++    socklen_t addrsize;
++    sasl_callback_t *cb;
++    char mytag[128];
++    char buf[2048];
++    char optstr[128];
++    char *in, *p;
++    const char *out;
++    unsigned int inlen, outlen;
++    const char *mechusing;
++    unsigned b64len;
++    char *availmechs;
++    const char *pass;
++
++    strcpy(optstr, s->hostname);
++    p = strchr(optstr, '.');
++    if (p) *p = '\0';
++    strcat(optstr, "_password");
++    pass = config_getoverflowstring(optstr);
++    cb = mysasl_callbacks(proxyd_userid, 
++			  config_getstring(IMAPOPT_PROXY_AUTHNAME),
++			  config_getstring(IMAPOPT_PROXY_REALM),
++			  pass);
++
++    /* set the IP addresses */
++    addrsize=sizeof(struct sockaddr_in);
++    if (getpeername(s->sock, (struct sockaddr *)&saddr_r, &addrsize) != 0)
++	return SASL_FAIL;
++    if(iptostring((struct sockaddr *)&saddr_r, sizeof(struct sockaddr_in),
++		  remoteip, 60) != 0)
++	return SASL_FAIL;
++  
++    addrsize=sizeof(struct sockaddr_in);
++    if (getsockname(s->sock, (struct sockaddr *)&saddr_l, &addrsize)!=0)
++	return SASL_FAIL;
++    if(iptostring((struct sockaddr *)&saddr_l, sizeof(struct sockaddr_in),
++		  localip, 60) != 0)
++	return SASL_FAIL;
++
++    r = sasl_client_new("imap", s->hostname, localip, remoteip,
++			cb, 0, &s->saslconn);
++    if (r != SASL_OK) {
++	return r;
++    }
++
++    secprops = mysasl_secprops(0);
++    r = sasl_setprop(s->saslconn, SASL_SEC_PROPS, secprops);
++    if (r != SASL_OK) {
++	return r;
++    }
++
++    /* read the initial greeting */
++    if (!prot_fgets(buf, sizeof(buf), s->in)) {
++	syslog(LOG_ERR,
++	       "proxyd_authenticate(): couldn't read initial greeting: %s",
++	       s->in->error ? s->in->error : "(null)");
++	return SASL_FAIL;
++    }
++
++    strcpy(buf, s->hostname);
++    p = strchr(buf, '.');
++    *p = '\0';
++    strcat(buf, "_mechs");
++    availmechs = config_getoverflowstring(buf);
++    if (!availmechs) availmechs = "KERBEROS_V4"; /* xxx */
++
++    /* we now do the actual SASL exchange */
++    r = sasl_client_start(s->saslconn, availmechs,
++			  NULL, NULL, NULL, &mechusing);
++    if ((r != SASL_OK) && (r != SASL_CONTINUE)) {
++	return r;
++    }
++    proxyd_gentag(mytag);
++    prot_printf(s->out, "%s AUTHENTICATE %s\r\n", mytag, mechusing);
++
++    in = NULL;
++    inlen = 0;
++    r = mysasl_getauthline(s->in, mytag, &in, &inlen);
++    while (r == SASL_CONTINUE) {
++	r = sasl_client_step(s->saslconn, in, inlen, NULL, &out, &outlen);
++	if (in) { 
++	    free(in);
++	}
++	if (r != SASL_OK && r != SASL_CONTINUE) {
++	    return r;
++	}
++
++	r = sasl_encode64(out, outlen, buf, sizeof(buf), &b64len);
++	if (r != SASL_OK) {
++	    return r;
++	}
++
++	prot_write(s->out, buf, b64len);
++	prot_printf(s->out, "\r\n");
++
++	r = mysasl_getauthline(s->in, mytag, &in, &inlen);
++    }
++
++    free_callbacks(cb);
++
++    if (r == SASL_OK) {
++	prot_setsasl(s->in, s->saslconn);
++	prot_setsasl(s->out, s->saslconn);
++    }
++
++    /* r == SASL_OK on success */
++    return r;
++}
++
++void proxyd_capability(struct backend *s)
++{
++    char tag[128];
++    char resp[1024];
++    int st = 0;
++
++    proxyd_gentag(tag);
++    prot_printf(s->out, "%s Capability\r\n", tag);
++    do {
++	if (!prot_fgets(resp, sizeof(resp), s->in)) return;
++	if (!strncasecmp(resp, "* Capability ", 13)) {
++	    st++; /* increment state */
++	    if (strstr(resp, "IDLE")) s->capability |= IDLE;
++	    if (strstr(resp, "MUPDATE")) s->capability |= MUPDATE;
++	} else {
++	    /* line we weren't expecting. hmmm. */
++	}
++    } while (st == 0);
++    do {
++	if (!prot_fgets(resp, sizeof(resp), s->in)) return;
++	if (!strncmp(resp, tag, strlen(tag))) {
++	    st++; /* increment state */
++	} else {
++	    /* line we weren't expecting. hmmm. */
++	}
++    } while (st == 1);
++}
++
++=======
++>>>>>>> 1.107
++=======
+ /* This handles piping of the LSUB command, because we have to figure out
+  * what mailboxes actually exist before passing them to the end user.
+  *
+@@ -823,6 +1018,7 @@
+     return r;
+ }
+ 
++>>>>>>> 1.128
+ void proxyd_downserver(struct backend *s)
+ {
+     if (!s || !s->timeout) {
+@@ -874,11 +1070,69 @@
+ 	}
+ 	i++;
+     }
++<<<<<<< proxyd.c
++
++    if (!ret) {
++	struct hostent *hp;
+ 
++	ret = xmalloc(sizeof(struct backend));
++	memset(ret, 0, sizeof(struct backend));
++	ret->hostname = xstrdup(server);
++	if ((hp = gethostbyname(server)) == NULL) {
++	    syslog(LOG_ERR, "gethostbyname(%s) failed: %m", server);
++	    free(ret);
++	    return NULL;
++	}
++	ret->addr.sin_family = AF_INET;
++	memcpy(&ret->addr.sin_addr, hp->h_addr, hp->h_length);
++	ret->addr.sin_port = htons(143);
++=======
++>>>>>>> 1.107
++
++<<<<<<< proxyd.c
++	ret->timeout = NULL;
++    }
++ 	
++    if (!ret->timeout) {
++=======
+     if (!ret || !ret->timeout) {
++>>>>>>> 1.107
+ 	/* need to (re)establish connection to server or create one */
++<<<<<<< proxyd.c
++	int sock;
++	int r;
++
++	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
++	    syslog(LOG_ERR, "socket() failed: %m");
++	    free(ret);
++	    return NULL;
++	}
++	if (connect(sock, (struct sockaddr *) &ret->addr, 
++		    sizeof(ret->addr)) < 0) {
++	    syslog(LOG_ERR, "connect(%s) failed: %m", server);
++	    free(ret);
++	    return NULL;
++	}
++	
++	ret->in = prot_new(sock, 0);
++	ret->out = prot_new(sock, 1);
++	ret->sock = sock;
++	prot_setflushonread(ret->in, ret->out);
++
++	/* now need to authenticate to backend server */
++	if ((r = proxy_authenticate(ret))) {
++	    syslog(LOG_ERR, "couldn't authenticate to backend server: %s",
++		   sasl_errstring(r, NULL, NULL));
++	    free(ret);
++	    return NULL;
++	}
++
++	/* find the capabilities of the server */
++	proxyd_capability(ret);
++=======
+ 	ret = findserver(ret, server, proxyd_userid);
+ 	if(!ret) return NULL;
++>>>>>>> 1.107
+ 
+ 	/* add the timeout */
+ 	ret->timeout = prot_addwaitevent(proxyd_in, time(NULL) + IDLE_TIMEOUT,
+@@ -1040,7 +1294,7 @@
+     /* check if remote realm */
+     if ((realm = strchr(auth_identity, '@'))!=NULL) {
+ 	realm++;
+-	val = config_getstring("loginrealms", "");
++	val = config_getstring(IMAPOPT_LOGINREALMS);
+ 	while (*val) {
+ 	    if (!strncasecmp(val, realm, strlen(realm)) &&
+ 		(!val[strlen(realm)] || isspace((int) val[strlen(realm)]))) {
+@@ -1060,16 +1314,16 @@
+     proxyd_authstate = auth_newstate(auth_identity, NULL);
+ 
+     /* ok, is auth_identity an admin? */
+-    proxyd_userisadmin = authisa(proxyd_authstate, "imap", "admins");
++    proxyd_userisadmin = config_authisa(proxyd_authstate, IMAPOPT_ADMINS);
+ 
+     if (strcmp(auth_identity, requested_user)) {
+ 	/* we want to authenticate as a different user; we'll allow this
+ 	   if we're an admin or if we've allowed ACL proxy logins */
+-	int use_acl = config_getswitch("loginuseacl", 0);
++	int use_acl = config_getswitch(IMAPOPT_LOGINUSEACL);
+ 
+ 	if (proxyd_userisadmin ||
+ 	    (use_acl && acl_ok(requested_user, auth_identity)) ||
+-	    authisa(proxyd_authstate, "imap", "proxyservers")) {
++	    config_authisa(proxyd_authstate, IMAPOPT_PROXYSERVERS)) {
+ 	    /* proxy ok! */
+ 
+ 	    proxyd_userisadmin = 0;	/* no longer admin */
+@@ -1109,7 +1363,6 @@
+     int opt;
+     int r;
+ 
+-    config_changeident("proxyd");
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+     setproctitle_init(argc, argv, envp);
+ 
+@@ -1318,7 +1571,7 @@
+     proc_register("proxyd", proxyd_clienthost, (char *)0, (char *)0);
+ 
+     /* Set inactivity timer */
+-    timeout = config_getint("timeout", 30);
++    timeout = config_getint(IMAPOPT_TIMEOUT);
+     if (timeout < 30) timeout = 30;
+     prot_settimeout(proxyd_in, timeout*60);
+     prot_setflushonread(proxyd_in, proxyd_out);
+@@ -2173,7 +2426,7 @@
+ 
+     /* possibly disallow login */
+     if ((proxyd_starttls_done == 0) &&
+-	(config_getswitch("allowplaintext", 1) == 0) &&
++	(config_getswitch(IMAPOPT_ALLOWPLAINTEXT) == 0) &&
+ 	strcmp(canon_user, "anonymous") != 0) {
+ 	eatline(proxyd_in, ' ');
+ 	prot_printf(proxyd_out, "%s NO Login only available under a layer\r\n",
+@@ -2197,7 +2450,7 @@
+     passwd = passwdbuf.s;
+ 
+     if (!strcmp(canon_user, "anonymous")) {
+-	if (config_getswitch("allowanonymouslogin", 0)) {
++	if (config_getswitch(IMAPOPT_ALLOWANONYMOUSLOGIN)) {
+ 	    passwd = beautify_string(passwd);
+ 	    if (strlen(passwd) > 500) passwd[500] = '\0';
+ 	    syslog(LOG_NOTICE, "login: %s anonymous %s",
+@@ -2238,12 +2491,18 @@
+     }
+     else {
+ 	proxyd_userid = xstrdup(canon_user);
++<<<<<<< proxyd.c
++	syslog(LOG_NOTICE, "login: %s %s plaintext %s", proxyd_clienthost,
++	       canon_user, reply ? reply : "");
++	plaintextloginpause = config_getint(IMAPOPT_PLAINTEXTLOGINPAUSE);
++=======
+ 
+ 	syslog(LOG_NOTICE, "login: %s %s plaintext%s %s", proxyd_clienthost,
+ 	       canon_user, proxyd_starttls_done ? "+TLS" : "", 
+ 	       reply ? reply : "");
+ 
+ 	plaintextloginpause = config_getint("plaintextloginpause", 0);
++>>>>>>> 1.128
+ 	if (plaintextloginpause) {
+ 
+ 	    /* Apply penalty only if not under layer */
+@@ -2255,7 +2514,7 @@
+ 
+     proxyd_authstate = auth_newstate(canon_user, (char *)0);
+ 
+-    val = config_getstring("admins", "");
++    val = config_getstring(IMAPOPT_ADMINS);
+     while (*val) {
+ 	for (p = (char *)val; *p && !isspace((int) *p); p++);
+ 	strlcpy(buf, val, p - val);
+@@ -2587,7 +2846,7 @@
+ 
+     /* spit out our ID string.
+        eventually this might be configurable. */
+-    if (config_getswitch("imapidresponse", 1)) {
++    if (config_getswitch(IMAPOPT_IMAPIDRESPONSE)) {
+ 	id_response(proxyd_out);
+ 
+ 	/* add info about the backend */
+@@ -2651,7 +2910,7 @@
+ 
+     /* get polling period */
+     if (idle_period == -1) {
+-      idle_period = config_getint("imapidlepoll", 60);
++      idle_period = config_getint(IMAPOPT_IMAPIDLEPOLL);
+       if (idle_period < 1) idle_period = 1;
+     }
+ 
+@@ -2855,10 +3114,16 @@
+ 
+     if (tls_enabled("imap")) {
+ 	prot_printf(proxyd_out, " STARTTLS");
++<<<<<<< proxyd.c
++    if (!proxyd_starttls_done && !config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
++	prot_printf(proxyd_out, " LOGINDISABLED");
++    }
++=======
+     }
+     if (!proxyd_starttls_done && !config_getswitch("allowplaintext", 1)) {
+ 	prot_printf(proxyd_out, " LOGINDISABLED");	
+     }
++>>>>>>> 1.100
+ 
+     if (sasl_listmech(proxyd_saslconn, NULL, 
+ 		      "AUTH=", " AUTH=", "",
+@@ -3919,7 +4184,7 @@
+     /* Ignore the reference argument?
+        (the behavior in 1.5.10 & older) */
+     if (ignorereference == -1) {
+-	ignorereference = config_getswitch("ignorereference", 0);
++	ignorereference = config_getswitch(IMAPOPT_IGNOREREFERENCE);
+     }
+ 
+     /* Reset state in mstringdata */
+@@ -4650,8 +4915,7 @@
+     const char *url;
+     /* so tempting, and yet ... */
+     /* url = "http://random.yahoo.com/ryl/"; */
+-    url = config_getstring("netscapeurl",
+-			   "http://andrew2.andrew.cmu.edu/cyrus/imapd/netscape-admin.html");
++    url = config_getstring(IMAPOPT_NETSCAPEURL);
+ 
+     /* I only know of three things to reply with: */
+     prot_printf(proxyd_out,
+Index: imap/sendmail-map.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/sendmail-map.c,v
+retrieving revision 1.4
+diff -u -r1.4 sendmail-map.c
+--- sendmail-map.c	2001/11/27 02:25:00	1.4
++++ sendmail-map.c	2002/06/14 17:05:13
+@@ -138,14 +138,14 @@
+     sasl_callback_t *cb;
+ 
+     if (!user) {
+-	user = config_getstring("acap_username", NULL);
++	user = config_getstring(IMAPOPT_ACAP_USERNAME);
+     }
+     if (user == NULL) {
+ 	syslog(LOG_ERR, "unable to find option acap_username");
+ 	fatal("couldn't connect to acap server", EC_UNAVAILABLE);
+     }
+ 
+-    authprog = config_getstring("acap_getauth", NULL);
++    authprog = config_getstring(IMAPOPT_ACAP_GETAUTH);
+     if (authprog) {
+ 	system(authprog);
+     }
+@@ -162,9 +162,9 @@
+     r = ACAP_NO_CONNECTION;
+ 
+     cb = mysasl_callbacks(user,
+-			  config_getstring("acap_authname", user),
+-			  config_getstring("acap_realm", NULL),
+-			  config_getstring("acap_password", NULL));
++			  config_getstring(IMAPOPT_ACAP_AUTHNAME),
++			  config_getstring(IMAPOPT_ACAP_REALM),
++			  config_getstring(IMAPOPT_ACAP_PASSWORD));
+     r = acap_conn_connect(acapurl, cb, &acap_conn);
+     free_callbacks(cb);
+     if (r != ACAP_OK) {
+@@ -476,7 +476,7 @@
+ 
+     acap_init();
+ 
+-    server = config_getstring("acap_server", NULL);
++    server = config_getstring(IMAPOPT_ACAP_SERVER);
+     if (!server) fatal("no ACAP servers specified", EC_USAGE);
+     
+     signal(SIGTERM, &handler);
+@@ -500,7 +500,7 @@
+ 	    fatal("can't download list of mailboxes\n", EC_UNAVAILABLE);
+ 	} else {
+ 	    acap_conn_close(acap_conn);
+-	    sleep(config_getint("acap_retry_timeout", 60));
++	    sleep(config_getint(IMAPOPT_ACAP_RETRY_TIMEOUT));
+ 	    execv(argv[0], argv);
+ 	}
+     }
+@@ -533,7 +533,7 @@
+ 	   to reestablish the connection with the ACAP server and
+ 	   resynchronize */
+ 	acap_conn_close(acap_conn);
+-	sleep(config_getint("acap_retry_timeout", 60));
++	sleep(config_getint(IMAPOPT_ACAP_RETRY_TIMEOUT));
+ 	execv(argv[0], argv);
+     }
+ 
+Index: imap/syncnews.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/syncnews.c,v
+retrieving revision 1.19
+diff -u -r1.19 syncnews.c
+--- syncnews.c	2001/02/22 19:27:20	1.19
++++ syncnews.c	2002/06/14 17:05:14
+@@ -140,7 +140,7 @@
+     int newsprefixlen = 0;
+     int lineno = 0;
+ 
+-    newsprefix = config_getstring("newsprefix", 0);
++    newsprefix = config_getstring(IMAPOPT_NEWSPREFIX);
+     if (newsprefix) {
+ 	newsprefixlen = strlen(newsprefix);
+ 	if (newsprefix[newsprefixlen-1] == '.') {
+Index: imap/target-acap.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/target-acap.c,v
+retrieving revision 1.28
+diff -u -r1.28 target-acap.c
+--- target-acap.c	2001/11/27 02:25:00	1.28
++++ target-acap.c	2002/06/14 17:05:14
+@@ -131,7 +131,7 @@
+     sasl_callback_t *cb;
+     static int firsttime = 1;
+ 
+-    user = config_getstring("acap_username", NULL);
++    user = config_getstring(IMAPOPT_ACAP_USERNAME);
+     if (user == NULL) {
+         syslog(LOG_ERR, "unable to find option acap_username");
+ 	fatal("couldn't connect to acap server", EC_UNAVAILABLE);
+@@ -139,11 +139,11 @@
+ 
+     if (firsttime) {
+ 	cb = mysasl_callbacks(user,
+-			      config_getstring("acap_authname", user),
+-			      config_getstring("acap_realm", NULL),
+-			      config_getstring("acap_password", NULL));
++			      config_getstring(IMAPOPT_ACAP_AUTHNAME),
++			      config_getstring(IMAPOPT_ACAP_REALM),
++			      config_getstring(IMAPOPT_ACAP_PASSWORD));
+ 
+-	authprog = config_getstring("acap_getauth", NULL);
++	authprog = config_getstring(IMAPOPT_ACAP_GETAUTH);
+ 	if (authprog) {
+             system(authprog);
+ 	}
+@@ -166,7 +166,7 @@
+     r = acap_conn_connect(acapurl, cb, &acap_conn);
+     free_callbacks(cb);
+     if (r != ACAP_OK) {
+-	int t = config_getint("acap_retry_timeout", 60);
++	int t = config_getint(IMAPOPT_ACAP_RETRY_TIMEOUT);
+ 	
+ 	acap_conn_close(acap_conn);
+         syslog(LOG_WARNING, "couldn't connect to ACAP server: %s;"
+@@ -593,7 +593,7 @@
+ 
+     acap_init();
+ 
+-    server = config_getstring("acap_server", NULL);
++    server = config_getstring(IMAPOPT_ACAP_SERVER);
+     if (!server) fatal("no ACAP servers specified", EC_USAGE);
+     
+     mboxlist_init(0);
+Index: imap/tls.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/tls.c,v
+retrieving revision 1.38
+diff -u -r1.38 tls.c
+--- tls.c	2002/06/03 16:59:57	1.38
++++ tls.c	2002/06/14 17:05:14
+@@ -150,17 +150,12 @@
+ 
+ int tls_enabled(const char *ident)
+ {
+-    char buf[50];
+     const char *val;
+ 
+-    sprintf(buf, "tls_%s_cert_file", ident);
+-    val = config_getstring(buf,
+-			   config_getstring("tls_cert_file", NULL));
++    val = config_getstring(IMAPOPT_TLS_CERT_FILE);
+     if (!val || !strcasecmp(val, "disabled")) return 0;
+ 
+-    sprintf(buf, "tls_%s_key_file", ident);
+-    val = config_getstring(buf,
+-			   config_getstring("tls_key_file", NULL));
++    val = config_getstring(IMAPOPT_TLS_KEY_FILE);
+     if (!val || !strcasecmp(val, "disabled")) return 0;
+ 
+     return 1;
+@@ -618,7 +613,7 @@
+ 				   SSL_SESS_CACHE_NO_INTERNAL_LOOKUP);
+ 
+     /* Get the session timeout from the config file (in minutes) */
+-    timeout = config_getint("tls_session_timeout", 1440); /* 24 hours */
++    timeout = config_getint(IMAPOPT_TLS_SESSION_TIMEOUT);
+     if (timeout < 0) timeout = 0;
+     if (timeout > 1440) timeout = 1440; /* 24 hours max */
+ 
+@@ -661,12 +656,17 @@
+ 	}
+     }
+ 
++<<<<<<< tls.c
++    CAfile = config_getstring(IMAPOPT_TLS_CA_FILE);
++    CApath = config_getstring(IMAPOPT_TLS_CA_PATH);
++=======
+     cipher_list = config_getstring("tls_cipher_list", "DEFAULT");
+     if (!SSL_CTX_set_cipher_list(ctx, cipher_list)) {
+ 	syslog(LOG_ERR,"TLS engine: cannot load cipher list '%s'",
+ 	       cipher_list);
+ 	return (-1);
+     }
++>>>>>>> 1.35
+ 
+     CAfile = config_getstring("tls_ca_file", NULL);
+     CApath = config_getstring("tls_ca_path", NULL);
+@@ -677,6 +677,10 @@
+ 	syslog(LOG_NOTICE,"TLS engine: cannot load CA data");	
+     }
+ 
++<<<<<<< tls.c
++    s_cert_file = config_getstring(IMAPOPT_TLS_CERT_FILE);
++    s_key_file = config_getstring(IMAPOPT_TLS_KEY_FILE);
++=======
+     sprintf(buf, "tls_%s_cert_file", ident);
+     s_cert_file = config_getstring(buf,
+ 				   config_getstring("tls_cert_file", NULL));
+@@ -684,6 +688,7 @@
+     sprintf(buf, "tls_%s_key_file", ident);
+     s_key_file = config_getstring(buf,
+ 				  config_getstring("tls_key_file", NULL));
++>>>>>>> 1.35
+ 
+     if (!set_cert_stuff(ctx, s_cert_file, s_key_file)) {
+ 	syslog(LOG_ERR,"TLS engine: cannot load cert/key data");
+Index: man/imapd.conf.5
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/man/imapd.conf.5,v
+retrieving revision 1.64
+diff -u -r1.64 imapd.conf.5
+--- imapd.conf.5	2002/06/10 18:35:12	1.64
++++ imapd.conf.5	2002/06/14 17:05:15
+@@ -68,104 +68,33 @@
+ ``<no default>''.  Some options default to the empty string, these
+ are listed with ``<none>''.
+ .IP "\fBconfigdirectory:\fR <no default>" 5
+-The pathname of the IMAP configuration directory.  This field is required.
+ .IP "\fBdefaultpartition:\fR default" 5
+-The partition name used by default for new mailboxes.
+ .IP "\fBpartition-\fIname\fB:\fR <no default>" 5
+ The pathname of the partition \fIname\fR.  At least one field, for the
+ partition named in the \fBdefaultpartition\fR option, is required.
+ For example, if the value of the \fBdefaultpartion\fR option is
+ \fBdefault\fR, then the \fBpartition-default\fR field is required.
+ .IP "\fBunixhierarchysep:\fR no" 5
+-Use the UNIX separator character '/' for delimiting levels of mailbox
+-hierarchy.  The default is to use the netnews separator character '.'. 
+ .IP "\fBaltnamespace:\fR no" 5
+-Use the alternate IMAP namespace, where personal folders reside at the
+-same level in the hierarchy as INBOX.
+-.br
+-.sp
+-This option ONLY applies where interaction takes place with the
+-client/user.  Currently this is limited to the IMAP protocol (imapd)
+-and Sieve scripts (lmtpd).  This option does NOT apply to admin tools
+-such as cyradm (admins ONLY), reconstruct, quota, etc., NOR does it
+-affect LMTP delivery of messages directly to mailboxes via plus-addressing.
+ .IP "\fBuserprefix:\fR Other Users" 5
+-If using the alternate IMAP namespace, the prefix for the other users
+-namespace.  The hierarchy delimiter will be automatically appended.
+ .IP "\fBsharedprefix:\fR Shared Folders" 5
+-If using the alternate IMAP namespace, the prefix for the shared
+-namespace.  The hierarchy delimiter will be automatically appended.
+ .IP "\fBumask:\fR 077" 5
+-The umask value used by various Cyrus IMAP programs.
+ .IP "\fBservername:\fR <result returned by gethostname(2)>" 5
+-This is the hostname visible in the greeting messages of the POP, IMAP and LMTP
+-daemons. If it is unset, then the result returned from gethostname(2) is used.
+ .IP "\fBallowanonymouslogin:\fR no" 5
+-Permit logins by the user "anonymous" using any password.  Also allows
+-use of the SASL ANONYMOUS mechanism.
+ .IP "\fBallowplaintext:\fR yes" 5
+-Allow the use of the SASL PLAIN mechanism.
+ .IP "\fBquotawarn:\fR 90" 5
+-The percent of quota utilization over which the server generates
+-warnings.
+ .IP "\fBtimeout:\fR 30" 5
+-The length of the IMAP server's inactivity autologout timer,
+-in minutes.  The minimum value is 30, the default.
+ .IP "\fBimapidlepoll:\fR 60" 5
+-The interval (in seconds) for polling the mailbox for changes while
+-running the IDLE command.  This option is used when idled can not be
+-contacted or when polling is used exclusively.  The minimum value is
+-1.  A value of 0 will disable polling (and disable IDLE if polling is
+-the only method available).
+ .IP "\fBimapidresponse:\fR yes" 5
+-If enabled, the server responds to an ID command with a parameter
+-list containing: version, vendor, support-url, os, os-version,
+-command, arguments, environment.  Otherwise the server returns NIL.
+ .IP "\fBpoptimeout:\fR 10" 5
+-Set the length of the POP server's inactivity autologout timer,
+-in minutes.  The minimum value is 10, the default.
+ .IP "\fBpopminpoll:\fR 0" 5
+-Set the minimum amount of time the server forces users to wait between
+-successive POP logins,
+-in minutes.  The default is 0.
+ .IP "\fBpopexpiretime:\fR 0" 5
+-The number of days advertised as being the minimum a message may be left on
+-the POP server before it is deleted (via the CAPA command, defined in the POP3
+-Extension Mechanism, which some clients may support).  "NEVER", the default,
+-may be specified with a negative number.  The Cyrus POP3 server never deletes
+-mail, no matter what the value of this parameter is.  However, if a site
+-implements a less liberal policy, it needs to change this parameter
+-accordingly.
+ .IP "\fBadmins:\fR <none>" 5
+-The list of userids with administrative rights.  Separate each userid
+-with a space.  Sites using Kerberos authentication may use
+-separate "admin" instances.
+-.PP
+-Note that accounts used by users should not be administrators.  Administrative 
+-accounts should not receive mail.  That is, if user "jbRo" is a user reading
+-mail, he should not also be in the admins line.  Some problems may occur
+-otherwise, most notably  the ability of administrators to create top-level
+-mailboxes visible to users, but not writable by users.
+ .IP "\fBproxyservers:\fR <none>" 5
+-A list of users and groups that are allowed to proxy for other users,
+-seperated by spaces.  Any user listed in this will be allowed to login
+-for any other user: use with caution.
+ .IP "\fBdefaultacl:\fR anyone lrs" 5
+-The Access Control List (ACL) placed on a newly-created (non-user) 
+-mailbox that does not have a parent mailbox.
+ .IP "\fBnewsspool\fB:\fR <no default>" 5
+-The pathname of the news spool directory.  Only used if the
+-\fBpartition-news\fR configuration option is set.
+ .IP "\fBnewsprefix:\fR <none>" 5
+-Prefix to be prepended to newsgroup names to make the corresponding
+-IMAP mailbox names.
+ .IP "\fBautocreatequota:\fR 0" 5
+-If nonzero, normal users may create their own IMAP accounts by
+-creating the mailbox INBOX.  The user's quota is set to the value if
+-it is positive, otherwise the user has unlimited quota.
+-.IP "\fBlogtimestamps:\fR no" 5
+-Include notations in the protocol telemetry logs indicating the number of
+-seconds since the last command or response.
+ .IP "\fBplaintextloginpause:\fR 0" 5
+ Number of seconds to pause after a successful plaintext login.  For
+ systems that support strong authentication, this permits users to
+@@ -196,8 +125,8 @@
+ If enabled, lmtpd rejects messages with 8-bit characters in the headers.
+ Otherwise, 8-bit characters are changed to `X'.  (A proper soultion to
+ non-ASCII characters in headers is offered by RFC 2047 and its predecessors.)
+-.IP "\fBmaxmessagesize:\fR <unlimited>" 5
+-Maximum incoming LMTP message size.  If set, lmtpd will
++.IP "\fBmaxmessagesize:\fR 0" 5
++Maximum incoming LMTP message size.  If non-zero, lmtpd will
+ reject messages larger than \fImaxmessagesize\fR bytes.  The default
+ is to allow messages of any size.
+ .IP "\fBlmtp_overquota_perm_failure:\fR no" 5
+Index: man/master.8
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/man/master.8,v
+retrieving revision 1.6
+diff -u -r1.6 master.8
+--- master.8	2002/05/25 19:57:48	1.6
++++ master.8	2002/06/14 17:05:15
+@@ -45,6 +45,10 @@
+ .SH SYNOPSIS
+ .B master
+ [
++.B \-C
++.I configfile
++]
++[
+ .B \-l
+ .I listen queue
+ ]
+@@ -64,19 +68,23 @@
+ when it receives a SIGTERM.
+ .SH OPTIONS
+ .TP
++.BI \-C " alternate configfile"
++Tell mastert to use a configuration file other than /etc/cyrus.conf.
++.TP
+ .BI \-l " listen queue backlog"
+ Increase the listen queue backlog. By default, the listen queue is set
+ to 32.   On systems with a high connection rate, it may be desirable
+ to increase this value. refer to \fBlisten(2)\fR for details.
+ .TP
+ .BI \-D
+-Don't close stdin/stdout/stderr. Primiarly useful for debugging.
++Don't close stdin/stdout/stderr and run in the foreground. Primarily
++useful for debugging.
+ .SH CONFIGURATION
+ Upon execution,
+ .I master
+ reads its configuration information out of the
+ .IR cyrus.conf (5)
+-file.
++file or the file specified by the -C option.
+ .PP
+ .I Master
+ rereads its configuration file when it receives a hangup signal,
+Index: master/CYRUS-MASTER.mib
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/CYRUS-MASTER.mib,v
+retrieving revision 1.4
+diff -u -r1.4 CYRUS-MASTER.mib
+--- CYRUS-MASTER.mib	2001/08/14 16:11:26	1.4
++++ CYRUS-MASTER.mib	2002/06/14 17:05:15
+@@ -109,6 +109,12 @@
+ 
+                          serviceConnections     Counter32
+ 
++                         serviceReady           Gauge32
++
++                         serviceBusy            Gauge32
++
++			 serviceFailures	Counter32
++
+                          } 		   
+ 
+       -- forks since startup
+@@ -135,10 +141,9 @@
+                          ACCESS     read-only 
+ 
+                          STATUS     mandatory 
+-
+-                         DESCRIPTION  "The total number of children currently 
+ 
+-                                       active." 
++                         DESCRIPTION  "The total number of processes associated
++			     with this service."
+ 
+                          ::= { serviceEntry 2 } 
+ 
+@@ -180,6 +185,46 @@
+ 			               service since initialization." 
+ 
+                          ::= { serviceEntry 5 } 
++
++      -- forks since startup
++      serviceReady       OBJECT-TYPE 
++
++                         SYNTAX     Gauge32 
++
++                         ACCESS     read-only 
++
++                         STATUS     mandatory 
++
++                         DESCRIPTION  "The number of processes waiting
++			     for incoming connections for this service."
++
++                         ::= { serviceEntry 6 } 
++
++      serviceBusy        OBJECT-TYPE 
++
++                         SYNTAX     Gauge32 
++
++                         ACCESS     read-only 
++
++                         STATUS     mandatory 
++
++                         DESCRIPTION  "The number of processes currently
++			     servicing connections for this service."
++
++                         ::= { serviceEntry 7 } 
++
++      serviceFailures    OBJECT-TYPE 
++
++                         SYNTAX     Counter32 
++
++                         ACCESS     read-only 
++
++                         STATUS     mandatory 
++
++                         DESCRIPTION  "The total number of processes that
++			     have exited badly for this service."
++
++                         ::= { serviceEntry 8 } 
+ 
+ -- event table
+ 
+Index: master/cyrusMasterMIB.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/cyrusMasterMIB.c,v
+retrieving revision 1.9
+diff -u -r1.9 cyrusMasterMIB.c
+--- cyrusMasterMIB.c	2002/02/19 18:50:15	1.9
++++ cyrusMasterMIB.c	2002/06/14 17:05:15
+@@ -73,6 +73,12 @@
+   { SERVICEID           , ASN_INTEGER   , NOACCESS , var_serviceTable, 3, { 2,1,4 } },
+ #define   SERVICECONNS          9
+   { SERVICECONNS        , ASN_COUNTER   , NOACCESS , var_serviceTable, 3, { 2,1,5 } },
++#define SERVICEREADY 10
++  { SERVICEREADY        , ASN_GAUGE     , NOACCESS , var_serviceTable, 3, { 2,1,5 } },
++#define SERVICEBUSY 11
++  { SERVICEBUSY         , ASN_GAUGE     , NOACCESS , var_serviceTable, 3, { 2,1,5 } },
++#define SERVICEFAILURES 12
++  { SERVICEFAILURES     , ASN_COUNTER   , NOACCESS , var_serviceTable, 3, { 2,1,5 } }
+ };
+ /*    (L = length of the oidsuffix) */
+ 
+@@ -213,6 +219,19 @@
+ 
+     case SERVICECONNS:
+ 	long_ret = Services[index - 1].nconnections;
++	return (unsigned char *) &long_ret;
++
++    case SERVICEREADY:
++	long_ret = Services[index - 1].ready_workers;
++	return (unsigned char *) &long_ret;
++
++    case SERVICEBUSY:
++	long_ret = 
++	    Services[index - 1].nactive - Services[index - 1].ready_workers;
++	return (unsigned char *) &long_ret;
++
++    case SERVICEFAILURES:
++	long_ret = Services[index - 1].nfailures;
+ 	return (unsigned char *) &long_ret;
+ 
+     default:
+Index: master/master.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/master.c,v
+retrieving revision 1.67
+diff -u -r1.67 master.c
+--- master.c	2002/06/07 20:13:35	1.67
++++ master.c	2002/06/14 17:05:15
+@@ -102,6 +102,7 @@
+ 
+ static int verbose = 0;
+ static int listen_queue_backlog = 32;
++static char *config_filename = NULL;
+ 
+ struct service *Services = NULL;
+ int allocservices = 0;
+@@ -640,6 +641,24 @@
+ 
+     /* run all events */
+     while (a && a != schedule) {
++<<<<<<< master.c
++	switch (p = fork()) {
++	case -1:
++	    syslog(LOG_CRIT, "can't fork process to run event %s", a->name);
++	    break;
++
++	case 0:
++	    if (become_cyrus() != 0) {
++		syslog(LOG_ERR, "can't change to the cyrus user");
++		exit(1);
++	    }
++
++	    /* close all listeners */
++	    for (i = 0; i < nservices; i++) {
++		if (Services[i].socket > 0) close(Services[i].socket);
++		if (Services[i].stat[0] > 0) close(Services[i].stat[0]);
++		if (Services[i].stat[1] > 0) close(Services[i].stat[1]);
++=======
+ 	/* if a->exec is NULL, we just used the event to wake up,
+ 	 * so we actually don't need to exec anything at the moment */
+ 	if(a->exec) {
+@@ -681,10 +700,36 @@
+ 		ctable[p % child_table_size] = c;
+ 		
+ 		break;
++>>>>>>> 1.67
+ 	    }
++<<<<<<< master.c
++	    limit_fds(256);
++
++	    get_prog(path, a->exec);
++	    syslog(LOG_DEBUG, "about to exec %s", path);
++	    execv(path, a->exec);
++	    syslog(LOG_ERR, "can't exec %s on schedule: %m", path);
++	    exit(EX_OSERR);
++	    break;
++	    
++	default:
++	    /* we don't wait for it to complete */
++	    
++	    /* add to child table */
++	    c = get_centry();
++	    c->pid = p;
++	    c->s = NULL;
++	    c->next = ctable[p % child_table_size];
++	    ctable[p % child_table_size] = c;
++
++	    break;
++	}
++
++=======
+ 	} /* a->exec */
+ 	
+ 	/* reschedule as needed */
++>>>>>>> 1.67
+ 	b = a->next;
+ 	if (a->period) {
+ 	    a->mark = now + a->period;
+@@ -703,16 +748,19 @@
+     int status;
+     pid_t pid;
+     struct centry *c;
++    int failure = 0;
+ 
+     while ((pid = waitpid((pid_t) -1, &status, WNOHANG)) > 0) {
+ 	if (WIFEXITED(status)) {
+ 	    syslog(LOG_DEBUG, "process %d exited, status %d", pid, 
+ 		   WEXITSTATUS(status));
++	    failure = 1;
+ 	}
+ 
+ 	if (WIFSIGNALED(status)) {
+ 	    syslog(LOG_ERR, "process %d exited, signaled to death by %d",
+ 		   pid, WTERMSIG(status));
++	    failure = 1;
+ 	}
+ 
+ 	/* account for the child */
+@@ -721,7 +769,10 @@
+ 	    /* first thing in the linked list */
+ 
+ 	    /* decrement active count for service */
+-	    if (c->s) c->s->nactive--;
++	    if (c->s) {
++		c->s->nactive--;
++		c->s->nfailures += failure;
++	    }
+ 
+ 	    ctable[pid % child_table_size] = c->next;
+ 	    c->next = cfreelist;
+@@ -738,7 +789,10 @@
+ 
+ 		t = c->next;
+ 		/* decrement active count for service */
+-		if (t->s) t->s->nactive--;
++		if (t->s) {
++		    t->s->nactive--;
++		    t->s->nfailures += failure;
++		}
+ 
+ 		c->next = t->next; /* remove node */
+ 		t->next = cfreelist; /* add to freelist */
+@@ -1021,6 +1075,7 @@
+ 	
+ 	Services[nservices].nforks = 0;
+ 	Services[nservices].nactive = 0;
++	Services[nservices].nfailures = 0;
+ 	Services[nservices].nconnections = 0;
+ 
+ 	if (verbose > 2)
+@@ -1108,8 +1163,13 @@
+        they will be re-enabled if they appear in config file */
+     for (i = 0; i < nservices; i++) Services[i].exec = NULL;
+ 
++<<<<<<< master.c
++     /* read services */
++    masterconf_getsection(config_filename, "SERVICES", &add_service, NULL);
++=======
+     /* read services */
+     masterconf_getsection("SERVICES", &add_service, (void*) 1);
++>>>>>>> 1.64
+ 
+     for (i = 0; i < nservices; i++) {
+ 	if (!Services[i].exec && Services[i].socket) {
+@@ -1125,6 +1185,7 @@
+ 	    Services[i].desired_workers = 0;
+ 	    Services[i].nforks = 0;
+ 	    Services[i].nactive = 0;
++	    Services[i].nfailures = 0;
+ 	    Services[i].nconnections = 0;
+ 
+ 	    /* close all listeners */
+@@ -1158,7 +1219,11 @@
+     }
+ 
+     /* read events */
++<<<<<<< master.c
++    masterconf_getsection(config_filename, "EVENTS", &add_event, NULL);
++=======
+     masterconf_getsection("EVENTS", &add_event, (void*) 1);
++>>>>>>> 1.64
+ }
+ 
+ int main(int argc, char **argv)
+@@ -1172,8 +1237,14 @@
+ 
+     p = getenv("CYRUS_VERBOSE");
+     if (p) verbose = atoi(p) + 1;
+-    while ((opt = getopt(argc, argv, "l:D")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:l:D")) != EOF) {
+ 	switch (opt) {
++	case 'C': /* cyrus.conf */
++	    config_filename = strdup(optarg);
++	    if (!config_filename) {
++		fatal("out of memory", EX_UNAVAILABLE);
++	    }
++	    break;
+ 	case 'l': /* user defined listen queue backlog */
+ 	    listen_queue_backlog = atoi(optarg);
+ 	    break;
+@@ -1223,9 +1294,9 @@
+     init_snmp("cyrusMaster"); 
+ #endif
+ 
+-    masterconf_getsection("START", &add_start, NULL);
+-    masterconf_getsection("SERVICES", &add_service, NULL);
+-    masterconf_getsection("EVENTS", &add_event, NULL);
++    masterconf_getsection(config_filename, "START", &add_start, NULL);
++    masterconf_getsection(config_filename, "SERVICES", &add_service, NULL);
++    masterconf_getsection(config_filename, "EVENTS", &add_event, NULL);
+ 
+     /* set signal handlers */
+     sighandler_setup();
+Index: master/master.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/master.h,v
+retrieving revision 1.6
+diff -u -r1.6 master.h
+--- master.h	2002/05/25 19:57:48	1.6
++++ master.h	2002/06/14 17:05:15
+@@ -28,8 +28,12 @@
+     int nforks;
+     int nactive;
+     int nconnections;
++<<<<<<< master.h
++    int nfailures;
++=======
+ 
+     unsigned int forkrate;
++>>>>>>> 1.6
+ };
+ 
+ extern struct service *Services;
+Index: master/masterconf.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/masterconf.c,v
+retrieving revision 1.6
+diff -u -r1.6 masterconf.c
+--- masterconf.c	2001/09/03 19:36:07	1.6
++++ masterconf.c	2002/06/14 17:05:15
+@@ -76,6 +76,7 @@
+ }
+ 
+ struct entry {
++    const char *filename;
+     char *line;
+     int lineno;
+ };
+@@ -102,7 +103,7 @@
+ 	    }
+ 	    if (*p != '"') {
+ 		sprintf(k, "configuration file %s: missing \" on line %d",
+-			CONFIG_FILENAME, e->lineno);
++			e->filename, e->lineno);
+ 		fatal(k, EX_CONFIG);
+ 	    }
+ 	} else {
+@@ -147,13 +148,15 @@
+     return def;
+ }
+ 
+-static void process_section(FILE *f, int *lnptr, 
++static void process_section(const char *filename, 
++			    FILE *f, int *lnptr, 
+ 			    masterconf_process *func, void *rock)
+ {
+     struct entry e;
+     char buf[4096];
+     int lineno = *lnptr;
+ 
++    e.filename = filename;
+     while (fgets(buf, sizeof(buf), f)) {
+ 	char *p, *q;
+ 
+@@ -189,7 +192,8 @@
+     *lnptr = lineno;
+ }
+ 
+-void masterconf_getsection(const char *section, masterconf_process *f,
++void masterconf_getsection(const char *file,
++			   const char *section, masterconf_process *f,
+ 			   void *rock)
+ {
+     FILE *infile;
+@@ -198,10 +202,12 @@
+     int lineno = 0;
+     char buf[4096];
+ 
+-    infile = fopen(CONFIG_FILENAME, "r");
++    if (file == NULL) file = CONFIG_FILENAME;
++
++    infile = fopen(file, "r");
+     if (!infile) {
+-	sprintf(buf, "can't open configuration file %s: %s", CONFIG_FILENAME,
+-		strerror(errno));
++	sprintf(buf, "can't open configuration file %s: %s", 
++		file, strerror(errno));
+ 	fatal(buf, EX_CONFIG);
+     }
+ 
+@@ -229,7 +235,7 @@
+ 	    }
+ 
+ 	    /* valid opening; process the section */
+-	    if (level == 1) process_section(infile, &lineno, f, rock);
++	    if (level == 1) process_section(file, infile, &lineno, f, rock);
+ 
+ 	    continue;
+ 	}
+Index: master/masterconf.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/masterconf.h,v
+retrieving revision 1.3
+diff -u -r1.3 masterconf.h
+--- masterconf.h	2000/05/23 20:56:30	1.3
++++ masterconf.h	2002/06/14 17:05:15
+@@ -58,7 +58,10 @@
+ /* entry values are good until the next call */
+ typedef void masterconf_process(const char *name, struct entry *e, void *rock);
+ 
+-extern void masterconf_getsection(const char *section, 
++/* read a single section from the configuration file 'file' making
++   callbacks as appropriate; pass NULL for default */
++extern void masterconf_getsection(const char *file, 
++				  const char *section, 
+ 				  masterconf_process *f, void *rock);
+ 
+ #endif /* INCLUDED_MASTERCONF_H */
+Index: master/service.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/service.c,v
+retrieving revision 1.37
+diff -u -r1.37 service.c
+--- service.c	2002/06/04 19:49:55	1.37
++++ service.c	2002/06/14 17:05:16
+@@ -292,12 +292,17 @@
+ 	syslog(LOG_ERR, "could not getenv(CYRUS_SERVICE); exiting");
+ 	exit(EX_SOFTWARE);
+     }
++<<<<<<< service.c
++    
++    config_init(alt_config, p);
++=======
+     service = strdup(p);
+     if (service == NULL) {
+ 	syslog(LOG_ERR, "couldn't strdup() service: %m");
+ 	exit(EX_OSERR);
+     }
+     config_init(alt_config, service);
++>>>>>>> 1.30
+ 
+     if (call_debugger) {
+ 	char debugbuf[1024];
+Index: tools/config2header
+===================================================================
+RCS file: config2header
+diff -N config2header
+--- /dev/null	Tue May  5 16:32:27 1998
++++ config2header	Fri Jun 14 13:05:16 2002
+@@ -0,0 +1,138 @@
++#!/bin/sh
++# $Id$
++#
++# Copyright (c) 2001 Carnegie Mellon University.  All rights reserved.
++#
++# Redistribution and use in source and binary forms, with or without
++# modification, are permitted provided that the following conditions
++# are met:
++#
++# 1. Redistributions of source code must retain the above copyright
++#    notice, this list of conditions and the following disclaimer. 
++#
++# 2. Redistributions in binary form must reproduce the above copyright
++#    notice, this list of conditions and the following disclaimer in
++#    the documentation and/or other materials provided with the
++#    distribution.
++#
++# 3. The name "Carnegie Mellon University" must not be used to
++#    endorse or promote products derived from this software without
++#    prior written permission. For permission or any other legal
++#    details, please contact  
++#      Office of Technology Transfer
++#      Carnegie Mellon University
++#      5000 Forbes Avenue
++#      Pittsburgh, PA  15213-3890
++#      (412) 268-4387, fax: (412) 268-7395
++#      tech-transfer@andrew.cmu.edu
++#
++# 4. Redistributions of any form whatsoever must retain the following
++#    acknowledgment:
++#    "This product includes software developed by Computing Services
++#     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++#
++# CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++# THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++# AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++# FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++# AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++# OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++#
++exec perl -x -S $0 ${1+"$@"} # -*-perl-*-
++#!perl -w
++
++if ($] !~ /^5\..*/) {
++  # uh-oh. this isn't perl 5.
++  foreach (split(/:/, $ENV{PATH})) { # try to find "perl5".
++    exec("$_/perl5", "-x", "-S", $0, @ARGV) if (-x "$_/perl5");
++  }
++  # we failed. bail.
++  die "Your perl is too old; I need perl 5.\n";
++}
++
++# load the real script. this is isolated in an 'eval' so perl4 won't
++# choke on the perl5-isms.
++eval join("\n", <DATA>);
++if ($@) { die "$@"; }
++
++__END__
++require 5;
++
++use strict;
++
++my $mode = 0;
++my $save = "";
++
++die "wrong number of arguments" if ($#ARGV != 1);
++my ($cfile, $hfile) = @ARGV;
++
++open CFILE, ">$cfile";
++open HFILE, ">$hfile";
++
++my $blank = "";
++my $version = "\$Revision$blank";
++$version =~ s/.Revision: (.*) /$1/;
++print HFILE "/* auto-generated by config2header $version */\n";
++print CFILE "/* auto-generated by config2header $version */\n";
++
++print HFILE "#ifndef INCLUDED_IMAPOPTIONS_H\n";
++print HFILE "#define INCLUDED_IMAPOPTIONS_H\n";
++print HFILE "\n";
++
++# prototypes
++print HFILE <<EOF
++enum imapopt;
++
++enum imapopt {
++  IMAPOPT_ZERO = 0,
++EOF
++    ;
++
++print CFILE <<EOF
++enum opttype {
++  NOTOPT,
++  STRING,
++  INT,
++  SWITCH
++};
++
++struct imapopt_s imapopts[] =
++{
++    { IMAPOPT_ZERO, "", NULL, NOTOPT },
++EOF
++    ;
++
++# output enumeration
++
++while (<STDIN>) {
++    next if (/^\#/);
++    # look for { option, default, type }
++    if (m|{\s*\"(.*?)\"\s*,\s*(\"?.*?\"?)\s*,\s*(.*?)\s*}|) {
++	my $opt = $1;
++	print HFILE "  IMAPOPT_", uc($opt), ",\n";
++
++	print CFILE "  { IMAPOPT_", uc($opt), ", $1, $2, $3 },\n";
++    } else {
++	#chomp;
++	#print "rejected '$_'\n";
++    }
++}
++
++print HFILE <<EOF
++
++  IMAPOPT_LAST
++};
++
++#endif /* INCLUDED_IMAPOPTIONS_H */
++EOF
++    ;
++
++print CFILE <<EOF
++  { IMAPOPT_LAST, NULL, NULL, NOTOPT }
++};
++
++/* c code goes here */
++
++EOF
++;
+Index: tools/config2man
+===================================================================
+RCS file: config2man
+diff -N config2man
+--- /dev/null	Tue May  5 16:32:27 1998
++++ config2man	Fri Jun 14 13:05:16 2002
+@@ -0,0 +1,111 @@
++#!/bin/sh
++# $Id$
++#
++# Copyright (c) 2001 Carnegie Mellon University.  All rights reserved.
++#
++# Redistribution and use in source and binary forms, with or without
++# modification, are permitted provided that the following conditions
++# are met:
++#
++# 1. Redistributions of source code must retain the above copyright
++#    notice, this list of conditions and the following disclaimer. 
++#
++# 2. Redistributions in binary form must reproduce the above copyright
++#    notice, this list of conditions and the following disclaimer in
++#    the documentation and/or other materials provided with the
++#    distribution.
++#
++# 3. The name "Carnegie Mellon University" must not be used to
++#    endorse or promote products derived from this software without
++#    prior written permission. For permission or any other legal
++#    details, please contact  
++#      Office of Technology Transfer
++#      Carnegie Mellon University
++#      5000 Forbes Avenue
++#      Pittsburgh, PA  15213-3890
++#      (412) 268-4387, fax: (412) 268-7395
++#      tech-transfer@andrew.cmu.edu
++#
++# 4. Redistributions of any form whatsoever must retain the following
++#    acknowledgment:
++#    "This product includes software developed by Computing Services
++#     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++#
++# CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++# THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++# AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++# FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++# AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++# OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++#
++exec perl -x -S $0 ${1+"$@"} # -*-perl-*-
++#!perl -w
++
++if ($] !~ /^5\..*/) {
++  # uh-oh. this isn't perl 5.
++  foreach (split(/:/, $ENV{PATH})) { # try to find "perl5".
++    exec("$_/perl5", "-x", "-S", $0, @ARGV) if (-x "$_/perl5");
++  }
++  # we failed. bail.
++  die "Your perl is too old; I need perl 5.\n";
++}
++
++# load the real script. this is isolated in an 'eval' so perl4 won't
++# choke on the perl5-isms.
++eval join("\n", <DATA>);
++if ($@) { die "$@"; }
++
++__END__
++require 5;
++
++use strict;
++
++my $mode = 0;
++my $save = "";
++
++my $blank = "";
++my $version = "\$Revision$blank";
++$version =~ s/.Revision: (.*) /$1/;
++print ".\\\" -*- nroff -*-\n";
++print ".\\\" auto-generated by config2man $version\n";
++
++while (<>) {
++    if ($mode == 0) {
++	# look for { option, default, type }; don't output until we
++	# hit a comment
++	if (m|{\s*\"(.*?)\"\s*,\s*\"?(.*?)\"?\s*,\s*(.*?)\s*}|) {
++	    my $opt = $1;
++	    my $def = $2 eq "NULL" ? "<none>" : $2;
++	    if ($def eq "") { $def = "<empty>" }
++	    $save = ".IP \"\\fB$1:\\fR $def\" 5\n";
++	}
++
++	# look for single-line comment
++	elsif (m|/\*\s*(.*)\s*\*/|) {
++	    print $save; $save = "";
++	    print "$1\n";
++	}
++
++	# look for /* to shift into passthrough mode; print current
++	# cached option header if any
++	elsif (m|/\*\s*(.*)|) {
++	    print $save; $save = "";
++	    print $1;
++	    $mode = 1;
++	}
++	else {
++	    chomp;
++	    #print "ignoring '$_'\n";
++	}
++    } elsif ($mode == 1) {
++	# passthru; look for */ to end
++	if (m|\s*(.*)\*/|) {
++	    print $1;
++	    print "\n";
++	    $mode = 0; # back to search mode
++	} elsif (m|\s*(.*)\s*|) {
++	    print "$1\n";
++	}
++    }
++}

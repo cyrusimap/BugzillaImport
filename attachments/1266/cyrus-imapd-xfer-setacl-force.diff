@@ -1,0 +1,83 @@
+--- imap/imapd.c	7 May 2010 18:44:20 -0000	1.579
++++ imap/imapd.c	7 May 2010 19:28:18 -0000
+@@ -8297,6 +8297,7 @@
+     char *acl_safe = acl_in ? xstrdup(acl_in) : NULL;
+     char *acl = acl_safe;
+     struct buf inbuf;
++    int force = 0;
+     
+     memset(&inbuf, 0, sizeof(struct buf));
+ 
+@@ -8309,13 +8310,14 @@
+ 	if (!nextid) break;
+ 	*nextid++ = '\0';
+ 
++tryforce:
+ 	snprintf(tag, sizeof(tag), "SACL%d", tagnum++);
+ 	
+ 	prot_printf(pout, "%s SETACL {" SIZE_T_FMT "+}\r\n%s"
+-		    " {" SIZE_T_FMT "+}\r\n%s {" SIZE_T_FMT "+}\r\n%s\r\n",
++		    " {" SIZE_T_FMT "+}\r\n%s%s {" SIZE_T_FMT "+}\r\n%s\r\n",
+ 		    tag,
+ 		    strlen(mailbox), mailbox,
+-		    strlen(acl), acl,
++		    strlen(acl)+force, force ? "+" : "", acl,
+ 		    strlen(rights), rights);
+ 
+ 	while(1) {
+@@ -8342,8 +8344,14 @@
+ 	}
+ 
+ 	if(strncmp("OK", inbuf.s, 2)) {
++	    if (!force) {
++		force = 1;
++		goto tryforce;
++	    }
+ 	    r = IMAP_REMOTE_DENIED;
+ 	    break;
++	} else {
++	    force = 0;
+ 	}
+ 
+ 	/* Eat the line and get the next one */
+--- imap/mboxlist.c	6 Jan 2010 17:01:36 -0000	1.273
++++ imap/mboxlist.c	7 May 2010 19:28:18 -0000
+@@ -1685,6 +1685,12 @@
+       goto done;
+     }
+ 
++    /* 2.2 Allow admin user to set rights for invalid IDs */
++    if (!r && !isadmin && *identifier == '+') {
++      r = IMAP_PERMISSION_DENIED;
++      goto done;
++    }
++
+     /* 3. Set DB Entry */
+     if(!r) {
+ 	/* Make change to ACL */
+--- lib/acl_afs.c	6 Jan 2010 17:01:43 -0000	1.29
++++ lib/acl_afs.c	7 May 2010 19:28:18 -0000
+@@ -118,8 +118,14 @@
+     char *newacl;
+     char *thisid, *nextid;
+     int oldaccess = 0;
++    int force = 0;
+     char *rights;
+ 
++    if (*identifier == '+') {
++	identifier++;
++	force++;
++    }
++
+     /* Convert 'identifier' into canonical form */
+     canonid = auth_canonifyid(*identifier == '-' ? identifier+1 : identifier, 0);
+     if (canonid) {
+@@ -131,7 +137,7 @@
+ 	} else {
+ 	    identifier = canonid;
+ 	}
+-    } else if (access != 0L) {
++    } else if (access != 0L && !force) {
+ 	return -1;
+     } else {
+ 	/* trying to delete invalid/non-existent identifier */

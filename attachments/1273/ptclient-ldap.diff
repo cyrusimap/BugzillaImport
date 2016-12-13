@@ -1,0 +1,318 @@
+--- lib/imapoptions	27 Aug 2008 08:28:47 -0000	1.55
++++ lib/imapoptions	19 Sep 2008 02:37:44 -0000
+@@ -376,7 +376,7 @@
+    %D   = user dn.  (use when ldap_member_method: filter)
+    %1-9 = domain tokens (%1 = tld, %2 = domain when %d = domain.tld)
+ 
+-   ldap_filter is not used when ldap_sasl is enabled. */
++   ldap_filter is not used when ldap_proxy_authz is enabled. */
+ 
+ { "ldap_group_base", "", STRING }
+ /* LDAP base dn for ldap_group_filter. */
+@@ -385,6 +385,16 @@
+ /* Specify a filter that searches for group identifiers.
+    See ldap_filter for more options. */ 
+ 
++{ "ldap_group_method", "filter", STRINGLIST("filter", "attribute", "none") }
++/* Specify a group validation method.  The "attribute" method
++   uses a filter, specified by ldap_group_filter, to find (person)
++   entries which contain the group.
++
++   The "filter" method uses a filter, specified by ldap_group_filter,
++   to find a group.
++   
++   The "none" method allows any group name which can be canonicalized. */
++
+ { "ldap_group_scope", "sub", STRINGLIST("sub", "one", "base") }
+ /* Specify search scope for ldap_group_filter. */
+ 
+@@ -405,8 +415,9 @@
+    See ldap_filter for more options. */ 
+ 
+ { "ldap_member_method", "attribute", STRINGLIST("attribute", "filter") }
+-/* Specify a group method.  The "attribute" method retrieves groups from 
+-   a multi-valued attribute specified in ldap_member_attribute.  
++/* Specify a group membership population method.  The "attribute" method
++   retrieves groups from a multi-valued attribute specified in
++   ldap_member_attribute.
+ 
+    The "filter" method uses a filter, specified by ldap_member_filter, to find
+    groups; ldap_member_attribute is a single-value attribute group name. */
+@@ -418,6 +429,11 @@
+ /* Password for the connection to the LDAP server (SASL and simple bind).  
+    Do not use for anonymous simple binds */
+ 
++{ "ldap_proxy_authz", "legacy", STRINGLIST("legacy", "on", "off") }
++/* Use LDAP proxy authz control to determine user DN.  A value of "legacy"
++   causes ldap_sasl to control this behavior.  A value of "off" means use
++   ldap_filter to determine the user DN. */
++
+ { "ldap_realm", NULL, STRING }
+ /* SASL realm for LDAP authentication */
+ 
+@@ -453,7 +469,8 @@
+ /* Deprecated.  Use ldap_uri */
+ 
+ { "ldap_size_limit", 1, INT }
+-/* Specify a number of entries for a search request to return. */
++/* Deprecated.  This value is ignored.  Instead, a size limit of 1 is used
++   where appropriate and LDAP_NO_LIMIT otherwise. */
+ 
+ { "ldap_start_tls", 0, SWITCH }
+ /* Use StartTLS extended operation.  Do not use ldaps: ldap_uri when
+@@ -491,7 +508,7 @@
+ 
+ { "ldap_version", 3, INT }
+ /* Specify the LDAP protocol version.  If ldap_start_tls and/or
+-   ldap_use_sasl are enabled, ldap_version will be automatically
++   ldap_sasl are enabled, ldap_version will be automatically
+    set to 3. */
+ 
+ { "lmtp_downcase_rcpt", 0, SWITCH }
+--- ptclient/ldap.c	10 Apr 2008 18:03:47 -0000	1.15
++++ ptclient/ldap.c	19 Sep 2008 02:37:46 -0000
+@@ -133,7 +133,6 @@
+     const char   *uri;
+     int    version;
+     struct timeval timeout;
+-    int    size_limit;
+     int    time_limit;
+     int    deref;
+     int    referrals;
+@@ -141,6 +140,7 @@
+     int    scope;
+     const char   *base;
+     int    sasl;
++    int    proxy_authz;
+     const char   *id;
+     const char   *bind_dn;
+     const char   *password;
+@@ -161,6 +161,7 @@
+     const char   *member_filter;
+     const char   *member_base;
+     int    member_scope;
++    int    group_method;
+     const char   *group_filter;
+     const char   *group_base;
+     int    group_scope;
+@@ -175,6 +176,10 @@
+ #define PTSM_MEMBER_METHOD_ATTRIBUTE 0
+ #define PTSM_MEMBER_METHOD_FILTER 1
+ 
++#define PTSM_GROUP_METHOD_ATTRIBUTE 0
++#define PTSM_GROUP_METHOD_FILTER 1
++#define PTSM_GROUP_METHOD_NONE 2
++
+ #define ISSET(x)  ((x != NULL) && (*(x) != '\0'))
+ #define EMPTY(x)  ((x == NULL) || (*(x) == '\0'))
+ 
+@@ -368,10 +373,6 @@
+ 		syslog(LOG_WARNING, "Unable to set LDAP_OPT_REFERRALS.");
+ 	}
+ 
+-	rc = ldap_set_option(ptsm->ld, LDAP_OPT_SIZELIMIT, &(ptsm->size_limit));
+-	if (rc != LDAP_OPT_SUCCESS)
+-		syslog(LOG_WARNING, "Unable to set LDAP_OPT_SIZELIMIT %d.", ptsm->size_limit);
+-
+ 	rc = ldap_set_option(ptsm->ld, LDAP_OPT_RESTART, ptsm->restart ? LDAP_OPT_ON : LDAP_OPT_OFF);
+ 	if (rc != LDAP_OPT_SUCCESS) {
+ 		syslog(LOG_WARNING, "Unable to set LDAP_OPT_RESTART.");
+@@ -460,7 +461,6 @@
+         ptsm->deref = LDAP_DEREF_NEVER;
+     }
+     ptsm->referrals = config_getswitch(IMAPOPT_LDAP_REFERRALS);
+-    ptsm->size_limit = config_getint(IMAPOPT_LDAP_SIZE_LIMIT);
+     ptsm->time_limit = config_getint(IMAPOPT_LDAP_TIME_LIMIT);
+     p = config_getstring(IMAPOPT_LDAP_SCOPE);
+     if (!strcasecmp(p, "one")) {
+@@ -472,6 +472,14 @@
+     }
+     ptsm->bind_dn = config_getstring(IMAPOPT_LDAP_BIND_DN);
+     ptsm->sasl = config_getswitch(IMAPOPT_LDAP_SASL);
++    p = config_getstring(IMAPOPT_LDAP_PROXY_AUTHZ);
++    if (!strcasecmp(p, "legacy")) {
++	ptsm->proxy_authz = ptsm->sasl;
++    } else if (!strcasecmp(p, "on")) {
++	ptsm->proxy_authz = 1;
++    } else {
++	ptsm->proxy_authz = 0;
++    }
+     ptsm->id = (config_getstring(IMAPOPT_LDAP_ID) ? 
+         config_getstring(IMAPOPT_LDAP_ID) : config_getstring(IMAPOPT_LDAP_SASL_AUTHC));
+     ptsm->authz = (config_getstring(IMAPOPT_LDAP_AUTHZ) ? 
+@@ -507,6 +515,14 @@
+     ptsm->member_base = config_getstring(IMAPOPT_LDAP_MEMBER_BASE);
+     ptsm->member_attribute = (config_getstring(IMAPOPT_LDAP_MEMBER_ATTRIBUTE) ?
+         config_getstring(IMAPOPT_LDAP_MEMBER_ATTRIBUTE) : config_getstring(IMAPOPT_LDAP_MEMBER_ATTRIBUTE));
++    p = config_getstring(IMAPOPT_LDAP_GROUP_METHOD);
++    if (!strcasecmp(p, "filter")) {
++        ptsm->group_method = PTSM_GROUP_METHOD_FILTER;
++    } else if (!strcasecmp(p, "attribute")) {
++        ptsm->group_method = PTSM_GROUP_METHOD_ATTRIBUTE;
++    } else {
++        ptsm->group_method = PTSM_GROUP_METHOD_NONE;
++    }
+     p = config_getstring(IMAPOPT_LDAP_GROUP_SCOPE);
+     if (!strcasecmp(p, "one")) {
+         ptsm->group_scope = LDAP_SCOPE_ONELEVEL;
+@@ -781,6 +797,7 @@
+     char **ret)
+ {
+     int rc;
++    int size_limit;
+ 
+ #if LDAP_VENDOR_VERSION >= 20125
+     struct berval *dn = NULL;
+@@ -789,7 +806,7 @@
+     char *authzid;
+ #endif
+     char *base = NULL, *filter = NULL;
+-    char *attrs[] = {NULL};
++    char *attrs[] = {LDAP_NO_ATTRS, NULL};
+     LDAPMessage *res;
+     LDAPMessage *entry;
+     char *attr, **vals;
+@@ -802,7 +819,7 @@
+ 
+ #if LDAP_VENDOR_VERSION >= 20125
+ 
+-    if (ptsm->sasl) {
++    if (ptsm->proxy_authz) {
+ 
+         authzid = xmalloc(size + sizeof("u:"));
+         if (authzid == NULL)
+@@ -846,6 +863,11 @@
+         if (rc != PTSM_OK)
+             return rc;
+ 
++	size_limit = 1;
++	rc = ldap_set_option(ptsm->ld, LDAP_OPT_SIZELIMIT, &size_limit);
++	if (rc != LDAP_OPT_SUCCESS)
++		syslog(LOG_WARNING, "Unable to set LDAP_OPT_SIZELIMIT %d.", size_limit);
++
+         rc = ldap_search_st(ptsm->ld, base, ptsm->scope, filter, attrs, 0, &(ptsm->timeout), &res);
+         free(filter);
+         free(base);
+@@ -986,6 +1008,7 @@
+ {
+     char *base = NULL, *filter = NULL;
+     int rc;
++    int size_limit;
+     int i; int n;
+     LDAPMessage *res = NULL;
+     LDAPMessage *entry = NULL;
+@@ -1017,6 +1040,11 @@
+         goto done;
+     }
+ 
++    size_limit = LDAP_NO_LIMIT;
++    rc = ldap_set_option(ptsm->ld, LDAP_OPT_SIZELIMIT, &size_limit);
++    if (rc != LDAP_OPT_SUCCESS)
++	    syslog(LOG_WARNING, "Unable to set LDAP_OPT_SIZELIMIT %d.", size_limit);
++
+     rc = ldap_search_st(ptsm->ld, base, ptsm->member_scope, filter, attrs, 0, &(ptsm->timeout), &res);
+     if (rc != LDAP_SUCCESS) {
+         *reply = "ldap_search(filter) failed";
+@@ -1024,8 +1052,15 @@
+             ldap_unbind(ptsm->ld);
+             ptsm->ld = NULL;
+             rc = PTSM_RETRY;
+-        } else
++	} else {
++	    /*
++	     * We do have a (truncated) result in this case.  Should we use it?
++	     */
++	    if (rc == LDAP_SIZELIMIT_EXCEEDED) {
++		*reply = "ldap_search(filter) size limit exceeded";
++	    }
+             rc = PTSM_FAIL;
++        }
+         goto done;
+     }
+ 
+@@ -1105,17 +1140,20 @@
+ {
+     char *base = NULL, *filter = NULL;
+     int rc;
++    int size_limit;
+     int i; int n;
+     LDAPMessage *res = NULL;
+-    LDAPMessage *entry = NULL;
+-    char **vals = NULL;
+-    char *attrs[] = {NULL};
++    char *attrs[] = {LDAP_NO_ATTRS, NULL};
+ 
+     if (strncmp(canon_id, "group:", 6))  { // Sanity check
+         *reply = "not a group identifier";
+         return PTSM_FAIL;
+     }
+ 
++    if (ptsm->group_method == PTSM_GROUP_METHOD_NONE) {
++	goto none;
++    }
++
+     rc = ptsmodule_connect();
+     if (rc != PTSM_OK) {
+         *reply = "ptsmodule_connect() failed";
+@@ -1134,6 +1172,16 @@
+         goto done;
+     }
+ 
++
++    if (ptsm->group_method == PTSM_GROUP_METHOD_FILTER) {
++	size_limit = 1;
++    } else {
++	size_limit = LDAP_NO_LIMIT;
++    }
++    rc = ldap_set_option(ptsm->ld, LDAP_OPT_SIZELIMIT, &size_limit);
++    if (rc != LDAP_OPT_SUCCESS)
++	    syslog(LOG_WARNING, "Unable to set LDAP_OPT_SIZELIMIT %d.", size_limit);
++
+     rc = ldap_search_st(ptsm->ld, base, ptsm->group_scope, filter, attrs, 0, &(ptsm->timeout), &res);
+     if (rc != LDAP_SUCCESS) {
+         *reply = "ldap_search(group) failed";
+@@ -1141,20 +1189,39 @@
+             ldap_unbind(ptsm->ld);
+             ptsm->ld = NULL;
+             rc = PTSM_RETRY;
+-        } else
++	    goto done;
++        } else if (rc == LDAP_SIZELIMIT_EXCEEDED) {
++	    /*
++	     * If the method is "attribute", size limit doesn't
++	     * indicate a problem.
++	     */
++	    if (ptsm->group_method == PTSM_GROUP_METHOD_FILTER) {
++		*reply = "ambiguous group identifier found (size limit)";
++		rc = PTSM_FAIL;
++		goto done;
++	    }
++	} else {
+             rc = PTSM_FAIL;
+-        goto done;
++	    goto done;
++	}
+     }
+ 
+     n = ldap_count_entries(ptsm->ld, res);
+-    if (n != 1) {
++    if (n == 0) {
+         *reply = "group identifier not found";
+         rc = PTSM_FAIL;
+         goto done;
+     }
+ 
+-    *dsize = sizeof(struct auth_state) +
+-             (n * sizeof(struct auth_ident));
++    if (n > 1 && ptsm->group_method == PTSM_GROUP_METHOD_FILTER) {
++        *reply = "ambiguous group identifier found";
++        rc = PTSM_FAIL;
++        goto done;
++    }
++
++none:;
++
++    *dsize = sizeof(struct auth_state);
+     *newstate = xmalloc(*dsize);
+     if (*newstate == NULL) {
+         *reply = "no memory";

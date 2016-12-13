@@ -1,0 +1,50 @@
+Index: append.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/append.c,v
+retrieving revision 1.90
+diff -u -r1.90 append.c
+--- append.c	2002/04/02 17:16:13	1.90
++++ append.c	2002/04/22 19:45:03
+@@ -69,7 +69,7 @@
+     char fname[1024];
+ 
+     int num_parts;
+-    char parts[1][MAX_MAILBOX_PATH];
++    char (*parts)[MAX_MAILBOX_PATH];
+ };
+ 
+ static int append_addseen(struct mailbox *mailbox, const char *userid,
+@@ -380,8 +380,8 @@
+     assert(mailboxname != NULL);
+     assert(stagep != NULL);
+ 
+-    stage = xmalloc(sizeof(struct stagemsg) +
+-		    5 * MAX_MAILBOX_PATH * sizeof(char));
++    stage = xmalloc(sizeof(struct stagemsg));
++    stage->parts = xmalloc(5 * MAX_MAILBOX_PATH * sizeof(char));
+ 
+     sprintf(stage->fname, "%d-%d",(int) getpid(), (int) internaldate);
+     stage->num_parts = 5; /* room for 5 paths */
+@@ -486,9 +486,9 @@
+ 	if (sp == stage->num_parts) {
+ 	    /* need more room */
+ 	    stage->num_parts += 5;
+-	    stage = xrealloc(stage, sizeof(struct stagemsg) +
+-			     stage->num_parts * MAX_MAILBOX_PATH * 
+-			     sizeof(char));
++	    stage->parts = xrealloc(stage->parts,
++				    stage->num_parts * MAX_MAILBOX_PATH * 
++				    sizeof(char));
+ 	}
+ 	strcpy(stage->parts[sp], stagefile);
+ 	stage->parts[sp+1][0] = '\0';
+@@ -608,7 +608,8 @@
+ 	}
+ 	i++;
+     }
+-
++    
++    free(stage->parts);
+     free(stage);
+     return 0;
+ }

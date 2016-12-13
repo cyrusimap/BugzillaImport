@@ -1,0 +1,168 @@
+diff -r -C 10 cyrus-sasl-2.1.14.orig/plugins/mysql.c cyrus-sasl-2.1.14/plugins/mysql.c
+*** cyrus-sasl-2.1.14.orig/plugins/mysql.c	Wed May 14 20:46:02 2003
+--- cyrus-sasl-2.1.14/plugins/mysql.c	Thu Jul  3 17:36:23 2003
+***************
+*** 9,28 ****
+--- 9,29 ----
+  **
+  **   The plugin uses the following options in the
+  ** sasl application config file ( usually in /usr/lib/sasl2 )
+  **
+  **  mysql_user: <username to login as>
+  **  mysql_passwd: <password to use>
+  **  mysql_hostnames: < comma seprated host list >
+  **  mysql_database: <database to connect to>
+  **  mysql_statement: <select statement to use>
+  **  mysql_verbose:  ( if it exists will print select statement to syslog )
++ **  mysql_ssl: (use SSL secured session)
+  **
+  **   The select statement used in the option mysql_statement is parsed
+  ** for 3 place holders %u %r and %p they are replaced with username
+  ** realm and property required respectively.
+  **
+  **  e.g
+  **    mysql_statement: select %p from user_table where username = %u and
+  **    realm = %r
+  **  would produce a statement like this :-
+  **
+***************
+*** 61,80 ****
+--- 62,82 ----
+  #include <ctype.h>
+  
+  #include "plugin_common.h"
+  
+  typedef struct mysql_settings {
+      const char *mysql_user;
+      const char *mysql_passwd;
+      const char *mysql_hostnames;
+      const char *mysql_database;
+      const char *mysql_statement;
++     int mysql_ssl;
+      int mysql_verbose;
+      int have_settings;
+  } mysql_settings_t;
+  
+  static const char * MYSQL_BLANK_STRING = "";
+  
+  /*
+  **  Mysql_create_statemnet
+  **   uses select line and allocate memory to replace
+  **  Parts with the strings provided.
+***************
+*** 175,194 ****
+--- 177,197 ----
+  
+  /* mysql_get_settings
+  **
+  **  Get the auxprop settings and put them in 
+  ** The global context array
+  */
+  void mysql_get_settings(const sasl_utils_t *utils,void *glob_context) {
+      struct mysql_settings *settings;
+      int r;
+      char *verbose_test;
++     char *ssl_test;
+      
+      settings = (struct mysql_settings *)glob_context;
+      /* do I have to allocate memory for the vars only testing will tell */
+      /*( probably )*/
+      if ( settings->have_settings == 0 ) {
+  	utils->getopt(utils->getopt_context,
+  		      "MYSQL","mysql_verbose",
+  		      (const char **)&verbose_test,NULL);
+  	if ( verbose_test != NULL ) {
+  	    settings->mysql_verbose = 1;
+***************
+*** 217,236 ****
+--- 220,250 ----
+  	r = utils->getopt(utils->getopt_context,"MYSQL", "mysql_database",
+  			  &settings->mysql_database, NULL);
+  	if ( r || !settings->mysql_database ) {
+  	    settings->mysql_database = MYSQL_BLANK_STRING;
+  	}
+  	r = utils->getopt(utils->getopt_context,"MYSQL", "mysql_statement",
+  		          &settings->mysql_statement, NULL);
+  	if ( r || !settings->mysql_statement ) {
+  	    settings->mysql_statement = MYSQL_BLANK_STRING;
+  	}
++ 
++ 	/* check for ssl request */
++ 	utils->getopt(utils->getopt_context,"MYSQL","mysql_ssl", (const char **)&ssl_test,NULL);
++ 
++ 	if (ssl_test != NULL) {
++ 		settings->mysql_ssl = 1;
++ 		utils->log(NULL, SASL_LOG_WARN, "mysql auxprop plugin requested SSL secured database session\n");
++ 	} else
++ 		settings->mysql_ssl = 0;
++ 
++ 	
+  	settings->have_settings = 1;
+      }
+  }
+  
+  static void mysql_auxprop_lookup(void *glob_context,
+  				 sasl_server_params_t *sparams,
+  				 unsigned flags,
+  				 const char *user,
+  				 unsigned ulen) 
+  {
+***************
+*** 319,342 ****
+  	    /* loop till we find some text */
+  	    while (!isalnum(db_host[0]))
+  		db_host++;
+  	}
+  	
+  	if (settings->mysql_verbose)
+  	    sparams->utils->log(NULL, SASL_LOG_WARN,
+  				"mysql plugin try and connect to %s\n",
+  				cur_host);
+  
+! 	sock = mysql_real_connect(&mysql,cur_host,
+! 				  settings->mysql_user,
+! 			          settings->mysql_passwd,
+! 				  NULL, 0, NULL, 0);
+  	if (sock) break;
+  	
+  	cur_host = db_host;
+      }
+      
+      if ( !sock ) {
+  	sparams->utils->log(NULL, SASL_LOG_ERR,
+  			    "mysql plugin couldnt connect to any host\n");
+  	goto done;
+      }
+--- 333,364 ----
+  	    /* loop till we find some text */
+  	    while (!isalnum(db_host[0]))
+  		db_host++;
+  	}
+  	
+  	if (settings->mysql_verbose)
+  	    sparams->utils->log(NULL, SASL_LOG_WARN,
+  				"mysql plugin try and connect to %s\n",
+  				cur_host);
+  
+! 	mysql_init(&mysql);
+! 
+! 	/* connect to database */
+! 	if (settings->mysql_ssl) {
+! 		if (settings->mysql_verbose)
+! 			sparams->utils->log(NULL, SASL_LOG_WARN, "mysql plugin database connect using SSL secured session\n");
+! 		
+! 		sock = mysql_real_connect(&mysql, cur_host, settings->mysql_user, settings->mysql_passwd, NULL, 0, NULL, CLIENT_SSL);
+! 
+! 	} else
+! 		sock = mysql_real_connect(&mysql, cur_host, settings->mysql_user, settings->mysql_passwd, NULL, 0, NULL, 0);
+! 
+  	if (sock) break;
+  	
+  	cur_host = db_host;
+      }
+      
+      if ( !sock ) {
+  	sparams->utils->log(NULL, SASL_LOG_ERR,
+  			    "mysql plugin couldnt connect to any host\n");
+  	goto done;
+      }

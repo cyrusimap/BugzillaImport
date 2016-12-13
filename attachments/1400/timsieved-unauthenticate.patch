@@ -1,0 +1,239 @@
+diff -ru cyrus-imapd-2.4.10/lib/prot.c cyrus-imapd-2.4.10-unauthenticate/lib/prot.c
+--- cyrus-imapd-2.4.10/lib/prot.c	2011-07-04 15:05:01.000000000 +0000
++++ cyrus-imapd-2.4.10-unauthenticate/lib/prot.c	2011-07-15 17:46:03.199148066 +0000
+@@ -264,6 +264,18 @@
+     return 0;
+ }
+ 
++/*
++ * Turn off SASL for this connection
++ */
++
++int prot_unsetsasl(s)
++struct protstream *s;
++{
++  s->conn = NULL;
++  s->maxplain = PROT_BUFSIZE;
++  s->saslssf = 0;
++}
++
+ #ifdef HAVE_ZLIB
+ 
+ #define ZLARGE_DIFF_CHUNK (5120) /* 5K */
+diff -ru cyrus-imapd-2.4.10/lib/prot.h cyrus-imapd-2.4.10-unauthenticate/lib/prot.h
+--- cyrus-imapd-2.4.10/lib/prot.h	2011-07-04 15:05:01.000000000 +0000
++++ cyrus-imapd-2.4.10-unauthenticate/lib/prot.h	2011-07-15 17:45:11.769148002 +0000
+@@ -196,6 +196,7 @@
+ /* Set the SASL options for a protstream (requires authentication to
+  * be complete for the given sasl_conn_t */
+ extern int prot_setsasl(struct protstream *s, sasl_conn_t *conn);
++extern int prot_unsetsasl(struct protstream *s);
+ 
+ #ifdef HAVE_SSL
+ /* Set TLS options for a given protstream (requires a completed tls
+diff -ru cyrus-imapd-2.4.10/timsieved/actions.c cyrus-imapd-2.4.10-unauthenticate/timsieved/actions.c
+--- cyrus-imapd-2.4.10/timsieved/actions.c	2011-07-04 15:05:01.000000000 +0000
++++ cyrus-imapd-2.4.10-unauthenticate/timsieved/actions.c	2011-07-18 16:29:49.041910997 +0000
+@@ -83,7 +83,7 @@
+    directory! */
+ 
+ extern int sieved_userisadmin;
+-char *sieve_dir = NULL;
++static char *sieve_dir_config = NULL;
+ 
+ static const char *sieved_userid = NULL;
+ 
+@@ -94,7 +94,7 @@
+   sieve_usehomedir = config_getswitch(IMAPOPT_SIEVEUSEHOMEDIR);
+   
+   if (!sieve_usehomedir) {
+-      sieve_dir = (char *) config_getstring(IMAPOPT_SIEVEDIR);
++      sieve_dir_config = (char *) config_getstring(IMAPOPT_SIEVEDIR);
+   } else {
+       /* can't use home directories with timsieved */
+       syslog(LOG_ERR, "can't use home directories");
+@@ -108,11 +108,10 @@
+ int actions_setuser(const char *userid)
+ {
+   char userbuf[1024], *user, *domain = NULL;
+-  char *foo = sieve_dir;
+   size_t size = 1024, len;
+   int result;  
+ 
+-  sieve_dir = (char *) xzmalloc(size+1);
++  char *sieve_dir = (char *) xzmalloc(size+1);
+   
+   sieved_userid = xstrdup(userid);
+   user = (char *) userid;
+@@ -123,7 +122,7 @@
+       if ((domain = strrchr(user, '@'))) *domain++ = '\0';
+   }
+ 
+-  len = strlcpy(sieve_dir, foo, size);
++  len = strlcpy(sieve_dir, sieve_dir_config, size);
+ 
+   if (domain) {
+       char dhash = (char) dir_hash_c(domain, config_fulldirhash);
+@@ -146,10 +145,12 @@
+       if (!result) result = chdir(sieve_dir);
+       if (result) {
+ 	  syslog(LOG_ERR, "mkdir %s: %m", sieve_dir);
++	  free(sieve_dir);
+ 	  return TIMSIEVE_FAIL;
+       }
+   }
+ 
++  free(sieve_dir);
+   return TIMSIEVE_OK;
+ }
+ 
+@@ -205,6 +206,7 @@
+     if (tls_enabled() && !starttls_done && !authenticated) {
+ 	prot_printf(conn, "\"STARTTLS\"\r\n");
+     }
++    prot_printf(conn, "\"UNAUTHENTICATE\"\r\n");
+ 
+     prot_printf(conn,"OK\r\n");
+ 
+diff -ru cyrus-imapd-2.4.10/timsieved/lex.c cyrus-imapd-2.4.10-unauthenticate/timsieved/lex.c
+--- cyrus-imapd-2.4.10/timsieved/lex.c	2011-07-04 15:05:01.000000000 +0000
++++ cyrus-imapd-2.4.10-unauthenticate/timsieved/lex.c	2011-07-17 13:50:41.810466029 +0000
+@@ -82,6 +82,7 @@
+     case 'g':
+ 	if (strcmp(str, "getscript")==0) return GETSCRIPT;
+ 	break;
++
+     case 'h':
+ 	if (strcmp(str, "havespace")==0) return HAVESPACE;
+ 	break;
+@@ -91,6 +92,10 @@
+ 	if (strcmp(str, "logout")==0) return LOGOUT;
+ 	break;
+ 
++    case 'n':
++	if (strcmp(str, "noop")==0) return NOOP;
++	break;
++
+     case 'p':
+ 	if (strcmp(str, "putscript")==0) return PUTSCRIPT;
+ 	break;
+@@ -100,6 +105,10 @@
+ 	if (strcmp(str, "starttls")==0 && tls_enabled())
+ 	    return STARTTLS;
+ 	break;
++
++    case 'u':
++	if (strcmp(str, "unauthenticate")==0) return UNAUTHENTICATE;
++	break;
+     }
+ 
+     /* error, nothing matched */
+diff -ru cyrus-imapd-2.4.10/timsieved/lex.h cyrus-imapd-2.4.10-unauthenticate/timsieved/lex.h
+--- cyrus-imapd-2.4.10/timsieved/lex.h	2011-07-04 15:05:01.000000000 +0000
++++ cyrus-imapd-2.4.10-unauthenticate/timsieved/lex.h	2011-07-17 13:48:36.261466001 +0000
+@@ -80,6 +80,8 @@
+ #define CAPABILITY   407
+ #define HAVESPACE    408
+ #define STARTTLS     409
++#define NOOP	     410
++#define UNAUTHENTICATE 411
+ 
+ 
+ int lex_init(void);
+diff -ru cyrus-imapd-2.4.10/timsieved/parser.c cyrus-imapd-2.4.10-unauthenticate/timsieved/parser.c
+--- cyrus-imapd-2.4.10/timsieved/parser.c	2011-07-04 15:05:01.000000000 +0000
++++ cyrus-imapd-2.4.10-unauthenticate/timsieved/parser.c	2011-07-18 16:18:24.562061025 +0000
+@@ -101,6 +101,8 @@
+ 		       struct protstream *sieved_in);
+ static int cmd_authenticate(struct protstream *sieved_out, struct protstream *sieved_in,
+ 			    mystring_t *mechanism_name, mystring_t *initial_challenge, const char **errmsg);
++static int cmd_unauthenticate(struct protstream *sieved_out,
++			      struct protstream *sieved_in);
+ static int cmd_starttls(struct protstream *sieved_out, struct protstream *sieved_in);
+ 
+ static char *sieve_parsesuccess(char *str, const char **status)
+@@ -152,6 +154,7 @@
+ 
+   if (!authenticated && (token > 255) && (token!=AUTHENTICATE) &&
+       (token!=LOGOUT) && (token!=CAPABILITY) &&
++      (token!=NOOP) &&
+       (!tls_enabled() || (token!=STARTTLS)))
+   {
+     error_msg = "Authenticate first";
+@@ -454,6 +457,57 @@
+     
+     break;
+ 
++  case NOOP:
++
++    token = timlex(NULL, NULL, sieved_in);
++    mystring_t *noop_param = NULL;
++    if (token != EOL)
++    {
++      /* optional string parameter */
++      if (token!=SPACE)
++      {
++	error_msg = "Expected SPACE";
++	goto error;
++      }
++
++      if (timlex(&noop_param, NULL, sieved_in)!=STRING)
++      {
++	error_msg = "Expected string";
++	free(noop_param);
++	goto error;
++      }
++
++      token = timlex(NULL, NULL, sieved_in);      
++    }
++
++    if (token != EOL)
++    {
++      error_msg = "Expected EOL";
++      free(noop_param);
++      goto error;
++    }
++
++    if (noop_param != NULL) {
++      int temp;
++      char* dataptr = string_DATAPTR(noop_param);
++      prot_printf(sieved_out, "OK (TAG {%d}\r\n", noop_param->len);
++      for (temp = 0; temp < noop_param->len; temp++)
++      prot_putc(dataptr[temp], sieved_out);
++      prot_printf(sieved_out, ") \"Done\"\r\n");
++      free(noop_param);
++    } else
++      prot_printf(sieved_out, "OK \"Done\"\r\n");
++    break;
++
++  case UNAUTHENTICATE:
++      if (timlex(NULL, NULL, sieved_in)!=EOL)
++      {
++	  error_msg = "Expected EOL";
++	  goto error;
++      }
++      cmd_unauthenticate(sieved_out, sieved_in);
++      break;
++
+   default:
+     error_msg="Expected a command. Got something else.";
+     goto error;
+@@ -516,6 +570,18 @@
+ 
+ extern int reset_saslconn(sasl_conn_t **conn, sasl_ssf_t ssf, char *authid);
+ 
++static int cmd_unauthenticate(struct protstream *sieved_out,
++			      struct protstream *sieved_in)
++{
++    if (chdir("/tmp/"))
++	syslog(LOG_ERR, "Failed to chdir to /tmp/");
++    reset_saslconn(&sieved_saslconn, sieved_in->saslssf, authid);
++    prot_unsetsasl(sieved_out);
++    prot_unsetsasl(sieved_in);
++    prot_printf(sieved_out, "OK\r\n");
++    authenticated = 0;
++}
++
+ static int cmd_authenticate(struct protstream *sieved_out,
+ 			    struct protstream *sieved_in,
+ 			    mystring_t *mechanism_name,

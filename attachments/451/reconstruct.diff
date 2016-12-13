@@ -1,0 +1,106 @@
+*** reconstruct.c	Fri Aug  4 12:38:11 2006
+--- reconstruct.c-	Thu Aug  3 15:41:08 2006
+***************
+*** 437,446 ****
+      unsigned long *uid;
+      int uid_num, uid_alloc;
+  
+-     unsigned long *expuid;
+-     int expuid_num, expuid_alloc;
+-     int expmsg;
+- 
+      int msg, old_msg = 0;
+      int new_exists = 0, 
+  	new_answered = 0,
+--- 437,442 ----
+***************
+*** 585,594 ****
+      fwrite(buf, 1, INDEX_HEADER_SIZE, newindex);
+      retry_write(newcache_fd, buf, sizeof(bit32));
+  
+-     expuid = (unsigned long *) xmalloc(UIDGROW * sizeof(unsigned long));
+-     expuid_num = 0;
+-     expuid_alloc = UIDGROW;
+- 
+      /* Remove any previously expunged messages */
+      /* XXX  For two-phase we will need to keep the messages referenced
+         in cyrus.expunge and refresh its header and offsets */
+--- 581,586 ----
+***************
+*** 641,656 ****
+  		    mailbox_message_get_fname(&mailbox, uid,
+  					  msgfname, sizeof(msgfname));
+  		    unlink(msgfname);
+- 		} else {
+- 
+- 		    if (expuid_num == expuid_alloc) {
+- 			expuid_alloc += UIDGROW;
+- 			expuid = (unsigned long *)
+- 	    xrealloc((char *)expuid, expuid_alloc * sizeof(unsigned long));
+- 		    }
+- 	    	    expuid[expuid_num] = 0;
+- 		    expuid[expuid_num] = uid;
+- 	            expuid_num++;
+  		}
+  	    }
+  	}
+--- 633,638 ----
+***************
+*** 659,668 ****
+  	close(expunge_fd);
+      }
+      unlink(fnamebuf);
+-     if (expuid_num > 0) {
+- 	qsort((char *)expuid, expuid_num, sizeof(*expuid), compare_uid);
+-     }
+- 	
+  
+      /* Find all message files in directory */
+      uid = (unsigned long *) xmalloc(UIDGROW * sizeof(unsigned long));
+--- 641,646 ----
+***************
+*** 766,778 ****
+  	    /* If we are recovering a message, reset MODSEQ */
+  	    message_index.modseq = 1;
+  	}
+- 
+-     for (expmsg = 0; expmsg < expuid_num; expmsg++) {
+- 	if (message_index.uid == expuid [expmsg]) {
+- 	    message_index.system_flags |= FLAG_DELETED;
+- 	    break;
+-         }
+-     }
+  	message_index.last_updated = time(0);
+  	if (message_index.modseq > mailbox.highestmodseq) {
+  	    mailbox.highestmodseq = message_index.modseq;
+--- 744,749 ----
+***************
+*** 784,790 ****
+  	    fclose(newindex);
+  	    mailbox_close(&mailbox);
+  	    free(uid);
+- 	    free(expuid);
+  	    return r;
+  	}
+  	fclose(msgfile);
+--- 755,760 ----
+***************
+*** 798,804 ****
+  	    fclose(newindex);
+  	    mailbox_close(&mailbox);
+  	    free(uid);
+- 	    free(expuid);
+  	    return IMAP_IOERROR;
+  	}
+  
+--- 768,773 ----
+***************
+*** 824,830 ****
+      }
+  
+      free(uid);
+-     free(expuid);
+      *((bit32 *)(buf+OFFSET_GENERATION_NO)) = htonl(mailbox.generation_no + 1);
+      *((bit32 *)(buf+OFFSET_FORMAT)) = htonl(mailbox.format);
+      *((bit32 *)(buf+OFFSET_MINOR_VERSION)) = htonl(MAILBOX_MINOR_VERSION);
+--- 793,798 ----

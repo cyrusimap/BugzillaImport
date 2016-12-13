@@ -1,0 +1,237 @@
+diff -ru cyrus-imapd-2.1.4.orig/master/master.c cyrus-imapd-2.1.4/master/master.c
+--- cyrus-imapd-2.1.4.orig/master/master.c	Thu Apr 11 18:47:29 2002
++++ cyrus-imapd-2.1.4/master/master.c	Fri May 17 14:57:41 2002
+@@ -123,11 +123,13 @@
+ 
+ struct centry {
+     pid_t pid;
++    int is_available;
+     struct service *s;
+     struct centry *next;
+ };
+ static struct centry *ctable[child_table_size];
+ static struct centry *cfreelist;
++static struct centry *morgue;
+ 
+ void limit_fds(rlim_t);
+ void schedule_event(struct event *a);
+@@ -586,6 +588,7 @@
+ 	/* add to child table */
+ 	c = get_centry();
+ 	c->pid = p;
++	c->is_available = 1;
+ 	c->s = s;
+ 	c->next = ctable[p % child_table_size];
+ 	ctable[p % child_table_size] = c;
+@@ -717,11 +720,21 @@
+ 	    /* first thing in the linked list */
+ 
+ 	    /* decrement active count for service */
+-	    if (c->s) c->s->nactive--;
++	    if (c->s) {
++		c->s->nactive--;
++		if (c->is_available) {
++		    c->s->ready_workers--;
++		    if (WIFSIGNALED(status) ||
++			(WIFEXITED(status) && WEXITSTATUS(status))) {
++			syslog(LOG_WARNING, "available child %d terminated abnormally",
++			       pid);
++		    }
++		}
++	    }
+ 
+ 	    ctable[pid % child_table_size] = c->next;
+-	    c->next = cfreelist;
+-	    cfreelist = c;
++	    c->next = morgue;
++	    morgue = c;
+ 	} else {
+ 	    /* not the first thing in the linked list */
+ 
+@@ -734,11 +747,21 @@
+ 
+ 		t = c->next;
+ 		/* decrement active count for service */
+-		if (t->s) t->s->nactive--;
++		if (t->s) {
++		    t->s->nactive--;
++		    if (c->is_available) {
++			t->s->ready_workers--;
++			if (WIFSIGNALED(status) ||
++			    (WIFEXITED(status) && WEXITSTATUS(status))) {
++			    syslog(LOG_WARNING, "available child %d terminated abnormally",
++				   pid);
++			}
++		    }
++		}
+ 
+ 		c->next = t->next; /* remove node */
+-		t->next = cfreelist; /* add to freelist */
+-		cfreelist = t;
++		t->next = morgue;
++		morgue = t;
+ 	    } else {
+ 		/* yikes! don't know about this child! */
+ 		syslog(LOG_ERR, "process %d not recognized", pid);
+@@ -747,14 +770,14 @@
+     }
+ }
+ 
+-static int gotsigchld = 0;
++static volatile int gotsigchld = 0;
+ 
+ void sigchld_handler(int sig __attribute__((unused)))
+ {
+     gotsigchld = 1;
+ }
+ 
+-static int gotsighup = 0;
++static volatile int gotsighup = 0;
+ 
+ void sighup_handler(int sig __attribute__((unused)))
+ {
+@@ -824,30 +847,73 @@
+     }
+ }
+ 
+-void process_msg(struct service *s, int msg)
++void process_msg(struct service *s, struct notify_message *msg)
+ {
+-    switch (msg) {
++    struct centry * c;
++    struct centry * t = NULL;
++    int in_morgue = 0;
++
++    /* Search hash table with linked list for pid */
++    c = ctable[msg->service_pid % child_table_size];
++    while (c && c->pid != msg->service_pid) c = c->next;
++
++    /* remember the recently deceased */
++    if (!c) {
++	in_morgue = 1; /* speaker to the dead */
++	c = morgue;
++	while (c && c->pid != msg->service_pid) {
++	    t = c;
++	    c = c->next;
++	}
++    }
++
++    /* Did we find it? */
++    if (!c || c->pid != msg->service_pid) {
++	syslog(LOG_ERR, "can't find pid %d to process message %d", 
++			msg->service_pid, msg->message);
++	return;
++    }
++
++    switch (msg->message) {
+     case MASTER_SERVICE_AVAILABLE:
+-	s->ready_workers++;
++	if (!in_morgue) {
++	    c->is_available = 1;
++	    s->ready_workers++;
++	}
+ 	break;
+ 
+     case MASTER_SERVICE_UNAVAILABLE:
+-	s->ready_workers--;
++	if (!in_morgue) {
++	    c->is_available = 0;
++	    s->ready_workers--;
++	}
+ 	break;
+ 
+     case MASTER_SERVICE_CONNECTION:
++	if (!in_morgue && c->is_available) {
++	   syslog(LOG_ERR, "still available child pid %d, service %s reported new connection",
++			   msg->service_pid, s->name);
++	}
+ 	s->nconnections++;
+ 	break;
+-	
++
+     default:
+ 	syslog(LOG_ERR, "unrecognized message for service '%s': %x", 
+-	       s->name, msg);
++	       s->name, msg->message);
+ 	break;
+     }
+ 
+     if (verbose)
+ 	syslog(LOG_DEBUG, "service %s now has %d workers\n", 
+ 	       s->name, s->ready_workers);
++
++    if (in_morgue) {
++	/* Let child go to final rest */
++	if (t) t->next = c->next;
++	else morgue = c->next;
++	c->next = cfreelist;
++	cfreelist = c;
++    }
+ }
+ 
+ static char **tokenize(char *p)
+@@ -1241,7 +1307,7 @@
+     syslog(LOG_NOTICE, "ready for work");
+ 
+     for (;;) {
+-	int r, i, msg, maxfd;
++	int r, i, maxfd;
+ 	struct timeval tv, *tvptr;
+ 	time_t now = time(NULL);
+ #if HAVE_UCDSNMP
+@@ -1349,13 +1415,15 @@
+ 	    int j;
+ 
+ 	    if (FD_ISSET(x, &rfds)) {
+-		r = read(x, &msg, sizeof(int));
+-		if (r != sizeof(int)) {
++		struct notify_message message;
++
++		r = read(x, &message, sizeof(message));
++		if (r != sizeof(message)) {
+ 		    syslog(LOG_ERR, "got weird response from child: %x", i);
+ 		    continue;
+ 		}
+-		
+-		process_msg(&Services[i], msg);
++
++		process_msg(&Services[i], &message);
+ 	    }
+ 
+ 	    if (Services[i].nactive < Services[i].max_workers) {
+diff -ru cyrus-imapd-2.1.4.orig/master/service.c cyrus-imapd-2.1.4/master/service.c
+--- cyrus-imapd-2.1.4.orig/master/service.c	Fri Mar  8 16:26:17 2002
++++ cyrus-imapd-2.1.4/master/service.c	Fri May 17 14:57:41 2002
+@@ -74,13 +74,16 @@
+ /* number of times this service has been used */
+ static int use_count = 0;
+ static int verbose = 0;
+-static int gotalrm = 0;
++static volatile int gotalrm = 0;
+ static int lockfd = -1;
+ 
+ void notify_master(int fd, int msg)
+ {
+-    if (verbose) syslog(LOG_DEBUG, "telling master %d", msg);
+-    if (write(fd, &msg, sizeof(msg)) != sizeof(msg)) {
++    struct notify_message notifymsg;
++    if (verbose) syslog(LOG_DEBUG, "telling master %x", msg);
++    notifymsg.message = msg;
++    notifymsg.service_pid = getpid();
++    if (write(fd, &notifymsg, sizeof(notifymsg)) != sizeof(notifymsg)) {
+ 	syslog(LOG_ERR, "unable to tell master %x: %m", msg);
+     }
+ }
+diff -ru cyrus-imapd-2.1.4.orig/master/service.h cyrus-imapd-2.1.4/master/service.h
+--- cyrus-imapd-2.1.4.orig/master/service.h	Mon Feb 11 15:41:45 2002
++++ cyrus-imapd-2.1.4/master/service.h	Fri May 17 14:57:41 2002
+@@ -63,4 +63,9 @@
+     REUSE_TIMEOUT = 60
+ };
+ 
++struct notify_message {
++    int message;
++    pid_t service_pid;
++};
++
+ #endif

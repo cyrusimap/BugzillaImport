@@ -1,0 +1,179 @@
+diff -urN cyrus-imapd-2.4.13.orig/imap/backend.c cyrus-imapd-2.4.13.wb/imap/backend.c
+--- cyrus-imapd-2.4.13.orig/imap/backend.c	2011-12-30 22:19:18.000000000 +0100
++++ cyrus-imapd-2.4.13.wb/imap/backend.c	2012-01-20 22:30:45.593027921 +0100
+@@ -414,6 +414,7 @@
+     char buf[2048], *mechlist = NULL;
+     struct sigaction action;
+     struct backend *ret;
++    char rsessionid[MAX_SESSIONID_SIZE];
+ 
+     if (!ret_backend) {
+ 	ret = xzmalloc(sizeof(struct backend));
+@@ -609,6 +610,12 @@
+ 		mechlist = parse_capability(my_status, prot,
+ 						&ret->capability);
+ 	    }
++
++	    if (!(strcmp(prot->service, "imap") &&
++		 (strcmp(prot->service, "pop3")))) {
++		parse_sessionid(my_status, rsessionid);
++		syslog(LOG_NOTICE, "proxy %s sessionid=<%s> remote=<%s>", userid, session_id(), rsessionid);
++	    }
+ 	}
+ 
+ 	if (mlist) free(mlist);
+diff -urN cyrus-imapd-2.4.13.orig/imap/global.c cyrus-imapd-2.4.13.wb/imap/global.c
+--- cyrus-imapd-2.4.13.orig/imap/global.c	2011-12-30 17:21:53.000000000 +0100
++++ cyrus-imapd-2.4.13.wb/imap/global.c	2012-01-23 13:17:49.605026435 +0100
+@@ -815,6 +815,29 @@
+     return (const char *)session_id_buf;
+ }
+ 
++/* parse sessionid out of protocol answers */
++void parse_sessionid(const char *str, char *sessionid)
++{
++    char *sp, *ep;
++    int len;
++
++    if ((str) && (sp = strstr(str, "SESSIONID=<")) && (ep = strchr(sp, '>')))
++    {
++	sp += 11;
++	len = ep - sp;
++	if (len < MAX_SESSIONID_SIZE)
++	{
++	    strncpy(sessionid, sp, len);
++	    ep = sessionid + len;
++	    *ep = '\0';
++	}
++	else
++	    strcpy(sessionid, "invalid");
++    }
++    else
++	strcpy(sessionid, "unknown");
++}
++
+ int capa_is_disabled(const char *str)
+ {
+     if (!suppressed_capabilities) return 0;
+diff -urN cyrus-imapd-2.4.13.orig/imap/imapd.c cyrus-imapd-2.4.13.wb/imap/imapd.c
+--- cyrus-imapd-2.4.13.orig/imap/imapd.c	2011-12-30 17:21:53.000000000 +0100
++++ cyrus-imapd-2.4.13.wb/imap/imapd.c	2012-01-20 20:38:08.394001101 +0100
+@@ -2248,12 +2248,15 @@
+ 	}
+     }
+     else if ( nosaslpasswdcheck ) {
+-	reply = "User logged in";
++	snprintf(replybuf, sizeof(replybuf), 
++	    "User logged in SESSIONID=<%s>", session_id());
++	reply = replybuf;
+ 	imapd_userid = xstrdup(canon_user);
+ 	imapd_authstate = auth_newstate(canon_user);
+ 	syslog(LOG_NOTICE, "login: %s %s%s nopassword%s %s", imapd_clienthost,
+ 	       imapd_userid, imapd_magicplus ? imapd_magicplus : "",
+-	       imapd_starttls_done ? "+TLS" : "", reply);
++	       imapd_starttls_done ? "+TLS" : "", 
++	       reply ? reply : "");
+     }
+     else if ((r = sasl_checkpass(imapd_saslconn,
+ 				 canon_user,
+@@ -2343,6 +2346,8 @@
+ 
+     const void *val;
+     char *ssfmsg=NULL;
++    char replybuf[MAX_MAILBOX_BUFFER];
++    const char *reply = NULL;
+ 
+     const char *canon_user;
+ 
+@@ -2433,9 +2438,13 @@
+ 	imapd_userid = xstrdup(canon_user);
+     }
+ 
++    snprintf(replybuf, sizeof(replybuf), 
++	"User logged in SESSIONID=<%s>", session_id());
++    reply = replybuf;
+     syslog(LOG_NOTICE, "login: %s %s%s %s%s %s", imapd_clienthost,
+ 	   imapd_userid, imapd_magicplus ? imapd_magicplus : "",
+-	   authtype, imapd_starttls_done ? "+TLS" : "", "User logged in");
++	   authtype, imapd_starttls_done ? "+TLS" : "", 
++	   reply ? reply : "");
+ 
+     sasl_getprop(imapd_saslconn, SASL_SSF, &val);
+     saslprops.ssf = *((sasl_ssf_t *) val);
+@@ -2463,9 +2472,11 @@
+     if (!saslprops.ssf) {
+ 	prot_printf(imapd_out, "%s OK [CAPABILITY ", tag);
+ 	capa_response(CAPA_PREAUTH|CAPA_POSTAUTH);
+-	prot_printf(imapd_out, "] Success (%s)\r\n", ssfmsg);
++	prot_printf(imapd_out, "] Success (%s) SESSIONID=<%s>\r\n",
++	ssfmsg, session_id());
+     } else {
+-	prot_printf(imapd_out, "%s OK Success (%s)\r\n", tag, ssfmsg);
++	prot_printf(imapd_out, "%s OK Success (%s) SESSIONID=<%s>\r\n",
++	tag, ssfmsg, session_id());
+     }
+ 
+     prot_setsasl(imapd_in,  imapd_saslconn);
+diff -urN cyrus-imapd-2.4.13.orig/imap/lmtpengine.c cyrus-imapd-2.4.13.wb/imap/lmtpengine.c
+--- cyrus-imapd-2.4.13.orig/imap/lmtpengine.c	2011-12-30 17:21:53.000000000 +0100
++++ cyrus-imapd-2.4.13.wb/imap/lmtpengine.c	2012-01-23 13:28:01.581026799 +0100
+@@ -1862,17 +1862,11 @@
+     if (!ISGOOD(code)) {
+ 	goto failall;
+     }
+-    if ((sp = strstr(buf, "SESSIONID=<")) && (ep = strchr(sp, '>')))
+-    {
+-	sp += 11;
+-	*ep = '\0';
+-	strncpy(rsessionid, sp, MAX_SESSIONID_SIZE);
+-    }
+-    else
+-        strcpy(rsessionid, "unknown");
+ 
+-    if (config_auditlog)
++    if (config_auditlog) {
++        parse_sessionid(buf, rsessionid);
+ 	syslog(LOG_NOTICE, "auditlog: proxy sessionid=<%s> remote=<%s>", session_id(), rsessionid);
++    }
+ 
+     /* mail from */
+     if (!txn->from) {
+diff -urN cyrus-imapd-2.4.13.orig/imap/pop3d.c cyrus-imapd-2.4.13.wb/imap/pop3d.c
+--- cyrus-imapd-2.4.13.orig/imap/pop3d.c	2011-12-30 17:21:53.000000000 +0100
++++ cyrus-imapd-2.4.13.wb/imap/pop3d.c	2012-01-20 21:54:22.179011947 +0100
+@@ -1348,9 +1348,9 @@
+     }
+     popd_userid = xstrdup((const char *) canon_user);
+     
+-    syslog(LOG_NOTICE, "login: %s %s%s APOP%s %s", popd_clienthost,
++    syslog(LOG_NOTICE, "login: %s %s%s APOP%s %s SESSIONID=<%s>", popd_clienthost,
+ 	   popd_userid, popd_subfolder ? popd_subfolder : "",
+-	   popd_starttls_done ? "+TLS" : "", "User logged in");
++	   popd_starttls_done ? "+TLS" : "", "User logged in", session_id());
+ 
+     popd_authstate = auth_newstate(popd_userid);
+ 
+@@ -1417,9 +1417,9 @@
+ 	    return;
+ 	}
+ 
+-	syslog(LOG_NOTICE, "login: %s %s%s KPOP%s %s", popd_clienthost,
++	syslog(LOG_NOTICE, "login: %s %s%s KPOP%s %s SESSIONID=<%s>", popd_clienthost,
+ 	       popd_userid, popd_subfolder ? popd_subfolder : "",
+-	       popd_starttls_done ? "+TLS" : "", "User logged in");
++	       popd_starttls_done ? "+TLS" : "", "User logged in", session_id());
+ 
+ 	openinbox();
+ 	return;
+@@ -1687,9 +1687,9 @@
+     } else {
+ 	popd_userid = xstrdup(canon_user);
+     }
+-    syslog(LOG_NOTICE, "login: %s %s%s %s%s %s", popd_clienthost,
++    syslog(LOG_NOTICE, "login: %s %s%s %s%s %s SESSIONID=<%s>", popd_clienthost,
+ 	   popd_userid, popd_subfolder ? popd_subfolder : "",
+-	   authtype, popd_starttls_done ? "+TLS" : "", "User logged in");
++	   authtype, popd_starttls_done ? "+TLS" : "", "User logged in", session_id());
+ 
+     sasl_getprop(popd_saslconn, SASL_SSF, &val);
+     saslprops.ssf = *((sasl_ssf_t *) val);

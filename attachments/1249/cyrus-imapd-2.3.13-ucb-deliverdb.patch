@@ -1,0 +1,44 @@
+diff -ru cyrus-imapd-2.3.13-orig/imap/duplicate.c cyrus-imapd-2.3.13-deliverdb/imap/duplicate.c
+--- cyrus-imapd-2.3.13-orig/imap/duplicate.c	2009-11-09 13:38:06.000000000 -0800
++++ cyrus-imapd-2.3.13-deliverdb/imap/duplicate.c	2009-11-09 14:45:02.000000000 -0800
+@@ -90,6 +90,7 @@
+ {
+     char buf[1024];
+     int r = 0;
++    const char *db_dir;
+ 
+     if (r != 0)
+ 	syslog(LOG_ERR, "DBERROR: init %s: %s", buf,
+@@ -99,9 +100,12 @@
+ 
+ 	/* create db file name */
+ 	if (!fname) {
+-	    fname = xmalloc(strlen(config_dir)+sizeof(FNAME_DELIVERDB));
++  	    db_dir = config_getstring(IMAPOPT_DUPLICATE_DB_DIR);
++	    if (db_dir == NULL)
++	        db_dir = config_dir;
++	    fname = xmalloc(strlen(db_dir)+sizeof(FNAME_DELIVERDB));
+ 	    tofree = fname;
+-	    strcpy(fname, config_dir);
++	    strcpy(fname, db_dir);
+ 	    strcat(fname, FNAME_DELIVERDB);
+ 	}
+ 
+diff -ru cyrus-imapd-2.3.13-orig/lib/imapoptions cyrus-imapd-2.3.13-deliverdb/lib/imapoptions
+--- cyrus-imapd-2.3.13-orig/lib/imapoptions	2009-11-09 13:38:06.000000000 -0800
++++ cyrus-imapd-2.3.13-deliverdb/lib/imapoptions	2009-11-09 15:11:49.000000000 -0800
+@@ -304,6 +304,14 @@
+    Note: This Invoca RPM build uses \fIskiplist\fR by default instead of
+    \fIberkeley-nosync\fR for \fBduplicate_db\fR. */
+ 
++{ "duplicate_db_dir", NULL, STRING }
++/* The directory in which to store the duplicate suppression database
++   (deliver.db).  The default is the configuration directory along with 
++   the other databases.  This option can be used to separate the 
++   duplicate suppression database onto another partition, eg. an in-memory
++   file system to avoid the associated I/O (if you don't mind the data
++   being lost across reboots). */
++
+ { "duplicatesuppression", 1, SWITCH }
+ /* If enabled, lmtpd will suppress delivery of a message to a mailbox if
+    a message with the same message-id (or resent-message-id) is recorded

@@ -1,0 +1,437 @@
+diff --git a/imap/lmtp_sieve.c b/imap/lmtp_sieve.c
+index 46e6c4f..8b77ab4 100644
+--- a/imap/lmtp_sieve.c
++++ b/imap/lmtp_sieve.c
+@@ -62,6 +62,7 @@
+ #include "duplicate.h"
+ #include "exitcodes.h"
+ #include "global.h"
++#include "hash.h"
+ #include "imap_err.h"
+ #include "lmtpd.h"
+ #include "lmtp_sieve.h"
+@@ -77,6 +78,7 @@
+ #include "xmalloc.h"
+ #include "xstrlcpy.h"
+ #include "xstrlcat.h"
++#include "message.h"
+ 
+ static int sieve_usehomedir = 0;
+ static const char *sieve_dir = NULL;
+@@ -359,6 +361,127 @@ static int send_forward(const char *forwardto,
+     return sm_stat;	/* sendmail exit value */
+ }
+ 
++static int sieve_quotaroot_check(hash_table *quotaroots,
++                                  char *quota_root, int quotacheck)
++
++{
++    struct txn *tid=NULL;
++    int ret=0;
++    struct quota *quotap=NULL;
++
++    quotap = hash_lookup(quota_root, quotaroots);
++    if (!quotap) {
++        quotap = (struct quota*) xmalloc(sizeof(struct quota));
++        if (!quotap) {
++            return SIEVE_NOMEM;
++        }
++        quotap->root=quota_root;
++        ret = quota_read(quotap, &tid, 0);
++        if (ret) {
++            return SIEVE_INTERNAL_ERROR;
++        }
++        hash_insert(quota_root, quotap, quotaroots);
++    }
++
++
++    if (quotap->limit >= 0 && quotacheck >= 0 &&
++        quotap->used + quotacheck > ((uquota_t) quotap->limit * QUOTA_UNITS)) {
++        return IMAP_QUOTA_EXCEEDED;
++    } else {
++      if (quotacheck >= 0) {
++        quotap->used += quotacheck;
++      }
++    }
++    return 0;
++}
++
++
++static int sieve_quota_check(void *script_context,
++                             void *message_context,
++                             action_list_t *actions)
++{
++  action_list_t *a;
++  action_t lastaction = -1;
++  int ret = 0;
++  int hasquotaroot;
++  int quotacheck = 0;
++  int implicit_keep = 1;
++  a = actions;
++  script_data_t *sd = (script_data_t *) script_context;
++  deliver_data_t *mdata = (deliver_data_t *)  message_context;
++  message_data_t *md = mdata->m;
++  sieve_fileinto_context_t *fc = NULL;
++  char namebuf[MAX_MAILBOX_NAME+1];
++  char quota_root[MAX_MAILBOX_PATH+1];
++  struct quota *quotap=NULL;
++  struct hash_table quotaroots;
++  
++  if (msg_getrcpt_ignorequota(md, mdata->cur_rcpt)) {
++    return SIEVE_OK;
++  }
++  construct_hash_table(&quotaroots, 8, 0);
++  quotacheck=(config_getswitch(IMAPOPT_LMTP_STRICT_QUOTA) ? md->size :0);
++  while (a != NULL) {
++    implicit_keep = implicit_keep && !a->cancel_keep;
++    switch (a->a) {
++    case ACTION_FILEINTO:
++      fc=(sieve_fileinto_context_t *) &a->u.fil;
++      ret = (*mdata->namespace->mboxname_tointernal)(mdata->namespace,
++						     fc->mailbox,
++						     sd->username, namebuf);
++
++      hasquotaroot = quota_findroot(quota_root, sizeof(quota_root), namebuf);
++      if (hasquotaroot) {
++        ret =  sieve_quotaroot_check(&quotaroots, quota_root,quotacheck);
++        if (ret != SIEVE_OK) {
++            free_hash_table(&quotaroots, free);
++            return ret;
++        } 
++      } 
++      break;
++    case ACTION_KEEP:
++      ret = (*mdata->namespace->mboxname_tointernal)(mdata->namespace,
++						     "INBOX",
++						     sd->username, namebuf);
++  
++      hasquotaroot = quota_findroot(quota_root, sizeof(quota_root), namebuf);
++      if (hasquotaroot) {
++        ret =  sieve_quotaroot_check(&quotaroots, quota_root,quotacheck);
++        if (ret != SIEVE_OK) {
++            free_hash_table(&quotaroots, free);
++            return ret;
++        }
++      }
++      break;
++    default:
++      break;
++    }
++
++    a = a->next;
++  }
++
++  if (implicit_keep) {
++    ret = (*mdata->namespace->mboxname_tointernal)(mdata->namespace,
++                                                   "INBOX",
++                                                   sd->username, namebuf);
++   
++    hasquotaroot = quota_findroot(quota_root, sizeof(quota_root), namebuf);
++    if (hasquotaroot) {
++        ret =  sieve_quotaroot_check(&quotaroots, quota_root,quotacheck);
++        if (ret != SIEVE_OK) {
++            free_hash_table(&quotaroots, free);
++            return ret;
++        }
++      } 
++    
++    }
++  if (quotacheck==0){
++    msg_setrcpt_ignorequota(md, mdata->cur_rcpt);
++  }
++  free_hash_table(&quotaroots, free);
++  return SIEVE_OK;
++  
++}
+ 
+ static int sieve_redirect(void *ac, 
+ 			  void *ic __attribute__((unused)), 
+@@ -805,6 +928,14 @@ sieve_interp_t *setup_sieve(void)
+ 	fatal("sieve_register_execute_error()", EC_SOFTWARE);
+     }
+ 
++    res = sieve_register_quota_check(interp, &sieve_quota_check);
++    if (res != SIEVE_OK) {
++	syslog(LOG_ERR, "sieve_register_quota_check() returns %d\n", res);
++	fatal("sieve_register_quota_check()", EC_SOFTWARE);
++    }
++
++
++
+     return interp;
+ }
+ 
+diff --git a/imap/lmtpd.c b/imap/lmtpd.c
+index aee3d84..c55d5df 100644
+--- a/imap/lmtpd.c
++++ b/imap/lmtpd.c
+@@ -1042,6 +1042,11 @@ static int verify_user(const char *user, const char *domain, char *mailbox,
+ 		    IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
+ 	    }
+ 	} else if (!r) {
++            if (config_getswitch(IMAPOPT_SIEVE_QUOTA)) {
++                // quota will be checked later
++                quotacheck = -1;
++            }
++
+ 	    r = append_check(namebuf, MAILBOX_FORMAT_NORMAL, authstate,
+ 			     aclcheck, (quotacheck < 0)
+ 			     || config_getswitch(IMAPOPT_LMTP_STRICT_QUOTA) ?
+diff --git a/imap/lmtpengine.c b/imap/lmtpengine.c
+index eff3e50..cd7aa32 100644
+--- a/imap/lmtpengine.c
++++ b/imap/lmtpengine.c
+@@ -375,6 +375,12 @@ int msg_getrcpt_ignorequota(message_data_t *m, int rcpt_num)
+     return m->rcpt[rcpt_num]->ignorequota;
+ }
+ 
++void  msg_setrcpt_ignorequota(message_data_t *m, int rcpt_num)
++{
++    assert(0 <= rcpt_num && rcpt_num < m->rcpt_num);
++    m->rcpt[rcpt_num]->ignorequota=1;
++}
++
+ /* set a recipient status; 'r' should be an IMAP error code that will be
+    translated into an LMTP status code */
+ void msg_setrcpt_status(message_data_t *m, int rcpt_num, int r)
+diff --git a/imap/lmtpengine.h b/imap/lmtpengine.h
+index 18e40cd..c891832 100644
+--- a/imap/lmtpengine.h
++++ b/imap/lmtpengine.h
+@@ -94,6 +94,9 @@ const char *msg_getrcptall(message_data_t *m, int rcpt_num);
+ /* return ignorequota flag of 'rcpt_num' */
+ int msg_getrcpt_ignorequota(message_data_t *m, int rcpt_num);
+ 
++/* set ignorequota flag of 'rcpt_num' to 1 */
++void msg_setrcpt_ignorequota(message_data_t *m, int rcpt_num);
++
+ /* set a recipient status; 'r' should be an IMAP error code that will be
+    translated into an LMTP status code */
+ void msg_setrcpt_status(message_data_t *m, int rcpt_num, int r);
+diff --git a/lib/imapoptions b/lib/imapoptions
+index 7537331..c46fde3 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -967,6 +967,10 @@ product version in the capabilities */
+ { "sieve_maxscripts", 5, INT }
+ /* Maximum number of sieve scripts any user may have, enforced at
+    submission by timsieved(8). */
++
++{ "sieve_quota", 0, SWITCH }
++/* Send overquota bounces after parsing the sieve script and only
++   for messages which match a keep or fileinto rule. */
+    
+ { "sieve_utf8fileinto", 0, SWITCH }
+ /* If enabled, the sieve engine expects folder names for the
+diff --git a/sieve/interp.c b/sieve/interp.c
+index 833e57f..4241feb 100644
+--- a/sieve/interp.c
++++ b/sieve/interp.c
+@@ -272,6 +272,14 @@ int sieve_register_execute_error(sieve_interp_t *interp, sieve_execute_error *f)
+     return SIEVE_OK;
+ }
+ 
++int sieve_register_quota_check(sieve_interp_t *interp, sieve_callback_quota_check *f)
++{
++    interp->quota_check = f;
++    return SIEVE_OK;
++}
++
++
++
+ int interp_verify(sieve_interp_t *i)
+ {
+     if (i->redirect && i->keep && i->getsize && i->getheader) {
+diff --git a/sieve/interp.h b/sieve/interp.h
+index 05f73ba..ed6a5cf 100644
+--- a/sieve/interp.h
++++ b/sieve/interp.h
+@@ -53,7 +53,7 @@ struct sieve_interp {
+     sieve_callback *redirect, *discard, *reject, *fileinto, *keep;
+     sieve_callback *notify;
+     sieve_vacation_t *vacation;
+-
++    sieve_callback_quota_check *quota_check;
+     sieve_get_size *getsize;
+     sieve_get_header *getheader;
+     sieve_get_envelope *getenvelope;
+diff --git a/sieve/message.h b/sieve/message.h
+index bd9da72..2b644ae 100644
+--- a/sieve/message.h
++++ b/sieve/message.h
+@@ -49,26 +49,6 @@
+ #include "sieve_interface.h"	/* for action contexts */
+ #include "tree.h"		/* for stringlist_t */
+ 
+-typedef struct Action action_list_t;
+-
+-typedef enum {
+-    ACTION_NULL = -1,
+-    ACTION_NONE = 0,
+-    ACTION_REJECT,
+-    ACTION_FILEINTO,
+-    ACTION_KEEP,
+-    ACTION_REDIRECT,
+-    ACTION_DISCARD,
+-    ACTION_VACATION,
+-    ACTION_SETFLAG,
+-    ACTION_ADDFLAG,
+-    ACTION_REMOVEFLAG,
+-    ACTION_MARK,
+-    ACTION_UNMARK,
+-    ACTION_NOTIFY,
+-    ACTION_DENOTIFY
+-} action_t;
+-
+ /* information */
+ action_list_t *new_action_list(void);
+ void free_action_list(action_list_t *actions);
+@@ -77,29 +57,6 @@ void free_action_list(action_list_t *actions);
+    and vac_subj are freed.  none of the others are automatically freed.
+ 
+    the do_action() functions should copy param */
+-struct Action {
+-    action_t a;
+-    int cancel_keep;
+-    union {
+-	sieve_reject_context_t rej;
+-	sieve_fileinto_context_t fil;
+-	sieve_keep_context_t keep;
+-	sieve_redirect_context_t red;
+-	struct {
+-	    /* addr, fromaddr, subj - freed! */
+-	    sieve_send_response_context_t send;
+-	    sieve_autorespond_context_t autoresp;
+-	} vac;
+-	struct {
+-	    const char *flag;
+-	} fla;
+-    } u;
+-    char *param;		/* freed! */
+-    struct Action *next;
+-    char *vac_subj;		/* freed! */
+-    char *vac_msg;
+-    int vac_days;
+-};
+ 
+ typedef struct notify_list_s {
+     int isactive;
+diff --git a/sieve/script.c b/sieve/script.c
+index c97d293..ff55ef3 100644
+--- a/sieve/script.c
++++ b/sieve/script.c
+@@ -946,11 +946,26 @@ int sieve_execute_bytecode(sieve_execute_t *exe, sieve_interp_t *interp,
+ 				 actions_string, errmsg);
+ 	}
+ 	else {
+-	    ret = do_action_list(interp, &body_cache,
+-				 script_context, message_context, 
+-				 &imapflags, actions, notify_list,
+-				 actions_string, errmsg);
+-	}
++          if (config_getswitch(IMAPOPT_SIEVE_QUOTA)) {
++            if (interp->quota_check) {
++              ret = interp->quota_check(script_context, message_context,
++                                           actions);
++              if (ret==SIEVE_OK) {
++                ret = do_action_list(interp, &body_cache,
++                                  script_context, message_context,
++                                  &imapflags, actions, notify_list,
++                                  actions_string, errmsg);
++              }
++            } else {
++              ret = SIEVE_INTERNAL_ERROR;
++            }
++          } else {
++            ret = do_action_list(interp, &body_cache,
++                                   script_context, message_context,
++                                   &imapflags, actions, notify_list,
++                                   actions_string, errmsg);
++          }
++       }
+     }
+ 
+     free_hash_table(&body_cache, free);
+diff --git a/sieve/sieve_interface.h b/sieve/sieve_interface.h
+index a3fe008..534311e 100644
+--- a/sieve/sieve_interface.h
++++ b/sieve/sieve_interface.h
+@@ -63,6 +63,7 @@ typedef struct bytecode_info bytecode_info_t;
+ typedef int sieve_callback(void *action_context, void *interp_context, 
+ 			   void *script_context,
+ 			   void *message_context, const char **errmsg);
++
+ typedef int sieve_get_size(void *message_context, int *size);
+ typedef int sieve_get_header(void *message_context, 
+ 			     const char *header,
+@@ -141,6 +142,54 @@ typedef struct sieve_send_response_context {
+     int mime;
+ } sieve_send_response_context_t;
+ 
++typedef struct Action action_list_t;
++
++typedef enum {
++    ACTION_NULL = -1,
++    ACTION_NONE = 0,
++    ACTION_REJECT,
++    ACTION_FILEINTO,
++    ACTION_KEEP,
++    ACTION_REDIRECT,
++    ACTION_DISCARD,
++    ACTION_VACATION,
++    ACTION_SETFLAG,
++    ACTION_ADDFLAG,
++    ACTION_REMOVEFLAG,
++    ACTION_MARK,
++    ACTION_UNMARK,
++    ACTION_NOTIFY,
++    ACTION_DENOTIFY
++} action_t;
++
++struct Action {
++    action_t a;
++    int cancel_keep;
++    union {
++	sieve_reject_context_t rej;
++	sieve_fileinto_context_t fil;
++	sieve_keep_context_t keep;
++	sieve_redirect_context_t red;
++	struct {
++	    /* addr, fromaddr, subj - freed! */
++	    sieve_send_response_context_t send;
++	    sieve_autorespond_context_t autoresp;
++	} vac;
++	struct {
++	    const char *flag;
++	} fla;
++    } u;
++    char *param;		/* freed! */
++    struct Action *next;
++    char *vac_subj;		/* freed! */
++    char *vac_msg;
++    int vac_days;
++};
++
++typedef int sieve_callback_quota_check( void *script_context,
++					void *message_context,
++					action_list_t *actions);
++
+ /* build a sieve interpretor */
+ int sieve_interp_alloc(sieve_interp_t **interp, void *interp_context);
+ int sieve_interp_free(sieve_interp_t **interp);
+@@ -156,6 +205,7 @@ int sieve_register_vacation(sieve_interp_t *interp, sieve_vacation_t *v);
+ int sieve_register_imapflags(sieve_interp_t *interp, sieve_imapflags_t *mark);
+ int sieve_register_notify(sieve_interp_t *interp, sieve_callback *f);
+ int sieve_register_include(sieve_interp_t *interp, sieve_get_include *f);
++int sieve_register_quota_check(sieve_interp_t *interp, sieve_callback_quota_check *f);
+ 
+ /* add the callbacks for messages. again, undefined if used after
+    sieve_script_parse */
+@@ -190,7 +240,6 @@ int sieve_script_free(sieve_script_t **s);
+ /* execute bytecode on a message */
+ int sieve_execute_bytecode(sieve_execute_t *script, sieve_interp_t *interp,
+ 			   void *script_context, void *message_context);
+-
+ /* Get space separated list of extensions supported by the implementation */
+ const char *sieve_listextensions(sieve_interp_t *i);
+ 

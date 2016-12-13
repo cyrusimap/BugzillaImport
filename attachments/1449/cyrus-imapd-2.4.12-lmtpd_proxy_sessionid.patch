@@ -1,0 +1,85 @@
+diff -urN cyrus-imapd-2.4.12.orig/imap/global.c cyrus-imapd-2.4.12/imap/global.c
+--- cyrus-imapd-2.4.12.orig/imap/global.c	2011-10-04 18:06:20.000000000 +0200
++++ cyrus-imapd-2.4.12/imap/global.c	2011-11-15 15:05:18.636734457 +0100
+@@ -103,7 +103,6 @@
+ struct cyrusdb_backend *config_statuscache_db;
+ struct cyrusdb_backend *config_userdeny_db;
+ 
+-#define MAX_SESSIONID_SIZE 256
+ char session_id_buf[MAX_SESSIONID_SIZE];
+ int session_id_time = 0;
+ int session_id_count = 0;
+diff -urN cyrus-imapd-2.4.12.orig/imap/global.h cyrus-imapd-2.4.12/imap/global.h
+--- cyrus-imapd-2.4.12.orig/imap/global.h	2011-10-04 21:53:03.000000000 +0200
++++ cyrus-imapd-2.4.12/imap/global.h	2011-11-15 15:05:08.420788273 +0100
+@@ -53,6 +53,8 @@
+ #include "signals.h"
+ #include "util.h"
+ 
++#define MAX_SESSIONID_SIZE 256
++
+ /* Flags for cyrus_init() */
+ enum {
+     CYRUSINIT_NODB =	(1<<0)
+diff -urN cyrus-imapd-2.4.12.orig/imap/lmtpd.c cyrus-imapd-2.4.12/imap/lmtpd.c
+--- cyrus-imapd-2.4.12.orig/imap/lmtpd.c	2011-10-04 21:53:03.000000000 +0200
++++ cyrus-imapd-2.4.12/imap/lmtpd.c	2011-11-15 17:45:41.966725764 +0100
+@@ -267,8 +267,6 @@
+ {
+     int opt, r;
+ 
+-    session_new_id();
+-
+     sync_log_init();
+ 
+     deliver_in = prot_new(0, 0);
+diff -urN cyrus-imapd-2.4.12.orig/imap/lmtpengine.c cyrus-imapd-2.4.12/imap/lmtpengine.c
+--- cyrus-imapd-2.4.12.orig/imap/lmtpengine.c	2011-10-04 21:53:03.000000000 +0200
++++ cyrus-imapd-2.4.12/imap/lmtpengine.c	2011-11-15 16:23:53.889783150 +0100
+@@ -1359,6 +1359,7 @@
+ 
+ 	      strlcpy(cd.lhlo_param, buf + 5, sizeof(cd.lhlo_param));
+ 	      
++	      session_new_id();
+ 	      continue;
+ 	  }
+ 	  goto syntaxerr;
+@@ -1553,7 +1554,8 @@
+ 		continue;
+ 	    }
+ 	    else if (!strcasecmp(buf, "rset")) {
+-		prot_printf(pout, "250 2.0.0 ok\r\n");
++		session_new_id();
++		prot_printf(pout, "250 2.0.0 ok SESSIONID=<%s>\r\n", session_id());
+ 
+ 	      rset:
+ 		if (msg) msg_free(msg);
+@@ -1845,8 +1847,9 @@
+ int lmtp_runtxn(struct backend *conn, struct lmtp_txn *txn)
+ {
+     int j, code, r = 0;
+-    char buf[8192];
++    char buf[8192], rsessionid[MAX_SESSIONID_SIZE];
+     int onegood;
++    char *sp, *ep;
+ 
+     assert(conn && txn);
+     /* pipelining v. no pipelining? */
+@@ -1859,6 +1862,17 @@
+     if (!ISGOOD(code)) {
+ 	goto failall;
+     }
++    if ((sp = strstr(buf, "SESSIONID=<")) && (ep = strchr(sp, '>')))
++    {
++	sp += 11;
++	*ep = '\0';
++	strncpy(rsessionid, sp, MAX_SESSIONID_SIZE);
++    }
++    else
++        strcpy(rsessionid, "unknown");
++
++    if (config_auditlog)
++	syslog(LOG_NOTICE, "auditlog: proxy sessionid=<%s> remote=<%s>", session_id(), rsessionid);
+ 
+     /* mail from */
+     if (!txn->from) {

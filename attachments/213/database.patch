@@ -1,0 +1,268 @@
+diff -c -r cyrus-imapd-2.2.1-BETA/acconfig.h imapd-2.2.1-c/acconfig.h
+*** cyrus-imapd-2.2.1-BETA/acconfig.h	Mon Jul 14 12:40:07 2003
+--- imapd-2.2.1-c/acconfig.h	Wed Jul 30 08:44:49 2003
+***************
+*** 152,157 ****
+--- 152,162 ----
+  #undef CONFIG_DB_TLS
+  #undef CONFIG_DB_ANNOTATION
+  
++ /* Database Backend Types that are configurable */
++ #undef CONFIG_DB_FLAT
++ #undef CONFIG_DB_BERKELEY
++ #undef CONFIG_DB_SKIPLIST
++ 
+  /* Facility for syslog */
+  #undef SYSLOG_FACILITY
+  
+diff -c -r cyrus-imapd-2.2.1-BETA/configure.in imapd-2.2.1-c/configure.in
+*** cyrus-imapd-2.2.1-BETA/configure.in	Mon Jul 14 12:40:07 2003
+--- imapd-2.2.1-c/configure.in	Wed Jul 30 13:28:41 2003
+***************
+*** 154,191 ****
+  AC_SUBST(LOCALDEFS)
+  AC_FUNC_VPRINTF
+  
+- dnl Berkeley DB Detection
+- 
+- dnl support old-style
+- AC_ARG_WITH(dbdir,
+- 	[  --with-dbdir=DIR        Berkeley DB files are in prefix DIR],
+- 	with_bdb_lib="$withval/lib"; with_bdb_inc="$withval/include",
+- 	with_bdb_lib=none; with_bdb_inc=none)
+- 
+- CYRUS_BERKELEY_DB_CHK()
+- 
+- if test "$dblib" = "no"; then
+-   AC_ERROR([this version requires Berkeley DB 3.x or later.
+- (Get it from http://www.sleepycat.com/).  You may need to suppply the
+- --with-bdb-libdir or --with-bdb-incdir configure options.])
+- fi
+- 
+- if test "$with_bdb_lib" != "none"; then
+-   CMU_ADD_LIBPATH($with_bdb_lib)
+- fi
+- 
+- BDB_INC=${BDB_INCADD}
+- BDB_LIB=${BDB_LIBADD}
+- AC_SUBST(BDB_INC)
+- AC_SUBST(BDB_LIB)
+- 
+- LIBS="${LIBS} ${BDB_LIBADD}"
+- CPPFLAGS="${BDB_INCADD} ${CPPFLAGS}"
+- 
+- dnl End Berkeley DB Detection
+- 
+  dnl function for doing each of the database backends
+  dnl parameters: backend name, variable to set, withval
+  AC_DEFUN(CYRUS_SET_BACKEND, [
+  	AC_MSG_CHECKING([$1 database backend])
+  	if test "$3" != "berkeley" -a \
+--- 154,164 ----
+  AC_SUBST(LOCALDEFS)
+  AC_FUNC_VPRINTF
+  
+  dnl function for doing each of the database backends
+  dnl parameters: backend name, variable to set, withval
++ 
++ use_berkeley="no"
++ 
+  AC_DEFUN(CYRUS_SET_BACKEND, [
+  	AC_MSG_CHECKING([$1 database backend])
+  	if test "$3" != "berkeley" -a \
+***************
+*** 194,201 ****
+--- 167,186 ----
+  		"$3" != "skiplist"; then
+  	   AC_ERROR([invalid $1 value])
+  	fi
++ 	if test "$3" = "berkeley" -o \
++ 	        "$3" = "berkeley_nosync"; then
++ 	   DB_TYPE="BERKELEY"
++ 	   use_berkeley="yes"
++ 	fi
++ 	if test "$3" = "flat"; then
++ 	   DB_TYPE="FLAT"
++ 	fi
++ 	if test "$3" = "skiplist"; then
++ 	   DB_TYPE="SKIPLIST"
++ 	fi
+  	DB_STRING="(&cyrusdb_$3)"
+  	AC_DEFINE_UNQUOTED($2, $DB_STRING)
++ 	AC_DEFINE(CONFIG_DB_$DBTYPE)
+  	AC_MSG_RESULT($3)
+  ])
+  AC_DEFUN(CYRUS_SET_BACKEND_BINARY, [
+***************
+*** 208,215 ****
+--- 193,212 ----
+  		"$3" != "skiplist"; then
+  	   AC_ERROR([invalid $1 value])
+  	fi
++ 	if test "$3" = "berkeley" -o \
++ 	        "$3" = "berkeley_nosync"; then
++ 	   DB_TYPE="BERKELEY"
++ 	   use_berkeley="yes"
++ 	fi
++ 	if test "$3" = "flat"; then
++ 	   DB_TYPE="FLAT"
++ 	fi
++ 	if test "$3" = "skiplist"; then
++ 	   DB_TYPE="SKIPLIST"
++ 	fi
+  	DB_STRING="(&cyrusdb_$3)"
+  	AC_DEFINE_UNQUOTED($2, $DB_STRING)
++ 	AC_DEFINE(CONFIG_DB_$DBTYPE)
+  	AC_MSG_RESULT($3)
+  ])
+  
+***************
+*** 254,259 ****
+--- 251,288 ----
+                            for the mailbox annotations (Default: skiplist) ],
+  	DB="$withval", DB="skiplist")
+  CYRUS_SET_BACKEND_BINARY("annotation db", CONFIG_DB_ANNOTATION, $DB)
++ 
++ dnl Berkeley DB Detection
++ 
++ dnl support old-style
++ AC_ARG_WITH(dbdir,
++ 	[  --with-dbdir=DIR        Berkeley DB files are in prefix DIR],
++ 	with_bdb_lib="$withval/lib"; with_bdb_inc="$withval/include",
++ 	with_bdb_lib=none; with_bdb_inc=none)
++ 
++ if test "$use_berkeley" != "no"; then
++   CYRUS_BERKELEY_DB_CHK()
++ 
++   if test "$dblib" = "no"; then
++     AC_ERROR([one or more databases require Berkeley DB 3.x or later.
++     (Get it from http://www.sleepycat.com/).  You may need to suppply the
++     --with-bdb-libdir or --with-bdb-incdir configure options.])
++   fi
++ 
++   if test "$with_bdb_lib" != "none"; then
++     CMU_ADD_LIBPATH($with_bdb_lib)
++   fi
++ 
++   BDB_INC=${BDB_INCADD}
++   BDB_LIB=${BDB_LIBADD}
++   AC_SUBST(BDB_INC)
++   AC_SUBST(BDB_LIB)
++ 
++   LIBS="${LIBS} ${BDB_LIBADD}"
++   CPPFLAGS="${BDB_INCADD} ${CPPFLAGS}"
++ fi
++ 
++ dnl End Berkeley DB Detection
+  
+  SIEVE_SUBDIRS=""
+  sievedir="sieve"
+diff -c -r cyrus-imapd-2.2.1-BETA/lib/cyrusdb.c imapd-2.2.1-c/lib/cyrusdb.c
+*** cyrus-imapd-2.2.1-BETA/lib/cyrusdb.c	Thu Feb 13 15:33:11 2003
+--- imapd-2.2.1-c/lib/cyrusdb.c	Wed Jul 30 08:44:49 2003
+***************
+*** 60,69 ****
+--- 60,75 ----
+  #include "xmalloc.h"
+  
+  struct cyrusdb_backend *cyrusdb_backends[] = {
++ #ifdef CONFIG_DB_BERKELEY
+      &cyrusdb_berkeley,
+      &cyrusdb_berkeley_nosync,
++ #endif
++ #ifdef CONFIG_DB_FLAT
+      &cyrusdb_flat,
++ #endif
++ #ifdef CONFIG_DB_SKIPLIST
+      &cyrusdb_skiplist,
++ #endif
+      NULL };
+  
+  void cyrusdb_init() 
+diff -c -r cyrus-imapd-2.2.1-BETA/lib/cyrusdb.h imapd-2.2.1-c/lib/cyrusdb.h
+*** cyrus-imapd-2.2.1-BETA/lib/cyrusdb.h	Thu Feb 13 15:33:11 2003
+--- imapd-2.2.1-c/lib/cyrusdb.h	Wed Jul 30 08:44:49 2003
+***************
+*** 174,183 ****
+--- 174,189 ----
+  
+  extern struct cyrusdb_backend *cyrusdb_backends[];
+  
++ #ifdef CONFIG_DB_BERKELEY
+  extern struct cyrusdb_backend cyrusdb_berkeley;
+  extern struct cyrusdb_backend cyrusdb_berkeley_nosync;
++ #endif
++ #ifdef CONFIG_DB_FLAT
+  extern struct cyrusdb_backend cyrusdb_flat;
++ #endif
++ #ifdef CONFIG_DB_SKIPLIST
+  extern struct cyrusdb_backend cyrusdb_skiplist;
++ #endif
+  
+  extern int cyrusdb_copyfile(const char *srcname, const char *dstname);
+  
+diff -c -r cyrus-imapd-2.2.1-BETA/lib/cyrusdb_berkeley.c imapd-2.2.1-c/lib/cyrusdb_berkeley.c
+*** cyrus-imapd-2.2.1-BETA/lib/cyrusdb_berkeley.c	Wed Jun 18 20:35:49 2003
+--- imapd-2.2.1-c/lib/cyrusdb_berkeley.c	Wed Jul 30 08:44:49 2003
+***************
+*** 43,48 ****
+--- 43,50 ----
+  
+  #include <config.h>
+  
++ #ifdef CONFIG_DB_BERKELEY
++ 
+  #include <db.h>
+  #include <syslog.h>
+  #include <assert.h>
+***************
+*** 971,973 ****
+--- 973,977 ----
+      NULL,
+      NULL
+  };
++ 
++ #endif /* CONFIG_DB_BERKELEY */
+diff -c -r cyrus-imapd-2.2.1-BETA/lib/cyrusdb_flat.c imapd-2.2.1-c/lib/cyrusdb_flat.c
+*** cyrus-imapd-2.2.1-BETA/lib/cyrusdb_flat.c	Tue Jun 10 21:31:08 2003
+--- imapd-2.2.1-c/lib/cyrusdb_flat.c	Wed Jul 30 08:44:49 2003
+***************
+*** 43,48 ****
+--- 43,50 ----
+  
+  #include <config.h>
+  
++ #ifdef CONFIG_DB_FLAT
++ 
+  #ifdef HAVE_UNISTD_H
+  #include <unistd.h>
+  #endif
+***************
+*** 726,728 ****
+--- 728,731 ----
+      NULL,
+      NULL
+  };
++ #endif /* CONFIG_DB_FLAT */
+diff -c -r cyrus-imapd-2.2.1-BETA/lib/cyrusdb_skiplist.c imapd-2.2.1-c/lib/cyrusdb_skiplist.c
+*** cyrus-imapd-2.2.1-BETA/lib/cyrusdb_skiplist.c	Tue Jun 17 16:40:44 2003
+--- imapd-2.2.1-c/lib/cyrusdb_skiplist.c	Wed Jul 30 08:44:49 2003
+***************
+*** 47,52 ****
+--- 47,54 ----
+  
+  #include <config.h>
+  
++ #ifdef CONFIG_DB_SKIPLIST
++ 
+  #include <stdlib.h>
+  #include <string.h>
+  #include <limits.h>
+***************
+*** 2126,2128 ****
+--- 2128,2132 ----
+      &dump,
+      &consistent
+  };
++ 
++ #endif /* CONFIG_DB_SKIPLIST */

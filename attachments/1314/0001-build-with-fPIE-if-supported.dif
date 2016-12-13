@@ -1,0 +1,177 @@
+From 35a77b1920197c9bbe215b5613cf8b3fa2f6b7f9 Mon Sep 17 00:00:00 2001
+From: Ralf Haferkamp <rhafer@suse.de>
+Date: Thu, 28 Oct 2010 14:11:53 +0200
+Subject: [PATCH] build with -fPIE if supported
+
+This will result in "Position Independent Executables" which provides
+addtional security on system supporting it  by allowing the resulting
+executable to be loaded to a random address. Making certain security
+attacks harder to perform.
+
+ 9 files changed, 47 insertions(+), 16 deletions(-)
+
+diff --git a/com_err/et/Makefile.in b/com_err/et/Makefile.in
+index 4835727..2858807 100644
+--- a/com_err/et/Makefile.in
++++ b/com_err/et/Makefile.in
+@@ -58,8 +58,8 @@ DEFS = @DEFS@
+ CPPFLAGS = @CPPFLAGS@
+ LIBS = @LIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ 
+diff --git a/configure.in b/configure.in
+index 779bf21..60b45cb 100644
+--- a/configure.in
++++ b/configure.in
+@@ -126,6 +126,37 @@ AC_REPLACE_FUNCS(memmove strcasecmp ftruncate strerror)
+ AC_CHECK_FUNCS(strlcat strlcpy getgrouplist)
+ AC_HEADER_DIRENT
+ 
++# Check if compiler supports -pie -fPIEr
++PIE_CFLAGS=""
++PIE_LDFLAGS=""
++AC_ARG_ENABLE(pie, [AS_HELP_STRING([--disable-pie],
++	[disable PIE support])])
++
++if test "$enable_pie" != no; then
++	AC_CACHE_CHECK(if compiler supports -pie and -fPIE, cyrus_cv_fpie,
++	[
++		cat > conftest.c <<EOF
++int foo;
++int main () { return 0;}
++EOF
++		if AC_TRY_COMMAND([${CC-cc} $CFLAGS $CPPFLAGS $LDFLAGS 
++				-pie -fPIE -o conftest conftest.c])
++			then
++				cyrus_cv_fpie=yes
++			else
++				cyrus_cv_fpie=no
++			fi
++			rm -f conftest*
++	])
++	if test "$cyrus_cv_fpie" = "yes"; then
++		PIE_CFLAGS="-fPIE"
++		PIE_LDFLAGS="-pie"
++	fi
++fi
++AC_SUBST(PIE_CFLAGS)
++AC_SUBST(PIE_LDFLAGS)
++
++
+ dnl do this before Berkeley DB/IPv6 detection
+ CMU_SOCKETS
+ LIBS="$LIBS ${LIB_SOCKET}"
+diff --git a/imap/Makefile.in b/imap/Makefile.in
+index 6146d35..3fe1528 100644
+--- a/imap/Makefile.in
++++ b/imap/Makefile.in
+@@ -68,8 +68,8 @@ LIB_WRAP = @LIB_WRAP@
+ LIBS = $(IMAP_LIBS) $(IMAP_COM_ERR_LIBS)
+ DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@ 
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+diff --git a/master/Makefile.in b/master/Makefile.in
+index 4b25f35..ff9bee8 100644
+--- a/master/Makefile.in
++++ b/master/Makefile.in
+@@ -56,8 +56,8 @@ DEFS = @DEFS@ @LOCALDEFS@
+ CPPFLAGS = -I.. -I$(srcdir)/../lib -I$(srcdir)/../imap @CPPFLAGS@ @COM_ERR_CPPFLAGS@
+ DEPLIBS = @DEPLIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@ @PIE_LDFLAGS@
+ LIBS = ../lib/libcyrus_min.a @LIB_UCDSNMP@ @LIBS@ @COM_ERR_LIBS@
+ 
+ SHELL = /bin/sh
+diff --git a/netnews/Makefile.in b/netnews/Makefile.in
+index 5b4573a..1ce9ba8 100644
+--- a/netnews/Makefile.in
++++ b/netnews/Makefile.in
+@@ -55,8 +55,8 @@ CPPFLAGS = -I.. -I$(srcdir) -I$(srcdir)/../lib -I$(srcdir)/../com_err/et @CPPFLA
+ LIBS =  @IMAP_LIBS@ @LIB_RT@
+ DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@ 
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+diff --git a/notifyd/Makefile.in b/notifyd/Makefile.in
+index b157282..6bd0f8f 100644
+--- a/notifyd/Makefile.in
++++ b/notifyd/Makefile.in
+@@ -56,8 +56,8 @@ CYRUS_GROUP=@cyrus_group@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+ CPPFLAGS = -I.. -I$(srcdir)/../sieve -I$(srcdir)/../imap -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ prefix = @prefix@
+ exec_prefix = @exec_prefix@
+diff --git a/sieve/Makefile.in b/sieve/Makefile.in
+index 839b7ff..e99c9e3 100644
+--- a/sieve/Makefile.in
++++ b/sieve/Makefile.in
+@@ -59,8 +59,8 @@ COMPILE_ET = @COMPILE_ET@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+ CPPFLAGS = -I.. -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
+-MAKEDEPEND_CFLAGS = @CFLAGS@
+-CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@
++MAKEDEPEND_CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@ @PIE_LDFLAGS@
+ LDFLAGS = @LDFLAGS@
+ 
+ MAKEDEPEND = @MAKEDEPEND@
+diff --git a/syslog/Makefile.in b/syslog/Makefile.in
+index 98abce5..52dfbe3 100644
+--- a/syslog/Makefile.in
++++ b/syslog/Makefile.in
+@@ -55,8 +55,8 @@ DEFS = @DEFS@
+ CPPFLAGS = @CPPFLAGS@
+ LIBS = @LIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+diff --git a/timsieved/Makefile.in b/timsieved/Makefile.in
+index 97ddedd..ab9f78e 100644
+--- a/timsieved/Makefile.in
++++ b/timsieved/Makefile.in
+@@ -56,8 +56,8 @@ CYRUS_GROUP=@cyrus_group@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+ CPPFLAGS = -I.. -I$(srcdir)/../sieve -I$(srcdir)/../imap -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ prefix = @prefix@
+ exec_prefix = @exec_prefix@
+-- 
+1.7.1
+

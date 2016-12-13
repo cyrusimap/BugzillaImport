@@ -1,0 +1,303 @@
+--- cyrus-imapd-2.3.7p4/imap/ctl_cyrusdb.c	2005-02-16 16:06:18.000000000 -0500
++++ cyrus-imapd-2.3.7p5/imap/ctl_cyrusdb.c	2006-10-30 15:10:57.000000000 -0500
+@@ -133,7 +133,7 @@
+     /* if it is MBTYPE_RESERVED, unset it & call mboxlist_delete */
+     if(!r && (mbtype & MBTYPE_RESERVE)) {
+ 	if(!r) {
+-	    r = mboxlist_deletemailbox(name, 1, NULL, NULL, 0, 0, 1);
++	    r = mboxlist_deletemailbox(name, 1, NULL, NULL, 0, 0, 1, 1);
+ 	    if(r) {
+ 		/* log the error */
+ 		syslog(LOG_ERR,
+--- cyrus-imapd-2.3.7p4/imap/ctl_mboxlist.c	2006-04-06 11:42:10.000000000 -0400
++++ cyrus-imapd-2.3.7p5/imap/ctl_mboxlist.c	2006-10-30 15:10:42.000000000 -0500
+@@ -457,7 +457,7 @@
+ 	    
+ 	    wipe_head = wipe_head->next;
+ 	    
+-	    ret = mboxlist_deletemailbox(me->mailbox, 1, "", NULL, 0, 1, 1);
++	    ret = mboxlist_deletemailbox(me->mailbox, 1, "", NULL, 0, 1, 1, 1);
+ 	    if(ret) {
+ 		fprintf(stderr, "couldn't delete defunct mailbox %s\n",
+ 			me->mailbox);
+--- cyrus-imapd-2.3.7p4/imap/imapd.c	2006-10-30 15:15:19.000000000 -0500
++++ cyrus-imapd-2.3.7p5/imap/imapd.c	2006-10-31 15:05:52.000000000 -0500
+@@ -4948,7 +4948,7 @@
+ 
+     r = mboxlist_deletemailbox(name, imapd_userisadmin,
+ 			       imapd_userid, imapd_authstate,
+-			       0, 0, 0);
++			       0, 0, 0, 0);
+     
+     if (!r) sync_log_mailbox(name);
+ 
+@@ -5030,7 +5030,7 @@
+ 
+ 	r = mboxlist_deletemailbox(mailboxname, imapd_userisadmin,
+ 				   imapd_userid, imapd_authstate, 1-force,
+-				   localonly, 0);
++				   localonly, 0, localonly);
+     }
+ 
+     /* was it a top-level user mailbox? */
+@@ -8191,7 +8191,7 @@
+ 	/* note also that we need to remember to let proxyadmins do this */
+ 	r = mboxlist_deletemailbox(mailboxname,
+ 				   imapd_userisadmin || imapd_userisproxyadmin,
+-				   imapd_userid, imapd_authstate, 0, 1, 0);
++				   imapd_userid, imapd_authstate, 0, 1, 0, 1);
+ 	if(r) syslog(LOG_ERR,
+ 		     "Could not delete local mailbox during move of %s",
+ 		     mailboxname);
+--- cyrus-imapd-2.3.7p4/imap/mailbox.c	2006-06-02 14:55:06.000000000 -0400
++++ cyrus-imapd-2.3.7p5/imap/mailbox.c	2006-10-31 15:25:29.000000000 -0500
+@@ -2673,7 +2673,7 @@
+  * Delete and close the mailbox 'mailbox'.  Closes 'mailbox' whether
+  * or not the deletion was successful.  Requires a locked mailbox.
+  */
+-int mailbox_delete(struct mailbox *mailbox, int delete_quota_root)
++int mailbox_delete(struct mailbox *mailbox, int delete_quota_root, char *deleteddir)
+ {
+     int r, rquota = 0;
+     DIR *dirp;
+@@ -2681,6 +2681,7 @@
+     char buf[MAX_MAILBOX_PATH+1], *path;
+     char *tail;
+     struct txn *tid = NULL;
++    char dbuf[MAX_MAILBOX_PATH+1], *dtail;
+     
+     /* Ensure that we are locked */
+     if(!mailbox->header_lock_count) return IMAP_INTERNAL;
+@@ -2711,6 +2712,12 @@
+ 	    quota_commit(&tid);
+     }
+ 
++    if ( deleteddir ) {
++	if ( cyrus_mkdir( deleteddir, 0755 ) != 0  ) return IMAP_IOERROR;
++	if (mkdir(deleteddir, 0755) == -1 ) return IMAP_IOERROR;
++	syslog( LOG_NOTICE, "Saving deleted mailbox %s in %s", mailbox->name, deleteddir );
++    }
++
+     /* remove data (message file) directory */
+     path = mailbox->path;
+ 
+@@ -2726,6 +2733,20 @@
+ 	tail = buf + strlen(buf);
+ 	*tail++ = '/';
+ 	*tail = '\0';
++
++	if ( deleteddir ) {
++	    strlcpy(dbuf, deleteddir, sizeof(dbuf));
++
++	    if(strlen(dbuf) >= sizeof(dbuf) - 2) {
++		syslog(LOG_ERR, "IOERROR: Path too long (%s)", dbuf);
++		fatal("path too long", EC_OSFILE);
++	    }
++
++	    dtail = dbuf + strlen(dbuf);
++	    *dtail++ = '/';
++	    *dtail = '\0';
++	}
++
+ 	dirp = opendir(path);
+ 	if (dirp) {
+ 	    while ((f = readdir(dirp))!=NULL) {
+@@ -2745,7 +2766,18 @@
+ 		    fatal("Path too long", EC_OSFILE);
+ 		}
+ 		strcpy(tail, f->d_name);
+-		unlink(buf);
++		if ( deleteddir ) {
++		    if(strlen(dbuf) + strlen(f->d_name) >= sizeof(dbuf)) {
++			syslog(LOG_ERR, "IOERROR: Path too long (%s + %s)",
++			       dbuf, f->d_name);
++			fatal("Path too long", EC_OSFILE);
++		    }
++		    strcpy(dtail, f->d_name);
++		    rename( buf, dbuf );
++		    *dtail = '\0';
++		} else {
++		    unlink(buf);
++		}
+ 		*tail = '\0';
+ 	    }
+ 	    closedir(dirp);
+@@ -2948,7 +2980,7 @@
+ 	/* Expunge old mailbox */
+ 	r = mailbox_expunge(oldmailbox, expungeall, (char *)0, EXPUNGE_FORCE);
+     } else {
+-	r = mailbox_delete(oldmailbox, 0);
++	r = mailbox_delete(oldmailbox, 0, NULL);
+     }
+ 
+     if(r) {
+--- cyrus-imapd-2.3.7p4/imap/mailbox.h	2006-06-02 12:41:57.000000000 -0400
++++ cyrus-imapd-2.3.7p5/imap/mailbox.h	2006-10-30 14:59:03.000000000 -0500
+@@ -362,7 +362,7 @@
+ extern int mailbox_create(const char *name, char *partition,
+ 			  const char *acl, const char *uniqueid, int format,
+ 			  struct mailbox *mailboxp);
+-extern int mailbox_delete(struct mailbox *mailbox, int delete_quota_root);
++extern int mailbox_delete(struct mailbox *mailbox, int delete_quota_root, char *deleteddir);
+ 
+ extern int mailbox_rename_copy(struct mailbox *oldmailbox, 
+ 			       const char *newname, char *newpartition,
+--- cyrus-imapd-2.3.7p4/imap/mboxlist.c	2006-10-30 15:15:19.000000000 -0500
++++ cyrus-imapd-2.3.7p5/imap/mboxlist.c	2006-10-31 15:25:45.000000000 -0500
+@@ -889,7 +889,7 @@
+  */
+ int mboxlist_deletemailbox(const char *name, int isadmin, char *userid, 
+ 			   struct auth_state *auth_state, int checkacl,
+-			   int local_only, int force)
++			   int local_only, int force, int now)
+ {
+     int r;
+     char *acl;
+@@ -902,6 +902,11 @@
+     int mbtype;
+     const char *p;
+     mupdate_handle *mupdate_h = NULL;
++    char *partition, *deleteddir = NULL;
++    const char *root;
++    char deleteddot[ MAX_MAILBOX_NAME+1 ], deletedhash[ MAX_MAILBOX_NAME+1 ];
++    char deletedbuf[ MAX_MAILBOX_NAME+1 ];
++    struct timeval tv;
+ 
+     if(!isadmin && force) return IMAP_PERMISSION_DENIED;
+ 
+@@ -922,7 +927,7 @@
+ 	if (!isadmin) { r = IMAP_PERMISSION_DENIED; goto done; }
+     }
+ 
+-    r = mboxlist_mylookup(name, &mbtype, &path, &mpath, NULL, &acl, &tid, 1);
++    r = mboxlist_mylookup(name, &mbtype, &path, &mpath, &partition, &acl, &tid, 1);
+     switch (r) {
+     case 0:
+ 	break;
+@@ -1014,7 +1019,19 @@
+ 
+     if ((r && !force) || isremote) goto done;
+ 
+-    if (!r || force) r = mailbox_delete(&mailbox, deletequotaroot);
++    if ( !now & config_getenum(IMAPOPT_DELETE_MODE) !=
++	    IMAP_ENUM_DELETE_MODE_IMMEDIATE ) {
++	root = config_partitiondir( partition );
++	if ( !root ) return IMAP_PARTITION_UNKNOWN;
++
++	snprintf( deleteddot, sizeof( deleteddot ), "%s/deleted./", root );
++	mailbox_hash_mbox( deletedhash, sizeof( deletedhash ), deleteddot, name );
++	gettimeofday( &tv, NULL );
++	snprintf( deletedbuf, sizeof( deletedbuf ), "%s.%X", deletedhash, tv.tv_sec );
++	deleteddir = deletedbuf;
++    }
++
++    if (!r || force) r = mailbox_delete(&mailbox, deletequotaroot, deleteddir);
+ 
+     /*
+      * See if we have to remove mailbox's quota root
+--- cyrus-imapd-2.3.7p4/imap/mboxlist.h	2006-10-30 15:15:19.000000000 -0500
++++ cyrus-imapd-2.3.7p5/imap/mboxlist.h	2006-10-30 15:03:31.000000000 -0500
+@@ -127,7 +127,7 @@
+  * the planet */
+ int mboxlist_deletemailbox(const char *name, int isadmin, char *userid, 
+ 			   struct auth_state *auth_state, int checkacl,
+-			   int local_only, int force);
++			   int local_only, int force, int now);
+ 
+ /* Rename/move a mailbox (hierarchical) */
+ int mboxlist_renamemailbox(char *oldname, char *newname, char *partition, 
+--- cyrus-imapd-2.3.7p4/imap/mupdate.c	2006-03-15 13:56:31.000000000 -0500
++++ cyrus-imapd-2.3.7p5/imap/mupdate.c	2006-10-30 15:11:27.000000000 -0500
+@@ -2297,7 +2297,7 @@
+ 	    remote_boxes.head = r->next;
+ 	} else if (ret < 0) {
+ 	    /* Local without corresponding remote, delete it */
+-	    mboxlist_deletemailbox(l->mailbox, 1, "", NULL, 0, 0, 0);
++	    mboxlist_deletemailbox(l->mailbox, 1, "", NULL, 0, 0, 0, 1);
+ 	    local_boxes.head = l->next;
+ 	} else /* (ret > 0) */ {
+ 	    /* Remote without corresponding local, insert it */
+@@ -2312,7 +2312,7 @@
+     if(l && !r) {
+ 	/* we have more deletes to do */
+ 	while(l) {
+-	    mboxlist_deletemailbox(l->mailbox, 1, "", NULL, 0, 0, 0);
++	    mboxlist_deletemailbox(l->mailbox, 1, "", NULL, 0, 0, 0, 1);
+ 	    local_boxes.head = l->next;
+ 	    l = local_boxes.head;
+ 	}
+--- cyrus-imapd-2.3.7p4/imap/sync_reset.c	2005-12-13 10:31:10.000000000 -0500
++++ cyrus-imapd-2.3.7p5/imap/sync_reset.c	2006-10-30 15:12:51.000000000 -0500
+@@ -254,7 +254,7 @@
+     if (r) goto fail;
+ 
+     for (item = list->head ; item ; item = item->next) {
+-        r=mboxlist_deletemailbox(item->name, 1, NULL, sync_authstate, 1, 0, 0);
++        r=mboxlist_deletemailbox(item->name, 1, NULL, sync_authstate, 1, 0, 0, 1);
+ 
+         if (r) goto fail;
+     }
+@@ -270,7 +270,7 @@
+     if (r) goto fail;
+ 
+     for (item = list->head ; item ; item = item->next) {
+-        r=mboxlist_deletemailbox(item->name, 1, NULL, sync_authstate, 1, 0, 0);
++        r=mboxlist_deletemailbox(item->name, 1, NULL, sync_authstate, 1, 0, 0, 1);
+ 
+         if (r) goto fail;
+     }
+@@ -278,7 +278,7 @@
+ 
+     /* Nuke inbox (recursive nuke possible?) */
+     snprintf(buf, sizeof(buf)-1, "user.%s", user);
+-    r = mboxlist_deletemailbox(buf, 1, "cyrus", sync_authstate, 1, 0, 0);
++    r = mboxlist_deletemailbox(buf, 1, "cyrus", sync_authstate, 1, 0, 0, 1);
+     if (r && (r != IMAP_MAILBOX_NONEXISTENT)) goto fail;
+ 
+     if ((r=user_deletedata(user, sync_userid, sync_authstate, 1)))
+--- cyrus-imapd-2.3.7p4/imap/sync_server.c	2006-10-30 15:15:19.000000000 -0500
++++ cyrus-imapd-2.3.7p5/imap/sync_server.c	2006-10-30 15:12:12.000000000 -0500
+@@ -1576,7 +1576,7 @@
+ 
+     for (item = list->head ; item ; item = item->next) {
+         r=mboxlist_deletemailbox(item->name, sync_userisadmin, sync_userid,
+-				 sync_authstate, 0, 0, 1);
++				 sync_authstate, 0, 0, 1, 0);
+ 
+         if (r) goto fail;
+     }
+@@ -1586,7 +1586,7 @@
+     (sync_namespacep->mboxname_tointernal)(sync_namespacep, "INBOX",
+ 					   user, buf);
+     r = mboxlist_deletemailbox(buf, sync_userisadmin, sync_userid,
+-			       sync_authstate, 0, 0, 1);
++			       sync_authstate, 0, 0, 1, 0);
+     if (r && (r != IMAP_MAILBOX_NONEXISTENT)) goto fail;
+ 
+     if ((r=user_deletedata(user, sync_userid, sync_authstate, 1)))
+@@ -2508,7 +2508,7 @@
+ 
+     /* Delete with admin priveleges */
+     r = mboxlist_deletemailbox(name, sync_userisadmin, sync_userid,
+-			       sync_authstate, 0, 0, 1);
++			       sync_authstate, 0, 0, 1, 0);
+ 
+     if (r)
+         prot_printf(sync_out, "NO Failed to delete %s: %s\r\n",
+--- cyrus-imapd-2.3.7p4/lib/imapoptions	2006-06-27 11:58:42.000000000 -0400
++++ cyrus-imapd-2.3.7p5/lib/imapoptions	2006-10-30 15:04:54.000000000 -0500
+@@ -192,6 +192,14 @@
+ { "defaultpartition", "default", STRING }
+ /* The partition name used by default for new mailboxes. */
+ 
++{ "delete_mode", "immediate", ENUM("immediate", "delayed") }
++/* The mode in which mailboxes (and their contents) are deleted.
++   "Immediate" mode is the default behavior in which the mailboxes and
++   their contents are removed at the time of the DELETE.  In "delayed" mode,
++   the contents of mailboxes are copied to a holding area, to be purged
++   at a later time by "cyr_expire".  This allows accidentally removed
++   mailboxes to be recovered. */
++
+ { "deleteright", "c", STRING }
+ /* Deprecated - only used for backwards compatibility with existing
+    installations.  Lists the old RFC 2086 right which was used to

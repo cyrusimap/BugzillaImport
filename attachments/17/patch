@@ -1,0 +1,48 @@
+--- imapd.c.old	Thu Apr 26 13:17:21 2001
++++ imapd.c	Wed May  9 16:20:35 2001
+@@ -4374,6 +4374,7 @@
+     char *p, *str;
+     int i, c, flag, size;
+     time_t start, end;
++    struct strlist **patlist;
+ 
+     c = getword(imapd_in, &criteria);
+     lcase(criteria.s);
+@@ -4509,6 +4510,37 @@
+ 	    if (c != ' ') goto missingarg;
+ 	    lcase(arg.s);
+ 
++            /* some headers can be reduced to search terms */
++            patlist = NULL;
++            if (!strcmp(arg.s, "bcc")) {
++                patlist = &searchargs->bcc;
++            }
++            else if (!strcmp(arg.s, "cc")) {
++		patlist = &searchargs->cc;
++            }
++	    else if (!strcmp(arg.s, "to")) {
++		patlist = &searchargs->to;
++            }
++	    else if (!strcmp(arg.s, "from")) {
++		patlist = &searchargs->from;
++            }
++	    else if (!strcmp(arg.s, "subject")) {
++		patlist = &searchargs->subject;
++            }
++            if (!patlist) {
++        	c = getastring(imapd_in, imapd_out, &arg);
++	        if (c == EOF) goto missingarg;
++   	        str = charset_convert(arg.s, *charset, NULL, 0);
++	        if (strchr(str, EMPTY)) {
++		    /* Force failure */
++  		    searchargs->flags = (SEARCH_RECENT_SET|SEARCH_RECENT_UNSET);
++	        }
++                else {
++   	            appendstrlistpat(patlist, str);
++                }
++                break;
++            }
++                
+ 	    /* we look message-id up in the envelope */
+ 	    if (!strcmp(arg.s, "message-id")) {
+ 		c = getastring(imapd_in, imapd_out, &arg);

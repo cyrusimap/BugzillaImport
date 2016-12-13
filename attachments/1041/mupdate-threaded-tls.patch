@@ -1,0 +1,158 @@
+diff -Nrub cyrus-imapd-2.3.13/imap/Makefile.in working_copy/imap/Makefile.in
+--- cyrus-imapd-2.3.13/imap/Makefile.in	2008-09-23 17:17:09.000000000 +0100
++++ working_copy/imap/Makefile.in	2008-11-04 17:08:31.000000000 +0000
+@@ -101,8 +101,8 @@
+ 	convert_code.o duplicate.o saslclient.o saslserver.o signals.o \
+ 	annotate.o search_engines.o squat.o squat_internal.o mbdump.o \
+ 	imapparse.o telemetry.o user.o notify.o idle.o quota_db.o \
+-	sync_log.o $(SEEN) mboxkey.o backend.o tls.o message_guid.o \
+-	statuscache_db.o
++	sync_log.o $(SEEN) mboxkey.o backend.o tls.o tls_th-lock.o \
++	message_guid.o statuscache_db.o
+ 
+ IMAPDOBJS=pushstats.o imapd.o proxy.o imap_proxy.o index.o version.o
+ 
+@@ -214,11 +214,11 @@
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o libimap.a \
+ 	$(DEPLIBS) $(LIBS) $(LIB_WRAP)
+ 
+-mupdate: mupdate.o mupdate-slave.o mupdate-client.o mutex_pthread.o tls.o \
+-	libimap.a $(DEPLIBS)
++mupdate: mupdate.o mupdate-slave.o mupdate-client.o mutex_pthread.o \
++	tls.o tls_th-lock.o libimap.a $(DEPLIBS)
+ 	$(CC) $(LDFLAGS) -o mupdate \
+ 	 $(SERVICETHREAD) mupdate.o mupdate-slave.o mupdate-client.o \
+-	 mutex_pthread.o tls.o libimap.a \
++	 mutex_pthread.o tls.o tls_th-lock.o libimap.a \
+ 	 $(DEPLIBS) $(LIBS) $(LIB_WRAP) -lpthread
+ 
+ mupdate.pure: mupdate.o mupdate-slave.o mupdate-client.o mutex_pthread.o \
+diff -Nrub cyrus-imapd-2.3.13/imap/mupdate.c working_copy/imap/mupdate.c
+--- cyrus-imapd-2.3.13/imap/mupdate.c	2008-10-08 16:47:08.000000000 +0100
++++ working_copy/imap/mupdate.c	2008-11-04 17:09:01.000000000 +0000
+@@ -86,6 +86,7 @@
+ #include "nonblock.h"
+ #include "prot.h"
+ #include "tls.h"
++#include "tls_th-lock.h"
+ #include "util.h"
+ #include "version.h"
+ #include "xmalloc.h"
+@@ -634,6 +635,10 @@
+ 
+     database_init();
+ 
++#ifdef HAVE_SSL
++    CRYPTO_thread_setup();
++#endif
++
+     if (!masterp) {
+ 	r = pthread_create(&t, NULL, &mupdate_client_start, NULL);
+ 	if(r == 0) {
+@@ -679,6 +684,9 @@
+ /* Called by service API to shut down the service */
+ void service_abort(int error)
+ {
++#ifdef HAVE_SSL
++    CRYPTO_thread_cleanup();
++#endif
+     shut_down(error);
+ }
+ 
+diff -Nrub cyrus-imapd-2.3.13/imap/tls_th-lock.c working_copy/imap/tls_th-lock.c
+--- cyrus-imapd-2.3.13/imap/tls_th-lock.c	1970-01-01 01:00:00.000000000 +0100
++++ working_copy/imap/tls_th-lock.c	2008-11-04 17:08:31.000000000 +0000
+@@ -0,0 +1,70 @@
++/* tls_th-lock.c */
++/* Derived from openssl-0.9.8i/crypto/threads/th-lock.c
++ * by Duncan Gibb <duncan.gibb@siriusit.co.uk>
++ * 4 November 2008
++ */
++
++#include <config.h>
++#include <pthread.h>
++#include <syslog.h>
++
++#include <openssl/ssl.h>
++
++#include "tls_th-lock.h"
++
++static pthread_mutex_t *lock_cs;
++static long *lock_count;
++
++void CRYPTO_thread_setup(void)
++	{
++	int i;
++
++	syslog(LOG_DEBUG, "Setting up pthreads TLS.");
++
++	lock_cs=OPENSSL_malloc(CRYPTO_num_locks() * sizeof(pthread_mutex_t));
++	lock_count=OPENSSL_malloc(CRYPTO_num_locks() * sizeof(long));
++	for (i=0; i<CRYPTO_num_locks(); i++)
++		{
++		lock_count[i]=0;
++		pthread_mutex_init(&(lock_cs[i]),NULL);
++		}
++
++	CRYPTO_set_id_callback((unsigned long (*)())pthreads_thread_id);
++	CRYPTO_set_locking_callback((void (*)())pthreads_locking_callback);
++	}
++
++void CRYPTO_thread_cleanup(void)
++	{
++	int i;
++
++	CRYPTO_set_locking_callback(NULL);
++	for (i=0; i<CRYPTO_num_locks(); i++)
++		{
++		pthread_mutex_destroy(&(lock_cs[i]));
++		}
++	OPENSSL_free(lock_cs);
++	OPENSSL_free(lock_count);
++	}
++
++void pthreads_locking_callback(int mode, int type, char *file,
++	     int line)
++      {
++	if (mode & CRYPTO_LOCK)
++		{
++		pthread_mutex_lock(&(lock_cs[type]));
++		lock_count[type]++;
++		}
++	else
++		{
++		pthread_mutex_unlock(&(lock_cs[type]));
++		}
++	}
++
++unsigned long pthreads_thread_id(void)
++	{
++	unsigned long ret;
++
++	ret=(unsigned long)pthread_self();
++	return(ret);
++	}
++
+diff -Nrub cyrus-imapd-2.3.13/imap/tls_th-lock.h working_copy/imap/tls_th-lock.h
+--- cyrus-imapd-2.3.13/imap/tls_th-lock.h	1970-01-01 01:00:00.000000000 +0100
++++ working_copy/imap/tls_th-lock.h	2008-11-04 17:08:31.000000000 +0000
+@@ -0,0 +1,19 @@
++/* tls_th-lock.h */
++/* Derived from openssl-0.9.8i/crypto/threads/th-lock.c
++ * by Duncan Gibb <duncan.gibb@siriusit.co.uk>
++ * 4 November 2008
++ */
++
++#ifndef INCLUDED_TLS_TH_LOCK_H
++#define INCLUDED_TLS_TH_LOCK_H
++
++#ifdef HAVE_SSL
++
++void CRYPTO_thread_setup(void);
++void CRYPTO_thread_cleanup(void);
++
++static void pthreads_locking_callback(int mode,int type,char *file,int line);
++static unsigned long pthreads_thread_id(void );
++
++#endif /* HAVE_SSL */
++#endif /* INCLUDED_TLS_TH_LOCK_H */

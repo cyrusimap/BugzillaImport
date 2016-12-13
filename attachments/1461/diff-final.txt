@@ -1,0 +1,75 @@
+For imap/pop3d.c :
+===================
+
+--- /pop3d.c	2012-03-31 23:01:50.000000000 +0200
++++ imap/pop3d.c	2012-04-01 01:34:58.000000000 +0200
+@@ -1069,13 +1069,13 @@
+ 		    prot_printf(popd_out, "-ERR No such message\r\n");
+ 		}
+ 		else if (mboxstruct.options & OPT_POP3_NEW_UIDL) {
+-			    prot_printf(popd_out, "+OK %u %lu.%u\r\n", msg, 
++			    prot_printf(popd_out, "+OK %u %lu.%.10u\r\n", msg, 
+ 					mboxstruct.uidvalidity,
+ 					popd_msg[msg].uid);
+ 		}
+ 		else {
+ 		    /* old uidl format */
+-		    prot_printf(popd_out, "+OK %u %u\r\n", 
++		    prot_printf(popd_out, "+OK %u %.10u\r\n", 
+ 				msg, popd_msg[msg].uid);
+ 		}
+ 	    }
+@@ -1084,11 +1084,11 @@
+ 		for (msg = 1; msg <= popd_exists; msg++) {
+ 		    if (!popd_msg[msg].deleted) {
+ 			if (mboxstruct.options & OPT_POP3_NEW_UIDL) {
+-			    prot_printf(popd_out, "%u %lu.%u\r\n", msg, 
++			    prot_printf(popd_out, "%u %lu.%.10u\r\n", msg, 
+ 					mboxstruct.uidvalidity,
+ 					popd_msg[msg].uid);
+ 			} else {
+-			    prot_printf(popd_out, "%u %u\r\n", msg, 
++			    prot_printf(popd_out, "%u %.10u\r\n", msg, 
+ 					popd_msg[msg].uid);
+ 			}
+ 		    }
+
+
+
+For lib/prot.c : 
+=================
+
+--- lib/prot.c	2011-10-04 21:59:14.000000000 +0200
++++ /prot.c	2012-04-01 20:56:28.000000000 +0200
+@@ -1170,6 +1170,30 @@
+ 	    prot_putc('%', s);
+ 	    break;
+ 
++	case '.':
++	    switch (*++percent) {
++	    case '1':
++            	switch (*++percent) {
++		case '0':
++			switch (*++percent) {
++			case 'l':
++			        switch (*++percent) {
++			    	case 'u':
++				ul = va_arg(pvar, long);
++				snprintf(buf, sizeof(buf), "%.10lu", ul);
++				prot_write(s, buf, strlen(buf));
++				break;
++				                    }
++		 	case 'u':
++ 			u = va_arg(pvar, int);
++            	        snprintf(buf, sizeof(buf), "%.10u", u);
++            	        prot_write(s, buf, strlen(buf));
++            	        break;
++			                   }
++				  }
++		                }
++		break;
++
+ 	case 'l':
+ 	    switch (*++percent) {
+ 	    case 'd':
+macramattack:Desktop egoitzaurrekoetxeaaurre$ 

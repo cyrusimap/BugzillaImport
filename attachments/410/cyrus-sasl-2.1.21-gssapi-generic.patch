@@ -1,0 +1,60 @@
+Attempt to add support for the CITI gssglue-based GSSAPI library.
+Pass "--with-gss-impl=generic" to configure to actually use it.
+
+--- cyrus-sasl-2.1.21/cmulocal/sasl2.m4	2006-01-11 18:11:41.000000000 -0500
++++ cyrus-sasl-2.1.21/cmulocal/sasl2.m4	2006-01-11 18:45:48.000000000 -0500
+@@ -95,11 +95,21 @@
+      gssapi_dir="/usr/local/lib"
+   fi
+ 
+-  # Check a full link against the Heimdal libraries.
++  # Check a full link against the generic (gssglue-based) libraries.
++  # If this fails, check a full link against the Heimdal libraries.
+   # If this fails, check a full link against the MIT libraries.
+   # If this fails, check a full link against the CyberSafe libraries.
+   # If this fails, check a full link against the Solaris 8 and up libgss.
+ 
++  if test "$gss_impl" = "auto" -o "$gss_impl" = "generic"; then
++    gss_failed=0
++    AC_CHECK_LIB(gssapi,gss_unwrap,gss_impl="generic",gss_failed=1,
++                 ${GSSAPIBASE_LIBS} -lgssapi)
++    if test "$gss_impl" != "auto" -a "$gss_failed" = "1"; then
++      gss_impl="failed"
++    fi
++  fi
++
+   if test "$gss_impl" = "auto" -o "$gss_impl" = "heimdal"; then
+     gss_failed=0
+     AC_CHECK_LIB(gssapi,gss_unwrap,gss_impl="heimdal",gss_failed=1,
+@@ -176,6 +186,13 @@
+     GSSAPIBASE_LIBS="$GSSAPIBASE_LIBS -lgss -lcstbk5"
+     # there is no static libgss for CyberSafe
+     GSSAPIBASE_STATIC_LIBS=none
++  elif test "$gss_impl" = "generic"; then
++    GSSAPI_CFLAGS=`pkg-config --cflags libgssapi 2> /dev/null`
++    CPPFLAGS="$CPPFLAGS ${GSSAPI_CFLAGS:--I/usr/include/gssglue}"
++    GSSAPI_LIBS=`pkg-config --libs libgssapi 2> /dev/null`
++    GSSAPIBASE_LIBS="${GSSAPI_LIBS:--lgssapi -ldl}"
++    # Who knows if this even works with libdl being in there, but okay....
++    GSSAPIBASE_STATIC_LIBS="$GSSAPI_LIBS"
+   elif test "$gss_impl" = "cybersafe"; then
+     CPPFLAGS="$CPPFLAGS -D$platform -I${gssapi}/appsec-sdk/include"
+     GSSAPIBASE_LIBS="$GSSAPIBASE_LIBS -lgss"
+@@ -255,6 +272,7 @@
+   cmu_save_LIBS="$LIBS"
+   LIBS="$LIBS $GSSAPIBASE_LIBS"
+   AC_CHECK_FUNCS(gsskrb5_register_acceptor_identity)
++  GSSAPI_LIBS="$LIBS"
+   LIBS="$cmu_save_LIBS"
+ else
+   AC_MSG_RESULT([disabled])
+--- cyrus-sasl-2.1.21/lib/Makefile.am	2006-01-11 19:50:22.000000000 -0500
++++ cyrus-sasl-2.1.21/lib/Makefile.am	2006-01-11 19:50:14.000000000 -0500
+@@ -79,6 +79,7 @@
+ 	$(AR) cru .libs/$@ $(SASL_STATIC_OBJS)
+ 	@for i in ./libsasl2.la $(top_builddir)/sasldb/libsasldb.la $(top_builddir)/plugins/lib*.la; do \
+ 	if test ! -f $$i; then continue; fi; . $$i; \
++	dependency_libs="$(GSSAPI_LIBS) $(NTLM_LIBS) $(OTP_LIBS) $(PASSDSS_LIBS) $(PLAIN_LIBS) $(SRP_LIBS) $(SASL_DB_LIB)" ; \
+ 	for j in $$dependency_libs foo; do \
+ 	case $$j in foo) ;; \
+ 	-L*) for k in $$depdirs foo; do \

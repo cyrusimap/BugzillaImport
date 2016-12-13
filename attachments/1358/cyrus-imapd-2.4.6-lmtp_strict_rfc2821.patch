@@ -1,0 +1,41 @@
+diff -Naur cyrus-imapd-2.4.6.orig/imap/lmtpengine.c cyrus-imapd-2.4.6/imap/lmtpengine.c
+--- cyrus-imapd-2.4.6.orig/imap/lmtpengine.c	2010-12-20 14:15:49.000000000 +0100
++++ cyrus-imapd-2.4.6/imap/lmtpengine.c	2011-02-22 07:23:51.000000000 +0100
+@@ -462,6 +462,7 @@
+ {
+     char *p, *ret;
+     int len;
++    int lmtp_strict_rfc2821 = config_getswitch(IMAPOPT_LMTP_STRICT_RFC2821);
+ 
+     p = s;
+ 
+@@ -500,6 +501,12 @@
+ 		if (!*++p) return 0;
+ 	    }
+ 	    else {
++		if (*p & 128 && !lmtp_strict_rfc2821) {
++		    /* this prevents us from becoming a backscatter
++		       source if our MTA allows 8bit in local-part
++		       of adresses. */
++		    *p = 'X';
++		}
+ 		if (*p <= ' ' || (*p & 128) ||
+ 		    strchr("<>()[]\\,;:\"", *p)) return 0;
+ 	    }
+diff -Naur cyrus-imapd-2.4.6.orig/lib/imapoptions cyrus-imapd-2.4.6/lib/imapoptions
+--- cyrus-imapd-2.4.6.orig/lib/imapoptions	2010-12-20 14:15:49.000000000 +0100
++++ cyrus-imapd-2.4.6/lib/imapoptions	2011-02-22 07:29:26.000000000 +0100
+@@ -586,6 +586,13 @@
+    will cause the user's mailbox to exceed its quota.  By default, the
+    failure won't occur until the mailbox is already over quota. */
+ 
++{ "lmtp_strict_rfc2821", 1, SWITCH }
++/* If enabled, lmtpd will be strict (per RFC 2821) with regards to which
++   envelope addresses are allowed. When disabled, 8bit characters are
++   allowed in the local-part of envelope addresses but they are changed
++   to 'X'. This is useful with certain MTAs like Postfix or Exim which
++   accept such messages. */
++
+ { "lmtpsocket", "{configdirectory}/socket/lmtp", STRING }
+ /* Unix domain socket that lmtpd listens on, used by deliver(8). This should
+    match the path specified in cyrus.conf(5). */

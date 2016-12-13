@@ -1,0 +1,72 @@
+diff -Naur cyrus-imapd-2.3.16.old/imap/annotate.c cyrus-imapd-2.3.16/imap/annotate.c
+--- cyrus-imapd-2.3.16.old/imap/annotate.c	2009-12-21 11:25:22.000000000 +0000
++++ cyrus-imapd-2.3.16/imap/annotate.c	2010-05-18 10:54:42.069620739 +0100
+@@ -1874,6 +1874,9 @@
+     { "/vendor/cmu/cyrus-imapd/duplicatedeliver", ATTRIB_TYPE_BOOLEAN, BACKEND_ONLY,
+       ATTRIB_VALUE_SHARED | ATTRIB_CONTENTTYPE_SHARED,
+       ACL_ADMIN, annotation_set_mailboxopt, NULL },
++    { "/vendor/qmul/cyrus-imapd/lmtptarget", ATTRIB_TYPE_BOOLEAN, BACKEND_ONLY,
++      ATTRIB_VALUE_SHARED | ATTRIB_CONTENTTYPE_SHARED,
++      ACL_ADMIN, annotation_set_todb, NULL },
+     { NULL, 0, ANNOTATION_PROXY_T_INVALID, 0, 0, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.3.16.old/imap/mboxlist.c cyrus-imapd-2.3.16/imap/mboxlist.c
+--- cyrus-imapd-2.3.16.old/imap/mboxlist.c	2009-11-17 03:34:30.000000000 +0000
++++ cyrus-imapd-2.3.16/imap/mboxlist.c	2010-05-18 11:18:15.509634066 +0100
+@@ -1028,6 +1028,7 @@
+     int mbtype;
+     const char *p;
+     mupdate_handle *mupdate_h = NULL;
++    struct annotation_data attrib;
+ 
+     if(!isadmin && force) return IMAP_PERMISSION_DENIED;
+ 
+@@ -1048,6 +1049,14 @@
+ 	if (!isadmin) { r = IMAP_PERMISSION_DENIED; goto done; }
+     }
+ 
++    /* Does mailbox have the lmtptarget annotation set? */
++    if (annotatemore_lookup(name, "/vendor/qmul/cyrus-imapd/lmtptarget", "", &attrib) == 0 &&
++        attrib.value && !strcasecmp(attrib.value, "true")) {
++        /* Even admins can't delete a mailbox with the lmtptarget annotation set. */
++        r = IMAP_MAILBOX_NOTSUPPORTED;
++        goto done;
++    }
++
+     r = mboxlist_mylookup(name, &mbtype, &path, &mpath, NULL, &acl, &tid, 1);
+     switch (r) {
+     case 0:
+@@ -1193,6 +1202,7 @@
+     char *newpartition = NULL;
+     char *mboxent = NULL;
+     char *p;
++    struct annotation_data attrib;
+ 
+     mupdate_handle *mupdate_h = NULL;
+     int madenew = 0;
+@@ -1299,6 +1309,13 @@
+ 		goto done;
+ 	    }
+ 	}
++        /* Does mailbox have the lmtptarget annotation set? */
++        if (annotatemore_lookup(oldname, "/vendor/qmul/cyrus-imapd/lmtptarget", "", &attrib) == 0 &&
++            attrib.value && !strcasecmp(attrib.value, "true")) {
++            /* Even admins can't rename a mailbox with the lmtptarget annotation set. */
++            r = IMAP_MAILBOX_NOTSUPPORTED;
++            goto done;
++        }
+ 	r = mboxlist_mycreatemailboxcheck(newname, 0, partition, isadmin, 
+ 					  userid, auth_state, NULL, 
+ 					  &newpartition, 1, 0, forceuser, &tid);
+diff -Naur cyrus-imapd-2.3.16.old/perl/imap/IMAP/Admin.pm cyrus-imapd-2.3.16/perl/imap/IMAP/Admin.pm
+--- cyrus-imapd-2.3.16.old/perl/imap/IMAP/Admin.pm	2008-04-04 13:47:11.000000000 +0100
++++ cyrus-imapd-2.3.16/perl/imap/IMAP/Admin.pm	2010-05-18 11:30:54.437108440 +0100
+@@ -789,6 +789,7 @@
+ 		 "expire" => "/vendor/cmu/cyrus-imapd/expire",
+ 		 "news2mail" => "/vendor/cmu/cyrus-imapd/news2mail",
+ 		 "sharedseen" => "/vendor/cmu/cyrus-imapd/sharedseen",
++		 "lmtptarget" => "/vendor/qmul/cyrus-imapd/lmtptarget",
+ 		 "sieve" => "/vendor/cmu/cyrus-imapd/sieve",
+ 		 "squat" => "/vendor/cmu/cyrus-imapd/squat" );
+ 

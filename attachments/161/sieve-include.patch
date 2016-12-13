@@ -1,0 +1,874 @@
+Index: imap/lmtpd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/lmtpd.c,v
+retrieving revision 1.99.2.29
+diff -u -r1.99.2.29 lmtpd.c
+--- imap/lmtpd.c	31 Mar 2003 01:19:31 -0000	1.99.2.29
++++ imap/lmtpd.c	31 Mar 2003 18:18:43 -0000
+@@ -358,6 +358,32 @@
+     }
+ }
+ 
++#define PERSONAL_PREFIX	"/personal/"
++#define GLOBAL_PREFIX	"/global/"
++
++static int sieve_find_script(const char *user, const char *script,
++			     char *fname, size_t size);
++
++static int getinclude(void *sc, const char *script,
++		      char *fname, size_t size)
++{
++    script_data_t *sdata = (script_data_t *) sc;
++
++    if (!strncmp(script, PERSONAL_PREFIX, strlen(PERSONAL_PREFIX))) {
++	script += strlen(PERSONAL_PREFIX);
++	return sieve_find_script(sdata->username, script, fname, size);
++    }
++    else if (!strncmp(script, GLOBAL_PREFIX, strlen(GLOBAL_PREFIX))) {
++	script += strlen(GLOBAL_PREFIX);
++	return sieve_find_script(NULL, script, fname, size);
++    }
++
++    syslog(LOG_NOTICE, "failed to get sieve script '%s' for user '%s'",
++	   script, sdata->username);
++
++    return SIEVE_FAIL;
++}
++
+ static int global_outgoing_count = 0;
+ 
+ pid_t open_sendmail(const char *argv[], FILE **sm)
+@@ -984,6 +1010,12 @@
+ 	fatal("sieve_register_envelope()", EC_SOFTWARE);
+     }
+     
++    res = sieve_register_include(sieve_interp, &getinclude);
++    if (res != SIEVE_OK) {
++	syslog(LOG_ERR,"sieve_register_include() returns %d\n", res);
++	fatal("sieve_register_include()", EC_SOFTWARE);
++    }
++    
+     res = sieve_register_vacation(sieve_interp, &vacation);
+     if (res != SIEVE_OK) {
+ 	syslog(LOG_ERR, "sieve_register_vacation() returns %d\n", res);
+@@ -1005,56 +1037,77 @@
+ }
+ 
+ /* returns true if user has a sieve file */
+-static int sieve_find_script(const char *user, char *fname, size_t size)
++static int sieve_find_script(const char *user, const char *script,
++			     char *fname, size_t size)
+ {
+-    if (strlen(user) > 900) {
++    if (!user && !script) {
+ 	return -1;
+     }
+     
++    if (user && strlen(user) > 900) {
++	return -1;
++    }
++
+     if (!have_dupdb) {
+ 	/* duplicate delivery database is needed for sieve */
+ 	return -1;
+     }
+ 
+     if (sieve_usehomedir) { /* look in homedir */
+-	struct passwd *pent = getpwnam(user);
+-
+-	if (pent == NULL) {
++	if (!user) { /* global script */
++	    /* XXX where are global scripts? */
+ 	    return -1;
+ 	}
++	else {
++	    struct passwd *pent = getpwnam(user);
+ 
+-	/* check ~USERNAME/.sieve */
+-	snprintf(fname, size, "%s/%s", pent->pw_dir, ".sieve");
++	    if (pent == NULL) {
++		return -1;
++	    }
++
++	    /* check ~USERNAME/.sieve */
++	    snprintf(fname, size, "%s/%s", pent->pw_dir,
++		     script ? script : ".sieve");
++	}
+     } else { /* look in sieve_dir */
+-	char hash, *domain;
+-	char bufuser[MAX_MAILBOX_NAME+1];
+-
+-	strlcpy(bufuser, user, sizeof(bufuser));
+-
+-	mboxname_hiersep_tointernal(&lmtpd_namespace, bufuser,
+-				    config_virtdomains ?
+-				    strcspn(bufuser, "@") : 0);
+-
+-	if (config_virtdomains && (domain = strchr(bufuser, '@'))) {
+-	    char d = (char) dir_hash_c(domain+1);
+-	    *domain = '\0';  /* split user@domain */
+-	    hash = (char) dir_hash_c(user);
+-	    snprintf(fname, size, "%s%s%c/%s/%c/%s/default.bc",
+-		     sieve_dir, FNAME_DOMAINDIR, d, domain+1,
+-		     hash, bufuser);
++	if (!user) { /* global script */
++	    snprintf(fname, size, "%s/", sieve_dir);
+ 	}
+ 	else {
+-	    hash = (char) dir_hash_c(bufuser);
++	    char hash, *domain;
++	    char bufuser[MAX_MAILBOX_NAME+1];
++
++	    strlcpy(bufuser, user, sizeof(bufuser));
+ 
+-	    snprintf(fname, size, "%s/%c/%s/default.bc",
+-		     sieve_dir, hash, user);
++	    mboxname_hiersep_tointernal(&lmtpd_namespace, bufuser,
++					config_virtdomains ?
++					strcspn(bufuser, "@") : 0);
++
++	    if (config_virtdomains && (domain = strchr(bufuser, '@'))) {
++		char d = (char) dir_hash_c(domain+1);
++		*domain = '\0';  /* split user@domain */
++		hash = (char) dir_hash_c(user);
++		snprintf(fname, size, "%s%s%c/%s/%c/%s/",
++			 sieve_dir, FNAME_DOMAINDIR, d, domain+1,
++			 hash, bufuser);
++	    }
++	    else {
++		hash = (char) dir_hash_c(bufuser);
++
++		snprintf(fname, size, "%s/%c/%s/",
++			 sieve_dir, hash, user);
++	    }
+ 	}
++
++	strlcat(fname, script ? script : "default", size);
++	strlcat(fname, ".bc", size);
+     }
+ 	
+     return 0;
+ }
+ #else /* USE_SIEVE */
+-static int sieve_find_script(const char *user, char *fname, size_t size)
++static int sieve_find_script(const char *user, const char *script,
++			     char *fname, size_t size)
+ {
+     return -1;
+ }
+@@ -1202,9 +1255,9 @@
+ 	    if (domain) sprintf(user+strlen(user), "@%s", domain);
+ 
+ #ifdef USE_SIEVE
+-	    if (sieve_find_script(user, fname, sizeof(fname)) != -1) {
++	    if (sieve_find_script(user, NULL, fname, sizeof(fname)) != -1) {
+ 		script_data_t *sdata = NULL;
+-		sieve_bytecode_t *bc = NULL;
++		sieve_execute_t *bc = NULL;
+ 
+ 		sdata = (script_data_t *) xmalloc(sizeof(script_data_t));
+ 
+Index: sieve/bc_dump.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/Attic/bc_dump.c,v
+retrieving revision 1.1.4.1
+diff -u -r1.1.4.1 bc_dump.c
+--- sieve/bc_dump.c	27 Feb 2003 18:13:51 -0000	1.1.4.1
++++ sieve/bc_dump.c	31 Mar 2003 18:18:46 -0000
+@@ -293,6 +293,17 @@
+ 	case B_NULL:
+ 	    printf("%d: NULL\n",i);
+ 	    break;
++
++	case B_INCLUDE:
++	    printf("%d: INCLUDE {%d}%s\n",i,
++		   d->data[i+1].len,d->data[i+2].str);
++	    i+=2;
++	    break;
++
++	case B_RETURN:
++	    printf("%d: RETURN\n",i);
++	    break;
++
+ 	default:
+ 	    printf("%d: %d\n",i,d->data[i].op);
+ 	    break;
+Index: sieve/bc_emit.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/Attic/bc_emit.c,v
+retrieving revision 1.1.4.1
+diff -u -r1.1.4.1 bc_emit.c
+--- sieve/bc_emit.c	27 Feb 2003 18:13:51 -0000	1.1.4.1
++++ sieve/bc_emit.c	31 Mar 2003 18:18:46 -0000
+@@ -442,6 +442,7 @@
+ 	case B_REJECT:
+ 	case B_FILEINTO:
+ 	case B_REDIRECT:
++	case B_INCLUDE:
+ 	    /*just a string*/
+ 	    len = bc->data[codep++].len;
+ 	    if(write(fd,&len,sizeof(len)) == -1)
+@@ -621,6 +622,7 @@
+ 	case B_KEEP:
+ 	case B_MARK:
+ 	case B_UNMARK:
++	case B_RETURN:
+ 	    /* No Parameters! */
+ 	    break;
+ 
+Index: sieve/bc_eval.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/Attic/bc_eval.c,v
+retrieving revision 1.1.4.9
+diff -u -r1.1.4.9 bc_eval.c
+--- sieve/bc_eval.c	29 Mar 2003 01:26:44 -0000	1.1.4.9
++++ sieve/bc_eval.c	31 Mar 2003 18:18:46 -0000
+@@ -31,6 +31,7 @@
+ #include "sieve_interface.h"
+ #include "interp.h"
+ #include "message.h"
++#include "script.h"
+ 
+ #include "bytecode.h"
+ 
+@@ -666,24 +667,31 @@
+ }
+ 
+ /* The entrypoint for bytecode evaluation */
+-int sieve_eval_bc(sieve_interp_t *i, const void *bc_in, unsigned int bc_len,
+-		  void *m, sieve_imapflags_t * imapflags,
++int sieve_eval_bc(sieve_execute_t *exe, int is_incl, sieve_interp_t *i,
++		  void *sc, void *m, sieve_imapflags_t * imapflags,
+ 		  action_list_t *actions,
+ 		  notify_list_t *notify_list,
+ 		  const char **errmsg) 
+ {
+     const char *data;
+-    unsigned int ip = 0, ip_max = (bc_len/sizeof(bytecode_input_t));
+     int res=0;
+    
+-    bytecode_input_t *bc = (bytecode_input_t *)bc_in;
+-    
++    sieve_bytecode_t *bc_cur = exe->bc_cur;
++    bytecode_input_t *bc = (bytecode_input_t *) bc_cur->data;
++    unsigned int ip = 0, ip_max = (bc_cur->len/sizeof(bytecode_input_t));
++
++    if (bc_cur->is_executing) {
++	*errmsg = "Recursive Include";
++	return SIEVE_RUN_ERROR;
++    }
++    bc_cur->is_executing = 1;
++
+     /* Check that we
+      * a) have bytecode
+      * b) it is atleast long enough for the magic number, the version
+      *    and one opcode */
+     if(!bc) return SIEVE_FAIL;
+-    if(bc_len < (BYTECODE_MAGIC_LEN + 2*sizeof(bytecode_input_t)))
++    if(bc_cur->len < (BYTECODE_MAGIC_LEN + 2*sizeof(bytecode_input_t)))
+        return SIEVE_FAIL;
+ 
+     if(memcmp(bc, BYTECODE_MAGIC, BYTECODE_MAGIC_LEN)) {
+@@ -1040,6 +1048,36 @@
+ 	    ip= bc[ip+1].jump;
+ 	    break;
+ 	    
++	case B_INCLUDE:/*17*/
++	{
++	    char fname[4096];
++
++	    ip = unwrap_string(bc, ip+1, &data, NULL);
++
++	    res = i->getinclude(sc, data, fname, sizeof(fname));
++	    if (res != SIEVE_OK)
++		*errmsg = "Include can not find script";
++
++	    if (!res) {
++		res = sieve_script_load(fname, &exe);
++		if (res != SIEVE_OK)
++		*errmsg = "Include can not load script";
++	    }
++
++	    if (!res)
++		res = sieve_eval_bc(exe, 1, i, sc, m, imapflags, actions,
++				    notify_list, errmsg);
++
++	    break;
++	}
++
++	case B_RETURN:/*18*/
++	    if (is_incl)
++		goto done;
++	    else
++		res=1;
++	    break;
++
+ 	default:
+ 	    if(errmsg) *errmsg = "Invalid sieve bytecode";
+ 	    return SIEVE_FAIL;
+@@ -1048,5 +1086,9 @@
+ 	if (res) /* we've either encountered an error or a stop */
+ 	    break;
+     }
++
++  done:
++    bc_cur->is_executing = 0;
++
+     return res;      
+ }
+Index: sieve/bc_generate.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/Attic/bc_generate.c,v
+retrieving revision 1.1.4.3
+diff -u -r1.1.4.3 bc_generate.c
+--- sieve/bc_generate.c	5 Mar 2003 17:53:01 -0000	1.1.4.3
++++ sieve/bc_generate.c	31 Mar 2003 18:18:46 -0000
+@@ -407,6 +407,13 @@
+ 		if(!atleast(retval,codep+1)) return -1;
+ 		retval->data[codep++].op = B_UNMARK;
+ 		break;
++
++	    case RETURN:
++		/* RETURN (no arguments) */
++		if(!atleast(retval,codep+1)) return -1;
++		retval->data[codep++].op = B_RETURN;
++		break;
++
+ 	    case DENOTIFY:
+ 		/* DENOTIFY  */
+ 		if(!atleast(retval,codep+6)) return -1;
+@@ -481,6 +488,15 @@
+ 		retval->data[codep++].len = strlen(c->u.str);
+ 		retval->data[codep++].str = c->u.str;
+ 		break;
++
++	    case INCLUDE:
++		/* INCLUDE (STRING: len + dataptr) */
++		if(!atleast(retval,codep+3)) return -1;
++		retval->data[codep++].op = B_INCLUDE;
++		retval->data[codep++].len = strlen(c->u.str);
++		retval->data[codep++].str = c->u.str;
++		break;
++
+ 	    case ADDFLAG:
+ 		/* ADDFLAG stringlist */
+ 		if(!atleast(retval,codep+1)) return -1;
+Index: sieve/bytecode.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/Attic/bytecode.h,v
+retrieving revision 1.1.4.1
+diff -u -r1.1.4.1 bytecode.h
+--- sieve/bytecode.h	27 Feb 2003 18:13:52 -0000	1.1.4.1
++++ sieve/bytecode.h	31 Mar 2003 18:18:46 -0000
+@@ -99,7 +99,10 @@
+ 
+     B_VACATION,/* require vacation*/
+     B_NULL,
+-    B_JUMP
++    B_JUMP,
++
++    B_INCLUDE,/* require include */
++    B_RETURN/* require include */
+ };
+ 
+ enum bytecode_comps {
+Index: sieve/interp.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/interp.c,v
+retrieving revision 1.22.4.1
+diff -u -r1.22.4.1 interp.c
+--- sieve/interp.c	27 Feb 2003 18:13:52 -0000	1.22.4.1
++++ sieve/interp.c	31 Mar 2003 18:18:46 -0000
+@@ -57,6 +57,8 @@
+     i->getsize = NULL;
+     i->getheader = NULL;
+     i->getenvelope = NULL;
++    i->getinclude = NULL;
++
+     i->vacation = NULL;
+     i->notify = NULL;
+ 
+@@ -71,6 +73,7 @@
+ 
+ static const char *sieve_extensions = "fileinto reject envelope vacation"
+                                       " imapflags notify subaddress relational"
++                                      " include"
+ #ifdef ENABLE_REGEX
+ " regex";
+ #else
+@@ -160,6 +163,12 @@
+ int sieve_register_envelope(sieve_interp_t *interp, sieve_get_envelope *f)
+ {
+     interp->getenvelope = f;
++    return SIEVE_OK;
++}
++
++int sieve_register_include(sieve_interp_t *interp, sieve_get_include *f)
++{
++    interp->getinclude = f;
+     return SIEVE_OK;
+ }
+ 
+Index: sieve/interp.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/interp.h,v
+retrieving revision 1.7.4.1
+diff -u -r1.7.4.1 interp.h
+--- sieve/interp.h	27 Feb 2003 18:13:52 -0000	1.7.4.1
++++ sieve/interp.h	31 Mar 2003 18:18:46 -0000
+@@ -39,6 +39,7 @@
+     sieve_get_size *getsize;
+     sieve_get_header *getheader;
+     sieve_get_envelope *getenvelope;
++    sieve_get_include *getinclude;
+ 
+     sieve_parse_error *err;
+ 
+Index: sieve/script.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/script.c,v
+retrieving revision 1.54.4.4
+diff -u -r1.54.4.4 script.c
+--- sieve/script.c	29 Mar 2003 01:26:44 -0000	1.54.4.4
++++ sieve/script.c	31 Mar 2003 18:18:46 -0000
+@@ -113,6 +113,13 @@
+     } else if (!strcmp("comparator-i;ascii-numeric", req)) {
+ 	s->support.i_ascii_numeric = 1;
+ 	return 1;
++    } else if (!strcmp("include", req)) {
++	if (s->interp.getinclude) {
++	    s->support.include = 1;
++	    return 1;
++	} else {
++	    return 0;
++	}
+     }
+     return 0;
+ }
+@@ -415,11 +422,11 @@
+  *****************************************************************************/
+ 
+ /* Load a compiled script */
+-int sieve_script_load(const char *fname, sieve_bytecode_t **ret) 
++int sieve_script_load(const char *fname, sieve_execute_t **ret) 
+ {
+     struct stat sbuf;
+-    sieve_bytecode_t *r;
+-    int fd;
++    sieve_execute_t *r;
++    sieve_bytecode_t *bc;
+    
+     if (!fname || !ret) return SIEVE_FAIL;
+     
+@@ -428,29 +435,62 @@
+ 	return SIEVE_FAIL;
+     }
+ 
+-    fd = open(fname, O_RDONLY);
+-    if (fd == -1) {
+-	syslog(LOG_ERR, "IOERROR: can not open sieve script %s: %m", fname);
+-	return SIEVE_FAIL;
++    if (!*ret) {
++	/* new sieve_bytecode_t */
++	r = (sieve_execute_t *) xzmalloc(sizeof(sieve_execute_t));
++    } else {
++	/* existing sieve_execute_t (INCLUDE) */
++	r = *ret;
++    }
++  
++    /* see if we already have this script loaded */
++    bc = r->bc_list;
++    while (bc) {
++	if (sbuf.st_ino == bc->inode) break;
++	bc = bc->next;
+     }
+ 
+-    r = (sieve_bytecode_t *) xzmalloc(sizeof(sieve_bytecode_t));
++    if (!bc) {
++	int fd;
++
++	/* new script -- load it */
++	fd = open(fname, O_RDONLY);
++	if (fd == -1) {
++	    syslog(LOG_ERR, "IOERROR: can not open sieve script %s: %m", fname);
++	    return SIEVE_FAIL;
++	}
+ 
+-    r->fd = fd;
++	bc = (sieve_bytecode_t *) xzmalloc(sizeof(sieve_bytecode_t));
++
++	bc->fd = fd;
++	bc->inode = sbuf.st_ino;
+     
+-    map_refresh(fd, 1, &r->data, &r->len, sbuf.st_size, fname, "sievescript");
++	map_refresh(fd, 1, &bc->data, &bc->len, sbuf.st_size,
++		    fname, "sievescript");
++
++	/* add buffer to list */
++	bc->next = r->bc_list;
++	r->bc_list = bc;
++    }
+ 
++    r->bc_cur = bc;
+     *ret = r;
+     return SIEVE_OK;
+ }
+ 
+ 
+ 
+-int sieve_script_unload(sieve_bytecode_t **s) 
++int sieve_script_unload(sieve_execute_t **s) 
+ {
+     if(s && *s) {
+-	map_free(&((*s)->data), &((*s)->len));
+-	close((*s)->fd);
++	sieve_bytecode_t *bc = (*s)->bc_list;
++
++	/* free each bytecode buffer in the linked list */
++	while (bc) {
++	    map_free(&(bc->data), &(bc->len));
++	    close(bc->fd);
++	    bc = bc->next;
++	}
+ 	free(*s);
+ 	*s = NULL;
+     } 
+@@ -758,13 +798,13 @@
+ 
+ 
+ /* execute some bytecode */
+-int sieve_eval_bc(sieve_interp_t *i, const void *bc_in, unsigned int bc_len,
+-		  void *m, sieve_imapflags_t * imapflags,
++int sieve_eval_bc(sieve_execute_t *exe, int is_incl, sieve_interp_t *i,
++		  void *sc, void *m, sieve_imapflags_t * imapflags,
+ 		  action_list_t *actions,
+ 		  notify_list_t *notify_list,
+ 		  const char **errmsg);
+ 
+-int sieve_execute_bytecode(sieve_bytecode_t *bc, sieve_interp_t *interp,
++int sieve_execute_bytecode(sieve_execute_t *exe, sieve_interp_t *interp,
+ 			   void *script_context, void *message_context) 
+ {
+     action_list_t *actions = NULL;
+@@ -798,7 +838,7 @@
+ 			      actions_string, errmsg);
+     }
+     
+-    if (sieve_eval_bc(interp, bc->data, bc->len, message_context, 
++    if (sieve_eval_bc(exe, 0, interp, script_context, message_context, 
+ 		      &imapflags, actions, notify_list, &errmsg) < 0)
+ 	return SIEVE_RUN_ERROR;  
+     
+Index: sieve/script.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/script.h,v
+retrieving revision 1.7.4.3
+diff -u -r1.7.4.3 script.h
+--- sieve/script.h	27 Mar 2003 19:28:35 -0000	1.7.4.3
++++ sieve/script.h	31 Mar 2003 18:18:46 -0000
+@@ -28,6 +28,8 @@
+ #ifndef SIEVE_SCRIPT_H
+ #define SIEVE_SCRIPT_H
+ 
++#include <sys/types.h>
++
+ #include "sieve_interface.h"
+ #include "interp.h"
+ #include "tree.h"
+@@ -49,6 +51,7 @@
+ 	int subaddress     : 1;
+ 	int relational     : 1;
+ 	int i_ascii_numeric: 1;
++	int include        : 1;
+     } support;
+ 
+     void *script_context;
+@@ -57,14 +60,22 @@
+     int err;
+ };
+ 
+-struct sieve_bytecode
+-{
+-    sieve_interp_t *interp;
+-    void *script_context;
++typedef struct sieve_bytecode sieve_bytecode_t;
+ 
++struct sieve_bytecode {
++    ino_t inode;		/* used to prevent mmapping the same script */
+     const char *data;
+     unsigned long len;
+     int fd;
++
++    int is_executing;		/* used to prevent recursive INCLUDEs */
++
++    sieve_bytecode_t *next;
++};
++
++struct sieve_execute {
++    sieve_bytecode_t *bc_list;	/* list of loaded bytecode buffers */
++    sieve_bytecode_t *bc_cur;	/* currently active bytecode buffer */
+ };
+ 
+ /* generated by the yacc script */
+Index: sieve/sieve-lex.l
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/sieve-lex.l,v
+retrieving revision 1.20.4.1
+diff -u -r1.20.4.1 sieve-lex.l
+--- sieve/sieve-lex.l	27 Feb 2003 18:13:53 -0000	1.20.4.1
++++ sieve/sieve-lex.l	31 Mar 2003 18:18:46 -0000
+@@ -78,6 +78,8 @@
+ <INITIAL>\"        { BEGIN QSTRING;
+                     mlcur = 0; mlbufsz = 0; mlbuf = NULL; }
+ <INITIAL>[0-9]+[KMG]?	{ yylval.nval = tonum(yytext); return NUMBER; }
++<INITIAL>include	return INCLUDE;
++<INITIAL>return		return RETURN;
+ <INITIAL>if		return IF;
+ <INITIAL>elsif		return ELSIF;
+ <INITIAL>else		return ELSE;
+Index: sieve/sieve.y
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/sieve.y,v
+retrieving revision 1.19.4.6
+diff -u -r1.19.4.6 sieve.y
+--- sieve/sieve.y	24 Mar 2003 19:01:42 -0000	1.19.4.6
++++ sieve/sieve.y	31 Mar 2003 18:18:46 -0000
+@@ -151,6 +151,7 @@
+ %token ALL LOCALPART DOMAIN USER DETAIL
+ %token DAYS ADDRESSES SUBJECT MIME
+ %token METHOD ID OPTIONS LOW NORMAL HIGH ANY MESSAGE
++%token INCLUDE RETURN
+ 
+ %type <cl> commands command action elsif block
+ %type <sl> stringlist strings
+@@ -279,6 +280,18 @@
+ 					if ($$ == NULL) { 
+ 			yyerror("unable to find a compatible comparator");
+ 			YYERROR; } } }
++
++	 | INCLUDE STRING	 { if (!parse_script->support.include) {
++				     yyerror("include not required");
++	                             YYERROR;
++                                   }
++	                           $$ = new_command(INCLUDE); 
++				   $$->u.str = $2; }
++         | RETURN		 { if (!parse_script->support.include) {
++                                    yyerror("include not required");
++                                    YYERROR;
++                                  }
++                                   $$ = new_command(RETURN); }
+ 	;
+ 
+ ntags: /* empty */		 { $$ = new_ntags(); }
+Index: sieve/sieve_interface.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/sieve_interface.h,v
+retrieving revision 1.17.4.4
+diff -u -r1.17.4.4 sieve_interface.h
+--- sieve/sieve_interface.h	29 Mar 2003 01:26:44 -0000	1.17.4.4
++++ sieve/sieve_interface.h	31 Mar 2003 18:18:46 -0000
+@@ -29,7 +29,7 @@
+ 
+ #include <stdio.h>
+ 
+-#define SIEVE_VERSION "CMU Sieve 2.2"
++#define SIEVE_VERSION "CMU Sieve 2.3"
+ 
+ /* error codes */
+ #define SIEVE_OK (0)
+@@ -39,7 +39,7 @@
+ /* external sieve types */
+ typedef struct sieve_interp sieve_interp_t;
+ typedef struct sieve_script sieve_script_t;
+-typedef struct sieve_bytecode sieve_bytecode_t;
++typedef struct sieve_execute sieve_execute_t;
+ typedef struct bytecode_info bytecode_info_t;
+ 
+ typedef int sieve_callback(void *action_context, void *interp_context, 
+@@ -52,6 +52,8 @@
+ typedef int sieve_get_envelope(void *message_context, 
+ 			       const char *field,
+ 			       const char ***contents);
++typedef int sieve_get_include(void *script_context, const char *script,
++			      char *fname, size_t size);
+ 
+ typedef struct sieve_vacation {
+     int min_response;		/* 0 -> defaults to 3 */
+@@ -129,6 +131,7 @@
+ int sieve_register_size(sieve_interp_t *interp, sieve_get_size *f);
+ int sieve_register_header(sieve_interp_t *interp, sieve_get_header *f);
+ int sieve_register_envelope(sieve_interp_t *interp, sieve_get_envelope *f);
++int sieve_register_include(sieve_interp_t *interp, sieve_get_include *f);
+ 
+ typedef int sieve_parse_error(int lineno, const char *msg, 
+ 			      void *interp_context,
+@@ -144,17 +147,17 @@
+ int sieve_script_parse(sieve_interp_t *interp, FILE *script,
+ 		       void *script_context, sieve_script_t **ret);
+ 
+-/* given a bytecode file descriptor, setup the sieve_bytecode_t */
+-int sieve_script_load(const char *fname, sieve_bytecode_t **ret);
++/* given a bytecode file descriptor, load it into the sieve_execute_t */
++int sieve_script_load(const char *fname, sieve_execute_t **ret);
+ 
+ /* Unload a sieve_bytecode_t */
+-int sieve_script_unload(sieve_bytecode_t **s);
++int sieve_script_unload(sieve_execute_t **s);
+ 
+ /* Free a sieve_script_t */
+ int sieve_script_free(sieve_script_t **s);
+ 
+ /* execute bytecode on a message */
+-int sieve_execute_bytecode(sieve_bytecode_t *script, sieve_interp_t *interp,
++int sieve_execute_bytecode(sieve_execute_t *script, sieve_interp_t *interp,
+ 			   void *script_context, void *message_context);
+ 
+ /* Get space separated list of extensions supported by the implementation */
+Index: sieve/sievec.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/Attic/sievec.c,v
+retrieving revision 1.1.4.1
+diff -u -r1.1.4.1 sievec.c
+--- sieve/sievec.c	27 Feb 2003 18:13:54 -0000	1.1.4.1
++++ sieve/sievec.c	31 Mar 2003 18:18:46 -0000
+@@ -227,6 +227,12 @@
+ 	return TIMSIEVE_FAIL;
+     }
+   
++    res = sieve_register_include(i, (sieve_get_include *) &foo);
++    if (res != SIEVE_OK) {
++	syslog(LOG_ERR, "sieve_register_include() returns %d\n", res);
++	return TIMSIEVE_FAIL;
++    }
++  
+     res = sieve_register_vacation(i, &vacation);
+     if (res != SIEVE_OK) {
+ 	syslog(LOG_ERR, "sieve_register_vacation() returns %d\n", res);
+Index: sieve/sieved.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/Attic/sieved.c,v
+retrieving revision 1.1.4.1
+diff -u -r1.1.4.1 sieved.c
+--- sieve/sieved.c	27 Feb 2003 18:13:54 -0000	1.1.4.1
++++ sieve/sieved.c	31 Mar 2003 18:18:46 -0000
+@@ -435,6 +435,17 @@
+ 	    printf("%d:JUMP %d\n",i, d[i+1].jump);
+ 	    i+=2;
+ 	    break;		  
++
++	case B_INCLUDE:/*17*/
++	    i = unwrap_string(d, i+1, &data, &len);
++	    printf("%d: INCLUDE {%d}%s\n", i, len, data);
++	    break;
++
++	case B_RETURN:/*18*/
++	    printf("%d: RETURN\n",i);
++	    i++;
++	    break;
++	    
+ 	default:
+ 	    printf("%d: %d (NOT AN OP)\n",i,d[i].op);
+ 	    exit(1);
+Index: sieve/test.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sieve/test.c,v
+retrieving revision 1.19.4.4
+diff -u -r1.19.4.4 test.c
+--- sieve/test.c	29 Mar 2003 01:26:44 -0000	1.19.4.4
++++ sieve/test.c	31 Mar 2003 18:18:46 -0000
+@@ -325,6 +325,26 @@
+     return SIEVE_OK;
+ }
+ 
++#define PERSONAL_PREFIX	"/personal/"
++#define GLOBAL_PREFIX	"/global/"
++
++int getinclude(void *v, const char *script, char *fname, size_t size)
++{
++    if (!strncmp(script, PERSONAL_PREFIX, strlen(PERSONAL_PREFIX))) {
++	script += strlen(PERSONAL_PREFIX);
++    } else if (!strncmp(script, GLOBAL_PREFIX, strlen(GLOBAL_PREFIX))) {
++	script += strlen(GLOBAL_PREFIX);
++    } else {
++	printf("unknown script namespace %s\n", script);
++	return -1;
++    }
++
++    /* assume everything after the prefix is the path */
++    strcpy(fname, script);
++
++    return SIEVE_OK;
++}
++
+ int redirect(void *ac, void *ic, void *sc, void *mc, const char **errmsg)
+ {
+     sieve_redirect_context_t *rc = (sieve_redirect_context_t *) ac;
+@@ -672,7 +692,7 @@
+ int main(int argc, char *argv[])
+ {
+     sieve_interp_t *i;
+-    sieve_bytecode_t *bc;
++    sieve_execute_t *exe = NULL;
+     message_data_t *m;
+     char *script = NULL, *message = NULL;
+     int c, force_fail = 0, usage_error = 0;
+@@ -764,6 +784,12 @@
+ 	exit(1);
+     }
+ 
++    res = sieve_register_include(i, &getinclude);
++    if (res != SIEVE_OK) {
++	printf("sieve_register_include() returns %d\n", res);
++	exit(1);
++    }
++
+     res = sieve_register_vacation(i, &vacation);
+     if (res != SIEVE_OK) {
+ 	printf("sieve_register_vacation() returns %d\n", res);
+@@ -795,7 +821,7 @@
+         exit(1);
+     }   
+ 
+-    res = sieve_script_load(argv[2], &bc);
++    res = sieve_script_load(argv[2], &exe);
+     if (res != SIEVE_OK) {
+ 	exit(1);
+     }
+@@ -814,7 +840,7 @@
+ 	    exit(1);
+ 	}
+ 
+-	res = sieve_execute_bytecode(bc, i, NULL, m);
++	res = sieve_execute_bytecode(exe, i, NULL, m);
+ 	if (res != SIEVE_OK) {
+ 	    printf("sieve_execute_bytecode() returns %d\n", res);
+ 	    exit(1);
+@@ -823,7 +849,7 @@
+ 	close(fd);
+     }
+     /*used to be sieve_script_free*/
+-    res = sieve_script_unload(&bc);
++    res = sieve_script_unload(&exe);
+     if (res != SIEVE_OK) {
+ 	printf("sieve_script_unload() returns %d\n", res);
+ 	exit(1);
+Index: timsieved/scripttest.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/timsieved/scripttest.c,v
+retrieving revision 1.18.16.2
+diff -u -r1.18.16.2 scripttest.c
+--- timsieved/scripttest.c	27 Feb 2003 18:14:16 -0000	1.18.16.2
++++ timsieved/scripttest.c	31 Mar 2003 18:18:47 -0000
+@@ -159,6 +159,12 @@
+ 	return TIMSIEVE_FAIL;
+     }
+   
++    res = sieve_register_include(i, (sieve_get_include *) &foo);
++    if (res != SIEVE_OK) {
++	syslog(LOG_ERR, "sieve_register_include() returns %d\n", res);
++	return TIMSIEVE_FAIL;
++    }
++  
+     res = sieve_register_vacation(i, &vacation);
+     if (res != SIEVE_OK) {
+ 	syslog(LOG_ERR, "sieve_register_vacation() returns %d\n", res);

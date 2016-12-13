@@ -1,0 +1,279 @@
+diff -urb cyrus-imapd-2.2.12/imap/tls.c cyrus-imapd-2.2.12-new/imap/tls.c
+--- cyrus-imapd-2.2.12/imap/tls.c	2004-05-04 21:47:34.000000000 +0200
++++ cyrus-imapd-2.2.12-new/imap/tls.c	2005-04-01 23:25:11.717380677 +0200
+@@ -578,10 +578,12 @@
+     const char   *cipher_list;
+     const char   *CApath;
+     const char   *CAfile;
++    const char   *s_CA_file;
+     const char   *s_cert_file;
+     const char   *s_key_file;
+-    int    requirecert;
++    enum enum_value requirecert;
+     int    timeout;
++    int    allowClientCA = 1;
+ 
+     if (tls_serverengine)
+ 	return (0);				/* already running */
+@@ -673,11 +675,44 @@
+ 	(!SSL_CTX_set_default_verify_paths(s_ctx))) {
+ 	/* just a warning since this is only necessary for client auth */
+ 	syslog(LOG_NOTICE,"TLS server engine: cannot load CA data");	
++        allowClientCA = 0;      /* no CA set, no client verify... */
++    }
++    else
++    {
++       if (!CAfile)
++          allowClientCA = 0;      /* no CA set, no client verify... */
+     }
+ 
++    s_CA_file   = config_getstring(IMAPOPT_TLS_SERVER_CA_FILE);
+     s_cert_file = config_getstring(IMAPOPT_TLS_CERT_FILE);
+     s_key_file = config_getstring(IMAPOPT_TLS_KEY_FILE);
+ 
++    if (s_CA_file)
++    {
++       SSL_CTX_set_mode(s_ctx,SSL_CTX_get_mode(s_ctx) | SSL_MODE_NO_AUTO_CHAIN);
++       if (s_CA_file[0] && strcasecmp(s_CA_file,"disabled")) {
++          BIO *filebio = BIO_new_file(s_CA_file,"r");
++          if (filebio) {
++             X509 *cacert;
++             syslog(LOG_DEBUG,"TLS server engine: loading server CA certs from file %s",s_CA_file);
++             while((cacert = PEM_read_bio_X509(filebio,NULL,NULL,NULL)) != NULL) {
++                char buf[256];
++                X509_NAME_oneline(X509_get_subject_name(cacert), buf, sizeof(buf));
++                if (!SSL_CTX_add_extra_chain_cert(s_ctx,cacert)) {
++                   syslog(LOG_ERR,"TLS server engine: failed to add CA cert to chain: %s",buf);
++                   X509_free(cacert);
++                }
++                else 
++                   syslog(LOG_DEBUG,"TLS server engine: added CA cert to chain: %s",buf);
++             }
++             BIO_free(filebio);
++          }
++          else {
++             syslog(LOG_ERR,"TLS server engine: cannot load server CA certs from file %s",s_CA_file);
++             return (-1);
++          }
++       }
++    }
+     if (!set_cert_stuff(s_ctx, s_cert_file, s_key_file)) {
+ 	syslog(LOG_ERR,"TLS server engine: cannot load cert/key data");
+ 	return (-1);
+@@ -685,24 +720,37 @@
+     SSL_CTX_set_tmp_rsa_callback(s_ctx, tmp_rsa_cb);
+ 
+     verify_depth = verifydepth;
+-    if (askcert!=0)
+-	verify_flags |= SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;
+ 
+-    requirecert = config_getswitch(IMAPOPT_TLS_REQUIRE_CERT);
+-    if (requirecert)
+-	verify_flags |= SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT
+-	    | SSL_VERIFY_CLIENT_ONCE;
+-    SSL_CTX_set_verify(s_ctx, verify_flags, verify_callback);
++    requirecert  = config_getenum(IMAPOPT_TLS_REQUIRE_CERT);
+ 
+-    if (askcert || requirecert) {
+-      if (CAfile == NULL) {
++    if (!allowClientCA) {
++       if (requirecert!=IMAP_ENUM_TLS_REQUIRE_CERT_OFF || askcert)
+ 	  syslog(LOG_ERR, 
+-		 "TLS server engine: No CA file specified. "
++		 "TLS server engine: No client CA file specified. "
+ 		 "Client side certs may not work");
+-      } else {
+-	  SSL_CTX_set_client_CA_list(s_ctx, SSL_load_client_CA_file(CAfile));
++    }
++    else
++    {
++       STACK_OF(X509_NAME) *CAnames = SSL_load_client_CA_file(CAfile);
++       if (!CAnames || sk_num(CAnames) < 1) {
++	  syslog(LOG_ERR, 
++		 "TLS server engine: No client CA certs specified. "
++		 "Client side certs may not work");
++       }
++       else
++       {
++          if (askcert || (requirecert != IMAP_ENUM_TLS_REQUIRE_CERT_OFF))
++             verify_flags = SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;
++          if (requirecert == IMAP_ENUM_TLS_REQUIRE_CERT_REQUIRE)
++             verify_flags |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
++          SSL_CTX_set_client_CA_list(s_ctx, CAnames);
++          syslog(LOG_DEBUG, "set client CA list: Client cert %srequested,"
++                 " %srequied",
++                 verify_flags & SSL_VERIFY_PEER ? "" : "not ",
++                 verify_flags & SSL_VERIFY_FAIL_IF_NO_PEER_CERT ? "":"not ");
+       }
+     }
++    SSL_CTX_set_verify(s_ctx, verify_flags, verify_callback);
+ 
+     tls_serverengine = 1;
+     return (0);
+diff -urb cyrus-imapd-2.2.12/imtest/imtest.c cyrus-imapd-2.2.12-new/imtest/imtest.c
+--- cyrus-imapd-2.2.12/imtest/imtest.c	2004-12-07 20:26:22.000000000 +0100
++++ cyrus-imapd-2.2.12-new/imtest/imtest.c	2005-04-01 21:35:14.525664463 +0200
+@@ -372,8 +372,8 @@
+ 	printf("verify error:num=%d:%s\n", err,
+ 	       X509_verify_cert_error_string(err));
+ 	if (verify_depth >= depth) {
+-	    ok = 1;
+-	    verify_error = X509_V_OK;
++           //           ok = 1;
++           //verify_error = X509_V_OK;
+ 	} else {
+ 	    ok = 0;
+ 	    verify_error = X509_V_ERR_CERT_CHAIN_TOO_LONG;
+@@ -479,7 +479,7 @@
+ static int tls_init_clientengine(int verifydepth, char *var_tls_cert_file, char *var_tls_key_file)
+ {
+     int     off = 0;
+-    int     verify_flags = SSL_VERIFY_NONE;
++    int     verify_flags = /*SSL_VERIFY_NONE*/ SSL_VERIFY_PEER;
+     char   *CApath;
+     char   *CAfile;
+     char   *c_cert_file;
+@@ -515,11 +515,16 @@
+ 	CApath = var_tls_CApath;
+     
+     if (CAfile || CApath)
++    {
++       //printf("TLS engine: set peer verify data %s\n",CAfile);
+ 	if ((!SSL_CTX_load_verify_locations(tls_ctx, CAfile, CApath)) ||
+ 	    (!SSL_CTX_set_default_verify_paths(tls_ctx))) {
+ 	    printf("TLS engine: cannot load CA data\n");
+ 	    return IMTEST_FAIL;
+ 	}
++        verify_depth = verifydepth;
++        SSL_CTX_set_verify(tls_ctx, verify_flags, verify_callback);
++    }
+     if (strlen(var_tls_cert_file) == 0)
+ 	c_cert_file = NULL;
+     else
+@@ -536,9 +541,6 @@
+ 	}
+     SSL_CTX_set_tmp_rsa_callback(tls_ctx, tmp_rsa_cb);
+     
+-    verify_depth = verifydepth;
+-    SSL_CTX_set_verify(tls_ctx, verify_flags, verify_callback);
+-    
+     return IMTEST_OK;
+ }
+ 
+@@ -684,7 +686,25 @@
+ 	SSL_set_session(tls_conn, tls_sess);
+ 
+     if ((sts = SSL_connect(tls_conn)) <= 0) {
+-	printf("SSL_connect error %d\n", sts);
++       const char *cpMsg, *cpMsg2 = "";
++       switch(SSL_get_error(tls_conn,sts))
++       {
++       case SSL_ERROR_NONE:        cpMsg = "none"; break;
++       case SSL_ERROR_ZERO_RETURN: cpMsg = "connection closed"; break;
++       case SSL_ERROR_WANT_READ:   cpMsg = "want read";   break;
++       case SSL_ERROR_WANT_WRITE:  cpMsg = "want write";  break;
++       case SSL_ERROR_WANT_CONNECT:cpMsg = "want write";  break;
++       case SSL_ERROR_WANT_ACCEPT: cpMsg = "want accept"; break;
++       case SSL_ERROR_WANT_X509_LOOKUP:cpMsg = "want lookup"; break;
++       case SSL_ERROR_SYSCALL:     cpMsg = "syscall"; break;
++       case SSL_ERROR_SSL:         cpMsg = "SSL error:";
++          sts = SSL_get_verify_result(tls_conn);
++          cpMsg2 = X509_verify_cert_error_string(sts);
++          break;
++       default:
++          cpMsg = "??? unknown error"; 
++       }
++       printf("SSL_connect error %d %s %s\n", sts,cpMsg,cpMsg2);
+ 	tls_sess = SSL_get_session(tls_conn);
+ 	if (tls_sess) {
+ 	    SSL_CTX_remove_session(tls_ctx, tls_sess);
+@@ -2177,6 +2197,8 @@
+     if (strcasecmp(prot, "mupdate"))
+ 	printf("  -t file  : Enable TLS. file has the TLS public and private keys\n"
+ 	       "             (specify \"\" to not use TLS for authentication)\n");
++    printf("  -F file  : Enable TLS. file has the TLS CA certificates\n");
++    printf("  -C path  : Enable TLS. path has the TLS CA certificates\n");
+ #endif /* HAVE_SSL */
+     printf("  -c       : enable challenge prompt callbacks\n"
+ 	   "             (enter one-time password instead of secret pass-phrase)\n");
+@@ -2294,7 +2316,7 @@
+     prog = strrchr(argv[0], '/') ? strrchr(argv[0], '/')+1 : argv[0];
+ 
+     /* look at all the extra args */
+-    while ((c = getopt(argc, argv, "P:scizvk:l:p:u:a:m:f:r:t:n:I:x:X:w:o:?h")) != EOF)
++    while ((c = getopt(argc, argv, "P:scizvk:l:p:u:a:m:f:r:t:F:C:n:I:x:X:w:o:?h")) != EOF)
+ 	switch (c) {
+ 	case 'P':
+ 	    prot = optarg;
+@@ -2355,6 +2377,22 @@
+ 	    imtest_fatal("imtest was not compiled with SSL/TLS support\n");
+ #endif
+ 	    break;
++	case 'F':
++#ifdef HAVE_SSL
++	    dotls=1;
++	    var_tls_CAfile=optarg;
++#else
++	    imtest_fatal("imtest was not compiled with SSL/TLS support\n");
++#endif
++	    break;
++	case 'C':
++#ifdef HAVE_SSL
++	    dotls=1;
++	    var_tls_CApath=optarg;
++#else
++	    imtest_fatal("imtest was not compiled with SSL/TLS support\n");
++#endif
++	    break;
+ 	case 'n':
+ 	    reauth = atoi(optarg);
+ 	    if (reauth <= 0)
+@@ -2503,7 +2541,7 @@
+ 	
+ #ifdef HAVE_SSL
+ 	if (dossl==1) {
+-	    do_starttls(1, "", &ext_ssf);
++	    do_starttls(1, tls_keyfile, &ext_ssf);
+ 	}
+ #endif /* HAVE_SSL */
+ 
+@@ -2550,7 +2588,7 @@
+ 					  protocol->tls_cmd.auto_capa);
+ 	    }
+ 	    
+-	} else if ((dotls==1) && (server_supports_tls!=1)) {
++	} else if (dossl!=1 && (dotls==1) && (server_supports_tls!=1)) {
+ 	    imtest_fatal("STARTTLS not supported by the server!\n");
+ 	}
+ #endif /* HAVE_SSL */
+diff -urb cyrus-imapd-2.2.12/lib/imapoptions cyrus-imapd-2.2.12-new/lib/imapoptions
+--- cyrus-imapd-2.2.12/lib/imapoptions	2004-07-21 21:07:45.000000000 +0200
++++ cyrus-imapd-2.2.12-new/lib/imapoptions	2005-04-01 23:39:45.540328753 +0200
+@@ -795,6 +795,15 @@
+ { "tlscache_db", "berkeley-nosync", STRINGLIST("berkeley", "berkeley-nosync", "skiplist")}
+ /* The cyrusdb backend to use for the TLS cache. */
+ 
++{ "tls_server_ca_file", NULL, STRING }
++/* File containing the Certificate Authority (CA) certificates
++   that build the issuer (CA) chain for the server certificate.
++   If it is missing, the server CA chain is build from the certificates in
++   tls_ca_file and tls_ca_path.
++   If it is empty, no CA certificates are sent.
++   (This is vaild if the server certificate was signed by a root CA).
++ */
++
+ { "tls_cert_file", NULL, STRING }
+ /* File containing the certificate presented for server authentication
+    during STARTTLS.  A value of "disabled" will disable SSL/TLS. */
+@@ -807,8 +816,9 @@
+ /* File containing the private key belonging to the server
+    certificate.  A value of "disabled" will disable SSL/TLS. */
+ 
+-{ "tls_require_cert", 0, SWITCH }
+-/* Require a client certificate for ALL services (imap, pop3, lmtp, sieve). */
++{ "tls_require_cert", "off",  ENUM("off", "optional", "require") }
++/* Require a client certificate for ALL services (imap, pop3, lmtp, sieve).
++   (if set to "optional", the client MAY send a certificate) */
+ 
+ { "tls_session_timeout", 1440, INT }
+ /* The length of time (in minutes) that a TLS session will be cached

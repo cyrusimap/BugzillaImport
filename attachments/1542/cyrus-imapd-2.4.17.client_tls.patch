@@ -1,0 +1,38 @@
+diff -urN cyrus-imapd-2.4.17/imap/tls.c cyrus-imapd-2.4.17.clienttls/imap/tls.c
+--- cyrus-imapd-2.4.17/imap/tls.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17.clienttls/imap/tls.c	2014-09-12 13:51:25.000000000 +0200
+@@ -1175,10 +1175,12 @@
+ {
+     int usebits = 0;
+     int algbits = 0;
++    const SSL_CIPHER *cipher;
+ 
+-    usebits = SSL_get_cipher_bits(conn, &algbits);
++    cipher = SSL_get_current_cipher(conn);
++    usebits = SSL_CIPHER_get_bits(cipher, &algbits);
+     snprintf(buf, len, "version=%s cipher=%s bits=%d/%d verify=%s",
+-	     SSL_get_cipher_version(conn), SSL_get_cipher_name(conn),
++	     SSL_get_version(conn), SSL_CIPHER_get_name(cipher),
+ 	     usebits, algbits,
+ 	     SSL_get_verify_result(conn) == X509_V_OK ? "YES" : "NO");
+ 
+@@ -1209,12 +1211,18 @@
+ 	return -1;
+     }
+     
+-    c_ctx = SSL_CTX_new(TLSv1_client_method());
++    c_ctx = SSL_CTX_new(SSLv23_client_method());
+     if (c_ctx == NULL) {
+ 	return (-1);
+     };
+     
+     off |= SSL_OP_ALL;		/* Work around all known bugs */
++    off |= SSL_OP_NO_SSLv2;
++    off |= SSL_OP_NO_SSLv3;
++    if (! compression) {
++        off |= SSL_OP_NO_COMPRESSION;
++        syslog(LOG_DEBUG, "TLS client engine: Setting SSL_OP_NO_COMPRESSION");
++    }
+     SSL_CTX_set_options(c_ctx, off);
+     SSL_CTX_set_info_callback(c_ctx, (void (*)()) apps_ssl_info_callback);
+     

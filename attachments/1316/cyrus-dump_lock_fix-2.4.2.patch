@@ -1,0 +1,139 @@
+--- cyrus-imapd-2.4.2.vanilla/imap/mbdump.c	2010-10-19 05:08:28.000000000 +0200
++++ cyrus-imapd-2.4.2/imap/mbdump.c	2010-11-04 10:42:19.000000000 +0100
+@@ -152,7 +152,8 @@
+ 
+ static int dump_file(int first, int sync,
+ 		     struct protstream *pin, struct protstream *pout,
+-		     const char *filename, const char *ftag)
++		     const char *filename, const char *ftag,
++		     const char *fbase, unsigned long flen)
+ {
+     int filefd;
+     const char *base;
+@@ -162,25 +163,42 @@
+ 
+     /* map file */
+     syslog(LOG_DEBUG, "wanting to dump %s", filename);
+-    filefd = open(filename, O_RDONLY, 0666);
+-    if (filefd == -1) {
+-	/* If an optional file doesn't exist, skip it */
+-	if (errno == ENOENT) return 0;
+-	syslog(LOG_ERR, "IOERROR: open on %s: %m", filename);
+-	return IMAP_SYS_ERROR;
+-    }
++    if (fbase) {
++	/* already mapped */
++	base = fbase;
++
++	/* we need to check real file size since actual mmap size may be larger */
++	if (stat(filename, &sbuf) == -1) {
++	    syslog(LOG_ERR, "IOERROR: stat on %s: %m", filename);
++	    fatal("can't stat message file", EC_OSFILE);
++	}
++	if (sbuf.st_size > flen) {
++	   syslog(LOG_ERR, "IOERROR: size mismatch on %s", filename);
++	   return IMAP_SYS_ERROR;
++	}
++	len = sbuf.st_size;
++    }
++    else {
++	filefd = open(filename, O_RDONLY, 0666);
++	if (filefd == -1) {
++	    /* If an optional file doesn't exist, skip it */
++	    if (errno == ENOENT) return 0;
++	    syslog(LOG_ERR, "IOERROR: open on %s: %m", filename);
++	    return IMAP_SYS_ERROR;
++	}
+     
+-    if (fstat(filefd, &sbuf) == -1) {
+-	syslog(LOG_ERR, "IOERROR: fstat on %s: %m", filename);
+-	fatal("can't fstat message file", EC_OSFILE);
+-    }	
++	if (fstat(filefd, &sbuf) == -1) {
++	    syslog(LOG_ERR, "IOERROR: fstat on %s: %m", filename);
++	    fatal("can't fstat message file", EC_OSFILE);
++	}	
+ 
+-    base = NULL;
+-    len = 0;
++	base = NULL;
++	len = 0;
+ 
+-    map_refresh(filefd, 1, &base, &len, sbuf.st_size, filename, NULL);
++	map_refresh(filefd, 1, &base, &len, sbuf.st_size, filename, NULL);
+ 
+-    close(filefd);
++	close(filefd);
++    }
+ 
+     /* send: name, size, and contents */
+     if (first) {
+@@ -205,7 +223,7 @@
+ 		    ftag, len, (sync ? "+" : ""));
+     }
+     prot_write(pout, base, len);
+-    map_free(&base, &len);
++    if (!fbase) map_free(&base, &len);
+ 
+     return 0;
+ }
+@@ -275,9 +293,31 @@
+ 
+     /* Dump cyrus data files */
+     for (df = data_files; df->metaname; df++) {
++	const char *fbase = NULL;
++	unsigned long flen = 0;
++
++	switch (df->metaname) {
++	case META_INDEX:
++	    if (mailbox->index_base) {
++		fbase = mailbox->index_base;
++		flen = mailbox->index_len;
++	    }
++	    break;
++
++	case META_CACHE:
++	    if (mailbox->cache_buf.s) {
++		fbase = mailbox->cache_buf.s;
++		flen = mailbox->cache_buf.len;
++	    }
++	    break;
++
++	default:
++	    break;
++	}
++
+ 	fname = mailbox_meta_fname(mailbox, df->metaname);
+ 
+-	r = dump_file(first, !tag, pin, pout, fname, df->fname);
++	r = dump_file(first, !tag, pin, pout, fname, df->fname, fbase, flen);
+ 	if (r) goto done;
+ 
+ 	first = 0;
+@@ -303,7 +343,7 @@
+ 	/* construct path/filename */
+ 	fname = mailbox_message_fname(mailbox, uid);
+ 
+-	r = dump_file(0, !tag, pin, pout, fname, name);
++	r = dump_file(0, !tag, pin, pout, fname, name, NULL, 0);
+ 	if (r) goto done;
+     }
+ 
+@@ -346,7 +386,7 @@
+ 		fatal("unknown user data file", EC_OSFILE);
+ 	    }
+ 
+-	    r = dump_file(0, !tag, pin, pout, fname, ftag);
++	    r = dump_file(0, !tag, pin, pout, fname, ftag, NULL, 0);
+ 	    free(fname);
+ 	    if (r) goto done;
+ 	}
+@@ -388,7 +428,7 @@
+ 				 sieve_path, next->d_name);
+ 
+ 			/* dump file */
+-			r = dump_file(0, !tag, pin, pout, filename, tag_fname);
++			r = dump_file(0, !tag, pin, pout, filename, tag_fname, NULL, 0);
+ 			if (r) goto done;
+ 		    }
+ 		}

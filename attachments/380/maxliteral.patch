@@ -1,0 +1,22 @@
+--- cyrus-imapd-2.2.10.orig/imap/imapparse.c    2004-01-06 17:32:17.000000000 +0100
++++ cyrus-imapd-2.2.10/imap/imapparse.c 2005-09-23 15:27:40.000000000 +0200
+@@ -54,7 +54,7 @@
+ enum {
+     MAXQUOTED = 16384,
+     MAXWORD = 16384,
+-    MAXLITERAL = INT_MAX / 20
++    MAXLITERAL = INT_MAX
+ };
+ 
+ void freebuf(struct buf *buf)
+@@ -179,6 +179,10 @@
+        buf->s[0] = '\0';
+        while ((c = prot_getc(pin)) != EOF && isdigit(c)) {
+            sawdigit = 1;
++           if(len > (MAXLITERAL - 9) / 10) {
++                /* we might overflow */
++                fatal("literal too big", EC_IOERR);
++           }
+            len = len*10 + c - '0';
+             if (len > MAXLITERAL || len < 0) {
+                 /* we overflowed */

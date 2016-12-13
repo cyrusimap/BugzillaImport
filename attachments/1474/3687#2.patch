@@ -1,0 +1,70 @@
+diff --git a/imap/cyr_expire.c b/imap/cyr_expire.c
+index 6091461..83aa90a 100644
+--- a/imap/cyr_expire.c
++++ b/imap/cyr_expire.c
+@@ -81,7 +81,7 @@ static int verbose = 0;
+ void usage(void)
+ {
+     fprintf(stderr,
+-	    "cyr_expire [-C <altconfig>] -E <days> [-X <expunge-days>] [-p prefix] [-a] [-v]\n");
++	    "cyr_expire [-C <altconfig>] [-E <expire-duration>] [-D <delete-duration] [-X <expunge-duration>] [-p prefix] [-a] [-v] [-x]\n");
+     exit(-1);
+ }
+ 
+@@ -391,7 +391,7 @@ int main(int argc, char *argv[])
+ 	}
+     }
+ 
+-    if (!expire_seconds) usage();
++    if (!expire_seconds && delete_seconds == -1 && expunge_seconds == -1) usage();
+ 
+     sigemptyset(&action.sa_mask);
+     action.sa_flags = 0;
+@@ -422,7 +422,7 @@ int main(int argc, char *argv[])
+ 	exit(1);
+     }
+ 
+-    if (do_expunge) {
++    if (do_expunge && (expunge_seconds >= 0 || expire_seconds)) {
+ 	/* xxx better way to determine a size for this table? */
+ 
+ 	/* expire messages from mailboxes,
+@@ -504,7 +504,8 @@ int main(int argc, char *argv[])
+     }
+ 
+     /* purge deliver.db entries of expired messages */
+-    r = duplicate_prune(expire_seconds, &erock.table);
++    if (expire_seconds > 0)
++	r = duplicate_prune(expire_seconds, &erock.table);
+ 
+ finish:
+     free_hash_table(&erock.table, free);
+diff --git a/man/cyr_expire.8 b/man/cyr_expire.8
+index 7708136..6b7b829 100644
+--- a/man/cyr_expire.8
++++ b/man/cyr_expire.8
+@@ -50,11 +50,13 @@ cyr_expire \- expire messages and duplicate delivery database entries
+ .I config-file
+ ]
+ [
+-.BI \-D " delete-days"
++.BI \-D " delete-duration"
+ ]
++[
+ .BI \-E " expire-duration"
++]
+ [
+-.BI \-X " expunge-days"
++.BI \-X " expunge-duration"
+ ]
+ [
+ .BI \-p " mailbox-prefix"
+@@ -101,6 +103,8 @@ expired using the value given to the \fB-E\fR option.
+ .PP
+ \fBCyr_expire\fR reads its configuration options out of the \fIimapd.conf\fR(5)
+ file unless specified otherwise by \fB-C\fR.
++.PP
++\fBCyr_expire\fR requires at least one of \fB-D -E\fR or \fB-X\fR to be supplied.
+ .SH OPTIONS
+ .TP
+ \fB\-C\fI config-file\fR

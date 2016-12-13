@@ -1,0 +1,29 @@
+commit bb1b2ee2e9d7eae13320fd311f07d471abf3cdd5
+Author: Ettore Elio Caprella <ettoreelio.caprella@it.telecomitalia.it>
+Date:   Wed Apr 20 00:41:15 2016 +0200
+
+    add check in cache lookup in order to get the valid bucket (not yet expired) if it exists
+
+diff --git a/saslauthd/cache.c b/saslauthd/cache.c
+index 2b78464..1ca21e4 100644
+--- a/saslauthd/cache.c
++++ b/saslauthd/cache.c
+@@ -244,7 +244,8 @@ int cache_lookup(const char *user, const char *realm, const char *service, const
+ 	for (ref_bucket = low_bucket; ref_bucket < high_bucket; ref_bucket++) {
+ 		if (strcmp(user, ref_bucket->creds + ref_bucket->user_offt) == 0 && \
+ 		    strcmp (realm, ref_bucket->creds + ref_bucket->realm_offt) == 0 && \
+-		    strcmp(service, ref_bucket->creds + ref_bucket->service_offt) == 0) {
++		    strcmp(service, ref_bucket->creds + ref_bucket->service_offt) == 0)  && \
++		    ref_bucket->created > epoch_timeout) {
+ 			read_bucket = ref_bucket;
+ 			break;
+ 		}
+@@ -259,7 +260,7 @@ int cache_lookup(const char *user, const char *realm, const char *service, const
+ 	 * best bucket to place the new entry (CACHE_FLUSH_WITH_RESCAN).
+ 	 **************************************************************/
+ 
+-	if (read_bucket != NULL && read_bucket->created > epoch_timeout) {
++	if (read_bucket != NULL) {
+ 
+ 		if (memcmp(pwd_digest, read_bucket->pwd_digest, 16) == 0) {
+ 

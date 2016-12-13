@@ -1,0 +1,52 @@
+Index: imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.443.2.51
+diff -u -r1.443.2.51 imapd.c
+--- imapd.c	11 Jan 2005 20:08:13 -0000	1.443.2.51
++++ imapd.c	7 Feb 2005 21:17:53 -0000
+@@ -210,7 +210,7 @@
+ void cmd_copy(char *tag, char *sequence, char *name, int usinguid);
+ void cmd_expunge(char *tag, char *sequence);
+ void cmd_create(char *tag, char *name, char *partition, int localonly);
+-void cmd_delete(char *tag, char *name, int localonly);
++void cmd_delete(char *tag, char *name, int localonly, int force);
+ void cmd_dump(char *tag, char *name, int uid_start);
+ void cmd_undump(char *tag, char *name);
+ void cmd_xfer(char *tag, char *name, char *toserver, char *topart);
+@@ -1139,7 +1139,7 @@
+ 		if (c == EOF) goto missingargs;
+ 		if (c == '\r') c = prot_getc(imapd_in);
+ 		if (c != '\n') goto extraargs;
+-		cmd_delete(tag.s, arg1.s, 0);
++		cmd_delete(tag.s, arg1.s, 0, 0);
+ 
+ 		snmp_increment(DELETE_COUNT, 1);
+ 	    }
+@@ -1384,7 +1384,7 @@
+ 		if (c == EOF) goto missingargs;
+ 		if (c == '\r') c = prot_getc(imapd_in);
+ 		if (c != '\n') goto extraargs;
+-		cmd_delete(tag.s, arg1.s, 1);
++		cmd_delete(tag.s, arg1.s, 1, 1);
+ 
+ 		/* xxxx snmp_increment(DELETE_COUNT, 1); */
+ 	    }
+@@ -4301,7 +4301,7 @@
+ /*
+  * Perform a DELETE command
+  */
+-void cmd_delete(char *tag, char *name, int localonly)
++void cmd_delete(char *tag, char *name, int localonly, int force)
+ {
+     int r;
+     char mailboxname[MAX_MAILBOX_NAME+1];
+@@ -4366,7 +4366,7 @@
+ 	    domainlen = p - mailboxname + 1;
+ 
+ 	r = mboxlist_deletemailbox(mailboxname, imapd_userisadmin,
+-				   imapd_userid, imapd_authstate, 1,
++				   imapd_userid, imapd_authstate, 1-force,
+ 				   localonly, 0);
+     }
+ 

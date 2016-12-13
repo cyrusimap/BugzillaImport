@@ -1,0 +1,154 @@
+Index: imap/mailbox.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.165
+diff -u -r1.165 mailbox.c
+--- imap/mailbox.c	27 Mar 2007 19:53:08 -0000	1.165
++++ imap/mailbox.c	2 Apr 2007 20:07:04 -0000
+@@ -945,7 +945,7 @@
+ 	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_LEAKED_CACHE)));
+ #ifdef HAVE_LONG_LONG_INT
+     mailbox->highestmodseq =
+-	ntohll(*((bit64 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ_64)));
++	align_ntohll(mailbox->index_base+OFFSET_HIGHESTMODSEQ_64);
+ #else
+     mailbox->highestmodseq =
+ 	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ)));
+@@ -1318,7 +1318,7 @@
+     *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) =
+ 	htonl(mailbox->leaked_cache_records);
+ #ifdef HAVE_LONG_LONG_INT
+-    *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(mailbox->highestmodseq);
++    align_htonll(buf+OFFSET_HIGHESTMODSEQ_64, mailbox->highestmodseq);
+ #else
+     /* zero the unused 32bits */
+     *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+@@ -1547,7 +1547,7 @@
+ 
+     if (ntohl(*((bit32 *)(buf+OFFSET_MINOR_VERSION))) < 8) {
+ #ifdef HAVE_LONG_LONG_INT
+-	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(1);
++	align_htonll(buf+OFFSET_HIGHESTMODSEQ_64, 1);
+ #else
+ 	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+ 	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(1);
+@@ -1593,8 +1593,8 @@
+     }
+ #if 0
+     if (oldstart_offset < OFFSET_HIGHESTMODSEQ-quota_offset+sizeof(bit32) ||
+-	!ntohll(*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)))) {
+-	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(1);
++	!align_ntohll(buf+OFFSET_HIGHESTMODSEQ_64)) {
++	align_htonll(buf+OFFSET_HIGHESTMODSEQ_64, 1);
+     }
+ #endif
+     *((bit32 *)(buf+OFFSET_SPARE0)) = htonl(0); /* RESERVED */
+Index: imap/reconstruct.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/reconstruct.c,v
+retrieving revision 1.92
+diff -u -r1.92 reconstruct.c
+--- imap/reconstruct.c	30 Mar 2007 18:40:20 -0000	1.92
++++ imap/reconstruct.c	2 Apr 2007 20:07:04 -0000
+@@ -1074,7 +1074,7 @@
+     *((bit32 *)(buf+OFFSET_MAILBOX_OPTIONS)) = htonl(mailbox.options);
+     *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) = htonl(0);
+ #ifdef HAVE_LONG_LONG_INT
+-    *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(mailbox.highestmodseq);
++    align_htonll(buf+OFFSET_HIGHESTMODSEQ_64, mailbox.highestmodseq);
+ #else
+     /* zero the unused 32bits */
+     *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+Index: imap/sync_commit.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/sync_commit.c,v
+retrieving revision 1.3
+diff -u -r1.3 sync_commit.c
+--- imap/sync_commit.c	2 Apr 2007 18:25:51 -0000	1.3
++++ imap/sync_commit.c	2 Apr 2007 20:07:04 -0000
+@@ -311,8 +311,8 @@
+ 
+     /* Fix up highest modseq */
+ #ifdef HAVE_LONG_LONG_INT
+-    if (highestmodseq > ntohll(*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)))) {
+-	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
++    if (highestmodseq > align_ntohll(buf+OFFSET_HIGHESTMODSEQ_64)) {
++	align_htonll(buf+OFFSET_HIGHESTMODSEQ_64, highestmodseq);
+     }
+ #else
+     if (highestmodseq > ntohl(*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)))) {
+@@ -616,8 +616,8 @@
+ 	
+     /* Fix up highest modseq */
+ #ifdef HAVE_LONG_LONG_INT
+-    if (highestmodseq > ntohll(*((bit64 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)))) {
+-	*((bit64 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
++    if (highestmodseq > align_ntohll(hbuf+OFFSET_HIGHESTMODSEQ_64)) {
++	align_htonll(hbuf+OFFSET_HIGHESTMODSEQ_64, highestmodseq);
+     }
+ #else
+     if (highestmodseq > ntohl(*((bit32 *)(hbuf+OFFSET_HIGHESTMODSEQ)))) {
+Index: lib/byteorder64.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/byteorder64.c,v
+retrieving revision 1.2
+diff -u -r1.2 byteorder64.c
+--- lib/byteorder64.c	30 Nov 2006 17:11:22 -0000	1.2
++++ lib/byteorder64.c	2 Apr 2007 20:07:04 -0000
+@@ -42,8 +42,11 @@
+  */
+ 
+ #include <config.h>
++#include "byteorder64.h"
+ 
+-#if defined(HAVE_LONG_LONG_INT) && !defined(WORDS_BIGENDIAN)
++#if defined(HAVE_LONG_LONG_INT)
++
++#if !defined(WORDS_BIGENDIAN)
+ 
+ #include <netinet/in.h>
+ 
+@@ -92,4 +95,24 @@
+     return u2.a;
+ }
+ 
+-#endif /* defined(HAVE_LONG_LONG_INT) && !defined(WORDS_BIGENDIAN) */
++#endif /* !defined(WORDS_BIGENDIAN) */
++
++#include <string.h>
++
++void align_htonll(void *dst, unsigned long long src)
++{
++    unsigned long long tmp;
++
++    tmp = htonll(src);
++    memcpy(dst, (void *) &tmp, sizeof(unsigned long long));
++}
++
++unsigned long long align_ntohll(const void *src)
++{
++    unsigned long long dst;
++
++    memcpy((void *) &dst, src, sizeof(unsigned long long));
++    return ntohll(dst);
++}
++
++#endif /* defined(HAVE_LONG_LONG_INT) */
+Index: lib/byteorder64.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/byteorder64.h,v
+retrieving revision 1.2
+diff -u -r1.2 byteorder64.h
+--- lib/byteorder64.h	30 Nov 2006 17:11:22 -0000	1.2
++++ lib/byteorder64.h	2 Apr 2007 20:07:04 -0000
+@@ -61,5 +61,10 @@
+ extern unsigned long long _ntohll(unsigned long long);
+ 
+ #endif /* WORDS_BIGENDIAN */
++
++/* 64-bit host/network byte-order swap functions to/from non-aligned buffers */
++extern void align_htonll(void *dst, unsigned long long src);
++extern unsigned long long align_ntohll(const void *src);
++
+ #endif /* HAVE_LONG_LONG_INT */
+ #endif /* _BYTEORDER64_H */

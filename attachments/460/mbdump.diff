@@ -1,0 +1,297 @@
+*** mbdump.c.orig	Mon May 22 16:52:27 2006
+--- mbdump.c	Wed Aug 30 14:55:14 2006
+***************
+*** 160,165 ****
+--- 160,233 ----
+      { NULL, 0 }
+  };
+  
++ static int move_file (const char *tag, struct mailbox *mailbox, 
++ 		struct protstream *pin, struct protstream *pout,
++                int * first, char * filename, char * fname_tail)
++ {
++     int  filefd;
++     const char *map_base;
++     unsigned long map_len;
++ 
++     struct stat sbuf;
++ 
++     char  c;
++  
++     /* map file */
++ 
++     filefd = open(filename, O_RDONLY, 0666);
++     if (filefd == -1) {
++ 	syslog(LOG_ERR, "IOERROR: open on %s: %m", filename);
++ 	return ( IMAP_SYS_ERROR );
++     }
++     
++     if (fstat(filefd, &sbuf) == -1) {
++ 	syslog(LOG_ERR, "IOERROR: fstat on %s: %m", filename);
++ 	fatal("can't fstat message file", EC_OSFILE);
++     }	
++ 
++     map_base = NULL;
++     map_len = 0;
++ 
++     map_refresh(filefd, 1, &map_base, &map_len, sbuf.st_size, filename, NULL);
++ 
++     close(filefd);
++ 
++     /* send filename, size, and contents */
++     if( *first) {
++ 	prot_printf(pout, "{%d}\r\n", strlen(fname_tail));
++ 
++ 	if(!tag) {
++ 	    /* synchronize */
++ 	    c = prot_getc(pin);
++ 	    eatline(pin, c); /* We eat it no matter what */
++ 	    if(c != '+') {
++ 		/* Synchronization Failure, Abort! */
++ #if 0
++ 		syslog(LOG_ERR, "Sync Error: expected '+' got '%c'",c);
++ #endif
++ 		syslog(LOG_ERR, "Sync Error: expected '+' got '%c' when xfering: %s", c, filename);
++ 		return ( IMAP_SERVER_UNAVAILABLE );
++ 	    }
++ 	}
++ 
++ 	prot_printf(pout, "%s {%lu%s}\r\n",
++ 			fname_tail, map_len,
++ 			(!tag ? "+" : ""));
++ 
++ 	*first = 0;
++     } else {
++ 	prot_printf(pout, " {%d%s}\r\n%s {%lu%s}\r\n",
++ 			strlen(fname_tail),
++ 			(!tag ? "+" : ""),
++ 			fname_tail, map_len,
++ 			(!tag ? "+" : ""));
++     }
++     prot_write(pout, map_base, map_len);
++     map_free(&map_base, &map_len);
++ 
++     return (0);
++ }
++ 
+  int dump_mailbox(const char *tag, const char *mbname, const char *mbpath,
+  		 const char *metapath, const char *mbacl, int uid_start,
+  		 struct protstream *pin, struct protstream *pout,
+***************
+*** 175,186 ****
+--- 243,260 ----
+      unsigned long len;
+      int first = 1;
+      struct mailbox mb;
++     struct mailbox expunge;
+      unsigned int msgno;
+      struct stat sbuf;
+      char c;
+      int i;
+      struct data_file *df;
+  
++     struct dirent *dirent;
++     DIR *dirp;
++     char * pname;
++     int  msg;
++ 
+      /* non-null userid means we are moving the user */
+      const char *userid = NULL;
+      enum { SEEN_DB = 0, SUBS_DB = 1 };
+***************
+*** 252,328 ****
+      fname_len = strlen(filename);
+      fname_tail = filename + fname_len;
+  
+!     for (msgno = 1; msgno <= mb.exists; msgno++) {
+! 	struct index_record record;
+! 
+! 	r = mailbox_read_index_record(&mb, msgno, &record);
+! 	if (r) {
+! 	    syslog(LOG_ERR, "IOERROR: reading index record %u: %m", msgno);
+! 	    goto done;
+  	}
+  
+! 	/* ensure (number) is >= our target uid */
+! 	if(record.uid < uid_start) continue;
+! 
+! 	/* map file */
+! 	mailbox_message_get_fname(&mb, record.uid, fname_tail,
+! 				  sizeof(filename) - fname_len);
+  
+! 	filefd = open(filename, O_RDONLY, 0666);
+! 	if (filefd == -1) {
+! 	    syslog(LOG_ERR, "IOERROR: open on %s: %m", filename);
+! 	    r = IMAP_SYS_ERROR;
+  	    goto done;
+  	}
+-     
+- 	if (fstat(filefd, &sbuf) == -1) {
+- 	    syslog(LOG_ERR, "IOERROR: fstat on %s: %m", filename);
+- 	    fatal("can't fstat message file", EC_OSFILE);
+  	}	
+  
+! 	base = NULL;
+! 	len = 0;
+! 
+! 	map_refresh(filefd, 1, &base, &len, sbuf.st_size, filename, NULL);
+! 
+! 	close(filefd);
+  
+! 	/* send filename, size, and contents */
+! 	if(first) {
+! 	    prot_printf(pout, "{%d}\r\n",
+! 			strlen(fname_tail));
+! 
+! 	    if(!tag) {
+! 		/* synchronize */
+! 		c = prot_getc(pin);
+! 		eatline(pin, c); /* We eat it no matter what */
+! 		if(c != '+') {
+! 		    /* Synchronization Failure, Abort! */
+! 		    syslog(LOG_ERR, "Sync Error: expected '+' got '%c'",c);
+! 		    r = IMAP_SERVER_UNAVAILABLE;
+! 		    goto done;
+! 		}
+  	    }
+- 
+- 	    prot_printf(pout, "%s {%lu%s}\r\n",
+- 			fname_tail, len,
+- 			(!tag ? "+" : ""));
+- 
+- 	    first = 0;
+  	} else {
+! 	    prot_printf(pout, " {%d%s}\r\n%s {%lu%s}\r\n",
+! 			strlen(fname_tail),
+! 			(!tag ? "+" : ""),
+! 			fname_tail, len,
+! 			(!tag ? "+" : ""));
+  	}
+- 	prot_write(pout, base, len);
+- 	map_free(&base, &len);
+      }
+  
+-     /* XXX For two-phase expunge, we also need to copy message files
+-        referenced by cyrus.expunge */
+- 
+      for (df = data_files; df->fname; df++) {
+  	const char *path;
+  
+--- 326,365 ----
+      fname_len = strlen(filename);
+      fname_tail = filename + fname_len;
+   
+!     while ((dirent = readdir(mbdir)) != NULL) {
+!         if (!isdigit((int) (dirent->d_name[0])) || dirent->d_name[0] == '0')
+!             continue;
+!         pname = dirent->d_name;
+!         msg = 0;
+!         while (isdigit((int) *pname)) {
+!             msg = msg * 10 + *pname++ - '0';
+          }
++         if (*pname++ != '.') continue;
++         if (*pname) continue;
+  
+! 	/* ensure message number is >= our target uid */
+! 	if(msg < uid_start) continue;
+      
+! 	strlcpy ( fname_tail, dirent->d_name, sizeof(filename) - fname_len);
+!         if (move_file(tag, &mb, pin, pout, &first, filename, fname_tail) != 0){
+  	    goto done;
+  	}
+      }
+  
+!     strlcpy(fname_tail, FNAME_EXPUNGE_INDEX, sizeof(filename));
+  
+!     if (stat(filename, &sbuf) == -1) {
+! 	if (errno != ENOENT) {
+! 	    syslog(LOG_ERR, "IOERROR: fstat on %s: %m", filename);
+! 	    fatal("can't fstat message file", EC_OSFILE);
+  	}
+      } else {
+! 	strlcpy(fname_tail, FNAME_EXPUNGE_INDEX, sizeof(filename));
+! 	if (move_file (tag, &mb, pin, pout, &first, filename, fname_tail) != 0){
+! 	    goto done;
+  	}
+      }
+  
+      for (df = data_files; df->fname; df++) {
+  	const char *path;
+  
+***************
+*** 331,389 ****
+  	    metapath : mbpath;
+  	strlcpy(filename, path, sizeof(filename));
+  	strlcat(filename, "/", sizeof(filename));
+! 	strlcat(filename, df->fname, sizeof(filename));
+! 		
+! 	filefd = open(filename, O_RDONLY, 0666);
+! 	if (filefd == -1) {
+! 	    syslog(LOG_ERR, "IOERROR: open on %s: %m", filename);
+! 	    r = IMAP_SYS_ERROR;
+! 	    goto done;
+! 	}
+!     
+! 	if (fstat(filefd, &sbuf) == -1) {
+! 	    syslog(LOG_ERR, "IOERROR: fstat on %s: %m", filename);
+! 	    fatal("can't fstat message file", EC_OSFILE);
+! 	}	
+! 
+! 	base = NULL;
+! 	len = 0;
+! 
+! 	map_refresh(filefd, 1, &base, &len, sbuf.st_size, filename, NULL);
+! 
+! 	close(filefd);
+  
+! 	/* send filename, size, and contents */
+! 	if(first) {
+! 	    prot_printf(pout, "{%d}\r\n",
+! 			strlen(df->fname));
+  	    
+! 	    if(!tag) {
+! 		/* synchronize */
+! 		c = prot_getc(pin);
+! 		if(c != '+') {
+! 		    /* Synchronization Failure, Abort! */
+! 		    r = IMAP_SERVER_UNAVAILABLE;
+  		    goto done;
+- 		} else {
+- 		    eatline(pin, c);
+- 		}
+- 	    }
+- 
+- 	    prot_printf(pout, "%s {%lu%s}\r\n",
+- 			df->fname, len,
+- 			(!tag ? "+" : ""));
+- 	    first = 0;
+- 	} else {
+- 	    prot_printf(pout, " {%d%s}\r\n%s {%lu%s}\r\n",
+- 			strlen(df->fname),
+- 			(!tag ? "+" : ""),
+- 			df->fname, len,
+- 			(!tag ? "+" : ""));
+  	}
+- 	prot_write(pout, base, len);
+- 	map_free(&base, &len);
+      }
+- 
+      /* now dump annotations */
+      {
+  	struct dump_annotation_rock actx;
+--- 368,382 ----
+  	    metapath : mbpath;
+  	strlcpy(filename, path, sizeof(filename));
+  	strlcat(filename, "/", sizeof(filename));
+! 	fname_len = strlen(filename);
+! 	fname_tail = filename + fname_len;
+  
+! 	strlcat(filename, df->fname, sizeof(filename));
+  		
+! 	if (move_file (tag, &mb, pin, pout, &first, filename, fname_tail) != 0){
+  	    goto done;
+  	}
+      }
+      /* now dump annotations */
+      {
+  	struct dump_annotation_rock actx;

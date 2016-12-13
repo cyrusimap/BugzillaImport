@@ -1,0 +1,124 @@
+diff -Naur cyrus-imapd-2.4.6.orig/doc/man/imapd.conf.5.html cyrus-imapd-2.4.6/doc/man/imapd.conf.5.html
+--- cyrus-imapd-2.4.6.orig/doc/man/imapd.conf.5.html	2010-12-20 14:20:44.000000000 +0100
++++ cyrus-imapd-2.4.6/doc/man/imapd.conf.5.html	2011-01-12 07:12:48.000000000 +0100
+@@ -1065,21 +1065,6 @@
+ <p style="margin-left:18%; margin-top: 1em">Allowed values:
+ <i>standard</i>, <i>unified</i>, <i>replicated</i></p>
+ 
+-<p style="margin-left:11%;"><b>md5_dir:</b>
+-&lt;none&gt;</p>
+-
+-<p style="margin-left:18%;">Top level directory for MD5
+-store manipulated by make_md5. File structure within this
+-directory is one file for each user on the system, hashed on
+-the first letter of the userid (e.g.,
+-/var/imap/md5/d/dpc22).</p>
+-
+-<p style="margin-left:11%;"><b>md5_user_map:</b>
+-&lt;none&gt;</p>
+-
+-<p style="margin-left:18%;">Map file (cdb) to allow partial
+-make_md5 runs. Maps username to UID</p>
+-
+ <p style="margin-left:11%;"><b>munge8bit:</b> 1</p>
+ 
+ <p style="margin-left:18%;">If enabled, lmtpd munges
+@@ -1630,15 +1615,6 @@
+ <p style="margin-left:18%; margin-top: 1em">Allowed values:
+ <i>off</i>, <i>min</i>, <i>on</i></p>
+ 
+-<p style="margin-left:11%;"><b>sha1_dir:</b>
+-&lt;none&gt;</p>
+-
+-<p style="margin-left:18%;">Top level directory for SHA1
+-store manipulated by make_sha1. File structure within this
+-directory is one file for each user on the system, hashed on
+-the first letter of the userid (e.g:
+-/var/imap/sha1/d/dpc22).</p>
+-
+ <p style="margin-left:11%;"><b>sharedprefix:</b> Shared
+ Folders</p>
+ 
+diff -Naur cyrus-imapd-2.4.6.orig/lib/imapoptions cyrus-imapd-2.4.6/lib/imapoptions
+--- cyrus-imapd-2.4.6.orig/lib/imapoptions	2010-12-20 14:15:49.000000000 +0100
++++ cyrus-imapd-2.4.6/lib/imapoptions	2011-01-12 07:17:54.000000000 +0100
+@@ -671,14 +671,6 @@
+    mailspool, but each have their own "replicated" copy of
+    mailboxes.db. */
+ 
+-{ "md5_dir", NULL, STRING }
+-/* Top level directory for MD5 store manipulated by make_md5. File
+-   structure within this directory is one file for each user on the system,
+-   hashed on the first letter of the userid (e.g., /var/imap/md5/d/dpc22). */
+-
+-{ "md5_user_map", NULL, STRING }
+-/* Map file (cdb) to allow partial make_md5 runs. Maps username to UID */
+-
+ { "munge8bit", 1, SWITCH }
+ /* If enabled, lmtpd munges messages with 8-bit characters in the
+    headers.  The 8-bit characters are changed to `X'.  If
+@@ -1043,11 +1035,6 @@
+    "on" = \fIservername\fR and product version in the greeting;
+ product version in the capabilities */
+ 
+-{ "sha1_dir", NULL, STRING }
+-/* Top level directory for SHA1 store manipulated by make_sha1. File
+-   structure within this directory is one file for each user on the system,
+-   hashed on the first letter of the userid (e.g: /var/imap/sha1/d/dpc22). */
+-
+ { "sharedprefix", "Shared Folders", STRING }
+ /* If using the alternate IMAP namespace, the prefix for the shared
+    namespace.  The hierarchy delimiter will be automatically appended. */
+diff -Naur cyrus-imapd-2.4.6.orig/lib/imapopts.c cyrus-imapd-2.4.6/lib/imapopts.c
+--- cyrus-imapd-2.4.6.orig/lib/imapopts.c	2010-12-20 14:20:42.000000000 +0100
++++ cyrus-imapd-2.4.6/lib/imapopts.c	2011-01-12 07:13:46.000000000 +0100
+@@ -401,12 +401,6 @@
+       { "unified" , IMAP_ENUM_MUPDATE_CONFIG_UNIFIED },
+       { "replicated" , IMAP_ENUM_MUPDATE_CONFIG_REPLICATED },
+       { NULL, IMAP_ENUM_ZERO } } },
+-  { IMAPOPT_MD5_DIR, "md5_dir", 0, OPT_STRING,
+-    {(void *)(NULL)},
+-    { { NULL, IMAP_ENUM_ZERO } } },
+-  { IMAPOPT_MD5_USER_MAP, "md5_user_map", 0, OPT_STRING,
+-    {(void *)(NULL)},
+-    { { NULL, IMAP_ENUM_ZERO } } },
+   { IMAPOPT_MUNGE8BIT, "munge8bit", 0, OPT_SWITCH,
+     {(void*)1},
+     { { NULL, IMAP_ENUM_ZERO } } },
+@@ -626,9 +620,6 @@
+       { "min" , IMAP_ENUM_SERVERINFO_MIN },
+       { "on" , IMAP_ENUM_SERVERINFO_ON },
+       { NULL, IMAP_ENUM_ZERO } } },
+-  { IMAPOPT_SHA1_DIR, "sha1_dir", 0, OPT_STRING,
+-    {(void *)(NULL)},
+-    { { NULL, IMAP_ENUM_ZERO } } },
+   { IMAPOPT_SHAREDPREFIX, "sharedprefix", 0, OPT_STRING,
+     {(void *)("Shared Folders")},
+     { { NULL, IMAP_ENUM_ZERO } } },
+diff -Naur cyrus-imapd-2.4.6.orig/man/imapd.conf.5 cyrus-imapd-2.4.6/man/imapd.conf.5
+--- cyrus-imapd-2.4.6.orig/man/imapd.conf.5	2010-12-20 14:20:42.000000000 +0100
++++ cyrus-imapd-2.4.6/man/imapd.conf.5	2011-01-12 07:12:09.000000000 +0100
+@@ -577,12 +577,6 @@
+ mailboxes.db. 
+ 
+ Allowed values: \fIstandard\fR, \fIunified\fR, \fIreplicated\fR
+-.IP "\fBmd5_dir:\fR <none>" 5
+-Top level directory for MD5 store manipulated by make_md5. File
+-structure within this directory is one file for each user on the system,
+-hashed on the first letter of the userid (e.g., /var/imap/md5/d/dpc22). 
+-.IP "\fBmd5_user_map:\fR <none>" 5
+-Map file (cdb) to allow partial make_md5 runs. Maps username to UID 
+ .IP "\fBmunge8bit:\fR 1" 5
+ If enabled, lmtpd munges messages with 8-bit characters in the
+ headers.  The 8-bit characters are changed to `X'.  If
+@@ -888,10 +882,6 @@
+ product version in the capabilities 
+ 
+ Allowed values: \fIoff\fR, \fImin\fR, \fIon\fR
+-.IP "\fBsha1_dir:\fR <none>" 5
+-Top level directory for SHA1 store manipulated by make_sha1. File
+-structure within this directory is one file for each user on the system,
+-hashed on the first letter of the userid (e.g: /var/imap/sha1/d/dpc22). 
+ .IP "\fBsharedprefix:\fR Shared Folders" 5
+ If using the alternate IMAP namespace, the prefix for the shared
+ namespace.  The hierarchy delimiter will be automatically appended. 

@@ -1,0 +1,42 @@
+From 1bfda761c67e62ebce7568c67d5fefe6a1ace025 Mon Sep 17 00:00:00 2001
+From: Jeroen van Meeuwen (Kolab Systems) <vanmeeuwen@kolabsys.com>
+Date: Tue, 3 Aug 2010 10:38:55 +0200
+Subject: [PATCH 12/13] Workaround for missing user_deny.db
+
+If there is no user_deny.db, then all users are denied by default
+in 2.3.16. This patch circumvents that by returning OK when no
+user_deny.db exists.
+---
+ imap/global.c |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/imap/global.c b/imap/global.c
+index 5d64895..dac3d1c 100644
+--- a/imap/global.c
++++ b/imap/global.c
+@@ -542,14 +542,22 @@ static int acl_ok(const char *user, struct auth_state *authstate)
+ int access_ok(const char *user, const char *service, char *msgbuf, int size)
+ {
+     static char *fname = NULL;
++    static int nodb = 0;
+     struct db *db = NULL;
+     int r, ret = 1;  /* access always granted by default */
+ 
++    if (nodb) return ret;
++
+     if (!fname) {
++	struct stat s;
+ 	/* create path to database */
+ 	fname = xmalloc(strlen(config_dir) + sizeof(FNAME_USERDENYDB) + 1);
+ 	strcpy(fname, config_dir);
+ 	strcat(fname, FNAME_USERDENYDB);
++	if (stat(fname, &s) == -1 && errno==ENOENT) {
++	    nodb = 1;
++	    return ret;
++	}
+     }
+ 
+     /* try to open database */
+-- 
+1.7.2
+

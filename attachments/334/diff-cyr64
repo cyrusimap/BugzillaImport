@@ -1,0 +1,184 @@
+--- lib/libconfig.c	22 May 2004 03:45:54 -0000	1.9
++++ lib/libconfig.c	20 Feb 2005 05:22:29 -0000	1.2.2.15
+@@ -96,7 +97,13 @@
+ {
+     assert(opt > IMAPOPT_ZERO && opt < IMAPOPT_LAST);
+     assert(imapopts[opt].t == OPT_INT);
+-
++#if (SIZEOF_LONG != 4)
++    if ((imapopts[opt].val.i > 0x7fffffff)||
++	(imapopts[opt].val.i < -0x7fffffff)) {
++	syslog(LOG_ERR, "config_getint: %s: %lld too large for type",
++	       imapopts[opt].optname, imapopts[opt].val.i);
++    }
++#endif    
+     return imapopts[opt].val.i;
+ }
+ 
+@@ -104,7 +111,13 @@
+ {
+     assert(opt > IMAPOPT_ZERO && opt < IMAPOPT_LAST);
+     assert(imapopts[opt].t == OPT_SWITCH);
+-    
++#if (SIZEOF_LONG != 4)
++    if ((imapopts[opt].val.b > 0x7fffffff)||
++	(imapopts[opt].val.b < -0x7fffffff)) {
++	syslog(LOG_ERR, "config_getswitch: %s: %lld too large for type", 
++	       imapopts[opt].optname, imapopts[opt].val.b);
++    }
++#endif    
+     return imapopts[opt].val.b;
+ }
+ 
+--- lib/libcyr_cfg.c	16 Feb 2005 20:38:01 -0000	1.11
++++ lib/libcyr_cfg.c	20 Feb 2005 05:24:41 -0000	1.2.2.10
+@@ -63,15 +63,15 @@
+     { CYRUSOPT_ZERO, { NULL }, CYRUS_OPT_NOTOPT },
+ 
+     { CYRUSOPT_AUTH_UNIX_GROUP_ENABLE,
+-      CFGVAL(int, 1),
++      CFGVAL(long, 1),
+       CYRUS_OPT_SWITCH },
+ 
+     { CYRUSOPT_USERNAME_TOLOWER,
+-      CFGVAL(int, 0),
++      CFGVAL(long, 0),
+       CYRUS_OPT_SWITCH },
+ 
+     { CYRUSOPT_SKIPLIST_UNSAFE,
+-      CFGVAL(int, 0),
++      CFGVAL(long, 0),
+       CYRUS_OPT_SWITCH },
+ 
+     { CYRUSOPT_TEMP_PATH,
+@@ -79,7 +79,7 @@
+       CYRUS_OPT_STRING },
+ 
+     { CYRUSOPT_PTS_CACHE_TIMEOUT,
+-      CFGVAL(int, 3 * 60 * 60), /* 3 hours */
++      CFGVAL(long, 3 * 60 * 60), /* 3 hours */
+       CYRUS_OPT_INT },
+ 
+     { CYRUSOPT_CONFIG_DIR,
+@@ -87,11 +87,11 @@
+       CYRUS_OPT_STRING },
+ 
+     { CYRUSOPT_DB_INIT_FLAGS,
+-      CFGVAL(int, 0),
++      CFGVAL(long, 0),
+       CYRUS_OPT_INT },
+    
+     { CYRUSOPT_FULLDIRHASH,
+-      CFGVAL(int, 0),
++      CFGVAL(long, 0),
+       CYRUS_OPT_SWITCH },
+ 
+     { CYRUSOPT_PTSCACHE_DB,
+@@ -103,11 +103,11 @@
+       CYRUS_OPT_STRING },
+ 
+     { CYRUSOPT_VIRTDOMAINS,
+-      CFGVAL(int, 0),
++      CFGVAL(long, 0),
+       CYRUS_OPT_SWITCH },
+ 
+     { CYRUSOPT_BERKELEY_CACHESIZE,
+-      CFGVAL(int, 512 * 1024), /* 512KB */
++      CFGVAL(long, 512 * 1024), /* 512KB */
+       CYRUS_OPT_INT },
+ 
+     { CYRUSOPT_AUTH_MECH,
+@@ -115,11 +115,11 @@
+       CYRUS_OPT_STRING },
+ 
+     { CYRUSOPT_BERKELEY_LOCKS_MAX,
+-      CFGVAL(int, 50000),
++      CFGVAL(long, 50000),
+       CYRUS_OPT_INT },
+ 
+     { CYRUSOPT_BERKELEY_TXNS_MAX,
+-      CFGVAL(int, 100),
++      CFGVAL(long, 100),
+       CYRUS_OPT_INT },
+ 
+     { CYRUSOPT_LAST, { NULL }, CYRUS_OPT_NOTOPT }
+@@ -139,7 +139,11 @@
+     assert(opt > CYRUSOPT_ZERO && opt < CYRUSOPT_LAST);
+     assert(cyrus_options[opt].opt == opt);
+     assert(cyrus_options[opt].t == CYRUS_OPT_INT);
+-
++#if (SIZEOF_LONG != 4)
++    if ((cyrus_options[opt].val.i > 0x7fffffff)||(cyrus_options[opt].val.i < -0x7fffffff)) {
++	syslog(LOG_ERR, "libcyrus_config_getint: option %d: %lld too large for type", cyrus_options[opt].opt, cyrus_options[opt].val.i);
++    }
++#endif    
+     return cyrus_options[opt].val.i;
+ }
+ 
+@@ -148,7 +152,11 @@
+     assert(opt > CYRUSOPT_ZERO && opt < CYRUSOPT_LAST);
+     assert(cyrus_options[opt].opt == opt);
+     assert(cyrus_options[opt].t == CYRUS_OPT_SWITCH);
+-    
++#if (SIZEOF_LONG != 4)
++    if ((cyrus_options[opt].val.b > 0x7fffffff)||(cyrus_options[opt].val.b < -0x7fffffff)) {
++	syslog(LOG_ERR, "libcyrus_config_getswitch: option %d: %lld too large for type", cyrus_options[opt].opt, cyrus_options[opt].val.b);
++    }
++#endif    
+     return cyrus_options[opt].val.b;
+ }
+ 
+Index: libcyr_cfg.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/lib/libcyr_cfg.h,v
+retrieving revision 1.8
+retrieving revision 1.2.2.8
+diff -u -r1.8 -r1.2.2.8
+--- lib/libcyr_cfg.h	16 Feb 2005 20:38:01 -0000	1.8
++++ lib/libcyr_cfg.h	20 Feb 2005 05:22:29 -0000	1.2.2.8
+@@ -106,8 +106,8 @@
+ 
+ union cyrus_config_value {
+     const char *s; /* string */
+-    int i; /* int */
+-    int b; /* switch */
++    long i; /* int */
++    long b; /* switch */
+ };
+ 
+ struct cyrusopt_s {
+Index: tools/config2header
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/tools/config2header,v
+retrieving revision 1.2.2.9
+retrieving revision 1.2.2.10
+diff -u -r1.2.2.9 -r1.2.2.10
+--- tools/config2header	24 Jun 2004 15:16:34 -0000	1.2.2.9
++++ tools/config2header	17 Feb 2005 18:09:51 -0000	1.2.2.10
+@@ -274,8 +274,8 @@
+ union config_value {
+     $dummy_field
+     const char *s;	/* OPT_STRING, OPT_STRINGLIST */
+-    int i;		/* OPT_INT */
+-    int b;		/* OPT_SWITCH */
++    long i;		/* OPT_INT */
++    long b;		/* OPT_SWITCH */
+     enum enum_value e;	/* OPT_ENUM */
+     unsigned long x;	/* OPT_BITFIELD */
+ };
+Index: configure.in
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/configure.in,v
+retrieving revision 1.268.2.19
+diff -u -r1.268.2.19 configure.in
+--- configure.in	17 Feb 2005 17:51:33 -0000	1.268.2.19
++++ configure.in	22 Feb 2005 05:49:19 -0000
+@@ -100,6 +100,8 @@
+ fi
+ AC_C_INLINE
+ 
++AC_CHECK_SIZEOF(long)
++
+ dnl Check if `long long int' is available
+ AC_CHECK_SIZEOF(long long int)
+ AC_CHECK_SIZEOF(unsigned long long int)

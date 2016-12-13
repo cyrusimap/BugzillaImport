@@ -1,0 +1,138 @@
+diff -r -u cyrus-imapd-2.3.16.orig/imap/imapd.c cyrus-imapd-2.3.16/imap/imapd.c
+--- cyrus-imapd-2.3.16.orig/imap/imapd.c	2009-12-16 03:51:39.000000000 +0100
++++ cyrus-imapd-2.3.16/imap/imapd.c	2010-01-11 13:43:57.000000000 +0100
+@@ -1021,6 +1021,8 @@
+     for (;;) {
+ 	/* Flush any buffered output */
+ 	prot_flush(imapd_out);
++	/* reset client timeout for next command */
++	prot_resettimeout(imapd_in);
+ 	if (backend_current) prot_flush(backend_current->out);
+ 
+ 	/* Check for shutdown file */
+diff -r -u cyrus-imapd-2.3.16.orig/imap/lmtpengine.c cyrus-imapd-2.3.16/imap/lmtpengine.c
+--- cyrus-imapd-2.3.16.orig/imap/lmtpengine.c	2009-04-23 03:30:32.000000000 +0200
++++ cyrus-imapd-2.3.16/imap/lmtpengine.c	2010-01-11 13:45:12.000000000 +0100
+@@ -1125,6 +1125,9 @@
+ 
+     for (;;) {
+     nextcmd:
++      /* reset client timeout for next command */
++      prot_resettimeout(pin);
++
+       signals_poll();
+ 
+       if (!prot_fgets(buf, sizeof(buf), pin)) {
+diff -r -u cyrus-imapd-2.3.16.orig/imap/nntpd.c cyrus-imapd-2.3.16/imap/nntpd.c
+--- cyrus-imapd-2.3.16.orig/imap/nntpd.c	2009-12-16 03:51:42.000000000 +0100
++++ cyrus-imapd-2.3.16/imap/nntpd.c	2010-01-11 13:46:48.000000000 +0100
+@@ -810,6 +810,8 @@
+     for (;;) {
+ 	/* Flush any buffered output */
+ 	prot_flush(nntp_out);
++	/* reset client timeout for next command */
++	prot_resettimeout(nntp_in);
+ 	if (backend_current) prot_flush(backend_current->out);
+ 
+ 	/* Check for shutdown file */
+@@ -2005,10 +2007,6 @@
+ 	if (buf[strlen(buf)-1] != '\n') prot_printf(nntp_out, "\r\n");
+ 
+ 	prot_printf(nntp_out, ".\r\n");
+-
+-	/* Reset inactivity timer in case we spend a long time
+-	   pushing data to the client over a slow link. */
+-	prot_resettimeout(nntp_in);
+     }
+ 
+     if (!by_msgid) free(msgid);
+diff -r -u cyrus-imapd-2.3.16.orig/imap/pop3d.c cyrus-imapd-2.3.16/imap/pop3d.c
+--- cyrus-imapd-2.3.16.orig/imap/pop3d.c	2009-12-17 16:32:32.000000000 +0100
++++ cyrus-imapd-2.3.16/imap/pop3d.c	2010-01-11 13:47:42.000000000 +0100
+@@ -779,6 +779,9 @@
+     unsigned msg = 0;
+ 
+     for (;;) {
++	/* reset client timeout for next command */
++	prot_resettimeout(popd_in);
++
+ 	signals_poll();
+ 
+ 	if (backend) {
+@@ -1843,10 +1846,6 @@
+ 
+     prot_printf(popd_out, ".\r\n");
+ 
+-    /* Reset inactivity timer in case we spend a long time
+-       pushing data to the client over a slow link. */
+-    prot_resettimeout(popd_in);
+-
+     return 0;
+ }
+ 
+diff -r -u cyrus-imapd-2.3.16.orig/imap/smmapd.c cyrus-imapd-2.3.16/imap/smmapd.c
+--- cyrus-imapd-2.3.16.orig/imap/smmapd.c	2009-02-09 06:01:59.000000000 +0100
++++ cyrus-imapd-2.3.16/imap/smmapd.c	2010-01-11 13:49:23.000000000 +0100
+@@ -390,13 +390,18 @@
+ {
+     int c;
+ 
+-    while ((c = prot_getc(map_in)) != EOF) {
++    for (;;) {
+ 	int r = 0, sawdigit = 0, len = 0, size = 0;
+ 	struct auth_state *authstate = NULL;
+ 	char request[MAXREQUEST+1];
+ 	char *mapname = NULL, *key = NULL;
+ 	const char *errstring = NULL;
+ 
++	/* reset client timeout for next command */
++	prot_resettimeout(map_in);
++	if((c = prot_getc(map_in)) == EOF)
++	    break;
++
+ 	if (signals_poll() == SIGHUP) {
+ 	    /* caught a SIGHUP, return */
+ 	    return 1;
+diff -r -u cyrus-imapd-2.3.16.orig/imap/sync_server.c cyrus-imapd-2.3.16/imap/sync_server.c
+--- cyrus-imapd-2.3.16.orig/imap/sync_server.c	2009-12-16 03:54:14.000000000 +0100
++++ cyrus-imapd-2.3.16/imap/sync_server.c	2010-01-11 13:50:25.000000000 +0100
+@@ -628,6 +628,10 @@
+ 
+     for (;;) {
+         prot_flush(sync_out);
++#if 0
++	/* reset client timeout for next command */
++	prot_resettimeout(sync_in);
++#endif
+ 
+ 	/* Parse command name */
+ 	if ((c = getword(sync_in, &cmd)) == EOF)
+diff -r -u cyrus-imapd-2.3.16.orig/lib/prot.c cyrus-imapd-2.3.16/lib/prot.c
+--- cyrus-imapd-2.3.16.orig/lib/prot.c	2009-11-05 01:19:19.000000000 +0100
++++ cyrus-imapd-2.3.16/lib/prot.c	2010-01-11 13:51:59.000000000 +0100
+@@ -599,8 +599,11 @@
+ 		}
+ 		/* Request a flush of the buffer.  If we are a blocking
+ 		   read stream, force the flush */
+-		if (s->flushonread)
++		if (s->flushonread) {
+ 		    prot_flush_internal(s->flushonread, !s->dontblock);
++		    /* reset client timeout since we just sent data */
++		    prot_resettimeout(s);
++		}
+ 	    }
+ 	    else {
+ 		haveinput = 1;
+diff -r -u cyrus-imapd-2.3.16.orig/timsieved/timsieved.c cyrus-imapd-2.3.16/timsieved/timsieved.c
+--- cyrus-imapd-2.3.16.orig/timsieved/timsieved.c	2009-12-16 03:51:45.000000000 +0100
++++ cyrus-imapd-2.3.16/timsieved/timsieved.c	2010-01-11 13:53:15.000000000 +0100
+@@ -189,6 +189,9 @@
+ 
+     while (ret != TRUE)
+     {
++	/* reset client timeout for next command */
++	prot_resettimeout(sieved_in);
++
+ 	if (backend) {
+ 	    /* create a pipe from client to backend */
+ 	    bitpipe();

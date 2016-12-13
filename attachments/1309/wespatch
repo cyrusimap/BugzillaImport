@@ -1,0 +1,38 @@
+--- cyrus-imapd-2.4.1/imap/backend.c	2010-10-18 14:28:14.000000000 +0200
++++ cyrus-imapd-2.4.1-wespatch/imap/backend.c	2010-10-19 16:48:19.471529526 +0200
+@@ -533,7 +533,11 @@
+     if ((server[0] != '/') ||
+ 	(strcmp(prot->sasl_service, "lmtp") &&
+ 	 strcmp(prot->sasl_service, "csync"))) {
+-	char *mlist = xstrdup(mechlist); /* backend_auth is destructive */
++	char *mlist = NULL;
++
++	if ( mechlist ) {
++	    mlist = xstrdup(mechlist); /* backend_auth is destructive */
++	}
+ 	const char *my_status;
+ 
+ 	if ((r = backend_authenticate(ret, prot, &mlist, userid,
+@@ -575,6 +579,11 @@
+ 
+ 		new_mechlist = ask_capability(ret->out, ret->in, prot,
+ 					      &ret->capability, auto_capa);
++		/*
++		 * A flawed check: backend_authenticate() may be given a
++		 * NULL mechlist, negotiate SSL, and get a new mechlist.
++		 * This new, correct mechlist won't be visible here.
++		 */
+ 		if (new_mechlist && strcmp(new_mechlist, mechlist)) {
+ 		    syslog(LOG_ERR, "possible MITM attack:"
+ 			   "list of available SASL mechanisms changed");
+--- cyrus-imapd-2.4.1/imap/sync_client.c	2010-10-18 14:28:14.000000000 +0200
++++ cyrus-imapd-2.4.1-wespatch/imap/sync_client.c	2010-10-19 16:48:34.430533262 +0200
+@@ -121,7 +121,7 @@
+     { { "* SASL ", CAPA_AUTH },
+       { "* STARTTLS", CAPA_STARTTLS },
+       { NULL, 0 } } },
+-  { "STARTTLS", "OK", "NO", 0 },
++  { "STARTTLS", "OK", "NO", 1 },
+   { "AUTHENTICATE", USHRT_MAX, 0, "OK", "NO", "+ ", "*", NULL, 0 },
+   { NULL, NULL, NULL },
+   { "NOOP", NULL, "OK" },

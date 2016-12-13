@@ -1,0 +1,97 @@
+diff -rcN cyrus-imapd-2.1.11/man/cyrus.conf.5 cyrus-imapd-2.1.11-maxfds/man/cyrus.conf.5
+*** cyrus-imapd-2.1.11/man/cyrus.conf.5	Thu Oct  3 14:32:08 2002
+--- cyrus-imapd-2.1.11-maxfds/man/cyrus.conf.5	Thu Feb 20 20:07:56 2003
+***************
+*** 119,124 ****
+--- 119,127 ----
+  .IP "\fBmaxchild=\fR-1" 5
+  The maximum number of instances of this service to spawn.  A value of
+  -1 means unlimited.  This integer value is optional.
++ .IP "\fBmaxfds=\fR256" 5
++ The maximum number of file descriptors to which to limit this process.
++ This integer value is optional.
+  .SS EVENTS
+  This section lists processes that should be run at specific intervals,
+  similar to cron jobs.  This section is typically used to perform
+diff -rcN cyrus-imapd-2.1.11/master/master.c cyrus-imapd-2.1.11-maxfds/master/master.c
+*** cyrus-imapd-2.1.11/master/master.c	Fri Nov  1 11:44:33 2002
+--- cyrus-imapd-2.1.11-maxfds/master/master.c	Thu Feb 20 20:03:00 2003
+***************
+*** 566,572 ****
+  	    if (Services[i].stat[0] > 0) close(Services[i].stat[0]);
+  	    if (Services[i].stat[1] > 0) close(Services[i].stat[1]);
+  	}
+! 	limit_fds(256);
+  
+  	syslog(LOG_DEBUG, "about to exec %s", path);
+  
+--- 566,572 ----
+  	    if (Services[i].stat[0] > 0) close(Services[i].stat[0]);
+  	    if (Services[i].stat[1] > 0) close(Services[i].stat[1]);
+  	}
+! 	limit_fds(s->maxfds);
+  
+  	syslog(LOG_DEBUG, "about to exec %s", path);
+  
+***************
+*** 910,915 ****
+--- 910,916 ----
+      char *listen = mystrdup(masterconf_getstring(e, "listen", NULL));
+      char *proto = mystrdup(masterconf_getstring(e, "proto", "tcp"));
+      char *max = mystrdup(masterconf_getstring(e, "maxchild", "-1"));
++     rlim_t maxfds = (rlim_t) masterconf_getint(e, "maxfds", 256);
+      int i;
+  
+      if(babysit && prefork == 0) prefork = 1;
+***************
+*** 1000,1005 ****
+--- 1001,1008 ----
+  
+  	Services[nservices].maxforkrate = maxforkrate;
+  
++ 	Services[nservices].maxfds = maxfds;
++ 
+  	if(!strcmp(Services[nservices].proto, "tcp")) {
+  	    Services[nservices].desired_workers = prefork;
+  	    Services[nservices].babysit = babysit;
+***************
+*** 1024,1034 ****
+  	Services[nservices].nconnections = 0;
+  
+  	if (verbose > 2)
+! 	    syslog(LOG_DEBUG, "add: service '%s' (%s, %s:%s, %d, %d)",
+  		   Services[nservices].name, cmd,
+  		   Services[nservices].proto, Services[nservices].listen,
+  		   Services[nservices].desired_workers,
+! 		   Services[nservices].max_workers);
+  
+  	nservices++;
+      }
+--- 1027,1038 ----
+  	Services[nservices].nconnections = 0;
+  
+  	if (verbose > 2)
+! 	    syslog(LOG_DEBUG, "add: service '%s' (%s, %s:%s, %d, %d, %d)",
+  		   Services[nservices].name, cmd,
+  		   Services[nservices].proto, Services[nservices].listen,
+  		   Services[nservices].desired_workers,
+! 		   Services[nservices].max_workers,
+! 		   (int) Services[nservices].maxfds);
+  
+  	nservices++;
+      }
+diff -rcN cyrus-imapd-2.1.11/master/master.h cyrus-imapd-2.1.11-maxfds/master/master.h
+*** cyrus-imapd-2.1.11/master/master.h	Sat May 25 15:57:48 2002
+--- cyrus-imapd-2.1.11-maxfds/master/master.h	Thu Feb 20 20:15:43 2003
+***************
+*** 30,35 ****
+--- 30,38 ----
+      int nconnections;
+  
+      unsigned int forkrate;
++ 
++     /* limits */
++     rlim_t maxfds;
+  };
+  
+  extern struct service *Services;

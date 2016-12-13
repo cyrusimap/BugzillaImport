@@ -1,0 +1,231 @@
+diff -urN cyrus-imapd-2.5.6/imap/fud.c cyrus-imapd-2.5.6.procfix/imap/fud.c
+--- cyrus-imapd-2.5.6/imap/fud.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/fud.c	2015-10-07 16:48:02.925519978 +0200
+@@ -149,11 +149,11 @@
+  * run once when process is forked;
+  * MUST NOT exit directly; must return with non-zero error code
+  */
+-int service_init(int argc, char **argv, char **envp)
++int service_init(int argc, char **argv, char **envp, char **origargv)
+ {
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+-    setproctitle_init(argc, argv, envp);
++    setproctitle_init(argc, origargv, envp);
+ 
+     signals_set_shutdown(&shut_down);
+ 
+diff -urN cyrus-imapd-2.5.6/imap/httpd.c cyrus-imapd-2.5.6.procfix/imap/httpd.c
+--- cyrus-imapd-2.5.6/imap/httpd.c	2015-09-11 03:50:15.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/httpd.c	2015-10-07 16:48:02.926520018 +0200
+@@ -395,7 +395,7 @@
+  */
+ int service_init(int argc __attribute__((unused)),
+ 		 char **argv __attribute__((unused)),
+-		 char **envp __attribute__((unused)))
++		 char **envp __attribute__((unused)), char **origargv)
+ {
+     int r, opt, i, allow_trace = config_getswitch(IMAPOPT_HTTPALLOWTRACE);
+ 
+@@ -404,7 +404,7 @@
+     initialize_http_error_table();
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+-    setproctitle_init(argc, argv, envp);
++    setproctitle_init(argc, origargv, envp);
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+diff -urN cyrus-imapd-2.5.6/imap/imapd.c cyrus-imapd-2.5.6.procfix/imap/imapd.c
+--- cyrus-imapd-2.5.6/imap/imapd.c	2015-09-11 03:50:15.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/imapd.c	2015-10-07 16:48:02.928520099 +0200
+@@ -814,12 +814,12 @@
+  * run once when process is forked;
+  * MUST NOT exit directly; must return with non-zero error code
+  */
+-int service_init(int argc, char **argv, char **envp)
++int service_init(int argc, char **argv, char **envp, char **origargv)
+ {
+     int opt;
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+-    setproctitle_init(argc, argv, envp);
++    setproctitle_init(argc, origargv, envp);
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+diff -urN cyrus-imapd-2.5.6/imap/lmtpd.c cyrus-imapd-2.5.6.procfix/imap/lmtpd.c
+--- cyrus-imapd-2.5.6/imap/lmtpd.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/lmtpd.c	2015-10-07 16:48:02.928520099 +0200
+@@ -185,7 +185,8 @@
+ 
+ int service_init(int argc __attribute__((unused)),
+ 		 char **argv __attribute__((unused)),
+-		 char **envp __attribute__((unused)))
++		 char **envp __attribute__((unused)),
++                 char **origargv __attribute__((unused)))
+ {
+     int r;
+ 
+diff -urN cyrus-imapd-2.5.6/imap/mupdate.c cyrus-imapd-2.5.6.procfix/imap/mupdate.c
+--- cyrus-imapd-2.5.6/imap/mupdate.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/mupdate.c	2015-10-07 16:48:02.929520139 +0200
+@@ -479,7 +479,7 @@
+  * MUST NOT exit directly; must return with non-zero error code
+  */
+ int service_init(int argc, char **argv,
+-		 char **envp __attribute__((unused)))
++		 char **envp __attribute__((unused)), char **origargv __attribute__((unused)))
+ {
+     int i, r, workers_to_start;
+     int opt, autoselect = 0;
+diff -urN cyrus-imapd-2.5.6/imap/nntpd.c cyrus-imapd-2.5.6.procfix/imap/nntpd.c
+--- cyrus-imapd-2.5.6/imap/nntpd.c	2015-09-11 03:50:15.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/nntpd.c	2015-10-07 16:48:02.930520179 +0200
+@@ -427,7 +427,7 @@
+  */
+ int service_init(int argc __attribute__((unused)),
+ 		 char **argv __attribute__((unused)),
+-		 char **envp __attribute__((unused)))
++		 char **envp __attribute__((unused)), char **origargv)
+ {
+     int opt;
+     const char *prefix;
+@@ -435,7 +435,7 @@
+     initialize_nntp_error_table();
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+-    setproctitle_init(argc, argv, envp);
++    setproctitle_init(argc, origargv, envp);
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+diff -urN cyrus-imapd-2.5.6/imap/pop3d.c cyrus-imapd-2.5.6.procfix/imap/pop3d.c
+--- cyrus-imapd-2.5.6/imap/pop3d.c	2015-09-11 03:50:15.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/pop3d.c	2015-10-07 16:48:02.930520179 +0200
+@@ -426,13 +426,13 @@
+  */
+ int service_init(int argc __attribute__((unused)),
+ 		 char **argv __attribute__((unused)),
+-		 char **envp __attribute__((unused)))
++		 char **envp __attribute__((unused)), char **origargv)
+ {
+     int r;
+     int opt;
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+-    setproctitle_init(argc, argv, envp);
++    setproctitle_init(argc, origargv, envp);
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+diff -urN cyrus-imapd-2.5.6/imap/smmapd.c cyrus-imapd-2.5.6.procfix/imap/smmapd.c
+--- cyrus-imapd-2.5.6/imap/smmapd.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/smmapd.c	2015-10-07 16:48:02.931520219 +0200
+@@ -175,13 +175,13 @@
+  * run once when process is forked;
+  * MUST NOT exit directly; must return with non-zero error code
+  */
+-int service_init(int argc, char **argv, char **envp)
++int service_init(int argc, char **argv, char **envp, char **origargv)
+ {
+     int r;
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+-    setproctitle_init(argc, argv, envp);
++    setproctitle_init(argc, origargv, envp);
+ 
+     signals_set_shutdown(&shut_down);
+     signal(SIGPIPE, SIG_IGN);
+diff -urN cyrus-imapd-2.5.6/imap/sync_server.c cyrus-imapd-2.5.6.procfix/imap/sync_server.c
+--- cyrus-imapd-2.5.6/imap/sync_server.c	2015-09-11 03:50:15.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/imap/sync_server.c	2015-10-07 16:48:02.931520219 +0200
+@@ -245,12 +245,13 @@
+  */
+ int service_init(int argc __attribute__((unused)),
+ 		 char **argv __attribute__((unused)),
+-		 char **envp __attribute__((unused)))
++		 char **envp __attribute__((unused)),
++                 char **origargv)
+ {
+     int opt, r;
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+-    setproctitle_init(argc, argv, envp);
++    setproctitle_init(argc, origargv, envp);
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+diff -urN cyrus-imapd-2.5.6/master/service.c cyrus-imapd-2.5.6.procfix/master/service.c
+--- cyrus-imapd-2.5.6/master/service.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/master/service.c	2015-10-07 16:48:02.932520260 +0200
+@@ -415,7 +415,7 @@
+ 	return 1;
+     }
+ 
+-    if (service_init(newargv.count, newargv.data, envp) != 0) {
++    if (service_init(newargv.count, newargv.data, envp, argv) != 0) {
+ 	if (MESSAGE_MASTER_ON_EXIT) 
+ 	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+diff -urN cyrus-imapd-2.5.6/master/service.h cyrus-imapd-2.5.6.procfix/master/service.h
+--- cyrus-imapd-2.5.6/master/service.h	2015-07-06 07:36:34.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/master/service.h	2015-10-07 16:48:02.932520260 +0200
+@@ -54,7 +54,7 @@
+     MASTER_SERVICE_CONNECTION_MULTI = 0x04
+ };
+ 
+-extern int service_init(int argc, char **argv, char **envp);
++extern int service_init(int argc, char **argv, char **envp, char **origargv);
+ extern int service_main(int argc, char **argv, char **envp);
+ extern int service_main_fd(int fd, int argc, char **argv, char **envp);
+ extern void service_abort(int error);
+diff -urN cyrus-imapd-2.5.6/master/service-thread.c cyrus-imapd-2.5.6.procfix/master/service-thread.c
+--- cyrus-imapd-2.5.6/master/service-thread.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/master/service-thread.c	2015-10-07 16:48:02.932520260 +0200
+@@ -241,7 +241,7 @@
+ 	return 1;
+     }
+ 
+-    if (service_init(newargv.count, newargv.data, envp) != 0) {
++    if (service_init(newargv.count, newargv.data, envp, argv) != 0) {
+ 	if (MESSAGE_MASTER_ON_EXIT) 
+ 	    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	return 1;
+diff -urN cyrus-imapd-2.5.6/notifyd/notifyd.c cyrus-imapd-2.5.6.procfix/notifyd/notifyd.c
+--- cyrus-imapd-2.5.6/notifyd/notifyd.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/notifyd/notifyd.c	2015-10-07 16:48:02.933520300 +0200
+@@ -209,7 +209,7 @@
+     exit(EC_USAGE);
+ }
+ 
+-EXPORTED int service_init(int argc, char **argv, char **envp __attribute__((unused)))
++EXPORTED int service_init(int argc, char **argv, char **envp __attribute__((unused)), char **origargv __attribute__((unused)))
+ {
+     int opt;
+     char *method = "null";
+diff -urN cyrus-imapd-2.5.6/ptclient/ptloader.c cyrus-imapd-2.5.6.procfix/ptclient/ptloader.c
+--- cyrus-imapd-2.5.6/ptclient/ptloader.c	2015-09-11 03:18:38.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/ptclient/ptloader.c	2015-10-07 16:48:02.933520300 +0200
+@@ -126,7 +126,7 @@
+ static char ptclient_debug = 0;
+ struct db *ptsdb = NULL;
+   
+-int service_init(int argc, char *argv[], char **envp __attribute__((unused)))
++int service_init(int argc, char *argv[], char **envp __attribute__((unused)), char **origargv __attribute__((unused)))
+ {
+     int r;
+     int opt;
+diff -urN cyrus-imapd-2.5.6/timsieved/timsieved.c cyrus-imapd-2.5.6.procfix/timsieved/timsieved.c
+--- cyrus-imapd-2.5.6/timsieved/timsieved.c	2015-09-11 03:50:15.000000000 +0200
++++ cyrus-imapd-2.5.6.procfix/timsieved/timsieved.c	2015-10-07 16:48:57.763727850 +0200
+@@ -214,7 +214,7 @@
+ 
+ EXPORTED int service_init(int argc __attribute__((unused)),
+                  char **argv __attribute__((unused)),
+-                 char **envp __attribute__((unused)))
++                 char **envp __attribute__((unused)), char **origargv __attribute__((unused)))
+ {
+     global_sasl_init(1, 1, mysasl_cb);
+ 

@@ -1,0 +1,104 @@
+diff -ur cyrus-imapd-2.2.12-orig/imap/imapd.c cyrus-imapd-2.2.12/imap/imapd.c
+--- cyrus-imapd-2.2.12-orig/imap/imapd.c	2011-01-05 12:28:15.000000000 +0100
++++ cyrus-imapd-2.2.12/imap/imapd.c	2011-01-06 09:44:58.000000000 +0100
+@@ -1705,6 +1705,7 @@
+     char *passwd;
+     const char *reply = NULL;
+     int plaintextloginpause;
++    int failedloginpause;
+     int r;
+     
+     if (imapd_userid) {
+@@ -1776,7 +1777,10 @@
+ 	syslog(LOG_NOTICE, "badlogin: %s plaintext %s %s",
+ 	       imapd_clienthost, canon_user, sasl_errdetail(imapd_saslconn));
+ 
+-	sleep(3);
++	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++        if (failedloginpause != 0) {
++	    sleep(failedloginpause);
++	}
+ 
+ 	if ((reply = sasl_errstring(r, NULL, NULL)) != NULL) {
+ 	    prot_printf(imapd_out, "%s NO Login failed: %s\r\n", tag, reply);
+@@ -1866,6 +1870,8 @@
+ 
+     int r;
+ 
++    int failedloginpause;
++
+     r = saslserver(imapd_saslconn, authtype, resp, "", "+ ", "",
+ 		   imapd_in, imapd_out, &sasl_result, NULL);
+ 
+@@ -1894,7 +1900,11 @@
+ 	    snmp_increment_args(AUTHENTICATION_NO, 1,
+ 				VARIABLE_AUTH, 0, /* hash_simple(authtype) */ 
+ 				VARIABLE_LISTEND);
+-	    sleep(3);
++
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++            if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
+ 
+ 	    if (errorstring) {
+ 		prot_printf(imapd_out, "%s NO %s\r\n", tag, errorstring);
+diff -ur cyrus-imapd-2.2.12-orig/imap/proxyd.c cyrus-imapd-2.2.12/imap/proxyd.c
+--- cyrus-imapd-2.2.12-orig/imap/proxyd.c	2011-01-05 12:28:15.000000000 +0100
++++ cyrus-imapd-2.2.12/imap/proxyd.c	2011-01-06 09:45:13.000000000 +0100
+@@ -2163,6 +2163,7 @@
+     char *passwd;
+     char *reply = 0;
+     int plaintextloginpause;
++    int failedloginpause;
+     int r;
+ 
+     if (proxyd_userid) {
+@@ -2242,8 +2243,12 @@
+ 		   proxyd_clienthost, canon_user, reply);
+ 	}
+ 	/* Apply penalty only if not under layer */
+-	if (proxyd_starttls_done == 0)
+-	    sleep(3);
++	if (proxyd_starttls_done == 0) {
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	    if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
++	}
+ 	if (errorstring) {
+ 	    prot_printf(proxyd_out, "%s NO Login failed: %s\r\n", 
+ 			tag, errorstring);
+@@ -2308,6 +2313,7 @@
+     char *ssfmsg=NULL;
+ 
+     int r;
++    int failedloginpause;
+ 
+     r = saslserver(proxyd_saslconn, authtype, resp, "", "+ ", "",
+ 		   proxyd_in, proxyd_out, &sasl_result, NULL);
+@@ -2337,7 +2343,10 @@
+ 	    snmp_increment_args(AUTHENTICATION_NO, 1,
+ 				VARIABLE_AUTH, 0, /* hash_simple(authtype) */ 
+ 				VARIABLE_LISTEND);
+-	    sleep(3);
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	    if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
+ 
+ 	    if (errorstring) {
+ 		prot_printf(proxyd_out, "%s NO %s\r\n", tag, errorstring);
+diff -ur cyrus-imapd-2.2.12-orig/lib/imapoptions cyrus-imapd-2.2.12/lib/imapoptions
+--- cyrus-imapd-2.2.12-orig/lib/imapoptions	2011-01-05 12:28:15.000000000 +0100
++++ cyrus-imapd-2.2.12/lib/imapoptions	2011-01-06 09:44:00.000000000 +0100
+@@ -202,6 +202,9 @@
+    as having already been delivered to the mailbox.  Records the mailbox
+    and message-id/resent-message-id of all successful deliveries. */
+ 
++{ "failedloginpause", 3, INT }
++/* Number of seconds to pause after a failed login. */
++
+ { "foolstupidclients", 0, SWITCH }
+ /* If enabled, only list the personal namespace when a LIST "*" is performed.
+    (it changes the request to a LIST "INBOX*" */

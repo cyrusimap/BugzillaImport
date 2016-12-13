@@ -1,0 +1,197 @@
+diff -urN cyrus-imapd-2.4.17/imap/imapd.c cyrus-imapd-2.4.17.badlogin/imap/imapd.c
+--- cyrus-imapd-2.4.17/imap/imapd.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17.badlogin/imap/imapd.c	2013-11-22 16:32:37.000000000 +0100
+@@ -2198,7 +2198,7 @@
+ 
+     if (r) {
+ 	eatline(imapd_in, ' ');
+-	syslog(LOG_NOTICE, "badlogin: %s plaintext %s invalid user",
++	syslog(LOG_NOTICE, "badlogin: %s plaintext (%s) invalid user",
+ 	       imapd_clienthost, beautify_string(user));
+ 	prot_printf(imapd_out, "%s NO %s\r\n", tag, 
+ 		    error_message(IMAP_INVALID_USER));
+@@ -2264,7 +2264,7 @@
+ 				 strlen(canon_user),
+ 				 passwd,
+ 				 strlen(passwd))) != SASL_OK) {
+-	syslog(LOG_NOTICE, "badlogin: %s plaintext %s %s",
++	syslog(LOG_NOTICE, "badlogin: %s plaintext (%s) [%s]",
+ 	       imapd_clienthost, canon_user, sasl_errdetail(imapd_saslconn));
+ 
+ 	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
+@@ -2360,6 +2360,7 @@
+ 
+     if (r) {
+ 	const char *errorstring = NULL;
++	const char *userid = "-notset-";
+ 
+ 	switch (r) {
+ 	case IMAP_SASL_CANCEL:
+@@ -2375,8 +2376,11 @@
+ 	    break;
+ 	default: 
+ 	    /* failed authentication */
+-	    syslog(LOG_NOTICE, "badlogin: %s %s [%s]",
+-		   imapd_clienthost, authtype, sasl_errdetail(imapd_saslconn));
++	    if (sasl_result != SASL_NOUSER)
++		sasl_getprop(imapd_saslconn, SASL_USERNAME, (const void **) &userid);
++
++	    syslog(LOG_NOTICE, "badlogin: %s %s (%s) [%s]",
++		   imapd_clienthost, authtype, userid, sasl_errdetail(imapd_saslconn));
+ 
+ 	    snmp_increment_args(AUTHENTICATION_NO, 1,
+ 				VARIABLE_AUTH, 0, /* hash_simple(authtype) */ 
+diff -urN cyrus-imapd-2.4.17/imap/lmtpengine.c cyrus-imapd-2.4.17.badlogin/imap/lmtpengine.c
+--- cyrus-imapd-2.4.17/imap/lmtpengine.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17.badlogin/imap/lmtpengine.c	2013-11-22 16:31:50.000000000 +0100
+@@ -1202,6 +1202,7 @@
+ 
+ 	      if (r) {
+ 		  const char *errorstring = NULL;
++		  const char *userid = "-notset-";
+ 
+ 		  switch (r) {
+ 		  case IMAP_SASL_CANCEL:
+@@ -1238,8 +1239,12 @@
+ 			  }
+ 			  else
+ 			      strlcpy(hbuf, "[unix socket]", sizeof(hbuf));		  
+-			  syslog(LOG_ERR, "badlogin: %s %s %s",
+-				 hbuf, mech, sasl_errdetail(cd.conn));
++
++			  if (r != SASL_NOUSER)
++			      sasl_getprop(cd.conn, SASL_USERNAME, (const void **) &userid);
++
++			  syslog(LOG_ERR, "badlogin: %s %s (%s) [%s]",
++				 hbuf, mech, userid, sasl_errdetail(cd.conn));
+ 		  
+ 			  snmp_increment_args(AUTHENTICATION_NO, 1,
+ 					      VARIABLE_AUTH, hash_simple(mech), 
+diff -urN cyrus-imapd-2.4.17/imap/mupdate.c cyrus-imapd-2.4.17.badlogin/imap/mupdate.c
+--- cyrus-imapd-2.4.17/imap/mupdate.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17.badlogin/imap/mupdate.c	2013-11-22 16:33:15.000000000 +0100
+@@ -1532,6 +1532,7 @@
+ 
+     if (r) {
+ 	const char *errorstring = NULL;
++	const char *userid = "-notset-";
+ 
+ 	switch (r) {
+ 	case IMAP_SASL_CANCEL:
+@@ -1551,9 +1552,12 @@
+ 	        sleep(failedloginpause);
+ 	    }
+ 	
+-	    syslog(LOG_ERR, "badlogin: %s %s %s",
++	    if (r != SASL_NOUSER)
++		sasl_getprop(C->saslconn, SASL_USERNAME, (const void **) &userid);
++
++	    syslog(LOG_ERR, "badlogin: %s %s (%s) [%s]",
+ 		   C->clienthost,
+-		   mech, sasl_errdetail(C->saslconn));
++		   mech, userid, sasl_errdetail(C->saslconn));
+ 
+ 	    prot_printf(C->pout, "%s NO \"%s\"\r\n", tag,
+ 			sasl_errstring((r == SASL_NOUSER ? SASL_BADAUTH : r),
+diff -urN cyrus-imapd-2.4.17/imap/nntpd.c cyrus-imapd-2.4.17.badlogin/imap/nntpd.c
+--- cyrus-imapd-2.4.17/imap/nntpd.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17.badlogin/imap/nntpd.c	2013-11-22 16:34:20.000000000 +0100
+@@ -2078,7 +2078,7 @@
+ 			    strlen(nntp_userid),
+ 			    pass,
+ 			    strlen(pass))!=SASL_OK) { 
+-	syslog(LOG_NOTICE, "badlogin: %s plaintext %s %s",
++	syslog(LOG_NOTICE, "badlogin: %s plaintext (%s) [%s]",
+ 	       nntp_clienthost, nntp_userid, sasl_errdetail(nntp_saslconn));
+ 	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
+ 	if (failedloginpause != 0) {
+@@ -2177,6 +2177,7 @@
+     if (r) {
+ 	int code;
+ 	const char *errorstring = NULL;
++	const char *userid = "-notset-";
+ 
+ 	switch (r) {
+ 	case IMAP_SASL_CANCEL:
+@@ -2207,8 +2208,11 @@
+ 		code = 481;
+ 	    }
+ 
+-	    syslog(LOG_NOTICE, "badlogin: %s %s [%s]",
+-		   nntp_clienthost, mech, sasl_errdetail(nntp_saslconn));
++	    if (sasl_result != SASL_NOUSER)
++		sasl_getprop(nntp_saslconn, SASL_USERNAME, (const void **) &userid);
++
++	    syslog(LOG_NOTICE, "badlogin: %s %s (%s) [%s]",
++		   nntp_clienthost, mech, userid, sasl_errdetail(nntp_saslconn));
+ 
+ 	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
+ 	    if (failedloginpause != 0) {
+diff -urN cyrus-imapd-2.4.17/imap/pop3d.c cyrus-imapd-2.4.17.badlogin/imap/pop3d.c
+--- cyrus-imapd-2.4.17/imap/pop3d.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17.badlogin/imap/pop3d.c	2013-11-22 16:04:43.000000000 +0100
+@@ -1394,7 +1394,7 @@
+ 	     strlen(userbuf) + 6 >= MAX_MAILBOX_BUFFER) {
+ 	prot_printf(popd_out, "-ERR [AUTH] Invalid user\r\n");
+ 	syslog(LOG_NOTICE,
+-	       "badlogin: %s plaintext %s invalid user",
++	       "badlogin: %s plaintext (%s) invalid user",
+ 	       popd_clienthost, beautify_string(user));
+     }
+     else {
+@@ -1454,7 +1454,7 @@
+ 			    strlen(popd_userid),
+ 			    pass,
+ 			    strlen(pass))!=SASL_OK) { 
+-	syslog(LOG_NOTICE, "badlogin: %s plaintext %s %s",
++	syslog(LOG_NOTICE, "badlogin: %s plaintext (%s) [%s]",
+ 	       popd_clienthost, popd_userid, sasl_errdetail(popd_saslconn));
+ 	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
+ 	if (failedloginpause != 0) {
+@@ -1623,6 +1623,7 @@
+ 
+     if (r) {
+ 	const char *errorstring = NULL;
++	const char *userid = "-notset-";
+ 
+ 	switch (r) {
+ 	case IMAP_SASL_CANCEL:
+@@ -1639,8 +1640,11 @@
+ 	default:
+ 	    /* failed authentication */
+ 	    if (authtype) {
+-		syslog(LOG_NOTICE, "badlogin: %s %s %s",
+-		       popd_clienthost, authtype,
++		if (sasl_result != SASL_NOUSER)
++			sasl_getprop(popd_saslconn, SASL_USERNAME, (const void **) &userid);
++
++		syslog(LOG_NOTICE, "badlogin: %s %s (%s) [%s]",
++		       popd_clienthost, authtype, userid,
+ 		       sasl_errstring(sasl_result, NULL, NULL));
+ 	    } else {
+ 		syslog(LOG_NOTICE, "badlogin: %s %s",
+diff -urN cyrus-imapd-2.4.17/imap/sync_server.c cyrus-imapd-2.4.17.badlogin/imap/sync_server.c
+--- cyrus-imapd-2.4.17/imap/sync_server.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17.badlogin/imap/sync_server.c	2013-11-22 16:35:27.000000000 +0100
+@@ -779,6 +779,7 @@
+ 
+     if (r) {
+ 	const char *errorstring = NULL;
++	const char *userid = "-notset-";
+ 
+ 	switch (r) {
+ 	case IMAP_SASL_CANCEL:
+@@ -796,8 +797,11 @@
+ 	    /* failed authentication */
+ 	    errorstring = sasl_errstring(sasl_result, NULL, NULL);
+ 
+-	    syslog(LOG_NOTICE, "badlogin: %s %s [%s]",
+-		   sync_clienthost, mech, sasl_errdetail(sync_saslconn));
++	    if (r != SASL_NOUSER)
++		sasl_getprop(sync_saslconn, SASL_USERNAME, (const void **) &userid);
++
++	    syslog(LOG_NOTICE, "badlogin: %s %s (%s) [%s]",
++		   sync_clienthost, mech, userid, sasl_errdetail(sync_saslconn));
+ 
+ 	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
+ 	    if (failedloginpause != 0) {

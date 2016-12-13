@@ -1,0 +1,49 @@
+diff -Naur cyrus-imapd-2.2.5/imap/pop3d.c cyrus-imapd-2.2.5.poppollpadding/imap/pop3d.c
+--- cyrus-imapd-2.2.5/imap/pop3d.c	2004-05-21 23:45:52.000000000 -0400
++++ cyrus-imapd-2.2.5.poppollpadding/imap/pop3d.c	2004-06-04 11:57:57.000000000 -0400
+@@ -683,7 +683,18 @@
+ 	    if (!arg) {
+ 		if (popd_mailbox) {
+ 		    if (!mailbox_lock_index(popd_mailbox)) {
+-			popd_mailbox->pop3_last_login = popd_login_time;
++		        int pollpadding =config_getint(IMAPOPT_POPPOLLPADDING);
++			int minpollsec = config_getint(IMAPOPT_POPMINPOLL)*60;
++		        if ((minpollsec > 0) && (pollpadding > 1)) { 
++			    int mintime = popd_login_time - (minpollsec*(pollpadding));
++			    if (popd_mailbox->pop3_last_login < mintime) {
++			        popd_mailbox->pop3_last_login = mintime + minpollsec; 
++			    } else {
++			        popd_mailbox->pop3_last_login += minpollsec;
++			    }
++		        } else { 
++			    popd_mailbox->pop3_last_login = popd_login_time;
++		        }
+ 			mailbox_write_index_header(popd_mailbox);
+ 			mailbox_unlock_index(popd_mailbox);
+ 		    }
+diff -Naur cyrus-imapd-2.2.5/lib/imapoptions cyrus-imapd-2.2.5.poppollpadding/lib/imapoptions
+--- cyrus-imapd-2.2.5/lib/imapoptions	2004-05-24 20:03:05.000000000 -0400
++++ cyrus-imapd-2.2.5.poppollpadding/lib/imapoptions	2004-06-04 11:58:49.000000000 -0400
+@@ -583,6 +583,22 @@
+ /* Set the minimum amount of time the server forces users to wait
+    between successive POP logins, in minutes. */ 
+ 
++{ "poppollpadding", 1, INT }
++/* Create a softer minimum poll restriction.  Allows \fIpoppollpadding\fR
++   connections before the minpoll restriction is triggered.  Additionally,
++   one padding entry is recovered every \fIpopminpoll\fR minutes.
++   This allows for the occasional polling rate faster than popminpoll, 
++   (i.e. for clients that require a send/recieve to send mail) but still 
++   enforces the rate long-term.  Default is 1 (disabled).
++.br
++.sp
++   The easiest way to think of it is a queue of past connections, with one
++   slot being filled for every connection, and one slot being cleared 
++   every \fIpopminpoll\fR minutes. When the queue is full, the user
++   will not be able to check mail again until a slot is cleared.  If the 
++   user waits a sufficent amount of time, they will get back many or all
++   of the slots. */
++
+ { "poptimeout", 10, INT }
+ /* Set the length of the POP server's inactivity autologout timer,    
+    in minutes.  The minimum value is 10, the default. */

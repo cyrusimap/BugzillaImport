@@ -1,0 +1,35 @@
+--- lib/imapoptions~	2009-03-05 22:52:55.000000000 -0500
++++ lib/imapoptions	2009-05-11 16:35:25.000000000 -0400
+@@ -519,6 +519,12 @@
+ /* Unix domain socket that lmtpd listens on, used by deliver(8). This should
+    match the path specified in cyrus.conf(5). */
+ 
++{ "lmtptxn_timeout", 0, INT }
++/* Timeout (in seconds) used during a lmtp transaction to a remote backend
++   (e.g. in a murder environment).  Can be used to prevent hung lmtpds
++   on proxy hosts when a backend server becomes unresponsive during a
++   lmtp transaction. */
++
+ # xxx how does this tie into virtual domains?
+ { "loginrealms", "", STRING }
+ /* The list of remote realms whose users may authenticate using cross-realm
+--- imap/lmtpd.c~	2009-03-15 20:17:16.000000000 -0400
++++ imap/lmtpd.c	2009-05-11 15:46:53.000000000 -0400
+@@ -613,6 +613,7 @@
+ 	struct lmtp_txn *lt = LMTP_TXN_ALLOC(d->rnum);
+ 	struct rcpt *rc;
+ 	struct backend *remote;
++	int txn_timeout = 0;
+ 	int i = 0;
+ 	int r = 0;
+ 	
+@@ -636,6 +637,9 @@
+ 	remote = proxy_findserver(d->server, &lmtp_protocol, "",
+ 				  &backend_cached, NULL, NULL, NULL);
+ 	if (remote) {
++	    if (txn_timeout = config_getint(IMAPOPT_LMTPTXN_TIMEOUT)) {
++		prot_settimeout (remote->in, txn_timeout);
++	    }
+ 	    r = lmtp_runtxn(remote, lt);
+ 	} else {
+ 	    /* remote server not available; tempfail all deliveries */

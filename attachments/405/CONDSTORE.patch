@@ -1,0 +1,1397 @@
+Index: doc/specs.html
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/doc/specs.html,v
+retrieving revision 1.50.2.18
+diff -u -r1.50.2.18 specs.html
+--- doc/specs.html	21 Nov 2005 17:05:22 -0000	1.50.2.18
++++ doc/specs.html	13 Dec 2005 16:27:56 -0000
+@@ -49,6 +49,9 @@
+ <TR><TD><A HREF="http://www.ietf.org/internet-drafts/draft-ietf-imapext-list-extensions-13.txt">
+ draft-ietf-imapext-list-extensions</A></TD>
+ <TD>IMAP4 LIST Command Extensions</TD></TR>
++<TR><TD><A HREF="http://www.ietf.org/internet-drafts/draft-ietf-imapext-condstore-07.txt">
++draft-ietf-imapext-condstore</A></TD>
++<TD>IMAP Extension for Conditional STORE operation</TD></TR>
+ <TR><TD><A HREF="http://www.ietf.org/internet-drafts/draft-ietf-lemonade-catenate-05.txt">
+ draft-ietf-lemonade-catenate</A></TD>
+ <TD>Internet Message Access Protocol (IMAP) CATENATE Extension</TD></TR>
+Index: doc/internal/mailbox-format.html
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/doc/internal/mailbox-format.html,v
+retrieving revision 1.3.2.5
+diff -u -r1.3.2.5 mailbox-format.html
+--- doc/internal/mailbox-format.html	12 Dec 2005 21:40:43 -0000	1.3.2.5
++++ doc/internal/mailbox-format.html	13 Dec 2005 16:27:57 -0000
+@@ -177,6 +177,11 @@
+ 
+ <dt>Leaked Cache (4 bytes)</dt> 
+ <dd> Number of leaked records in the cache file.</dd>
++
++<dt>HighestModSeq (8 bytes)</dt>
++
++<dd> Highest Modification Sequence of all the messages in the
++mailbox (CONDSTORE).</dd>
+ </dl>
+ 
+ <p>
+@@ -230,6 +235,9 @@
+ 
+ <dt>UUID (MESSAGE_UUID_SIZE bytes)</dt>
+ <dd>Universal UID of the message (used by replication code).</dd>
++
++<dt>MODSEQ (8 bytes)</dt>
++<dd>Modification Sequence of the message (CONDSTORE).</dd>
+ </dl>
+ 
+ <h3><tt>cyrus.cache</tt> file format detail</h3>
+Index: imap/append.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/append.c,v
+retrieving revision 1.102.2.11
+diff -u -r1.102.2.11 append.c
+--- imap/append.c	2 Jun 2005 16:16:01 -0000	1.102.2.11
++++ imap/append.c	13 Dec 2005 16:27:57 -0000
+@@ -291,6 +291,7 @@
+     /* Calculate new index header information */
+     as->m.exists += as->nummsg;
+     as->m.last_uid += as->nummsg;
++    as->m.highestmodseq++;
+     
+     as->m.answered += as->numanswered;
+     as->m.deleted += as->numdeleted;
+@@ -550,6 +551,7 @@
+ 
+     /* Setup */
+     message_index.uid = mailbox->last_uid + as->nummsg + 1;
++    message_index.modseq = mailbox->highestmodseq + 1;
+     message_index.last_updated = time(0);
+     message_index.internaldate = internaldate;
+     lseek(mailbox->cache_fd, 0L, SEEK_END);
+@@ -703,6 +705,7 @@
+     zero_index(message_index);
+     /* Setup */
+     message_index.uid = mailbox->last_uid + as->nummsg + 1;
++    message_index.modseq = mailbox->highestmodseq + 1;
+     message_index.last_updated = time(0);
+     message_index.internaldate = internaldate;
+     lseek(mailbox->cache_fd, 0L, SEEK_END);
+Index: imap/cyrdump.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/cyrdump.c,v
+retrieving revision 1.14.2.4
+diff -u -r1.14.2.4 cyrdump.c
+--- imap/cyrdump.c	27 May 2005 17:40:38 -0000	1.14.2.4
++++ imap/cyrdump.c	13 Dec 2005 16:27:57 -0000
+@@ -85,6 +85,7 @@
+ struct protstream *imapd_out = NULL;
+ struct auth_state *imapd_authstate = NULL;
+ char *imapd_userid = NULL;
++int imapd_condstore_enabled = 0;
+ 
+ struct incremental_record {
+     int incruid;
+Index: imap/imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.443.2.68
+diff -u -r1.443.2.68 imapd.c
+--- imap/imapd.c	12 Dec 2005 21:23:59 -0000	1.443.2.68
++++ imap/imapd.c	13 Dec 2005 16:27:58 -0000
+@@ -151,6 +151,7 @@
+ struct auth_state *imapd_authstate = 0;
+ static int imapd_userisadmin = 0;
+ static int imapd_userisproxyadmin = 0;
++int imapd_condstore_enabled = 0;
+ static sasl_conn_t *imapd_saslconn; /* the sasl connection context */
+ static int imapd_starttls_done = 0; /* have we done a successful starttls? */
+ #ifdef HAVE_SSL
+@@ -205,7 +206,7 @@
+ void cmd_fetch(char *tag, char *sequence, int usinguid);
+ void cmd_partial(const char *tag, const char *msgno, char *data,
+ 		 const char *start, const char *count);
+-void cmd_store(char *tag, char *sequence, char *operation, int usinguid);
++void cmd_store(char *tag, char *sequence, int usinguid);
+ void cmd_search(char *tag, int usinguid);
+ void cmd_sort(char *tag, int usinguid);
+ void cmd_thread(char *tag, int usinguid);
+@@ -574,6 +575,7 @@
+     }
+     imapd_userisadmin = 0;
+     imapd_userisproxyadmin = 0;
++    imapd_condstore_enabled = 0;
+     if (imapd_saslconn) {
+ 	sasl_dispose(&imapd_saslconn);
+ 	imapd_saslconn = NULL;
+@@ -1074,8 +1076,7 @@
+ 		if (c != ' ') goto missingargs;
+ 		c = getastring(imapd_in, imapd_out, &arg1);
+ 		if (c == EOF) goto missingargs;
+-		if (c == '\r') c = prot_getc(imapd_in);
+-		if (c != '\n') goto extraargs;
++		prot_ungetc(c, imapd_in);
+ 
+ 		cmd_select(tag.s, cmd.s, arg1.s);
+ 
+@@ -1204,8 +1205,7 @@
+ 		if (c != ' ') goto missingargs;
+ 		c = getastring(imapd_in, imapd_out, &arg1);
+ 		if (c == EOF) goto missingargs;
+-		if (c == '\r') c = prot_getc(imapd_in);
+-		if (c != '\n') goto extraargs;
++		prot_ungetc(c, imapd_in);
+ 
+ 		cmd_select(tag.s, cmd.s, arg1.s);
+ 
+@@ -1618,10 +1618,8 @@
+ 	    store:
+ 		c = getword(imapd_in, &arg1);
+ 		if (c != ' ' || !imparse_issequence(arg1.s)) goto badsequence;
+-		c = getword(imapd_in, &arg2);
+-		if (c != ' ') goto missingargs;
+ 
+-		cmd_store(tag.s, arg1.s, arg2.s, usinguid);
++		cmd_store(tag.s, arg1.s, usinguid);
+ 
+ 		snmp_increment(STORE_COUNT, 1);
+ 	    }
+@@ -1629,8 +1627,7 @@
+ 		if (c != ' ') goto missingargs;
+ 		c = getastring(imapd_in, imapd_out, &arg1);
+ 		if (c == EOF) goto missingargs;
+-		if (c == '\r') c = prot_getc(imapd_in);
+-		if (c != '\n') goto extraargs;
++		prot_ungetc(c, imapd_in);
+ 
+ 		cmd_select(tag.s, cmd.s, arg1.s);
+ 
+@@ -3173,6 +3170,7 @@
+  */
+ void cmd_select(char *tag, char *cmd, char *name)
+ {
++    int c;
+     struct mailbox mailbox;
+     char mailboxname[MAX_MAILBOX_NAME+1];
+     int r = 0;
+@@ -3184,6 +3182,48 @@
+     static char lastqr[MAX_MAILBOX_PATH+1] = "";
+     static time_t nextalert = 0;
+ 
++    c = prot_getc(imapd_in);
++    if (cmd[0] != 'B' && c == ' ') {
++	static struct buf arg;
++
++	c = prot_getc(imapd_in);
++	if (c != '(') goto badlist;
++
++	c = getword(imapd_in, &arg);
++	if (arg.s[0] == '\0') goto badlist;
++	for (;;) {
++	    lcase(arg.s);
++	    if (!strcmp(arg.s, "condstore")) {
++		imapd_condstore_enabled = 1;
++	    }
++	    else {
++		prot_printf(imapd_out, "%s BAD Invalid %s modifier %s\r\n",
++			    tag, cmd, arg.s);
++		eatline(imapd_in, c);
++		return;
++	    }
++	    
++	    if (c == ' ') c = getword(imapd_in, &arg);
++	    else break;
++	}
++
++	if (c != ')') {
++	    prot_printf(imapd_out,
++			"%s BAD Missing close parenthesis in %s\r\n", tag, cmd);
++	    eatline(imapd_in, c);
++	    return;
++	}
++
++	c = prot_getc(imapd_in);
++    }
++    if (c == '\r') c = prot_getc(imapd_in);
++    if (c != '\n') {
++	prot_printf(imapd_out,
++		    "%s BAD Unexpected extra arguments to %s\r\n", tag, cmd);
++	eatline(imapd_in, c);
++	return;
++    }
++
+     if (imapd_mailbox) {
+ 	index_closemailbox(imapd_mailbox);
+ 	mailbox_close(imapd_mailbox);
+@@ -3345,6 +3385,11 @@
+ 
+     proc_register("imapd", imapd_clienthost, imapd_userid, mailboxname);
+     syslog(LOG_DEBUG, "open: user %s opened %s", imapd_userid, name);
++    return;
++
++ badlist:
++    prot_printf(imapd_out, "%s BAD Invalid modifier list in %s\r\n", tag, cmd);
++    eatline(imapd_in, c);
+ }
+ 	  
+ /*
+@@ -3699,6 +3744,12 @@
+ 	    else goto badatt;
+ 	    break;
+ 
++	case 'M':
++	    if (!strcmp(fetchatt.s, "MODSEQ")) {
++		fetchitems |= FETCH_MODSEQ;
++	    }
++	    else goto badatt;
++	    break;
+ 	case 'R':
+ 	    if (!strcmp(fetchatt.s, "RFC822")) {
+ 		fetchitems |= FETCH_RFC822|FETCH_SETSEEN;
+@@ -3792,9 +3843,55 @@
+     if (inlist && c == ')') {
+ 	inlist = 0;
+ 	c = prot_getc(imapd_in);
++	if (c == ' ') {
++	    /* Grab/parse the modifier(s) */
++	    c = prot_getc(imapd_in);
++	    if (c != '(') {
++		prot_printf(imapd_out,
++			    "%s BAD Missing required open parenthesis in %s modifiers\r\n",
++			    tag, cmd);
++		eatline(imapd_in, c);
++		goto freeargs;
++	    }
++	    inlist = 1;
++	    do {
++		c = getword(imapd_in, &fetchatt);
++		ucase(fetchatt.s);
++		if (!strcmp(fetchatt.s, "CHANGEDSINCE")) {
++		    if (c != ' ') {
++			prot_printf(imapd_out,
++				    "%s BAD Missing required argument to %s %s\r\n",
++				    tag, cmd, fetchatt.s);
++			eatline(imapd_in, c);
++			goto freeargs;
++		    }
++		    c = getastring(imapd_in, imapd_out, &fieldname);
++		    fetchargs.changedsince = strtoul(fieldname.s, &p, 10);
++		    if (*p || fetchargs.changedsince == ULONG_MAX) {
++			prot_printf(imapd_out,
++				    "%s BAD Invalid argument to %s %s\r\n",
++				    tag, cmd, fetchatt.s);
++			eatline(imapd_in, c);
++			goto freeargs;
++		    }
++		    fetchitems |= FETCH_MODSEQ;
++		}
++		else {
++		    prot_printf(imapd_out, "%s BAD Invalid %s modifier %s\r\n",
++				tag, cmd, fetchatt.s);
++		    eatline(imapd_in, c);
++		    goto freeargs;
++		}
++	    } while (c == ' ');
++	    if (c == ')') {
++		inlist = 0;
++		c = prot_getc(imapd_in);
++	    }
++	}
+     }
+     if (inlist) {
+-	prot_printf(imapd_out, "%s BAD Missing close parenthesis in %s\r\n", tag, cmd);
++	prot_printf(imapd_out, "%s BAD Missing close parenthesis in %s\r\n",
++		    tag, cmd);
+ 	eatline(imapd_in, c);
+ 	goto freeargs;
+     }
+@@ -3812,6 +3909,12 @@
+ 	goto freeargs;
+     }
+ 
++    if (fetchitems & FETCH_MODSEQ) {
++	if (!imapd_condstore_enabled++)
++	    prot_printf(imapd_out, "* OK [HIGHESTMODSEQ " MODSEQ_FMT "]  \r\n",
++			imapd_mailbox->highestmodseq);
++    }
++
+     if (usinguid || config_getswitch(IMAPOPT_FLUSHSEENSTATE)) {
+ 	if (usinguid) fetchitems |= FETCH_UID; 
+ 	index_check(imapd_mailbox, usinguid, /* update \Seen state from disk? */
+@@ -3981,13 +4084,13 @@
+ /*
+  * Parse and perform a STORE/UID STORE command
+  * The command has been parsed up to and including
+- * the FLAGS/+FLAGS/-FLAGS
++ * the sequence
+  */
+-void cmd_store(char *tag, char *sequence, char *operation, int usinguid)
++void cmd_store(char *tag, char *sequence, int usinguid)
+ {
+     const char *cmd = usinguid ? "UID Store" : "Store";
+     struct storeargs storeargs;
+-    static struct buf flagname;
++    static struct buf operation, flagname;
+     int len, c;
+     char **flag = 0;
+     int nflags = 0, flagalloc = 0;
+@@ -4004,22 +4107,83 @@
+ 
+     /* local mailbox */
+     memset(&storeargs, 0, sizeof storeargs);
++    storeargs.unchangedsince = ULONG_MAX;
++
++    c = prot_getc(imapd_in);
++    if (c == '(') {
++	/* Grab/parse the modifier(s) */
++	static struct buf storemod, modvalue;
++	char *p;
++
++	do {
++	    c = getword(imapd_in, &storemod);
++	    lcase(storemod.s);
++	    if (!strcmp(storemod.s, "unchangedsince")) {
++		if (c != ' ') {
++		    prot_printf(imapd_out,
++				"%s BAD Missing required argument to %s %s\r\n",
++				tag, cmd, storemod.s);
++		    eatline(imapd_in, c);
++		    return;
++		}
++		c = getastring(imapd_in, imapd_out, &modvalue);
++		storeargs.unchangedsince = strtoul(modvalue.s, &p, 10);
++		if (*p || storeargs.unchangedsince == ULONG_MAX) {
++		    prot_printf(imapd_out,
++				"%s BAD Invalid argument to %s %s\r\n",
++				tag, cmd, storemod.s);
++		    eatline(imapd_in, c);
++		    return;
++		}
++	    }
++	    else {
++		prot_printf(imapd_out, "%s BAD Invalid %s modifier %s\r\n",
++			    tag, cmd, storemod.s);
++		eatline(imapd_in, c);
++		return;
++	    }
++	} while (c == ' ');
++	if (c != ')') {
++	    prot_printf(imapd_out,
++			"%s BAD Missing close paren in store modifier entry \r\n",
++			tag);
++	    eatline(imapd_in, c);
++	    return;
++	}
++	c = prot_getc(imapd_in);
++	if (c != ' ') {
++	    prot_printf(imapd_out,
++			"%s BAD Missing required argument to %s\r\n",
++			tag, cmd);
++	    eatline(imapd_in, c);
++	    return;
++	}
++    }
++    else
++	prot_ungetc(c, imapd_in);
+ 
+-    lcase(operation);
++    c = getword(imapd_in, &operation);
++    if (c != ' ') {
++	prot_printf(imapd_out,
++		    "%s BAD Missing required argument to %s\r\n", tag, cmd);
++	eatline(imapd_in, c);
++	return;
++    }
++    lcase(operation.s);
+ 
+-    len = strlen(operation);
+-    if (len > 7 && !strcmp(operation+len-7, ".silent")) {
++    len = strlen(operation.s);
++    if (len > 7 && !strcmp(operation.s+len-7, ".silent")) {
+ 	storeargs.silent = 1;
+-	operation[len-7] = '\0';
++	operation.s[len-7] = '\0';
+     }
+     
+-    if (!strcmp(operation, "+flags")) {
++    if (!strcmp(operation.s, "+flags")) {
+ 	storeargs.operation = STORE_ADD;
+     }
+-    else if (!strcmp(operation, "-flags")) {
++    else if (!strcmp(operation.s, "-flags")) {
+ 	storeargs.operation = STORE_REMOVE;
+     }
+-    else if (!strcmp(operation, "flags")) {
++    else if (!strcmp(operation.s, "flags")) {
+ 	storeargs.operation = STORE_REPLACE;
+     }
+     else {
+@@ -4102,6 +4266,11 @@
+ 	goto freeflags;
+     }
+ 
++    if ((storeargs.unchangedsince != ULONG_MAX) && !imapd_condstore_enabled++) {
++	prot_printf(imapd_out, "* OK [HIGHESTMODSEQ " MODSEQ_FMT "]  \r\n",
++		    imapd_mailbox->highestmodseq);
++    }
++
+     r = index_store(imapd_mailbox, sequence, usinguid, &storeargs,
+ 		    flag, nflags);
+ 
+@@ -6450,6 +6619,9 @@
+ 	else if (!strcmp(arg.s, "unseen")) {
+ 	    statusitems |= STATUS_UNSEEN;
+ 	}
++	else if (!strcmp(arg.s, "highestmodseq")) {
++	    statusitems |= STATUS_HIGHESTMODSEQ;
++	}
+ 	else {
+ 	    prot_printf(imapd_out, "%s BAD Invalid Status attribute %s\r\n",
+ 			tag, arg.s);
+@@ -7227,6 +7399,18 @@
+ 	else goto badcri;
+ 	break;
+ 
++    case 'm':
++	if (!strcmp(criteria.s, "modseq")) {
++	    if (c != ' ') goto missingarg;		
++	    c = getword(imapd_in, &arg);
++	    for (p = arg.s; *p && isdigit((int) *p); p++) {
++		searchargs->modseq = searchargs->modseq * 10 + *p - '0';
++	    }
++	    if (!arg.s || *p) goto badnumber;
++	}
++	else goto badcri;
++	break;
++
+     case 'n':
+ 	if (!strcmp(criteria.s, "not")) {
+ 	    if (c != ' ') goto missingarg;		
+@@ -8393,6 +8577,8 @@
+ 	    (*sortcrit)[n].args.annot.attrib = xstrdup(arg.s);
+ 	}
+ #endif
++	else if (!strcmp(criteria.s, "modseq"))
++	    (*sortcrit)[n].key = SORT_MODSEQ;
+ 	else {
+ 	    prot_printf(imapd_out, "%s BAD Invalid Sort criterion %s\r\n",
+ 			tag, criteria.s);
+Index: imap/imapd.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.h,v
+retrieving revision 1.55.2.3
+diff -u -r1.55.2.3 imapd.h
+--- imap/imapd.h	2 Jun 2005 16:16:13 -0000	1.55.2.3
++++ imap/imapd.h	13 Dec 2005 16:27:58 -0000
+@@ -58,6 +58,9 @@
+ /* Number of messages in currently open mailbox */
+ extern int imapd_exists;
+ 
++/* Is condstore enabled? */
++extern int imapd_condstore_enabled;
++
+ /* List of HEADER.FIELDS[.NOT] fetch specifications */
+ struct fieldlist {
+     char *section;		/* First part of BODY[x] value */
+@@ -69,15 +72,16 @@
+ 
+ /* Items that may be fetched */
+ struct fetchargs {
+-    int fetchitems;		/* Bitmask */
+-    struct strlist *binsections; /* BINARY[x]<x> values */
++    int fetchitems;		  /* Bitmask */
++    struct strlist *binsections;  /* BINARY[x]<x> values */
+     struct strlist *sizesections; /* BINARY.SIZE[x] values */
+     struct strlist *bodysections; /* BODY[x]<x> values */
+     struct fieldlist *fsections;  /* BODY[xHEADER.FIELDSx]<x> values */
+-    struct strlist *headers;	/* RFC822.HEADER.LINES */
+-    struct strlist *headers_not; /* RFC822.HEADER.LINES.NOT */
+-    int start_octet;           /* start_octet for partial fetch */
+-    int octet_count;           /* octet_count for partial fetch, or 0 */
++    struct strlist *headers;	  /* RFC822.HEADER.LINES */
++    struct strlist *headers_not;  /* RFC822.HEADER.LINES.NOT */
++    int start_octet;              /* start_octet for partial fetch */
++    int octet_count;              /* octet_count for partial fetch, or 0 */
++    modseq_t changedsince;        /* changed since modseq, or 0 */
+ 
+     bit32 cache_atleast;          /* to do headers we need atleast this
+ 				   * cache version */
+@@ -103,7 +107,8 @@
+     FETCH_RFC822 =              (1<<9),
+     FETCH_SETSEEN =             (1<<10),
+ /*     FETCH_UNCACHEDHEADER =      (1<<11) -- obsolete */
+-    FETCH_IS_PARTIAL =          (1<<12) /* this is the PARTIAL command */
++    FETCH_IS_PARTIAL =          (1<<12), /* this is the PARTIAL command */
++    FETCH_MODSEQ =		(1<<13)
+ };
+ 
+ enum {
+@@ -115,6 +120,7 @@
+ /* Arguments to Store functions */
+ struct storeargs {
+     int operation;
++    modseq_t unchangedsince; /* unchanged since modseq, or ULLONG_MAX */
+     int silent;
+     int seen;
+     bit32 system_flags;
+@@ -174,6 +180,7 @@
+     struct strlist *text;
+     struct strlist *header_name, *header;
+     struct searchsub *sublist;
++    modseq_t modseq;
+ 
+     bit32 cache_atleast;
+ };
+@@ -200,7 +207,8 @@
+     SORT_SIZE,
+     SORT_SUBJECT,
+     SORT_TO,
+-    SORT_ANNOTATION
++    SORT_ANNOTATION,
++    SORT_MODSEQ
+     /* values > 255 are reserved for internal use */
+ };
+ 
+@@ -213,7 +221,8 @@
+     STATUS_RECENT =		(1<<1),
+     STATUS_UIDNEXT =		(1<<2),
+     STATUS_UIDVALIDITY =	(1<<3),
+-    STATUS_UNSEEN =		(1<<4)
++    STATUS_UNSEEN =		(1<<4),
++    STATUS_HIGHESTMODSEQ =	(1<<5)
+ };
+ 
+ /* Bitmask for list options */
+Index: imap/index.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/index.c,v
+retrieving revision 1.199.2.24
+diff -u -r1.199.2.24 index.c
+--- imap/index.c	17 Nov 2005 15:46:25 -0000	1.199.2.24
++++ imap/index.c	13 Dec 2005 16:27:58 -0000
+@@ -161,7 +161,8 @@
+ 				   comp_pat *pat);
+ static index_sequenceproc_t index_copysetup;
+ static int _index_search(unsigned **msgno_list, struct mailbox *mailbox,
+-			 struct searchargs *searchargs);
++			 struct searchargs *searchargs,
++			 modseq_t *highestmodseq);
+ 
+ static void parse_cached_envelope(char *env, char *tokens[], int tokens_size);
+ static char *find_msgid(char *str, char **rem);
+@@ -431,6 +432,8 @@
+ 		    mailbox->uidvalidity);
+ 	prot_printf(imapd_out, "* OK [UIDNEXT %lu]  \r\n",
+ 		    mailbox->last_uid + 1);
++	prot_printf(imapd_out, "* OK [HIGHESTMODSEQ " MODSEQ_FMT "]  \r\n",
++		    mailbox->highestmodseq);
+     }
+ 
+     for (msgno = 1; msgno <= oldexists; msgno++) {
+@@ -440,6 +443,9 @@
+ 	    }
+ 	    index_fetchflags(mailbox, msgno, SYSTEM_FLAGS(msgno), user_flags,
+ 			     LAST_UPDATED(msgno));
++	    if (imapd_condstore_enabled) {
++		prot_printf(imapd_out, " MODSEQ (" MODSEQ_FMT ")", MODSEQ(msgno));
++	    }
+ 	    if (usinguid) prot_printf(imapd_out, " UID %u", UID(msgno));
+ 	    prot_printf(imapd_out, ")\r\n");
+ 	}
+@@ -939,6 +945,8 @@
+     /* note that index_forsequence() doesn't sync the index file;
+        that's done below in mailbox_write_index_header() */
+     if (mailbox->dirty) {
++	/* bump HIGHESTMODSEQ */
++	mailbox->highestmodseq++;
+ 	/* xxx what to do on failure? */
+ 	mailbox_write_index_header(mailbox);
+ 	mailbox->dirty = 0;
+@@ -961,11 +969,9 @@
+  * Returns message numbers in an array.  This function is used by
+  * SEARCH, SORT and THREAD.
+  */
+-static int
+-_index_search(msgno_list, mailbox, searchargs)
+-unsigned **msgno_list;
+-struct mailbox *mailbox;
+-struct searchargs *searchargs;
++static int _index_search(unsigned **msgno_list, struct mailbox *mailbox,
++			 struct searchargs *searchargs,
++			 modseq_t *highestmodseq)
+ {
+     unsigned msgno;
+     struct mapfile msgfile;
+@@ -991,6 +997,9 @@
+ 
+ 	if (index_search_evaluate(mailbox, searchargs, msgno, &msgfile)) {
+ 	    (*msgno_list)[n++] = msgno;
++	    if (highestmodseq && (MODSEQ(msgno) > *highestmodseq)) {
++		*highestmodseq = MODSEQ(msgno);
++	    }
+ 	}
+ 	if (msgfile.base) {
+ 	    mailbox_unmap_message(mailbox, UID(msgno),
+@@ -1020,7 +1029,7 @@
+     unsigned *msgno_list;
+     int i, n;
+ 
+-    n = _index_search(&msgno_list, mailbox, searchargs);
++    n = _index_search(&msgno_list, mailbox, searchargs, NULL);
+     if (n == 0) {
+ 	*uid_list = NULL;
+ 	return 0;
+@@ -1038,16 +1047,15 @@
+  * Performs a SEARCH command.
+  * This is a wrapper around _index_search() which simply prints the results.
+  */
+-int
+-index_search(mailbox, searchargs, usinguid)
+-struct mailbox *mailbox;
+-struct searchargs *searchargs;
+-int usinguid;
++int index_search(struct mailbox *mailbox, struct searchargs *searchargs,
++		 int usinguid)
+ {
+     unsigned *msgno_list;
+     int i, n;
++    modseq_t highestmodseq = 0;
+ 
+-    n = _index_search(&msgno_list, mailbox, searchargs);
++    n = _index_search(&msgno_list, mailbox, searchargs,
++		      searchargs->modseq ? &highestmodseq : NULL);
+ 
+     prot_printf(imapd_out, "* SEARCH");
+ 
+@@ -1057,6 +1065,10 @@
+ 
+     if (n) free(msgno_list);
+ 
++    if (highestmodseq) {
++	prot_printf(imapd_out, " (MODSEQ " MODSEQ_FMT ")", highestmodseq);
++    }
++
+     prot_printf(imapd_out, "\r\n");
+ 
+     return n;
+@@ -1065,22 +1077,32 @@
+ /*
+  * Performs a SORT command
+  */
+-int
+-index_sort(struct mailbox *mailbox,
+-	   struct sortcrit *sortcrit,
+-	   struct searchargs *searchargs,
+-	   int usinguid)
++int index_sort(struct mailbox *mailbox, struct sortcrit *sortcrit,
++	       struct searchargs *searchargs, int usinguid)
+ {
+     unsigned *msgno_list;
+     MsgData *msgdata = NULL, *freeme = NULL;
+     int nmsg;
+     clock_t start;
++    modseq_t highestmodseq = 0;
++    int i, modseq = 0;
+ 
+     if(CONFIG_TIMING_VERBOSE)
+ 	start = clock();
+ 
++    if (searchargs->modseq) modseq = 1;
++    else {
++	for (i = 0; sortcrit[i].key != SORT_SEQUENCE; i++) {
++	    if (sortcrit[i].key == SORT_MODSEQ) {
++		modseq = 1;
++		break;
++	    }
++	}
++    }
++
+     /* Search for messages based on the given criteria */
+-    nmsg = _index_search(&msgno_list, mailbox, searchargs);
++    nmsg = _index_search(&msgno_list, mailbox, searchargs,
++			 modseq ? &highestmodseq : NULL);
+ 
+     prot_printf(imapd_out, "* SORT");
+ 
+@@ -1111,13 +1133,17 @@
+ 	free(freeme);
+     }
+ 
++    if (highestmodseq) {
++	prot_printf(imapd_out, " (MODSEQ " MODSEQ_FMT ")", highestmodseq);
++    }
++
+     prot_printf(imapd_out, "\r\n");
+ 
+     /* debug */
+     if (CONFIG_TIMING_VERBOSE) {
+ 	int len;
+ 	char *key_names[] = { "SEQUENCE", "ARRIVAL", "CC", "DATE", "FROM",
+-			      "SIZE", "SUBJECT", "TO", "ANNOTATION" };
++			      "SIZE", "SUBJECT", "TO", "ANNOTATION", "MODSEQ" };
+ 	char buf[1024] = "";
+ 
+ 	while (sortcrit->key && sortcrit->key < VECTOR_SIZE(key_names)) {
+@@ -1153,24 +1179,32 @@
+     unsigned *msgno_list;
+     int nmsg;
+     clock_t start;
++    modseq_t highestmodseq = 0;
+ 
+     if(CONFIG_TIMING_VERBOSE)
+ 	start = clock();
+ 
+     /* Search for messages based on the given criteria */
+-    nmsg = _index_search(&msgno_list, mailbox, searchargs);
++    nmsg = _index_search(&msgno_list, mailbox, searchargs,
++			 searchargs->modseq ? &highestmodseq : NULL);
+ 
+     if (nmsg) {
+ 	/* Thread messages using given algorithm */
+ 	(*thread_algs[algorithm].threader)(msgno_list, nmsg, usinguid);
+ 
+ 	free(msgno_list);
++
++	if (highestmodseq) {
++	    prot_printf(imapd_out, " (MODSEQ " MODSEQ_FMT ")", highestmodseq);
++	}
+     }
+ 
+     /* print an empty untagged response */
+     else
+ 	index_thread_print(NULL, usinguid);
+ 
++    prot_printf(imapd_out, "\r\n");
++
+     if (CONFIG_TIMING_VERBOSE) {
+ 	/* debug */
+ 	syslog(LOG_DEBUG, "THREAD %s processing time: %d msg in %f sec",
+@@ -1437,6 +1471,11 @@
+ 	prot_printf(imapd_out, "%cUNSEEN %u", sepchar, num_unseen);
+ 	sepchar = ' ';
+     }
++    if (statusitems & STATUS_HIGHESTMODSEQ) {
++	prot_printf(imapd_out, "%cHIGHESTMODSEQ " MODSEQ_FMT, sepchar,
++		    mailbox->highestmodseq);
++	sepchar = ' ';
++    }
+     prot_printf(imapd_out, ")\r\n");
+     return 0;
+ }
+@@ -2372,6 +2411,9 @@
+     char respbuf[100];
+     int r = 0;
+ 
++    /* Check the modseq against changedsince */
++    if (MODSEQ(msgno) <= fetchargs->changedsince) return 0;
++
+     /* Open the message file if we're going to need it */
+     if ((fetchitems & (FETCH_HEADER|FETCH_TEXT|FETCH_RFC822)) ||
+ 	fetchargs->cache_atleast > CACHE_VERSION(msgno) ||
+@@ -2420,6 +2462,11 @@
+ 		    sepchar, datebuf);
+ 	sepchar = ' ';
+     }
++    if (fetchitems & FETCH_MODSEQ) {
++	prot_printf(imapd_out, "%cMODSEQ (" MODSEQ_FMT ")",
++		    sepchar, MODSEQ(msgno));
++	sepchar = ' ';
++    }
+     if (fetchitems & FETCH_SIZE) {
+ 	prot_printf(imapd_out, "%cRFC822.SIZE %u", sepchar, SIZE(msgno));
+ 	sepchar = ' ';
+@@ -2755,21 +2802,33 @@
+     int val = (storeargs->operation == STORE_ADD) ? 1 : 0;
+     int i;
+     bit32 user_flags[MAX_USER_FLAGS/32];
++    char *sep = "";
+     
++    /* Check the modseq against unchangedsince */
++    if (MODSEQ(msgno) > storeargs->unchangedsince) return 0;
++
+     if (seenflag[msgno] == val) return 0;
+     seenflag[msgno] = val;
+ 
+-    if (storeargs->silent) return 0;
+-
+-    for (i=0; i < VECTOR_SIZE(user_flags); i++) {
+-	user_flags[i] = USER_FLAGS(msgno, i);
++    if (!storeargs->silent) {
++	for (i=0; i < VECTOR_SIZE(user_flags); i++) {
++	    user_flags[i] = USER_FLAGS(msgno, i);
++	}
++	index_fetchflags(mailbox, msgno, SYSTEM_FLAGS(msgno), user_flags,
++			 LAST_UPDATED(msgno));
++	sep = " ";
+     }
+-    index_fetchflags(mailbox, msgno, SYSTEM_FLAGS(msgno), user_flags,
+-		     LAST_UPDATED(msgno));
+-    if (storeargs->usinguid) {
+-	prot_printf(imapd_out, " UID %u", UID(msgno));
++    if (imapd_condstore_enabled) {
++	prot_printf(imapd_out, "%sMODSEQ (" MODSEQ_FMT ")",
++		    sep, MODSEQ(msgno));
++	sep = " ";
++    }
++    if (*sep) {
++	if (storeargs->usinguid) {
++	    prot_printf(imapd_out, " UID %u", UID(msgno));
++	}
++	prot_printf(imapd_out, ")\r\n");
+     }
+-    prot_printf(imapd_out, ")\r\n");
+ 
+     return 0;
+ }
+@@ -2790,14 +2849,20 @@
+     int firsttry = 1;
+     int dirty = 0;
+     bit32 oldflags;
++    int sepchar = '(';
++
++    /* Check the modseq against unchangedsince */
++    if (MODSEQ(msgno) > storeargs->unchangedsince) return 0;
+ 
+     /* Change \Seen flag */
+-    if (storeargs->operation == STORE_REPLACE && (mailbox->myrights&ACL_SEEN))
++    if (storeargs->operation == STORE_REPLACE && (mailbox->myrights & ACL_SEEN))
+     {
++	if (seenflag[msgno] != storeargs->seen) dirty++;
+ 	seenflag[msgno] = storeargs->seen;
+     }
+     else if (storeargs->seen) {
+ 	i = (storeargs->operation == STORE_ADD) ? 1 : 0;
++	if (seenflag[msgno] != i) dirty++;
+ 	seenflag[msgno] = i;
+     }
+ 
+@@ -2848,22 +2913,28 @@
+ 
+     if (storeargs->operation == STORE_REPLACE) {
+ 	if (!(mailbox->myrights & ACL_WRITE)) {
+-	    record.system_flags = (record.system_flags&~FLAG_DELETED) |
+-	      (storeargs->system_flags&FLAG_DELETED);
++	    /* ACL_DELETE handled in index_store() */
++	    if ((record.system_flags & FLAG_DELETED) !=
++		(storeargs->system_flags & FLAG_DELETED)) dirty++;
++	    record.system_flags = (record.system_flags & ~FLAG_DELETED) |
++	      (storeargs->system_flags & FLAG_DELETED);
+ 	}
+ 	else {
+ 	    if (!(mailbox->myrights & ACL_DELETE)) {
+-		record.system_flags = (record.system_flags&FLAG_DELETED) |
+-		  (storeargs->system_flags&~FLAG_DELETED);
++		if ((record.system_flags & ~FLAG_DELETED) !=
++		    (storeargs->system_flags & ~FLAG_DELETED)) dirty++;
++		record.system_flags = (record.system_flags & FLAG_DELETED) |
++		  (storeargs->system_flags & ~FLAG_DELETED);
+ 	    }
+ 	    else {
++		if (record.system_flags != storeargs->system_flags) dirty++;
+ 		record.system_flags = storeargs->system_flags;
+ 	    }
+ 	    for (i = 0; i < VECTOR_SIZE(record.user_flags); i++) {
++		if (record.user_flags[i] != storeargs->user_flags[i]) dirty++;
+ 		record.user_flags[i] = storeargs->user_flags[i];
+ 	    }
+ 	}
+-	dirty++;		/* Don't try to be clever */
+     }
+     else if (storeargs->operation == STORE_ADD) {
+ 	if (~record.system_flags & storeargs->system_flags) dirty++;
+@@ -2886,6 +2957,9 @@
+     }
+ 
+     if (dirty) {
++	/* bump MODSEQ */
++	record.modseq = mailbox->highestmodseq + 1;
++
+ 	/* update totals */
+ 	if ( (record.system_flags & FLAG_DELETED) && !(oldflags & FLAG_DELETED))
+ 	    mailbox->deleted++;
+@@ -2922,6 +2996,18 @@
+     if (!storeargs->silent) {
+ 	index_fetchflags(mailbox, msgno, record.system_flags,
+ 			 record.user_flags, record.last_updated);
++	sepchar = ' ';
++    }
++    if (imapd_condstore_enabled) {
++	if (sepchar == '(') {
++	    /* we haven't output a fetch item yet, so start the response */
++	    prot_printf(imapd_out, "* %u FETCH ", msgno);
++	}
++	prot_printf(imapd_out, "%cMODSEQ (" MODSEQ_FMT ")",
++		    sepchar, record.modseq);
++    }
++    if (sepchar != '(') {
++	/* finsh the response if we have one */
+ 	if (storeargs->usinguid) {
+ 	    prot_printf(imapd_out, " UID %u", UID(msgno));
+ 	}
+@@ -2971,6 +3057,8 @@
+     if (searchargs->sentbefore && SENTDATE(msgno) > searchargs->sentbefore)
+       return 0;
+ 
++    if (searchargs->modseq && MODSEQ(msgno) < searchargs->modseq) return 0;
++
+     if (~SYSTEM_FLAGS(msgno) & searchargs->system_flags_set) return 0;
+     if (SYSTEM_FLAGS(msgno) & searchargs->system_flags_unset) return 0;
+ 	
+@@ -4025,9 +4113,9 @@
+ /*
+  * Function for comparing two integers.
+  */
+-static int numcmp(int i1, int i2)
++static int numcmp(modseq_t n1, modseq_t n2)
+ {
+-    return ((i1 < i2) ? -1 : (i1 > i2) ? 1 : 0);
++    return ((n1 < n2) ? -1 : (n1 > n2) ? 1 : 0);
+ }
+ 
+ /*
+@@ -4072,6 +4160,9 @@
+ 	    ret = strcmp(md1->annot[ann], md2->annot[ann]);
+ 	    ann++;
+ 	    break;
++	case SORT_MODSEQ:
++	    ret = numcmp(MODSEQ(md1->msgno), MODSEQ(md2->msgno));
++	    break;
+ 	}
+     } while (!ret && sortcrit[i++].key != SORT_SEQUENCE);
+ 
+@@ -4314,8 +4405,6 @@
+ 	prot_printf(imapd_out, " ");
+ 	_index_thread_print(thread->child, usinguid);
+     }
+-
+-    prot_printf(imapd_out, "\r\n");
+ }
+ 
+ /*
+Index: imap/index.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/index.h,v
+retrieving revision 1.9.2.5
+diff -u -r1.9.2.5 index.h
+--- imap/index.h	17 Nov 2005 15:46:28 -0000	1.9.2.5
++++ imap/index.h	13 Dec 2005 16:27:58 -0000
+@@ -79,6 +79,11 @@
+ #define USER_FLAGS(msgno,i) ntohl(*((bit32 *)(INDEC_OFFSET(msgno)+OFFSET_USER_FLAGS+((i)*4))))
+ #define CONTENT_LINES(msgno) ntohl(*((bit32 *)(INDEC_OFFSET(msgno)+OFFSET_CONTENT_LINES)))
+ #define CACHE_VERSION(msgno) ntohl(*((bit32 *)(INDEC_OFFSET(msgno)+OFFSET_CACHE_VERSION)))
++#ifdef HAVE_LONG_LONG_INT
++#define MODSEQ(msgno) ntohll(*((bit64 *)(INDEC_OFFSET(msgno)+OFFSET_MODSEQ_64)))
++#else
++#define MODSEQ(msgno) ntohl(*((bit32 *)(INDEC_OFFSET(msgno)+OFFSET_MODSEQ)))
++#endif
+ 
+ /* Access assistance macros for memory-mapped cache file data */
+ /* CACHE_ITEM_BIT32: Convert to host byte order */
+Index: imap/mailbox.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.147.2.30
+diff -u -r1.147.2.30 mailbox.c
+--- imap/mailbox.c	10 Nov 2005 06:04:55 -0000	1.147.2.30
++++ imap/mailbox.c	13 Dec 2005 16:27:59 -0000
+@@ -84,7 +84,6 @@
+ #include "seen.h"
+ #include "util.h"
+ #include "xmalloc.h"
+-#include "byteorder64.h"
+ 
+ static int mailbox_doing_reconstruct = 0;
+ #define zeromailbox(m) { memset(&m, 0, sizeof(struct mailbox)); \
+@@ -898,7 +897,7 @@
+     mailbox->record_size =
+ 	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_RECORD_SIZE)));
+ 
+-    if ((mailbox->start_offset < OFFSET_LEAKED_CACHE+sizeof(bit32)) ||
++    if ((mailbox->start_offset < OFFSET_HIGHESTMODSEQ+4) ||
+ 	(mailbox->record_size < INDEX_RECORD_SIZE)) {
+ 	if (mailbox_upgrade_index(mailbox))
+ 	    return IMAP_IOERROR;
+@@ -940,6 +939,13 @@
+ 	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_POP3_NEW_UIDL)));
+     mailbox->leaked_cache_records =
+ 	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_LEAKED_CACHE)));
++#ifdef HAVE_LONG_LONG_INT
++    mailbox->highestmodseq =
++	ntohll(*((bit64 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ_64)));
++#else
++    mailbox->highestmodseq =
++	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ)));
++#endif
+ 
+     if (!mailbox_doing_reconstruct &&
+ 	(mailbox->minor_version < MAILBOX_MINOR_VERSION)) {
+@@ -986,8 +992,12 @@
+     }
+     record->content_lines = htonl(*((bit32 *)(buf+OFFSET_CONTENT_LINES)));
+     record->cache_version = htonl(*((bit32 *)(buf+OFFSET_CACHE_VERSION)));
+-
+     message_uuid_unpack(&record->uuid, buf+OFFSET_MESSAGE_UUID);
++#ifdef HAVE_LONG_LONG_INT
++    record->modseq = htonll(*((bit64 *)(buf+OFFSET_MODSEQ_64)));
++#else
++    record->modseq = htonl(*((bit32 *)(buf+OFFSET_MODSEQ)));
++#endif
+     return 0;
+ }
+ 
+@@ -1301,8 +1311,17 @@
+     *((bit32 *)(buf+OFFSET_POP3_NEW_UIDL)) = htonl(mailbox->pop3_new_uidl);
+     *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) =
+ 	htonl(mailbox->leaked_cache_records);
++#ifdef HAVE_LONG_LONG_INT
++    *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(mailbox->highestmodseq);
++#else
++    /* zero the unused 32bits */
++    *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
++    *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(mailbox->highestmodseq);
++#endif
++    *((bit32 *)(buf+OFFSET_SPARE0)) = htonl(0); /* RESERVED */
+     *((bit32 *)(buf+OFFSET_SPARE1)) = htonl(0); /* RESERVED */
+     *((bit32 *)(buf+OFFSET_SPARE2)) = htonl(0); /* RESERVED */
++    *((bit32 *)(buf+OFFSET_SPARE3)) = htonl(0); /* RESERVED */
+ 
+     if (mailbox->start_offset < header_size)
+ 	header_size = mailbox->start_offset;
+@@ -1342,6 +1361,13 @@
+     *((bit32 *)(buf+OFFSET_CONTENT_LINES)) = htonl(record->content_lines);
+     *((bit32 *)(buf+OFFSET_CACHE_VERSION)) = htonl(record->cache_version);
+     message_uuid_pack(&record->uuid, buf+OFFSET_MESSAGE_UUID);
++#ifdef HAVE_LONG_LONG_INT
++    *((bit64 *)(buf+OFFSET_MODSEQ_64)) = htonll(record->modseq);
++#else
++    /* zero the unused 32bits */
++    *((bit32 *)(buf+OFFSET_MODSEQ_64)) = htonl(0);
++    *((bit32 *)(buf+OFFSET_MODSEQ)) = htonl(record->modseq);
++#endif
+ }
+ 
+ /*
+@@ -1512,6 +1538,15 @@
+ 	*((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) = htonl(0);
+     }
+ 
++    if (ntohl(*((bit32 *)(buf+OFFSET_MINOR_VERSION))) < 8) {
++#ifdef HAVE_LONG_LONG_INT
++	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(1);
++#else
++	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
++	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(1);
++#endif
++    }
++
+     /* change version number */
+     *((bit32 *)(buf+OFFSET_MINOR_VERSION)) = htonl(MAILBOX_MINOR_VERSION);
+ 
+@@ -1548,11 +1583,16 @@
+     if (oldstart_offset < OFFSET_POP3_NEW_UIDL-quota_offset+sizeof(bit32)) {
+ 	*((bit32 *)(buf+OFFSET_POP3_NEW_UIDL)) = htonl(!exists);
+     }
+-    if (oldstart_offset < OFFSET_LEAKED_CACHE-quota_offset+sizeof(bit32)) {
+-	*((bit32 *)(buf+OFFSET_LEAKED_CACHE)) = htonl(0);
++#if 0
++    if (oldstart_offset < OFFSET_HIGHESTMODSEQ-quota_offset+sizeof(bit32) ||
++	!ntohll(*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)))) {
++	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(1);
+     }
++#endif
++    *((bit32 *)(buf+OFFSET_SPARE0)) = htonl(0); /* RESERVED */
+     *((bit32 *)(buf+OFFSET_SPARE1)) = htonl(0); /* RESERVED */
+     *((bit32 *)(buf+OFFSET_SPARE2)) = htonl(0); /* RESERVED */
++    *((bit32 *)(buf+OFFSET_SPARE3)) = htonl(0); /* RESERVED */
+ 
+     /* Write new header */
+     fwrite(buf, 1, INDEX_HEADER_SIZE, newindex);
+@@ -1595,6 +1635,16 @@
+             if (oldrecord_size < OFFSET_MESSAGE_UUID+MESSAGE_UUID_PACKED_SIZE)
+                 memset(buf+OFFSET_MESSAGE_UUID, 0, MESSAGE_UUID_PACKED_SIZE);
+ 
++	    /* Set the initial modseq to 1 */
++	    if (oldrecord_size < OFFSET_MODSEQ+4) {
++#ifdef HAVE_LONG_LONG_INT
++		*((bit64 *)(buf+OFFSET_MODSEQ_64)) = htonll(1);
++#else
++		*((bit32 *)(buf+OFFSET_MODSEQ_64)) = htonl(0);
++		*((bit32 *)(buf+OFFSET_MODSEQ)) = htonl(1);
++#endif
++	    }
++
+ 	    fwrite(buf+oldrecord_size, recsize_diff, 1, newindex);
+ 	}
+     }
+@@ -2571,6 +2621,8 @@
+     mailbox.answered = 0;
+     mailbox.flagged = 0;
+     mailbox.pop3_new_uidl = 1;
++    mailbox.leaked_cache_records = 0;
++    mailbox.highestmodseq = 0;
+ 
+     if (!uniqueid) {
+ 	size_t unique_size = sizeof(char) * 32;
+Index: imap/mailbox.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.h,v
+retrieving revision 1.77.2.11
+diff -u -r1.77.2.11 mailbox.h
+--- imap/mailbox.h	27 May 2005 17:40:54 -0000	1.77.2.11
++++ imap/mailbox.h	13 Dec 2005 16:27:59 -0000
+@@ -50,6 +50,7 @@
+ #include "auth.h"
+ #include "quota.h"
+ #include "message_uuid.h"
++#include "byteorder64.h"
+ 
+ 
+ #define BIT32_MAX 4294967295U
+@@ -66,6 +67,11 @@
+ 
+ #ifdef HAVE_LONG_LONG_INT
+ typedef unsigned long long int bit64;
++typedef unsigned long long int modseq_t;
++#define MODSEQ_FMT "%llu"
++#else 
++typedef unsigned long int modseq_t;
++#define MODSEQ_FMT "%lu"
+ #endif
+ 
+ #define MAX_MAILBOX_NAME 490
+@@ -80,7 +86,7 @@
+ #define MAILBOX_FORMAT_NORMAL	0
+ #define MAILBOX_FORMAT_NETNEWS	1
+ 
+-#define MAILBOX_MINOR_VERSION	7
++#define MAILBOX_MINOR_VERSION	8
+ #define MAILBOX_CACHE_MINOR_VERSION 2
+ 
+ #define FNAME_HEADER "/cyrus.header"
+@@ -146,9 +152,17 @@
+ 
+     int pop3_new_uidl;
+     unsigned long leaked_cache_records;
++    modseq_t highestmodseq;
+ 
+-    /* future expansion -- won't need expand the header */
+-    unsigned long spares[2];
++    /*
++     * future expansion -- won't need expand the header
++     *
++     * If the change to the index header change also includes a change
++     * to the index record, there is no benefit to using a spare.  In
++     * this case, just add a new field, and optionally add some more
++     * spares.
++     */
++    unsigned long spares[4];
+ 
+     struct quota quota;
+ 
+@@ -173,6 +187,7 @@
+     unsigned long content_lines;
+     unsigned long cache_version;
+     struct message_uuid uuid;
++    modseq_t modseq;
+ };
+ 
+ /* Offsets of index/expunge header fields */
+@@ -193,8 +208,12 @@
+ #define OFFSET_FLAGGED 56
+ #define OFFSET_POP3_NEW_UIDL 60	/* added for Outlook stupidity */
+ #define OFFSET_LEAKED_CACHE 64 /* Number of leaked records in cache file */
+-#define OFFSET_SPARE1 68
+-#define OFFSET_SPARE2 72
++#define OFFSET_HIGHESTMODSEQ_64 68 /* CONDSTORE (64-bit modseq) */
++#define OFFSET_HIGHESTMODSEQ 72    /* CONDSTORE (32-bit modseq) */
++#define OFFSET_SPARE0 76 /* Spares - only use these if the index */
++#define OFFSET_SPARE1 80 /*  record size remains the same */
++#define OFFSET_SPARE2 84 /*  (see note above about spares) */
++#define OFFSET_SPARE3 88
+ 
+ /* Offsets of index_record fields in index/expunge file */
+ #define OFFSET_UID 0
+@@ -210,9 +229,11 @@
+ #define OFFSET_CONTENT_LINES (OFFSET_USER_FLAGS+MAX_USER_FLAGS/8) /* added for nntpd */
+ #define OFFSET_CACHE_VERSION OFFSET_CONTENT_LINES+sizeof(bit32)
+ #define OFFSET_MESSAGE_UUID OFFSET_CACHE_VERSION+sizeof(bit32)
++#define OFFSET_MODSEQ_64 (OFFSET_MESSAGE_UUID+MESSAGE_UUID_PACKED_SIZE) /* CONDSTORE (64-bit modseq) */
++#define OFFSET_MODSEQ (OFFSET_MODSEQ_64+sizeof(bit32)) /* CONDSTORE (32-bit modseq) */
+ 
+-#define INDEX_HEADER_SIZE (OFFSET_SPARE2+sizeof(bit32))
+-#define INDEX_RECORD_SIZE (OFFSET_MESSAGE_UUID+MESSAGE_UUID_PACKED_SIZE)
++#define INDEX_HEADER_SIZE (OFFSET_SPARE3+sizeof(bit32))
++#define INDEX_RECORD_SIZE (OFFSET_MODSEQ+sizeof(bit32))
+ 
+ /* Number of fields in an individual message's cache record */
+ #define NUM_CACHE_FIELDS 10
+Index: imap/mbexamine.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mbexamine.c,v
+retrieving revision 1.5.2.7
+diff -u -r1.5.2.7 mbexamine.c
+--- imap/mbexamine.c	5 Dec 2005 15:01:37 -0000	1.5.2.7
++++ imap/mbexamine.c	13 Dec 2005 16:27:59 -0000
+@@ -121,8 +121,8 @@
+ /*    if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE); */
+ 
+     /* Ensure we're up-to-date on the index file format */
+-    assert(INDEX_HEADER_SIZE == (OFFSET_SPARE2+4));
+-    assert(INDEX_RECORD_SIZE == (OFFSET_MESSAGE_UUID+MESSAGE_UUID_PACKED_SIZE));
++    assert(INDEX_HEADER_SIZE == (OFFSET_SPARE3+4));
++    assert(INDEX_RECORD_SIZE == (OFFSET_MODSEQ+4));
+ 
+     while ((opt = getopt(argc, argv, "C:u:s:")) != EOF) {
+ 	switch (opt) {
+@@ -278,6 +278,10 @@
+ 	printf("  POP3 New UIDL: %d\n", mailbox.pop3_new_uidl);
+     printf("  Last POP3 Login: (%ld) %s", mailbox.pop3_last_login,
+ 	   ctime(&mailbox.pop3_last_login));
++    if (mailbox.minor_version >= 8) {
++	printf("  Highest Mod Sequence: " MODSEQ_FMT "\n",
++	       mailbox.highestmodseq);
++    }
+ 
+     printf("\n Message Info:\n");
+ 
+@@ -308,6 +312,10 @@
+ 
+ 	if (mailbox.minor_version >= 6)
+ 	    printf(" CACHEVER:%-6d", CACHE_VERSION(i));
++
++	if (mailbox.minor_version >= 8) {
++	    printf(" MODSEQ:" MODSEQ_FMT, MODSEQ(i));
++	}
+ 
+ 	printf("\n");
+ 
+Index: imap/reconstruct.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/reconstruct.c,v
+retrieving revision 1.81.2.16
+diff -u -r1.81.2.16 reconstruct.c
+--- imap/reconstruct.c	27 Mar 2005 14:36:25 -0000	1.81.2.16
++++ imap/reconstruct.c	13 Dec 2005 16:27:59 -0000
+@@ -94,7 +94,6 @@
+ #include "retry.h"
+ #include "convert_code.h"
+ #include "util.h"
+-#include "byteorder64.h"
+ 
+ extern int optind;
+ extern char *optarg;
+@@ -139,8 +138,8 @@
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+     /* Ensure we're up-to-date on the index file format */
+-    assert(INDEX_HEADER_SIZE == (OFFSET_SPARE2+4));
+-    assert(INDEX_RECORD_SIZE == (OFFSET_MESSAGE_UUID+MESSAGE_UUID_PACKED_SIZE));
++    assert(INDEX_HEADER_SIZE == (OFFSET_SPARE3+4));
++    assert(INDEX_RECORD_SIZE == (OFFSET_MODSEQ+4));
+ 
+     while ((opt = getopt(argc, argv, "C:p:rmfx")) != EOF) {
+ 	switch (opt) {
+@@ -536,6 +535,7 @@
+ 	/* If we can't read the index, assume new UIDL so that stupid clients
+ 	   will retrieve all of the messages in the mailbox. */
+ 	mailbox.pop3_new_uidl = 1;
++	mailbox.highestmodseq = 1;
+     }
+     else {
+ 	(void) mailbox_lock_index(&mailbox);
+@@ -713,6 +713,7 @@
+ 	if (old_index.uid == uid[msg]) {
+ 	    /* Use data in old index file, subject to validity checks */
+ 	    message_index.internaldate = old_index.internaldate;
++	    message_index.modseq = old_index.modseq;
+ 	    message_index.system_flags = old_index.system_flags &
+ 	      (FLAG_ANSWERED|FLAG_FLAGGED|FLAG_DELETED|FLAG_DRAFT);
+ 	    for (i = 0; i < MAX_USER_FLAGS/32; i++) {
+@@ -730,8 +731,13 @@
+ 	    mailbox.pop3_new_uidl = 1;
+             /* Wipe the Message UUID */
+             message_uuid_set_null(&message_index.uuid);
++	    /* If we are recovering a message, reset MODSEQ */
++	    message_index.modseq = 1;
+ 	}
+ 	message_index.last_updated = time(0);
++	if (message_index.modseq > mailbox.highestmodseq) {
++	    mailbox.highestmodseq = message_index.modseq;
++	}
+ 	
+ 	if (((r = message_parse_file(msgfile, NULL, NULL, &body)) != 0) ||
+ 	    ((r = message_create_record(&mailbox, &message_index, body)) != 0)) {
+@@ -775,6 +781,7 @@
+     if (mailbox.uidvalidity == 0 || mailbox.uidvalidity > time(0)) {
+ 	mailbox.uidvalidity = time(0);
+     }
++
+     free(uid);
+     *((bit32 *)(buf+OFFSET_GENERATION_NO)) = htonl(mailbox.generation_no + 1);
+     *((bit32 *)(buf+OFFSET_FORMAT)) = htonl(mailbox.format);
+@@ -801,8 +808,17 @@
+     *((bit32 *)(buf+OFFSET_FLAGGED)) = htonl(new_flagged);
+     *((bit32 *)(buf+OFFSET_POP3_NEW_UIDL)) = htonl(mailbox.pop3_new_uidl);
+     *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) = htonl(0);
+-
+-    message_uuid_pack(&message_index.uuid, buf+OFFSET_MESSAGE_UUID);
++#ifdef HAVE_LONG_LONG_INT
++    *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(mailbox.highestmodseq);
++#else
++    /* zero the unused 32bits */
++    *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
++    *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(mailbox.highestmodseq);
++#endif
++    *((bit32 *)(buf+OFFSET_SPARE0)) = htonl(0); /* RESERVED */
++    *((bit32 *)(buf+OFFSET_SPARE1)) = htonl(0); /* RESERVED */
++    *((bit32 *)(buf+OFFSET_SPARE2)) = htonl(0); /* RESERVED */
++    *((bit32 *)(buf+OFFSET_SPARE3)) = htonl(0); /* RESERVED */
+ 
+     n = fwrite(buf, 1, INDEX_HEADER_SIZE, newindex);
+     fflush(newindex);
+Index: imap/squatter.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/squatter.c,v
+retrieving revision 1.12.2.4
+diff -u -r1.12.2.4 squatter.c
+--- imap/squatter.c	25 May 2004 01:28:13 -0000	1.12.2.4
++++ imap/squatter.c	13 Dec 2005 16:27:59 -0000
+@@ -109,6 +109,7 @@
+ struct protstream *imapd_out = NULL;
+ struct auth_state *imapd_authstate = NULL;
+ char *imapd_userid = NULL;
++int imapd_condstore_enabled = 0;
+ void printastring(const char *s __attribute__((unused)))
+ {
+     fatal("not implemented", EC_SOFTWARE);
+Index: imap/unexpunge.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/Attic/unexpunge.c,v
+retrieving revision 1.1.2.4
+diff -u -r1.1.2.4 unexpunge.c
+--- imap/unexpunge.c	3 May 2005 01:32:14 -0000	1.1.2.4
++++ imap/unexpunge.c	13 Dec 2005 16:27:59 -0000
+@@ -57,7 +57,6 @@
+ #include <signal.h>
+ 
+ #include "annotate.h"
+-#include "byteorder64.h"
+ #include "cyrusdb.h"
+ #include "duplicate.h"
+ #include "exitcodes.h"
+Index: imap/version.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/version.h,v
+retrieving revision 1.128.2.6
+diff -u -r1.128.2.6 version.h
+--- imap/version.h	21 Nov 2005 17:13:30 -0000	1.128.2.6
++++ imap/version.h	13 Dec 2005 16:27:59 -0000
+@@ -58,8 +58,8 @@
+ 	"MAILBOX-REFERRALS NAMESPACE UIDPLUS ID " \
+ 	"NO_ATOMIC_RENAME UNSELECT " \
+ 	"CHILDREN MULTIAPPEND BINARY " \
+-	"SORT THREAD=ORDEREDSUBJECT THREAD=REFERENCES " \
+-	"ANNOTATEMORE CATENATE"
++	"SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES " \
++	"ANNOTATEMORE CATENATE CONDSTORE"
+ 
+ 
+ /* Values for ID processing */

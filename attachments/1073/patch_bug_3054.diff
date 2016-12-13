@@ -1,0 +1,55 @@
+*** cyrus-imapd-2.3.14-patched/timsieved/actions.c	2009-05-28 17:11:55.000000000 +0000
+--- cyrus-imapd-2.3.14/timsieved/actions.c	2009-01-14 15:50:47.000000000 +0000
+***************
+*** 354,386 ****
+    }
+  
+    dataptr = string_DATAPTR(data);
+!   char *str2 = malloc(BLOCKSIZE *2 +1);
+    for (lup=0;lup<= data->len / BLOCKSIZE; lup++) {
+        int amount = BLOCKSIZE;
+  
+        if (lup*BLOCKSIZE+BLOCKSIZE > data->len)
+  	  amount=data->len % BLOCKSIZE;
+!       /* Now, replace single \r or \n with \r\n */
+!       int i, j = 0;
+!       for (i = 0; i < amount; i++)
+! 	if (dataptr[i] == '\r' && dataptr[i+1] != '\n') {
+! 	  str2[i+j] = '\r';
+! 	  j++;
+! 	  str2[i+j] = '\n';
+! 	} else
+! 	    if (dataptr[i+1] == '\n' && dataptr[i] != '\r') {
+! 	      str2[i+j] = dataptr[i];
+! 	      j++;
+! 	      str2[i+j] = '\r';
+! 	      str2[i+j+1] = '\n';
+! 	      i++;
+! 	    } else 
+! 	      str2[i+j] = dataptr[i];
+!       fwrite(str2, 1, amount + j, stream);
+        dataptr += amount;
+    }
+-   free(str2);      
+- 
+  
+    /* let's make sure this is a valid script
+       (no parse errors)
+--- 354,370 ----
+    }
+  
+    dataptr = string_DATAPTR(data);
+! 
+    for (lup=0;lup<= data->len / BLOCKSIZE; lup++) {
+        int amount = BLOCKSIZE;
+  
+        if (lup*BLOCKSIZE+BLOCKSIZE > data->len)
+  	  amount=data->len % BLOCKSIZE;
+! 
+!       fwrite(dataptr, 1, amount, stream);
+!       
+        dataptr += amount;
+    }
+  
+    /* let's make sure this is a valid script
+       (no parse errors)

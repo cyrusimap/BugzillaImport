@@ -1,0 +1,84 @@
+--- imap/tls.c.orig	2008-11-14 15:24:38.000000000 -0700
++++ imap/tls.c	2010-05-27 08:32:39.000000000 -0600
+@@ -308,6 +308,9 @@
+     case X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD:
+ 	syslog(LOG_NOTICE, "cert has expired");
+ 	break;
++	case X509_V_ERR_CERT_REVOKED:
++	syslog(LOG_NOTICE, "cert has been revoked");
++	break;
+     }
+ 
+     return (ok);
+@@ -629,10 +632,15 @@
+     const char   *cipher_list;
+     const char   *CApath;
+     const char   *CAfile;
++    const char   *CAcrl;
+     const char   *s_cert_file;
+     const char   *s_key_file;
+     int    requirecert;
+     int    timeout;
++	BIO *crl_file;
++	X509_CRL *crl;
++	X509_STORE *store;
++
+ 
+     if (tls_serverengine)
+ 	return (0);				/* already running */
+@@ -719,6 +727,7 @@
+ 
+     CAfile = config_getstring(IMAPOPT_TLS_CA_FILE);
+     CApath = config_getstring(IMAPOPT_TLS_CA_PATH);
++	CAcrl  = config_getstring(IMAPOPT_TLS_CRL);
+ 
+     if ((!SSL_CTX_load_verify_locations(s_ctx, CAfile, CApath)) ||
+ 	(!SSL_CTX_set_default_verify_paths(s_ctx))) {
+@@ -760,6 +769,25 @@
+ 	  SSL_CTX_set_client_CA_list(s_ctx, SSL_load_client_CA_file(CAfile));
+       }
+     }
++	if(CAcrl != NULL) {
++		store = SSL_CTX_get_cert_store(s_ctx);
++		if((crl_file = BIO_new(BIO_s_file_internal())) != NULL) {
++			if (BIO_read_filename(crl_file, CAcrl) >= 0) {
++				while((crl = PEM_read_bio_X509_CRL(crl_file, NULL, NULL, NULL))) {
++					X509_STORE_add_crl(store, crl);
++					X509_CRL_free(crl);
++				}
++				X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK|X509_V_FLAG_CRL_CHECK_ALL);
++			} else {
++				syslog(LOG_ERR, "TLS server engine: Can't load CRL.");
++				/* should we bail? */
++			}
++
++			BIO_free(crl_file);
++		} else {
++			syslog(LOG_ERR, "TLS server engine: Can't load CRL. BIO_new failed.");
++		}
++	}
+ 
+     tls_serverengine = 1;
+     return (0);
+--- lib/imapopts.c.orig	2009-12-21 06:17:55.000000000 -0700
++++ lib/imapopts.c	2010-05-27 07:18:26.000000000 -0600
+@@ -736,6 +736,9 @@
+   { IMAPOPT_TLS_CA_PATH, "tls_ca_path", 0, OPT_STRING,
+     {(void *)(NULL)},
+     { { NULL, IMAP_ENUM_ZERO } } },
++  { IMAPOPT_TLS_CRL, "tls_crl", 0, OPT_STRING,
++    {(void *)(NULL)},
++    { { NULL, IMAP_ENUM_ZERO } } },
+   { IMAPOPT_TLSCACHE_DB, "tlscache_db", 0, OPT_STRINGLIST,
+     {(void*)("berkeley-nosync")},
+     { { "berkeley" , IMAP_ENUM_ZERO },
+--- lib/imapopts.h.orig	2009-12-21 06:17:55.000000000 -0700
++++ lib/imapopts.h	2010-05-27 07:14:52.000000000 -0600
+@@ -219,6 +219,7 @@
+   IMAPOPT_TIMEOUT,
+   IMAPOPT_TLS_CA_FILE,
+   IMAPOPT_TLS_CA_PATH,
++  IMAPOPT_TLS_CRL,
+   IMAPOPT_TLSCACHE_DB,
+   IMAPOPT_TLS_CERT_FILE,
+   IMAPOPT_TLS_CIPHER_LIST,

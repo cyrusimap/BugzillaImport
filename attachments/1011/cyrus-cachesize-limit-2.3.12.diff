@@ -1,0 +1,95 @@
+Check Cache Record Size
+
+We had a problem on 64bit kernel machines where cache corruption
+caused multi-gigabyte core files to be generated because the huge
+bogus offsets caused massive mmaped areas.
+
+This patch checks that every cache record points to a location
+between cache_base and (cache_base + cache_size), and returns
+an IOERROR rather than crashing if it doesn't.
+
+Index: cyrus-2.3.12/imap/mailbox.c
+===================================================================
+--- cyrus-2.3.12.orig/imap/mailbox.c	2008-07-06 00:29:49.000000000 -0400
++++ cyrus-2.3.12/imap/mailbox.c	2008-07-06 00:33:35.000000000 -0400
+@@ -310,13 +310,21 @@ unsigned long mailbox_cache_size(struct 
+          ((msgno-1) * mailbox->record_size));
+     
+     cache_offset = ntohl(*((bit32 *)(p+OFFSET_CACHE_OFFSET)));
++    if (cache_offset > mailbox->cache_size) {
++	return 0;
++    }
+ 
+     /* Compute size of this record */
+     cacheitembegin = cacheitem = mailbox->cache_base + cache_offset;
++    if (cache_offset < 0 || cache_offset >= mailbox->cache_size)
++	return 0;
+     for (cache_ent = 0; cache_ent < NUM_CACHE_FIELDS; cache_ent++) {
+-        cacheitem = CACHE_ITEM_NEXT(cacheitem);
++	cacheitem = CACHE_ITEM_NEXT(cacheitem);
++	if (cacheitem < cacheitembegin || cacheitem > cacheitembegin + mailbox->cache_size) {
++	    return 0; /* clearly bogus */
++	}
+     }
+-    return(cacheitem - cacheitembegin);
++    return (cacheitem - cacheitembegin);
+ }
+ 
+ /* function to be used for notification of mailbox changes/updates */
+@@ -1980,10 +1988,19 @@ static int process_records(struct mailbo
+ 
+ 	    /* Compute size of this record */
+ 	    cacheitembegin = cacheitem = mailbox->cache_base + cache_offset;
++            if (cache_offset < 0 || cache_offset >= mailbox->cache_size) {
++		syslog(LOG_ERR,
++		       "IOERROR: reading cache record for %s:"
++		       " got bogus offset %d for %u/%lu; try reconstruct",
++		       mailbox->name,
++		       cacheitem - (mailbox->cache_base + cache_offset),
++		       msgno, mailbox->exists);
++		return IMAP_IOERROR;
++            }
+ 	    for (cache_ent = 0; cache_ent < NUM_CACHE_FIELDS; cache_ent++) {
+ 		cacheitem = CACHE_ITEM_NEXT(cacheitem);
+ 		if ((cacheitem < (mailbox->cache_base + cache_offset)) || 
+-		    (cacheitem > (mailbox->cache_base + mailbox->cache_len))) {
++		    (cacheitem > (mailbox->cache_base + mailbox->cache_size))) {
+ 		    syslog(LOG_ERR,
+ 			   "IOERROR: reading cache record for %s:"
+ 			   " got bogus offset %d for %u/%lu; try reconstruct",
+Index: cyrus-2.3.12/imap/sync_server.c
+===================================================================
+--- cyrus-2.3.12.orig/imap/sync_server.c	2008-07-06 00:29:49.000000000 -0400
++++ cyrus-2.3.12/imap/sync_server.c	2008-07-06 00:29:51.000000000 -0400
+@@ -1433,6 +1433,7 @@ static void cmd_reserve(char *mailbox_na
+     char *stage_msg_path;
+     struct sync_message *message = NULL;
+     struct message_guid tmp_guid;
++    unsigned long cache_size;
+ 
+     if ((r = sync_message_list_newstage(message_list, mailbox_name))) {
+ 	eatline(sync_in,c);
+@@ -1505,6 +1506,14 @@ static void cmd_reserve(char *mailbox_na
+             continue;
+         }
+ 
++        cache_size = mailbox_cache_size(&m, msgno);
++        if (!cache_size) {
++            syslog(LOG_ERR, "IOERROR: bogus cache record %s %d",
++                m.name, msgno);
++            i++;       /* Failed to read cache record */
++            continue;
++        }
++
+         /* Reserve succeeded */
+         message = sync_message_add(message_list, &record.guid);
+         message->msg_size     = record.size;
+@@ -1512,7 +1521,7 @@ static void cmd_reserve(char *mailbox_na
+         message->cache_offset = sync_message_list_cache_offset(message_list);
+         message->content_lines = record.content_lines;
+         message->cache_version = record.cache_version;
+-        message->cache_size   = mailbox_cache_size(&m, msgno);
++        message->cache_size   = cache_size;
+         
+         sync_message_list_cache(message_list,
+                                 (char *)(m.cache_base+record.cache_offset),

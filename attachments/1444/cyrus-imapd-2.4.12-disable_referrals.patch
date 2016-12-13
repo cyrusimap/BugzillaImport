@@ -1,0 +1,68 @@
+diff -urN cyrus-imapd-2.4.12.orig/imap/imapd.c cyrus-imapd-2.4.12/imap/imapd.c
+--- cyrus-imapd-2.4.12.orig/imap/imapd.c	2011-10-04 21:53:03.000000000 +0200
++++ cyrus-imapd-2.4.12/imap/imapd.c	2011-12-15 13:22:33.000000000 +0100
+@@ -5979,7 +5979,9 @@
+     clock_t start = clock();
+     char mytime[100];
+ 
+-    if (listargs->sel & LIST_SEL_REMOTE) supports_referrals = !disable_referrals;
++    if ((listargs->sel & LIST_SEL_REMOTE) &&
++		(!capa_is_disabled("MAILBOX-REFERRALS")))
++	supports_referrals = !disable_referrals;
+ 
+     list_callback_calls = 0;
+ 
+diff -urN cyrus-imapd-2.4.12.orig/lib/imapoptions cyrus-imapd-2.4.12/lib/imapoptions
+--- cyrus-imapd-2.4.12.orig/lib/imapoptions	2011-10-04 21:53:03.000000000 +0200
++++ cyrus-imapd-2.4.12/lib/imapoptions	2011-12-15 13:26:57.000000000 +0100
+@@ -968,8 +968,9 @@
+    authentication load on the respective backend server. */
+ 
+ { "proxyd_disable_mailbox_referrals", 0, SWITCH }
+-/* Set to true to disable the use of mailbox-referrals on the
+-   proxy servers. */
++/* Option removed in 2.4.13. Use 
++   suppress_capabilities: MAILBOX-REFERRALS 
++   instead */
+ 
+ { "proxyservers", NULL, STRING }
+ /* A list of users and groups that are allowed to proxy for other
+diff -urN cyrus-imapd-2.4.12.orig/lib/imapopts.c cyrus-imapd-2.4.12/lib/imapopts.c
+--- cyrus-imapd-2.4.12.orig/lib/imapopts.c	2011-10-04 22:03:49.000000000 +0200
++++ cyrus-imapd-2.4.12/lib/imapopts.c	2011-12-15 13:24:06.000000000 +0100
+@@ -547,9 +547,6 @@
+   { IMAPOPT_PROXYD_ALLOW_STATUS_REFERRAL, "proxyd_allow_status_referral", 0, OPT_SWITCH,
+     {(void*)0},
+     { { NULL, IMAP_ENUM_ZERO } } },
+-  { IMAPOPT_PROXYD_DISABLE_MAILBOX_REFERRALS, "proxyd_disable_mailbox_referrals", 0, OPT_SWITCH,
+-    {(void*)0},
+-    { { NULL, IMAP_ENUM_ZERO } } },
+   { IMAPOPT_PROXYSERVERS, "proxyservers", 0, OPT_STRING,
+     {(void *)(NULL)},
+     { { NULL, IMAP_ENUM_ZERO } } },
+diff -urN cyrus-imapd-2.4.12.orig/lib/imapopts.h cyrus-imapd-2.4.12/lib/imapopts.h
+--- cyrus-imapd-2.4.12.orig/lib/imapopts.h	2011-10-04 22:03:49.000000000 +0200
++++ cyrus-imapd-2.4.12/lib/imapopts.h	2011-12-15 13:23:34.000000000 +0100
+@@ -173,7 +173,6 @@
+   IMAPOPT_PROXY_PASSWORD,
+   IMAPOPT_PROXY_REALM,
+   IMAPOPT_PROXYD_ALLOW_STATUS_REFERRAL,
+-  IMAPOPT_PROXYD_DISABLE_MAILBOX_REFERRALS,
+   IMAPOPT_PROXYSERVERS,
+   IMAPOPT_PTS_MODULE,
+   IMAPOPT_PTLOADER_SOCK,
+diff -urN cyrus-imapd-2.4.12.orig/man/imapd.conf.5 cyrus-imapd-2.4.12/man/imapd.conf.5
+--- cyrus-imapd-2.4.12.orig/man/imapd.conf.5	2011-10-04 22:03:49.000000000 +0200
++++ cyrus-imapd-2.4.12/man/imapd.conf.5	2011-12-15 13:27:43.000000000 +0100
+@@ -820,8 +820,9 @@
+ connections that these referrals would cause, thus resulting in a higher
+ authentication load on the respective backend server. 
+ .IP "\fBproxyd_disable_mailbox_referrals:\fR 0" 5
+-Set to true to disable the use of mailbox-referrals on the
+-proxy servers. 
++Removed in 2.4.13. Use
++suppress_capabilities: MAILBOX-REFERRALS
++instead. 
+ .IP "\fBproxyservers:\fR <none>" 5
+ A list of users and groups that are allowed to proxy for other
+ users, separated by spaces.  Any user listed in this will be

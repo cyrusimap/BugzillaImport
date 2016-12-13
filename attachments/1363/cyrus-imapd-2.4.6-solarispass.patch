@@ -1,0 +1,106 @@
+diff -Naur cyrus-imapd-2.4.6.orig/imap/fetchnews.c cyrus-imapd-2.4.6/imap/fetchnews.c
+--- cyrus-imapd-2.4.6.orig/imap/fetchnews.c	2010-12-20 15:15:49.000000000 +0200
++++ cyrus-imapd-2.4.6/imap/fetchnews.c	2011-02-23 16:30:39.048940750 +0200
+@@ -352,7 +352,12 @@
+ 	else if (!strncmp("381", buf, 3)) {
+ 	    /* password required */
+ 	    if (!password)
++#if defined(__SVR4) && defined(__sun)
++		/* getpassphrase() seems to have been born on Solaris. */
++		password = getpassphrase("Please enter the password: ");
++#else
+ 		password = getpass("Please enter the password: ");
++#endif
+ 
+ 	    if (!password) {
+ 		fprintf(stderr, "failed to get password\n");
+diff -Naur cyrus-imapd-2.4.6.orig/imtest/imtest.c cyrus-imapd-2.4.6/imtest/imtest.c
+--- cyrus-imapd-2.4.6.orig/imtest/imtest.c	2010-12-20 15:15:49.000000000 +0200
++++ cyrus-imapd-2.4.6/imtest/imtest.c	2011-02-23 16:30:39.048955100 +0200
+@@ -941,7 +941,12 @@
+     
+     if (id==SASL_CB_PASS && !cmdline_password) {
+ 	printf("%s: ", prompt);
++#if defined(__SVR4) && defined(__sun)
++	/* getpassphrase() seems to have been born on Solaris. */
++	cur->str=strdup(getpassphrase(""));
++#else
+ 	cur->str=strdup(getpass(""));
++#endif
+ 	*tlen=strlen(cur->str);
+ 	*tresult = cur->str;
+ 	return;
+@@ -972,7 +977,12 @@
+ 	}
+ 	printf("%s: ",prompt);
+ 	if (id==SASL_CB_NOECHOPROMPT) {
++#if defined(__SVR4) && defined(__sun)
++	    /* getpassphrase() seems to have been born on Solaris. */
++	    strcpy(result, getpassphrase(""));
++#else
+ 	    strcpy(result, getpass(""));
++#endif
+ 	} else {
+ 	    fgets(result, sizeof(result) - 1, stdin);
+ 	    c = strlen(result);
+diff -Naur cyrus-imapd-2.4.6.orig/installsieve/installscript.c cyrus-imapd-2.4.6/installsieve/installscript.c
+--- cyrus-imapd-2.4.6.orig/installsieve/installscript.c	2010-12-20 15:15:49.000000000 +0200
++++ cyrus-imapd-2.4.6/installsieve/installscript.c	2011-02-23 16:30:39.048964650 +0200
+@@ -116,7 +116,12 @@
+   return -1;
+ 
+   /*  printf("Password: ", prompt);
++#if defined(__SVR4) && defined(__sun)
++  // getpassphrase() seems to have been born on Solaris.
++  *tresult=strdup(getpassphrase(""));
++#else
+   *tresult=strdup(getpass(""));
++#endif
+   *tlen=strlen(*tresult);
+   if (! password)
+   return SASL_FAIL; */
+@@ -195,7 +200,12 @@
+ 	
+       } else {
+ 	printf("%s: ", prompt);
++#if defined(__SVR4) && defined(__sun)
++	/* getpassphrase() seems to have been born on Solaris. */
++	*tresult=strdup(getpassphrase(""));
++#else
+ 	*tresult=strdup(getpass(""));
++#endif
+ 	*tlen=strlen(*tresult);
+       }
+ 	return;
+diff -Naur cyrus-imapd-2.4.6.orig/lib/imclient.c cyrus-imapd-2.4.6/lib/imclient.c
+--- cyrus-imapd-2.4.6.orig/lib/imclient.c	2010-12-20 15:15:49.000000000 +0200
++++ cyrus-imapd-2.4.6/lib/imclient.c	2011-02-23 16:30:39.048974250 +0200
+@@ -1178,7 +1178,12 @@
+   } else {
+       printf("%s: ", t->prompt);
+       if (t->id == SASL_CB_PASS) {
++#if defined(__SVR4) && defined(__sun)
++	  /* getpassphrase() seems to have been born on Solaris. */
++	  char *ptr = getpassphrase("");
++#else
+ 	  char *ptr = getpass("");
++#endif
+ 	  strlcpy(result, ptr, sizeof(result));
+       } else {
+ 	  if (!fgets(result, sizeof(result)-1, stdin)) return;
+diff -Naur cyrus-imapd-2.4.6.orig/perl/imap/IMAP.xs cyrus-imapd-2.4.6/perl/imap/IMAP.xs
+--- cyrus-imapd-2.4.6.orig/perl/imap/IMAP.xs	2010-12-20 15:15:49.000000000 +0200
++++ cyrus-imapd-2.4.6/perl/imap/IMAP.xs	2011-02-23 16:30:39.048984650 +0200
+@@ -203,7 +203,12 @@
+ 	 * reason */ 
+ 	fprintf(stdout, "Password: ");
+ 	fflush(stdout);
++#if defined(__SVR4) && defined(__sun)
++	/* getpassphrase() seems to have been born on Solaris. */
++	ptr = getpassphrase("");
++#else
+ 	ptr = getpass("");
++#endif
+ 	text->password = safemalloc(sizeof(sasl_secret_t) + strlen(ptr));
+ 	text->password->len = strlen(ptr);
+ 	strncpy((char *) text->password->data, ptr, text->password->len);

@@ -1,0 +1,45 @@
+Our Problem:
+
+When saslauthd is configured to have two ldap servers, say ldap1
+and ldap2, and network connection to ldap1 is down after link
+between saslauthd and ldap1 is established, it takes about 15 minutes
+for saslauthd to detect the network down and start connecting to ldap2 --
+it responds to all the authentication requests with user unknown
+in the meanwhile.
+
+Changing OS parameters like /proc/sys/net/ipv4/tcp_keepalive_time
+doesn't have any noticeable effects to improve the situation.
+
+Cause:
+
+We've tracked down the problem to the version of OpenLDAP (2.3.27)
+that doesn't do setsockopt(SO_KEEPALIVE) nor does it honor
+LDAP_OPT_TIMEOUT option in ldap_result().
+
+Proposed Change/Enhancement:
+
+OpenLDAP 2.4 has fixed these problems, but we still need
+a little bit of help from saslauthd, i.e. ldap_set_option(LDAP_OPT_TIMEOUT)...
+
+    Signed-off-by: Kazuo Ito <ito.kazuo@oss.ntt.co.jp>
+
+---
+ saslauthd/lak.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/saslauthd/lak.c b/saslauthd/lak.c
+index 803d51f..8714265 100644
+--- a/saslauthd/lak.c
++++ b/saslauthd/lak.c
+@@ -833,6 +833,11 @@ static int lak_connect(
+ 		syslog(LOG_WARNING|LOG_AUTH, "Unable to set LDAP_OPT_NETWORK_TIMEOUT %d.%d.", lak->conf->timeout.tv_sec, lak->conf->timeout.tv_usec);
+ 	}
+ 
++	rc = ldap_set_option(lak->ld, LDAP_OPT_TIMEOUT, &(lak->conf->timeout));
++	if (rc != LDAP_OPT_SUCCESS) {
++		syslog(LOG_WARNING|LOG_AUTH, "Unable to set LDAP_OPT_TIMEOUT %d.%d.", lak->conf->timeout.tv_sec, lak->conf->timeout.tv_usec);
++	}
++
+ 	rc = ldap_set_option(lak->ld, LDAP_OPT_TIMELIMIT, &(lak->conf->time_limit));
+ 	if (rc != LDAP_OPT_SUCCESS) {
+ 		syslog(LOG_WARNING|LOG_AUTH, "Unable to set LDAP_OPT_TIMELIMIT %d.", lak->conf->time_limit);

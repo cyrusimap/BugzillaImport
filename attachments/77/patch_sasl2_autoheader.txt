@@ -1,0 +1,1107 @@
+Index: configure.in
+===================================================================
+RCS file: /cvs/src/sasl/configure.in,v
+retrieving revision 1.147
+diff -u -u -r1.147 configure.in
+--- configure.in	2002/09/11 19:57:07	1.147
++++ configure.in	2002/09/15 23:04:31
+@@ -44,6 +44,188 @@
+ AC_INIT(lib/saslint.h)
+ AC_CONFIG_AUX_DIR(config)
+ AM_CONFIG_HEADER(config.h)
++
++ifdef([AH_TOP],,[define([AH_TOP],
++[cat <<__EOF>confighin
++$1
++__EOF
++cat config.h.in >>confighin
++rm -f config.h.in
++mv confighin config.h.in
++])])
++
++ifdef([AH_BOTTOM],, [define([AH_BOTTOM],
++[cat <<__EOF>>config.h.in
++$1
++__EOF
++])])
++
++AH_TOP([/* acconfig.h - autoheader configuration input
++ * Rob Earhart
++ */
++/*
++ * Copyright (c) 2001 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#ifndef CONFIG_H
++#define CONFIG_H
++
++])
++
++AH_BOTTOM([/* Create a struct iovec if we need one */
++#if !defined(_WIN32) && !defined(HAVE_SYS_UIO_H)
++/* (win32 is handled in sasl.h) */
++struct iovec {
++    char *iov_base;
++    long iov_len;
++};
++#else
++#include <sys/types.h>
++#include <sys/uio.h>
++#endif
++
++/* location of the random number generator */
++#ifndef DEV_RANDOM
++#define DEV_RANDOM "/dev/random"
++#endif
++
++/* if we've got krb_get_err_txt, we might as well use it;
++   especially since krb_err_txt isn't in some newer distributions
++   (MIT Kerb for Mac 4 being a notable example). If we don't have
++   it, we fall back to the krb_err_txt array */
++#ifdef HAVE_KRB_GET_ERR_TEXT
++#define get_krb_err_txt krb_get_err_text
++#else
++#define get_krb_err_txt(X) (krb_err_txt[(X)])
++#endif
++
++/* Make Solaris happy... */
++#ifndef __EXTENSIONS__
++#define __EXTENSIONS__
++#endif
++
++/* Make Linux happy... */
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#endif
++
++#ifndef HAVE___ATTRIBUTE__
++/* Can't use attributes... */
++#define __attribute__(foo)
++#endif
++
++#define SASL_PATH_ENV_VAR "SASL_PATH"
++
++#include <stdlib.h>
++#include <sys/types.h>
++#include <sys/socket.h>
++#ifndef WIN32
++# include <netdb.h>
++# ifdef HAVE_SYS_PARAM_H
++#  include <sys/param.h>
++# endif
++#else /* WIN32 */
++# include <winsock.h>
++#endif /* WIN32 */
++#include <string.h>
++
++#include <netinet/in.h>
++
++#ifndef HAVE_SOCKLEN_T
++typedef unsigned int socklen_t;
++#endif /* HAVE_SOCKLEN_T */
++
++#ifndef HAVE_STRUCT_SOCKADDR_STORAGE
++#define _SS_MAXSIZE     128     /* Implementation specific max size */
++#define _SS_PADSIZE     (_SS_MAXSIZE - sizeof (struct sockaddr))
++
++struct sockaddr_storage {
++        struct  sockaddr ss_sa;
++        char            __ss_pad2[_SS_PADSIZE];
++};
++# define ss_family ss_sa.sa_family
++#endif /* !HAVE_STRUCT_SOCKADDR_STORAGE */
++
++#ifndef AF_INET6
++/* Define it to something that should never appear */
++#define AF_INET6        AF_MAX
++#endif
++
++#ifndef HAVE_GETADDRINFO
++#define getaddrinfo     sasl_getaddrinfo
++#define freeaddrinfo    sasl_freeaddrinfo
++#define getnameinfo     sasl_getnameinfo
++#define gai_strerror    sasl_gai_strerror
++#include "gai.h"
++#endif
++
++/* Defined in RFC 1035. max strlen is only 253 due to length bytes. */
++#ifndef MAXHOSTNAMELEN
++#define        MAXHOSTNAMELEN  255
++#endif
++
++#ifndef HAVE_SYSEXITS_H
++#include "exits.h"
++#else
++#include "sysexits.h"
++#endif
++
++#ifndef NI_WITHSCOPEID
++#define NI_WITHSCOPEID  0
++#endif
++
++/* Get the correct time.h */
++#if TIME_WITH_SYS_TIME
++# include <sys/time.h>
++# include <time.h>
++#else
++# if HAVE_SYS_TIME_H
++#  include <sys/time.h>
++# else
++#  include <time.h>
++# endif
++#endif
++
++#endif /* CONFIG_H */
++])
++
++
+ AC_CANONICAL_HOST
+ 
+ dnl
+@@ -122,7 +304,7 @@
+                 enable_staticdlopen=no)
+ 
+ if test "$enable_staticdlopen" = yes; then
+-  AC_DEFINE(TRY_DLOPEN_WHEN_STATIC)
++  AC_DEFINE(TRY_DLOPEN_WHEN_STATIC, 1, [Should we try to dlopen stuff when we are staticly compiled?])
+ fi
+ 
+ if test "$ac_cv_prog_gcc" = yes; then
+@@ -223,7 +405,7 @@
+     if(self) { ptr1=dlsym(self,"foo"); ptr2=dlsym(self,"_foo");
+     if(ptr1 && !ptr2) exit(0); } exit(1); } 
+ ], [sasl_cv_dlsym_adds_uscore=yes], sasl_cv_dlsym_adds_uscore=no
+-	AC_DEFINE(DLSYM_NEEDS_UNDERSCORE),
++	AC_DEFINE(DLSYM_NEEDS_UNDERSCORE, 1, [Do we need a leading _ for dlsym?]),
+ 	AC_MSG_WARN(cross-compiler, we'll do our best)))
+ 
+       AC_MSG_RESULT($sasl_cv_dlsym_adds_uscore)
+@@ -255,7 +437,7 @@
+ AC_MSG_RESULT($with_pam)
+ LIB_PAM=""
+ if test "$with_pam" != no; then
+-  AC_DEFINE(HAVE_PAM)
++  AC_DEFINE(HAVE_PAM, 1, [do we have PAM for plaintext password checking?])
+   LIB_PAM="-lpam"
+ fi
+ AC_SUBST(LIB_PAM)
+@@ -267,8 +449,8 @@
+   if test "$with_saslauthd" = yes; then
+     with_saslauthd="/var/state/saslauthd"
+   fi
+-  AC_DEFINE(HAVE_SASLAUTHD)
+-  AC_DEFINE_UNQUOTED(PATH_SASLAUTHD_RUNDIR, "$with_saslauthd")
++  AC_DEFINE(HAVE_SASLAUTHD, 1, [should we include support for the saslauth daemon?])
++  AC_DEFINE_UNQUOTED(PATH_SASLAUTHD_RUNDIR, "$with_saslauthd", [where does saslauthd look for the communication socket?])
+ fi
+ AM_CONDITIONAL(SASLAUTHD, test "$with_saslauthd" != no)
+ AC_MSG_CHECKING(if I should include saslauthd)
+@@ -282,8 +464,8 @@
+    if test "$with_pwcheck" = yes; then
+      with_pwcheck=/var/pwcheck
+    fi
+-   AC_DEFINE(HAVE_PWCHECK)
+-   AC_DEFINE_UNQUOTED(PWCHECKDIR, "$with_pwcheck")
++   AC_DEFINE(HAVE_PWCHECK, 1, [should we include support for the pwcheck daemon?])
++   AC_DEFINE_UNQUOTED(PWCHECKDIR, "$with_pwcheck", [where do we look for the pwcheck daemon?])
+    AC_CHECK_FUNC(getspnam,PWCHECKMETH="getspnam",PWCHECKMETH="getpwnam")
+    AC_SUBST(PWCHECKMETH)
+ fi
+@@ -298,14 +480,14 @@
+ AC_SUBST(IPCTYPE)
+ if test "$with_ipctype" = "doors"; then
+    LIBS="$LIBS -ldoor -lpthread"
+-   AC_DEFINE(USE_DOORS)
++   AC_DEFINE(USE_DOORS, 1, [do we use doors for IPC?])
+ fi
+ 
+ AC_ARG_ENABLE(alwaystrue, [  --enable-alwaystrue     enable the alwaystrue password verifier (discouraged)],
+ 		enable_alwaystrue=$enableval,
+ 		enable_alwaystrue=no)
+ if test "$enable_alwaystrue" = yes; then
+-  AC_DEFINE(HAVE_ALWAYSTRUE)
++  AC_DEFINE(HAVE_ALWAYSTRUE, 1, [do we want alwaystrue (discouraged)?])
+ fi
+ AC_MSG_CHECKING(if I should include the alwaystrue verifier)
+ AC_MSG_RESULT($enable_alwaystrue)
+@@ -318,7 +500,7 @@
+ AC_MSG_CHECKING(if we should enable sasl_checkapop)
+ if test "$checkapop" != no; then
+   AC_MSG_RESULT(enabled)
+-  AC_DEFINE(DO_SASL_CHECKAPOP)
++  AC_DEFINE(DO_SASL_CHECKAPOP, 1, [should we support sasl_checkapop])
+ else
+   AC_MSG_RESULT(disabled)
+ fi
+@@ -334,7 +516,7 @@
+   SASL_MECHS="$SASL_MECHS libcrammd5.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/cram.o"
+-    AC_DEFINE(STATIC_CRAMMD5)
++    AC_DEFINE(STATIC_CRAMMD5, 1, [which mechs can we link staticly?])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -364,7 +546,7 @@
+   SASL_MECHS="$SASL_MECHS libdigestmd5.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/digestmd5.o"
+-    AC_DEFINE(STATIC_DIGESTMD5)
++    AC_DEFINE(STATIC_DIGESTMD5, 1, [which mechs can we link staticly?])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -421,7 +603,7 @@
+   SASL_MECHS="$SASL_MECHS libotp.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/otp.o"
+-    AC_DEFINE(STATIC_OTP)
++    AC_DEFINE(STATIC_OTP, 1, [which mechs can we link staticly?])
+   fi
+ 
+   dnl Test for OPIE
+@@ -449,7 +631,7 @@
+   AC_MSG_RESULT($with_opie)
+ 
+   if test "$with_opie" != no; then
+-    AC_DEFINE(HAVE_OPIE)
++    AC_DEFINE(HAVE_OPIE, 1, [do we have OPIE for server-side OTP support?])
+     OTP_LIBS="$OTP_LIBS -lopie"
+   else
+     OTP_LIBS="$OTP_LIBS ../sasldb/libsasldb.la \$(SASL_DB_LIB)"
+@@ -479,7 +661,7 @@
+   SASL_MECHS="$SASL_MECHS libsrp.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/srp.o"
+-    AC_DEFINE(STATIC_SRP)
++    AC_DEFINE(STATIC_SRP, 1, [which mechs can we link staticly?])
+   fi
+ 
+ dnl srp_setpass support
+@@ -490,7 +672,7 @@
+   AC_MSG_CHECKING(if we should enable setting SRP secrets with saslpasswd)
+   if test "$srp_setpass" != no; then
+     AC_MSG_RESULT(enabled)
+-    AC_DEFINE(DO_SRP_SETPASS)
++    AC_DEFINE(DO_SRP_SETPASS, 1, [should we support srp_setpass])
+     SRP_LIBS="$SRP_LIBS ../sasldb/libsasldb.la \$(SASL_DB_LIB)"
+   else
+     AC_MSG_RESULT(disabled)
+@@ -506,7 +688,7 @@
+ SASL_PLAIN_CHK
+ 
+ if test "$gssapi" != "no"; then
+-  AC_DEFINE(STATIC_GSSAPIV2)
++  AC_DEFINE(STATIC_GSSAPIV2, 1, [which mechs can we link staticly?])
+ fi
+ 
+ dnl ANONYMOUS
+@@ -520,7 +702,7 @@
+   SASL_MECHS="$SASL_MECHS libanonymous.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/anonymous.o"
+-    AC_DEFINE(STATIC_ANONYMOUS)
++    AC_DEFINE(STATIC_ANONYMOUS, 1, [which mechs can we link staticly?])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -537,7 +719,7 @@
+   SASL_MECHS="$SASL_MECHS liblogin.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/login.o"
+-    AC_DEFINE(STATIC_LOGIN)
++    AC_DEFINE(STATIC_LOGIN, 1, [which mechs can we link staticly?])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -566,7 +748,7 @@
+   SASL_MECHS="$SASL_MECHS libntlm.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/ntlm.o"
+-    AC_DEFINE(STATIC_NTLM)
++    AC_DEFINE(STATIC_NTLM, 1, [which mechs can we link staticly?])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -634,7 +816,7 @@
+            SASL_MECHS="$SASL_MECHS libmysql.la"
+ 	   if test "$enable_static" = yes; then
+                SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/mysql.o"
+-               AC_DEFINE(STATIC_MYSQL)
++               AC_DEFINE(STATIC_MYSQL, 1, [which mechs can we link staticly?])
+ 	   fi
+ 	   ],
+            [AC_ERROR([MYSQL libarary mysqlclient not found])], $LIB_MYSQL_DIR);;
+@@ -646,7 +828,7 @@
+ ###############################################################################
+ 
+ if test "$ac_cv_can_build_shared" = yes; then
+-	AC_DEFINE(DO_DLOPEN)
++	AC_DEFINE(DO_DLOPEN, 1, [Does libtool support shared libs on this system?])
+ fi
+ 
+ AC_SUBST(SASL_MECHS)
+@@ -657,7 +839,7 @@
+                           be found [/usr/lib/sasl2] ],
+   plugindir=$withval,
+   plugindir=/usr/lib/sasl2)
+-AC_DEFINE_UNQUOTED(PLUGINDIR, "$plugindir")
++AC_DEFINE_UNQUOTED(PLUGINDIR, "$plugindir", [This is where plugins will live at runtime])
+ AC_SUBST(plugindir)
+ 
+ dnl look for rc4 libraries. we accept the CMU one or one from openSSL
+@@ -666,7 +848,7 @@
+ 	with_rc4=yes)
+ 
+ if test "$with_rc4" != no; then
+-    AC_DEFINE(WITH_RC4)
++    AC_DEFINE(WITH_RC4, 1, [should we use the internal rc4 library?])
+ fi
+ 
+ building_for_macosx=no
+@@ -692,11 +874,11 @@
+ 
+    if test -r "$with_dmalloc/libdmalloc.a"; then
+ 	DMALLOC_LIBS="$with_dmalloc/libdmalloc.a"
+-	AC_DEFINE(WITH_DMALLOC)
++	AC_DEFINE(WITH_DMALLOC, 1, [are we linking against DMALLOC?])
+ 	AC_MSG_RESULT(yes)
+    elif test -r "$with_dmalloc/lib/libdmalloc.a"; then
+ 	DMALLOC_LIBS="$with_dmalloc/lib/libdmalloc.a"
+-	AC_DEFINE(WITH_DMALLOC)
++	AC_DEFINE(WITH_DMALLOC, 1, [are we linking against DMALLOC?])
+ 	AC_MSG_RESULT(yes)
+    else
+ 	AC_MSG_ERROR(cannot find dmalloc library, please check your installation.)
+@@ -775,7 +957,7 @@
+ 
+ dnl check for getsubopt
+ sasl_cv_getsubopt=no
+-AC_CHECK_FUNC(getsubopt, [AC_DEFINE(HAVE_GETSUBOPT)], [sasl_cv_getsubopt=yes])
++AC_CHECK_FUNC(getsubopt, [AC_DEFINE(HAVE_GETSUBOPT, 1, [do we have getsubopt()?])], [sasl_cv_getsubopt=yes])
+ if test $sasl_cv_getsubopt = yes; then
+ 	LIBOBJS="$LIBOBJS getsubopt.o"
+ 	GETSUBOPT="getsubopt.lo"
+@@ -785,8 +967,10 @@
+ dnl Check for snprintf
+ sasl_cv_snprintf=no
+ SNPRINTFOBJS=""
+-AC_CHECK_FUNC(snprintf, [AC_DEFINE(HAVE_SNPRINTF)], [sasl_cv_snprintf=yes])
+-AC_CHECK_FUNC(vsnprintf, [AC_DEFINE(HAVE_VSNPRINTF)], [sasl_cv_snprintf=yes])
++AC_CHECK_FUNC(snprintf, [AC_DEFINE(HAVE_SNPRINTF, 1, [Does your system have the snprintf() call?])],
++              [sasl_cv_snprintf=yes])
++AC_CHECK_FUNC(vsnprintf, [AC_DEFINE(HAVE_VSNPRINTF, 1, [Does your system have the vsnprintf() call?])],
++              [sasl_cv_snprintf=yes])
+ if test $sasl_cv_snprintf = yes; then
+ 	LIBOBJS="$LIBOBJS snprintf.o"
+         SNPRINTFOBJS="snprintf.o"
+@@ -802,7 +986,7 @@
+ GETADDRINFOOBJS=""
+ sasl_cv_getaddrinfo=yes
+ IPv6_CHECK_FUNC(getaddrinfo, [IPv6_CHECK_FUNC(gai_strerror,
+-                [AC_DEFINE(HAVE_GETADDRINFO)
++                [AC_DEFINE(HAVE_GETADDRINFO, 1, [define if your system has getaddrinfo()])
+                 sasl_cv_getaddrinfo=no])])
+ if test $sasl_cv_getaddrinfo = yes; then
+     LIBOBJS="$LIBOBJS getaddrinfo.o"
+@@ -816,7 +1000,8 @@
+ GETNAMEINFOOBJS=""
+ sasl_cv_getnameinfo=no
+ IPv6_CHECK_FUNC(getnameinfo,
+-		[AC_DEFINE(HAVE_GETNAMEINFO)], [sasl_cv_getnameinfo=yes])
++		[AC_DEFINE(HAVE_GETNAMEINFO, 1, [define if your system has getnameinfo()])],
++                [sasl_cv_getnameinfo=yes])
+ if test $sasl_cv_getnameinfo = yes; then
+ 	LIBOBJS="$LIBOBJS getnameinfo.o"
+         GETNAMEINFOOBJS="getnameinfo.o"
+@@ -851,12 +1036,12 @@
+ 
+ if test $enable_cmulocal = yes; then
+     AC_WARN([enabling CMU local kludges])
+-    AC_DEFINE(KRB4_IGNORE_IP_ADDRESS)
+-    AC_DEFINE_UNQUOTED(PREFER_MECH, "KERBEROS_V4")
++    AC_DEFINE(KRB4_IGNORE_IP_ADDRESS, 1, [do we pay attention to IP addresses in the kerberos 4 tickets?])
++    AC_DEFINE_UNQUOTED(PREFER_MECH, "KERBEROS_V4", [do we have a preferred mechanism, or should we just pick the highest ssf?])
+ fi
+ 
+ AC_EGREP_HEADER(sockaddr_storage, sys/socket.h, [
+-		AC_DEFINE(HAVE_STRUCT_SOCKADDR_STORAGE)])
++		AC_DEFINE(HAVE_STRUCT_SOCKADDR_STORAGE, 1, [define if your system has struct sockaddr_storage])])
+ 
+ AC_SUBST(DIRS)
+ 
+Index: config/ipv6.m4
+===================================================================
+RCS file: /cvs/src/sasl/config/ipv6.m4,v
+retrieving revision 1.3
+diff -u -u -r1.3 ipv6.m4
+--- ipv6.m4	2002/09/03 15:11:45	1.3
++++ ipv6.m4	2002/09/15 23:04:39
+@@ -56,7 +56,7 @@
+ 	[struct sockaddr_storage ss; int i = ss.ss_family;],
+ 	[ipv6_cv_ss_family=yes], [ipv6_cv_ss_family=no])])dnl
+ if test $ipv6_cv_ss_family = yes; then
+-  ifelse([$1], , AC_DEFINE(HAVE_SS_FAMILY), [$1])
++  ifelse([$1], , AC_DEFINE(HAVE_SS_FAMILY, 1, [Define if you have ss_family in struct sockaddr_storage.]), [$1])
+ else
+   ifelse([$2], , :, [$2])
+ fi
+@@ -72,7 +72,7 @@
+ 	       [struct sockaddr sa; int i = sa.sa_len;],
+ 	       [ipv6_cv_sa_len=yes], [ipv6_cv_sa_len=no])])dnl
+ if test $ipv6_cv_sa_len = yes; then
+-  ifelse([$1], , AC_DEFINE(HAVE_SOCKADDR_SA_LEN), [$1])
++  ifelse([$1], , AC_DEFINE(HAVE_SOCKADDR_SA_LEN, 1, [do we have socklen_t?]), [$1])
+ else
+   ifelse([$2], , :, [$2])
+ fi
+@@ -88,7 +88,7 @@
+ 	    [socklen_t len = 0;],
+ 	    [ipv6_cv_socklen_t=yes], [ipv6_cv_socklen_t=no])])dnl
+ if test $ipv6_cv_socklen_t = yes; then
+-  ifelse([$1], , AC_DEFINE(HAVE_SOCKLEN_T), [$1])
++  ifelse([$1], , AC_DEFINE(HAVE_SOCKLEN_T, 1, [do we have socklen_t?]), [$1])
+ else
+   ifelse([$2], , :, [$2])
+ fi
+Index: config/kerberos_v4.m4
+===================================================================
+RCS file: /cvs/src/sasl/config/kerberos_v4.m4,v
+retrieving revision 1.7
+diff -u -u -r1.7 kerberos_v4.m4
+--- kerberos_v4.m4	2002/09/09 15:32:49	1.7
++++ kerberos_v4.m4	2002/09/15 23:04:39
+@@ -14,7 +14,7 @@
+ 
+   dnl check for openssl installing -lcrypto, then make vanilla check
+   AC_CHECK_LIB(crypto, des_cbc_encrypt, [
+-      AC_CHECK_HEADER(openssl/des.h, [AC_DEFINE(WITH_SSL_DES)
++      AC_CHECK_HEADER(openssl/des.h, [AC_DEFINE(WITH_SSL_DES, 1, [do we have des available?])
+                                      LIB_DES="-lcrypto";
+                                      with_des=yes],
+                      with_des=no)],
+@@ -46,7 +46,7 @@
+                  cmu_have_rsaref=no)
+ 
+     AC_CHECK_LIB(crypto, des_cbc_encrypt, [
+-	AC_CHECK_HEADER(openssl/des.h, [AC_DEFINE(WITH_SSL_DES)
++	AC_CHECK_HEADER(openssl/des.h, [AC_DEFINE(WITH_SSL_DES, 1, [do we have des available?])
+ 					LIB_DES="-lcrypto";
+ 					with_des=yes],
+ 			with_des=no)], 
+@@ -55,7 +55,7 @@
+ fi
+ 
+ if test "$with_des" != no; then
+-  AC_DEFINE(WITH_DES)
++  AC_DEFINE(WITH_DES, 1, [do we have des available?])
+ fi
+ 
+ AC_SUBST(LIB_DES)
+@@ -130,8 +130,8 @@
+     AC_MSG_RESULT(enabled)
+     SASL_MECHS="$SASL_MECHS libkerberos4.la"
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/kerberos4.o"
+-    AC_DEFINE(STATIC_KERBEROS4)
+-    AC_DEFINE(HAVE_KRB)
++    AC_DEFINE(STATIC_KERBEROS4, 1, [which mechs can we link staticly?])
++    AC_DEFINE(HAVE_KRB, 1, [Do we have kerberos for plaintext password checking?])
+     SASL_KRB_LIB="$SASL_KRB_LIB $LIB_DES $COM_ERR"
+   else
+     AC_MSG_RESULT(disabled)
+Index: config/plain.m4
+===================================================================
+RCS file: /cvs/src/sasl/config/plain.m4,v
+retrieving revision 1.4
+diff -u -u -r1.4 plain.m4
+--- plain.m4	2002/09/09 15:32:50	1.4
++++ plain.m4	2002/09/15 23:05:00
+@@ -31,7 +31,7 @@
+   SASL_MECHS="$SASL_MECHS libplain.la"
+   if test "$enable_static" = yes; then
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/plain.o"
+-    AC_DEFINE(STATIC_PLAIN)
++    AC_DEFINE(STATIC_PLAIN, 1, [which mechs can we link staticly?])
+   fi
+  else
+   AC_MSG_RESULT(disabled)
+Index: config/sasldb.m4
+===================================================================
+RCS file: /cvs/src/sasl/config/sasldb.m4,v
+retrieving revision 1.9
+diff -u -u -r1.9 sasldb.m4
+--- sasldb.m4	2002/09/09 15:32:50	1.9
++++ sasldb.m4	2002/09/15 23:05:01
+@@ -145,13 +145,13 @@
+ 
+ case "$dblib" in
+   gdbm) 
+-    AC_DEFINE(SASL_GDBM)
++    AC_DEFINE(SASL_GDBM, 1, [what db package are we using?])
+     ;;
+   ndbm)
+-    AC_DEFINE(SASL_NDBM)
++    AC_DEFINE(SASL_NDBM, 1, [what db package are we using?])
+     ;;
+   berkeley)
+-    AC_DEFINE(SASL_BERKELEYDB)
++    AC_DEFINE(SASL_BERKELEYDB, 1, [what db package are we using?])
+     ;;
+   *)
+     AC_MSG_WARN([Disabling SASL authentication database support])
+@@ -166,7 +166,7 @@
+ SASL_MECHS="$SASL_MECHS libsasldb.la"
+ if test "$enable_static" = yes; then
+       SASL_STATIC_OBJS="$SASL_STATIC_OBJS ../plugins/sasldb.o $SASL_DB_BACKEND_STATIC"
+-      AC_DEFINE(STATIC_SASLDB)
++      AC_DEFINE(STATIC_SASLDB, 1, [which mechs can we link staticly?])
+ fi
+ AC_SUBST(SASL_DB_UTILS)
+ AC_SUBST(SASL_DB_MANS)
+@@ -183,4 +183,4 @@
+   dbpath=/etc/sasldb2)
+ AC_MSG_CHECKING(DB path to use)
+ AC_MSG_RESULT($dbpath)
+-AC_DEFINE_UNQUOTED(SASL_DB_PATH, "$dbpath")])
++AC_DEFINE_UNQUOTED(SASL_DB_PATH, "$dbpath", [Set to the database name you want SASL to use for username->secret lookups])])
+Index: cmulocal/sasl2.m4
+===================================================================
+RCS file: /cvs/src/cmulocal/sasl2.m4,v
+retrieving revision 1.20
+diff -u -u -r1.20 sasl2.m4
+--- sasl2.m4	2002/08/21 15:03:19	1.20
++++ sasl2.m4	2002/09/15 23:05:12
+@@ -12,7 +12,7 @@
+        CPPFLAGS="$CPPFLAGS -I$gssapi/include"
+        LDFLAGS="$LDFLAGS -L$gssapi/lib"
+     fi
+-    AC_CHECK_HEADER(gssapi.h, AC_DEFINE(HAVE_GSSAPI_H), [
++    AC_CHECK_HEADER(gssapi.h, AC_DEFINE(HAVE_GSSAPI_H, 1, [do we have gssapi.h or gssapi/gssapi.h?]), [
+       AC_CHECK_HEADER(gssapi/gssapi.h,, AC_WARN(Disabling GSSAPI); gssapi=no)])
+  fi
+ 
+@@ -60,10 +60,10 @@
+ 
+  if test "$ac_cv_header_gssapi_h" = "yes"; then
+   AC_EGREP_HEADER(GSS_C_NT_HOSTBASED_SERVICE, gssapi.h,
+-    AC_DEFINE(HAVE_GSS_C_NT_HOSTBASED_SERVICE))
++    AC_DEFINE(HAVE_GSS_C_NT_HOSTBASED_SERVICE, 1, [what flavor of GSSAPI are we using?]))
+  elif test "$ac_cv_header_gssapi_gssapi_h"; then
+   AC_EGREP_HEADER(GSS_C_NT_HOSTBASED_SERVICE, gssapi/gssapi.h,
+-    AC_DEFINE(HAVE_GSS_C_NT_HOSTBASED_SERVICE))
++    AC_DEFINE(HAVE_GSS_C_NT_HOSTBASED_SERVICE, 1, [what flavor of GSSAPI are we using?]))
+  fi
+ 
+  GSSAPI_LIBS=""
+Index: cmulocal/util.m4
+===================================================================
+RCS file: /cvs/src/cmulocal/util.m4,v
+retrieving revision 1.9
+diff -u -u -r1.9 util.m4
+--- util.m4	2002/05/25 19:57:43	1.9
++++ util.m4	2002/09/15 23:05:13
+@@ -42,7 +42,7 @@
+   AC_REQUIRE([AC_TYPE_MODE_T])
+   AC_REQUIRE([AC_C_CONST])
+   AC_CHECK_HEADERS(sys/sysmacros.h)
+-  AC_CHECK_HEADER(inttypes.h, AC_DEFINE(HAVE_INTTYPES_H),
++  AC_CHECK_HEADER(inttypes.h, AC_DEFINE(HAVE_INTTYPES_H, 1, [do we have an inttypes.h?]),
+ 		  CMU_CHECK_TYPE_EXISTS(int8_t)
+ 		  CMU_CHECK_TYPE_EXISTS(uint8_t)
+ 		  CMU_CHECK_TYPE_EXISTS(u_int8_t)
+Index: saslauthd/configure.in
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/configure.in,v
+retrieving revision 1.28
+diff -u -u -r1.28 configure.in
+--- configure.in	2002/09/09 19:50:51	1.28
++++ configure.in	2002/09/15 23:05:14
+@@ -1,6 +1,85 @@
+ AC_INIT(mechanisms.h)
+ AC_CONFIG_AUX_DIR(config)
+ AM_CONFIG_HEADER(saslauthd.h)
++
++ifdef([AH_TOP],,d [efine([AH_TOP],
++[cat <<__EOF>saslauthdin
++$1
++__EOF
++cat saslauthd.h.in >>saslauthdin
++rm -f saslauthd.h.in
++mv saslauthdin saslauthd.h.in
++])])
++
++ifdef([AH_BOTTOM],, [define([AH_BOTTOM],
++[cat <<__EOF>>saslauthd.h.in
++$1
++__EOF
++])])
++
++AH_TOP([#include <stdio.h>])
++AH_BOTTOM([#ifndef HAVE___ATTRIBUTE__
++/* Can't use attributes... */
++#define __attribute__(foo)
++#endif
++
++#include <stdlib.h>
++#include <sys/types.h>
++#include <sys/socket.h>
++#ifndef WIN32
++# include <netdb.h>
++# include <sys/param.h>
++#else /* WIN32 */
++# include <winsock.h>
++#endif /* WIN32 */
++#include <string.h>
++
++#include <netinet/in.h>
++
++#ifndef HAVE_SOCKLEN_T
++typedef unsigned int socklen_t;
++#endif /* HAVE_SOCKLEN_T */
++
++#ifndef HAVE_STRUCT_SOCKADDR_STORAGE
++#define _SS_MAXSIZE     128     /* Implementation specific max size */
++#define _SS_PADSIZE     (_SS_MAXSIZE - sizeof (struct sockaddr))
++
++struct sockaddr_storage {
++        struct  sockaddr ss_sa;
++        char            __ss_pad2[_SS_PADSIZE];
++};
++# define ss_family ss_sa.sa_family
++#endif /* !HAVE_STRUCT_SOCKADDR_STORAGE */
++
++#ifndef AF_INET6
++/* Define it to something that should never appear */
++#define AF_INET6        AF_MAX
++#endif
++
++/* Create a struct iovec if we need one */
++#if !defined(HAVE_SYS_UIO_H)
++struct iovec {
++    long iov_len;
++    char *iov_base;
++};
++#else
++#include <sys/types.h>
++#include <sys/uio.h>
++#endif
++
++#ifndef HAVE_GETADDRINFO
++#define getaddrinfo     sasl_getaddrinfo
++#define freeaddrinfo    sasl_freeaddrinfo
++#define getnameinfo     sasl_getnameinfo
++#define gai_strerror    sasl_gai_strerror
++#include "gai.h"
++#endif
++
++#ifndef NI_WITHSCOPEID
++#define NI_WITHSCOPEID  0
++#endif
++])
++
+ AC_CANONICAL_HOST
+ 
+ dnl Should we enable SASLAUTHd at all?
+@@ -10,8 +89,8 @@
+   if test "$with_saslauthd" = yes; then
+     with_saslauthd="/var/state/saslauthd"
+   fi
+-  AC_DEFINE(HAVE_SASLAUTHD)
+-  AC_DEFINE_UNQUOTED(PATH_SASLAUTHD_RUNDIR, "$with_saslauthd")
++  AC_DEFINE(HAVE_SASLAUTHD, 1, [Things SASLAUTHd doesn't really care about])
++  AC_DEFINE_UNQUOTED(PATH_SASLAUTHD_RUNDIR, "$with_saslauthd", [Path to saslauthd rundir])
+ AM_CONDITIONAL(SASLAUTHD, test "$with_saslauthd" != no)
+ 
+ AM_INIT_AUTOMAKE(saslauthd,2.1.7)
+@@ -34,9 +113,9 @@
+ SASL_GSSAPI_CHK
+ 
+ if test "$gssapi" != no; then
+-	AC_DEFINE(AUTH_KRB5)
++	AC_DEFINE(AUTH_KRB5, 1, [do we want to enable the GSSAPI module])
+ 	if test "$gss_impl" = "heimdal"; then
+-	    AC_DEFINE(KRB5_HEIMDAL)
++	    AC_DEFINE(KRB5_HEIMDAL, 1, [do we want to enable the GSSAPI module])
+ 	fi
+ fi
+ 
+@@ -48,7 +127,7 @@
+ LIB_SIA=""
+ if test "$sia" != no; then
+   if test -f /etc/sia/matrix.conf; then
+-    AC_DEFINE(HAVE_SIA)
++    AC_DEFINE(HAVE_SIA, 1, [do we have SIA for plaintext password checking?])
+     LIB_SIA="-lsecurity -ldb -lm -laud"
+   else
+     AC_ERROR([No support for SIA found])
+@@ -64,7 +143,7 @@
+      echo "ERROR: Cannot build sasldb module outside of the full SASL source tree."
+      exit 0;
+   fi
+-  AC_DEFINE(AUTH_SASLDB)
++  AC_DEFINE(AUTH_SASLDB, 1, [Do we want to enable the experimental sasldb authentication module?])
+   SASL_DB_PATH_CHECK()
+   SASL_DB_CHECK()
+   SASL_DB_LIB="$SASL_DB_LIB ../sasldb/libsasldb.a"
+@@ -92,8 +171,8 @@
+ MAIN_COMPAT_OBJ="saslauthd-${with_ipctype}.o"
+ AC_SUBST(MAIN_COMPAT_OBJ)
+ if test "$with_ipctype" = "doors"; then
+-  AC_DEFINE(USE_DOORS)
+-  AC_DEFINE(SASLAUTHD_THREADED)
++  AC_DEFINE(USE_DOORS, 1, [Are we building with doors])
++  AC_DEFINE(SASLAUTHD_THREADED, 1, [for modules that want to know if we're threaded or not])
+   LIBS="$LIBS -ldoor -lpthread"
+ fi
+ 
+@@ -101,7 +180,7 @@
+ AC_MSG_RESULT($with_pam)
+ LIB_PAM=""
+ if test "$with_pam" != no; then
+-  AC_DEFINE(HAVE_PAM)
++  AC_DEFINE(HAVE_PAM, 1, [do we have pam?])
+   LIB_PAM="-lpam"
+ fi
+ AC_SUBST(LIB_PAM)
+@@ -121,7 +200,7 @@
+ 
+ LDAP_LIBS=""
+ if test "$with_ldap" != no; then
+-  AC_CHECK_LIB(ldap, ldap_initialize, [ AC_DEFINE(HAVE_LDAP)
++  AC_CHECK_LIB(ldap, ldap_initialize, [ AC_DEFINE(HAVE_LDAP, 1, [do we have ldap support])
+                                         LDAP_LIBS="-lldap -llber" ],,-llber)
+ fi
+ AC_SUBST(LDAP_LIBS)
+@@ -146,7 +225,8 @@
+ GETADDRINFOOBJS=""
+ sasl_cv_getaddrinfo=no
+ IPv6_CHECK_FUNC(getaddrinfo,
+-		[AC_DEFINE(HAVE_GETADDRINFO)], [sasl_cv_getaddrinfo=yes])
++		[AC_DEFINE(HAVE_GETADDRINFO, 1, [define if your system has getnameinfo()])],
++                [sasl_cv_getaddrinfo=yes])
+ if test $sasl_cv_getaddrinfo = yes; then
+     COMPAT_OBJ="$COMPAT_OBJ getaddrinfo.o"
+ fi
+@@ -155,7 +235,8 @@
+ GETNAMEINFOOBJS=""
+ sasl_cv_getnameinfo=no
+ IPv6_CHECK_FUNC(getnameinfo,
+-		[AC_DEFINE(HAVE_GETNAMEINFO)], [sasl_cv_getnameinfo=yes])
++		[AC_DEFINE(HAVE_GETNAMEINFO, 1, [define if your system has getnameinfo()])],
++                [sasl_cv_getnameinfo=yes])
+ if test $sasl_cv_getnameinfo = yes; then
+ 	COMPAT_OBJ="$COMPAT_OBJ getnameinfo.o"
+ fi
+@@ -167,6 +248,6 @@
+ IPv6_CHECK_SOCKLEN_T()
+ 
+ AC_EGREP_HEADER(sockaddr_storage, sys/socket.h,
+-                AC_DEFINE(HAVE_STRUCT_SOCKADDR_STORAGE))
++                AC_DEFINE(HAVE_STRUCT_SOCKADDR_STORAGE, 1, [define if your system has struct sockaddr_storage]))
+ 
+ AC_OUTPUT(Makefile)
+Index: saslauthd/config/missing
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/config/missing,v
+retrieving revision 1.2
+diff -u -u -r1.2 missing
+--- missing	2001/12/04 02:06:58	1.2
++++ missing	2002/09/15 23:05:42
+@@ -1,7 +1,7 @@
+ #! /bin/sh
+ # Common stub for a few missing GNU programs while installing.
+-# Copyright (C) 1996, 1997 Free Software Foundation, Inc.
+-# Franc,ois Pinard <pinard@iro.umontreal.ca>, 1996.
++# Copyright (C) 1996, 1997, 1999, 2000, 2002 Free Software Foundation, Inc.
++# Originally by Fran,cois Pinard <pinard@iro.umontreal.ca>, 1996.
+ 
+ # This program is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+@@ -18,11 +18,37 @@
+ # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+ # 02111-1307, USA.
+ 
++# As a special exception to the GNU General Public License, if you
++# distribute this file as part of a program that contains a
++# configuration script generated by Autoconf, you may include it under
++# the same distribution terms that you use for the rest of that program.
++
+ if test $# -eq 0; then
+   echo 1>&2 "Try \`$0 --help' for more information"
+   exit 1
+ fi
+ 
++run=:
++
++# In the cases where this matters, `missing' is being run in the
++# srcdir already.
++if test -f configure.ac; then
++  configure_ac=configure.ac
++else
++  configure_ac=configure.in
++fi
++
++case "$1" in
++--run)
++  # Try to run requested program, and just exit if it succeeds.
++  run=
++  shift
++  "$@" && exit 0
++  ;;
++esac
++
++# If it does not exist, or fails to run (possibly an outdated version),
++# try to emulate it.
+ case "$1" in
+ 
+   -h|--h|--he|--hel|--help)
+@@ -35,6 +61,7 @@
+ Options:
+   -h, --help      display this help and exit
+   -v, --version   output version information and exit
++  --run           try to run the given command, and emulate it if it fails
+ 
+ Supported PROGRAM values:
+   aclocal      touch file \`aclocal.m4'
+@@ -43,13 +70,15 @@
+   automake     touch all \`Makefile.in' files
+   bison        create \`y.tab.[ch]', if possible, from existing .[ch]
+   flex         create \`lex.yy.c', if possible, from existing .c
++  help2man     touch the output file
+   lex          create \`lex.yy.c', if possible, from existing .c
+   makeinfo     touch the output file
++  tar          try tar, gnutar, gtar, then tar without non-portable flags
+   yacc         create \`y.tab.[ch]', if possible, from existing .[ch]"
+     ;;
+ 
+   -v|--v|--ve|--ver|--vers|--versi|--versio|--version)
+-    echo "missing - GNU libit 0.0"
++    echo "missing 0.4 - GNU automake"
+     ;;
+ 
+   -*)
+@@ -58,31 +87,46 @@
+     exit 1
+     ;;
+ 
+-  aclocal)
++  aclocal*)
++    if test -z "$run" && ($1 --version) > /dev/null 2>&1; then
++       # We have it, but it failed.
++       exit 1
++    fi
++
+     echo 1>&2 "\
+ WARNING: \`$1' is missing on your system.  You should only need it if
+-         you modified \`acinclude.m4' or \`configure.in'.  You might want
++         you modified \`acinclude.m4' or \`${configure_ac}'.  You might want
+          to install the \`Automake' and \`Perl' packages.  Grab them from
+          any GNU archive site."
+     touch aclocal.m4
+     ;;
+ 
+   autoconf)
++    if test -z "$run" && ($1 --version) > /dev/null 2>&1; then
++       # We have it, but it failed.
++       exit 1
++    fi
++
+     echo 1>&2 "\
+ WARNING: \`$1' is missing on your system.  You should only need it if
+-         you modified \`configure.in'.  You might want to install the
++         you modified \`${configure_ac}'.  You might want to install the
+          \`Autoconf' and \`GNU m4' packages.  Grab them from any GNU
+          archive site."
+     touch configure
+     ;;
+ 
+   autoheader)
++    if test -z "$run" && ($1 --version) > /dev/null 2>&1; then
++       # We have it, but it failed.
++       exit 1
++    fi
++
+     echo 1>&2 "\
+ WARNING: \`$1' is missing on your system.  You should only need it if
+-         you modified \`acconfig.h' or \`configure.in'.  You might want
++         you modified \`acconfig.h' or \`${configure_ac}'.  You might want
+          to install the \`Autoconf' and \`GNU m4' packages.  Grab them
+          from any GNU archive site."
+-    files=`sed -n 's/^[ ]*A[CM]_CONFIG_HEADER(\([^)]*\)).*/\1/p' configure.in`
++    files=`sed -n 's/^[ ]*A[CM]_CONFIG_HEADER(\([^)]*\)).*/\1/p' ${configure_ac}`
+     test -z "$files" && files="config.h"
+     touch_files=
+     for f in $files; do
+@@ -95,10 +139,15 @@
+     touch $touch_files
+     ;;
+ 
+-  automake)
++  automake*)
++    if test -z "$run" && ($1 --version) > /dev/null 2>&1; then
++       # We have it, but it failed.
++       exit 1
++    fi
++
+     echo 1>&2 "\
+ WARNING: \`$1' is missing on your system.  You should only need it if
+-         you modified \`Makefile.am', \`acinclude.m4' or \`configure.in'.
++         you modified \`Makefile.am', \`acinclude.m4' or \`${configure_ac}'.
+          You might want to install the \`Automake' and \`Perl' packages.
+          Grab them from any GNU archive site."
+     find . -type f -name Makefile.am -print |
+@@ -106,6 +155,34 @@
+ 	   while read f; do touch "$f"; done
+     ;;
+ 
++  autom4te)
++    if test -z "$run" && ($1 --version) > /dev/null 2>&1; then
++       # We have it, but it failed.
++       exit 1
++    fi
++
++    echo 1>&2 "\
++WARNING: \`$1' is needed, and you do not seem to have it handy on your
++         system.  You might have modified some files without having the
++         proper tools for further handling them.
++         You can get \`$1Help2man' as part of \`Autoconf' from any GNU
++         archive site."
++
++    file=`echo "$*" | sed -n 's/.*--output[ =]*\([^ ]*\).*/\1/p'`
++    test -z "$file" && file=`echo "$*" | sed -n 's/.*-o[ ]*\([^ ]*\).*/\1/p'`
++    if test -f "$file"; then
++	touch $file
++    else
++	test -z "$file" || exec >$file
++	echo "#! /bin/sh"
++	echo "# Created by GNU Automake missing as a replacement of"
++	echo "#  $ $@"
++	echo "exit 0"
++	chmod +x $file
++	exit 1
++    fi
++    ;;
++
+   bison|yacc)
+     echo 1>&2 "\
+ WARNING: \`$1' is missing on your system.  You should only need it if
+@@ -159,7 +236,37 @@
+     fi
+     ;;
+ 
++  help2man)
++    if test -z "$run" && ($1 --version) > /dev/null 2>&1; then
++       # We have it, but it failed.
++       exit 1
++    fi
++
++    echo 1>&2 "\
++WARNING: \`$1' is missing on your system.  You should only need it if
++	 you modified a dependency of a manual page.  You may need the
++	 \`Help2man' package in order for those modifications to take
++	 effect.  You can get \`Help2man' from any GNU archive site."
++
++    file=`echo "$*" | sed -n 's/.*-o \([^ ]*\).*/\1/p'`
++    if test -z "$file"; then
++	file=`echo "$*" | sed -n 's/.*--output=\([^ ]*\).*/\1/p'`
++    fi
++    if [ -f "$file" ]; then
++	touch $file
++    else
++	test -z "$file" || exec >$file
++	echo ".ab help2man is required to generate this page"
++	exit 1
++    fi
++    ;;
++
+   makeinfo)
++    if test -z "$run" && (makeinfo --version) > /dev/null 2>&1; then
++       # We have makeinfo, but it failed.
++       exit 1
++    fi
++
+     echo 1>&2 "\
+ WARNING: \`$1' is missing on your system.  You should only need it if
+          you modified a \`.texi' or \`.texinfo' file, or any other file
+@@ -173,6 +280,45 @@
+       file=`sed -n '/^@setfilename/ { s/.* \([^ ]*\) *$/\1/; p; q; }' $file`
+     fi
+     touch $file
++    ;;
++
++  tar)
++    shift
++    if test -n "$run"; then
++      echo 1>&2 "ERROR: \`tar' requires --run"
++      exit 1
++    fi
++
++    # We have already tried tar in the generic part.
++    # Look for gnutar/gtar before invocation to avoid ugly error
++    # messages.
++    if (gnutar --version > /dev/null 2>&1); then
++       gnutar "$@" && exit 0
++    fi
++    if (gtar --version > /dev/null 2>&1); then
++       gtar "$@" && exit 0
++    fi
++    firstarg="$1"
++    if shift; then
++	case "$firstarg" in
++	*o*)
++	    firstarg=`echo "$firstarg" | sed s/o//`
++	    tar "$firstarg" "$@" && exit 0
++	    ;;
++	esac
++	case "$firstarg" in
++	*h*)
++	    firstarg=`echo "$firstarg" | sed s/h//`
++	    tar "$firstarg" "$@" && exit 0
++	    ;;
++	esac
++    fi
++
++    echo 1>&2 "\
++WARNING: I can't seem to be able to run \`tar' with the given arguments.
++         You may want to install GNU tar or Free paxutils, or check the
++         command line arguments."
++    exit 1
+     ;;
+ 
+   *)

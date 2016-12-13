@@ -1,0 +1,45 @@
+diff -ur cyrus-imapd-2.4.8/imap/append.c cyrus-imapd-2.4.8.modified/imap/append.c
+--- cyrus-imapd-2.4.8/imap/append.c		2011-04-13 16:35:22.000000000 +0200
++++ cyrus-imapd-2.4.8.modified/imap/append.c	2011-04-23 14:45:13.671147050 +0200
+@@ -163,7 +163,10 @@
+ 
+     as->mailbox = NULL;
+     r = mailbox_open_iwl(name, &as->mailbox);
+-    if (r) return r;
++    if (r) {
++     syslog(LOG_DEBUG, "append_setup: open mailbox failed %s", name);
++     return r;
++    }
+ 
+     as->myrights = cyrus_acl_myrights(auth_state, as->mailbox->acl);
+ 
+@@ -171,6 +174,12 @@
+ 	r = (as->myrights & ACL_LOOKUP) ?
+ 	  IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
+ 	mailbox_close(&as->mailbox);
++        if (r == IMAP_PERMISSION_DENIED ) { 
++	  syslog(LOG_DEBUG, "append_setup: aclcheck failed IMAP_PERMISSION_DENIED");
++        } else {
++	  syslog(LOG_DEBUG, "append_setup: aclcheck failed IMAP_MAILBOX_NONEXISTENT");
++	}
++        
+ 	return r;
+     }
+ 
+@@ -180,6 +189,7 @@
+ 	if (q.limit >= 0 && quotacheck >= 0 &&
+ 	    q.used + quotacheck > ((uquota_t) q.limit * QUOTA_UNITS)) {
+ 	    r = IMAP_QUOTA_EXCEEDED;
++            syslog(LOG_DEBUG, "append_setup: quota exceeded");
+ 	}
+     }
+     else if (r == IMAP_QUOTAROOT_NONEXISTENT) r = 0;
+@@ -199,6 +209,7 @@
+     r = mailbox_open_cache(as->mailbox);
+     if (r) {
+ 	mailbox_close(&as->mailbox);
++        syslog(LOG_DEBUG, "append_setup: could not open cachefile");
+ 	return r;
+     }
+ 
+

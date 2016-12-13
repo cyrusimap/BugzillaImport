@@ -1,0 +1,885 @@
+Index: imap/fud.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/fud.c,v
+retrieving revision 1.51
+diff -u -r1.51 fud.c
+--- imap/fud.c	3 Dec 2004 16:24:15 -0000	1.51
++++ imap/fud.c	14 Dec 2004 21:24:46 -0000
+@@ -123,7 +123,10 @@
+             memset(mbox,'\0',MAX_MAILBOX_NAME+1);
+             memset(buf, '\0', MAXLOGNAME + MAX_MAILBOX_NAME + 1);
+ 
+-	    signals_poll();
++	    if (signals_poll() == SIGHUP) {
++		/* caught a SIGHUP, return */
++		return 0;
++	    }
+             r = recvfrom(soc, buf, 511, 0, 
+ 			 (struct sockaddr *) &sfrom, &sfromsiz);
+             if (r == -1) {
+@@ -170,7 +173,6 @@
+     setproctitle_init(argc, argv, envp);
+ 
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+ 
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+Index: imap/global.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/global.h,v
+retrieving revision 1.5
+diff -u -r1.5 global.h
+--- imap/global.h	26 Jan 2004 17:46:56 -0000	1.5
++++ imap/global.h	14 Dec 2004 21:24:46 -0000
+@@ -47,6 +47,7 @@
+ #include "libconfig.h"
+ #include "auth.h"
+ #include "mboxname.h"
++#include "signals.h"
+ 
+ /* Flags for cyrus_init() */
+ enum {
+@@ -97,13 +98,6 @@
+ /* check if `authstate' is a valid member of class */
+ extern int global_authisa(struct auth_state *authstate, 
+ 			  enum imapopt opt);
+-
+-/* signal handling (signals.c) */
+-typedef void shutdownfn(int);
+-
+-void signals_add_handlers(void);
+-void signals_set_shutdown(shutdownfn *s);
+-void signals_poll(void);
+ 
+ /* useful types */
+ struct protstream;
+Index: imap/imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.488
+diff -u -r1.488 imapd.c
+--- imap/imapd.c	17 Nov 2004 22:29:03 -0000	1.488
++++ imap/imapd.c	14 Dec 2004 21:24:46 -0000
+@@ -533,7 +533,6 @@
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     /* load the SASL plugins */
+Index: imap/lmtpd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/lmtpd.c,v
+retrieving revision 1.139
+diff -u -r1.139 lmtpd.c
+--- imap/lmtpd.c	9 Sep 2004 16:21:26 -0000	1.139
++++ imap/lmtpd.c	14 Dec 2004 21:24:46 -0000
+@@ -148,7 +148,6 @@
+     if (geteuid() == 0) return 1;
+     
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     singleinstance = config_getswitch(IMAPOPT_SINGLEINSTANCESTORE);
+Index: imap/lmtpproxyd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/lmtpproxyd.c,v
+retrieving revision 1.66
+diff -u -r1.66 lmtpproxyd.c
+--- imap/lmtpproxyd.c	27 Oct 2004 16:53:36 -0000	1.66
++++ imap/lmtpproxyd.c	14 Dec 2004 21:24:46 -0000
+@@ -179,7 +179,6 @@
+     if (geteuid() == 0) return 1;
+     
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     BB = config_getstring(IMAPOPT_POSTUSER);
+Index: imap/mbexamine.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mbexamine.c,v
+retrieving revision 1.10
+diff -u -r1.10 mbexamine.c
+--- imap/mbexamine.c	3 Dec 2004 16:24:15 -0000	1.10
++++ imap/mbexamine.c	14 Dec 2004 21:24:46 -0000
+@@ -158,7 +158,7 @@
+     mboxlist_open(NULL);
+ 
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
++    signals_add_handlers(0);
+ 
+     if (optind == argc) {
+ 	strlcpy(buf, "*", sizeof(buf));
+Index: imap/mupdate.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mupdate.c,v
+retrieving revision 1.88
+diff -u -r1.88 mupdate.c
+--- imap/mupdate.c	29 May 2004 05:18:21 -0000	1.88
++++ imap/mupdate.c	14 Dec 2004 21:24:46 -0000
+@@ -509,7 +509,6 @@
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     global_sasl_init(1, 1, mysasl_cb);
+Index: imap/nntpd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/nntpd.c,v
+retrieving revision 1.38
+diff -u -r1.38 nntpd.c
+--- imap/nntpd.c	7 Dec 2004 19:26:23 -0000	1.38
++++ imap/nntpd.c	14 Dec 2004 21:24:46 -0000
+@@ -515,7 +515,6 @@
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     /* load the SASL plugins */
+Index: imap/pop3d.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/pop3d.c,v
+retrieving revision 1.163
+diff -u -r1.163 pop3d.c
+--- imap/pop3d.c	9 Sep 2004 16:21:26 -0000	1.163
++++ imap/pop3d.c	14 Dec 2004 21:24:47 -0000
+@@ -287,7 +287,6 @@
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     /* load the SASL plugins */
+Index: imap/proxyd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/proxyd.c,v
+retrieving revision 1.191
+diff -u -r1.191 proxyd.c
+--- imap/proxyd.c	23 Nov 2004 17:40:15 -0000	1.191
++++ imap/proxyd.c	14 Dec 2004 21:24:47 -0000
+@@ -1143,7 +1143,6 @@
+ 
+     /* set signal handlers */
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     /* load the SASL plugins */
+Index: imap/signals.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/signals.c,v
+retrieving revision 1.11
+diff -u -r1.11 signals.c
+--- imap/signals.c	22 Oct 2003 18:50:08 -0000	1.11
++++ imap/signals.c	14 Dec 2004 21:24:47 -0000
+@@ -46,7 +46,7 @@
+ #include <signal.h>
+ #include <syslog.h>
+ 
+-#include "global.h"
++#include "signals.h"
+ #include "xmalloc.h"
+ #include "exitcodes.h"
+ 
+@@ -60,7 +60,7 @@
+ 
+ static const int catch[] = { SIGHUP, SIGINT, SIGQUIT, 0 };
+ 
+-void signals_add_handlers(void)
++void signals_add_handlers(int alarm)
+ {
+     struct sigaction action;
+     int i;
+@@ -71,14 +71,20 @@
+ #ifdef SA_RESETHAND
+     action.sa_flags |= SA_RESETHAND;
+ #endif
++
++    action.sa_handler = sighandler;
++
++    /* SIGALRM used as a syscall timeout, so we don't set SA_RESTART */
++    if (alarm && sigaction(SIGALRM, &action, NULL) < 0) {
++	fatal("unable to install signal handler for %d: %m", SIGALRM);
++    }
++
+ #ifdef SA_RESTART
+     action.sa_flags |= SA_RESTART;
+ #endif
+-
+-    action.sa_handler = sighandler;
+     
+     for (i = 0; catch[i] != 0; i++) {
+-	if (sigaction(catch[i], &action, NULL) < 0) {
++	if (catch[i] != SIGALRM && sigaction(catch[i], &action, NULL) < 0) {
+ 	    fatal("unable to install signal handler for %d: %m", catch[i]);
+ 	}
+     }
+@@ -91,10 +97,16 @@
+     shutdown_cb = s;
+ }
+ 
+-void signals_poll(void)
++int signals_poll(void)
+ {
+-    if (gotsignal) {
++    switch (gotsignal) {
++    case SIGINT:
++    case SIGQUIT:
+ 	if (shutdown_cb) shutdown_cb(EC_TEMPFAIL);
+ 	else exit(EC_TEMPFAIL);
++	break;
++    default:
++	return gotsignal;
++	break;
+     }
+ }
+Index: imap/signals.h
+===================================================================
+RCS file: imap/signals.h
+diff -N imap/signals.h
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ imap/signals.h	14 Dec 2004 21:24:47 -0000
+@@ -0,0 +1,53 @@
++/* signals.c -- signal handling functions to allow clean shutdown
++
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ */
++/* $Id$ */
++
++#ifndef INCLUDED_SIGNALS_H
++#define INCLUDED_SIGNALS_H
++
++typedef void shutdownfn(int);
++
++void signals_add_handlers(int alarm);
++void signals_set_shutdown(shutdownfn *s);
++int signals_poll(void);
++
++#endif /* INCLUDED_SIGNALS_H */
+Index: imap/smmapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/smmapd.c,v
+retrieving revision 1.10
+diff -u -r1.10 smmapd.c
+--- imap/smmapd.c	9 Sep 2004 16:21:28 -0000	1.10
++++ imap/smmapd.c	14 Dec 2004 21:24:47 -0000
+@@ -157,7 +157,6 @@
+     setproctitle_init(argc, argv, envp);
+ 
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     BB = config_getstring(IMAPOPT_POSTUSER);
+@@ -316,7 +315,10 @@
+ 	char *mapname = NULL, *key = NULL;
+ 	const char *errstring = NULL;
+ 
+-	signals_poll();
++	if (signals_poll() == SIGHUP) {
++	    /* caught a SIGHUP, return */
++	    return 0;
++	}
+ 
+ 	while (isdigit(c)) {
+ 	    sawdigit = 1;
+Index: man/master.8
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/man/master.8,v
+retrieving revision 1.12
+diff -u -r1.12 master.8
+--- man/master.8	8 Dec 2004 18:05:04 -0000	1.12
++++ man/master.8	14 Dec 2004 21:24:48 -0000
+@@ -146,15 +146,6 @@
+ The environment variable \fBCYRUS_VERBOSE\fR can be set to log additional
+ debugging information. Setting the value to 1 results in base level logging. 
+ Setting it higher results in more log messages being generated.
+-.SH BUGS
+-Services do not always go away silently when removed through a SIGHUP.  If
+-there are workers of the removed service still running, messages to syslog
+-about broken pipes and accept() failures are to be expected.
+-.PP
+-The in-memory list of services is not cleaned up ever, so a Cyrus master
+-daemon that has been sent an extremely high amount of SIGHUP signals to
+-add/remove/modify services will lose performance eventually.  Restarting
+-Cyrus master fixes this.
+ .SH FILES
+ .TP
+ .B /etc/cyrus.conf, /etc/imapd.conf, /var/run/cyrus-master.pid
+Index: master/Makefile.in
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/master/Makefile.in,v
+retrieving revision 1.20
+diff -u -r1.20 Makefile.in
+--- master/Makefile.in	28 May 2004 18:03:05 -0000	1.20
++++ master/Makefile.in	14 Dec 2004 21:24:48 -0000
+@@ -54,7 +54,7 @@
+ CYRUS_GROUP=@cyrus_group@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+-CPPFLAGS = -I.. -I$(srcdir)/../lib @CPPFLAGS@ @COM_ERR_CPPFLAGS@
++CPPFLAGS = -I.. -I$(srcdir)/../lib -I$(srcdir)/../imap @CPPFLAGS@ @COM_ERR_CPPFLAGS@
+ DEPLIBS = @DEPLIBS@
+ 
+ CFLAGS = @CFLAGS@
+Index: master/master.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/master/master.c,v
+retrieving revision 1.99
+diff -u -r1.99 master.c
+--- master/master.c	8 Dec 2004 18:05:05 -0000	1.99
++++ master/master.c	14 Dec 2004 21:24:48 -0000
+@@ -1313,6 +1313,7 @@
+     char *proto = xstrdup(masterconf_getstring(e, "proto", "tcp"));
+     char *max = xstrdup(masterconf_getstring(e, "maxchild", "-1"));
+     rlim_t maxfds = (rlim_t) masterconf_getint(e, "maxfds", 256);
++    int reconfig = 0;
+     int i, j;
+ 
+     if(babysit && prefork == 0) prefork = 1;
+@@ -1331,11 +1332,16 @@
+ 	fatal(buf, EX_CONFIG);
+     }
+ 
+-    /* see if we have an existing entry for this service */
++    /* see if we have an existing entry that can be reused */
+     for (i = 0; i < nservices; i++) {
++	/* skip non-primary instances */
+ 	if (Services[i].associate > 0)
+ 	    continue;
+-	if (Services[i].name && !strcmp(Services[i].name, name)) break;
++	/* must have empty/same service name, listen and proto */
++	if ((!Services[i].name || !strcmp(Services[i].name, name)) &&
++	    (!Services[i].listen || !strcmp(Services[i].listen, listen)) &&
++	    (!Services[i].proto || !strcmp(Services[i].proto, proto)))
++	    break;
+     }
+ 
+     /* we have duplicate service names in the config file */
+@@ -1350,63 +1356,8 @@
+ 
+ 	fatal(buf, EX_CONFIG);
+     }
+-
+-    if ((i < nservices) &&
+-	!strcmp(Services[i].listen, listen) &&
+-	!strcmp(Services[i].proto, proto)) {
+-
+-	/* we found an existing entry and the port paramters are the same */
+-	Services[i].exec = tokenize(cmd);
+-	if (!Services[i].exec) fatal("out of memory", EX_UNAVAILABLE);
+-
+-	/* is this service actually there? */
+-	if (!verify_service_file(Services[i].exec)) {
+-	    char buf[1024];
+-	    snprintf(buf, sizeof(buf),
+-		     "cannot find executable for service '%s'", name);
+-
+-	    /* if it is not, we're misconfigured, die. */
+-	    fatal(buf, EX_CONFIG);
+-	}
+-
+-	Services[i].maxforkrate = maxforkrate;
+- 	Services[i].maxfds = maxfds;
+-
+-	if (!strcmp(Services[i].proto, "tcp") ||
+-	    !strcmp(Services[i].proto, "tcp4") ||
+-	    !strcmp(Services[i].proto, "tcp6")) {
+-	    Services[i].desired_workers = prefork;
+-	    Services[i].babysit = babysit;
+-	    Services[i].max_workers = atoi(max);
+-	    if (Services[i].max_workers == -1) {
+-		Services[i].max_workers = INT_MAX;
+-	    }
+-	} else {
+-	    /* udp */
+-	    if (prefork > 1) prefork = 1;
+-	    Services[i].desired_workers = prefork;
+-	    Services[i].max_workers = 1;
+-	}
+  
+-	for (j = 0; j < nservices; j++) {
+-	    if (Services[j].associate > 0 &&
+-		Services[j].name && !strcmp(Services[j].name, name)) {
+-		Services[j].maxforkrate = Services[i].maxforkrate;
+-		Services[j].exec = Services[i].exec;
+-		Services[j].desired_workers = Services[i].desired_workers;
+-		Services[j].babysit = Services[i].babysit;
+-		Services[j].max_workers = Services[i].max_workers;
+-	    }
+-	}
+-
+-	if (verbose > 2)
+-	    syslog(LOG_DEBUG, "reconfig: service '%s' (%s, %s:%s, %d, %d)",
+-		   Services[i].name, cmd,
+-		   Services[i].proto, Services[i].listen,
+-		   Services[i].desired_workers,
+-		   Services[i].max_workers);
+-    }
+-    else {
++    if (i == nservices) {
+ 	/* either we don't have an existing entry or we are changing
+ 	 * the port parameters, so create a new service
+ 	 */
+@@ -1416,69 +1367,73 @@
+ 	    Services = xrealloc(Services, 
+ 			       (allocservices+=5) * sizeof(struct service));
+ 	}
++	memset(&Services[nservices++], 0, sizeof(struct service));
+ 
+-	Services[nservices].name = xstrdup(name);
+-	Services[nservices].listen = listen;
+-	Services[nservices].proto = proto;
+-	Services[nservices].exec = tokenize(cmd);
+-	if (!Services[nservices].exec) fatal("out of memory", EX_UNAVAILABLE);
+-
+-	/* is this service actually there? */
+-	if (!verify_service_file(Services[i].exec)) {
+-	    char buf[1024];
+-	    snprintf(buf, sizeof(buf),
+-		     "cannot find executable for service '%s'", name);
+-
+-	    /* if it is not, we're misconfigured, die. */
+-	    fatal(buf, EX_CONFIG);
+-	}
+-
+-	Services[nservices].socket = 0;
+-	Services[nservices].saddr = NULL;
+-
+-	Services[nservices].ready_workers = 0;
+-
+- 	Services[nservices].maxfds = maxfds;
+-	Services[nservices].maxforkrate = maxforkrate;
+-
+-	if(!strcmp(Services[nservices].proto, "tcp") ||
+-	   !strcmp(Services[nservices].proto, "tcp4") ||
+-	   !strcmp(Services[nservices].proto, "tcp6")) {
+-	    Services[nservices].desired_workers = prefork;
+-	    Services[nservices].babysit = babysit;
+-	    Services[nservices].max_workers = atoi(max);
+-	    if (Services[nservices].max_workers == -1) {
+-		Services[nservices].max_workers = INT_MAX;
+-	    }
+-	} else {
+-	    if (prefork > 1) prefork = 1;
+-	    Services[nservices].desired_workers = prefork;
+-	    Services[nservices].max_workers = 1;
+-	}
+-	
+-	memset(Services[nservices].stat, 0, sizeof(Services[nservices].stat));
++	Services[i].last_interval_start = time(NULL);
++    }
++    else if (Services[i].listen) reconfig = 1;
+ 
+-	Services[nservices].last_interval_start = time(NULL);
+-	Services[nservices].interval_forks = 0;
+-	Services[nservices].forkrate = 0;
+-	
+-	Services[nservices].nforks = 0;
+-	Services[nservices].nactive = 0;
+-	Services[nservices].nconnections = 0;
+-	Services[nservices].associate = 0;
+-	
+-	if (verbose > 2)
+-	    syslog(LOG_DEBUG, "add: service '%s' (%s, %s:%s, %d, %d, %d)",
+-		   Services[nservices].name, cmd,
+-		   Services[nservices].proto, Services[nservices].listen,
+-		   Services[nservices].desired_workers,
+-		   Services[nservices].max_workers,
+-		   (int) Services[nservices].maxfds);
++    if (!Services[i].name) Services[i].name = xstrdup(name);
++    if (Services[i].listen) free(Services[i].listen);
++    Services[i].listen = listen;
++    if (Services[i].proto) free(Services[i].proto);
++    Services[i].proto = proto;
+ 
+-	nservices++;
++    Services[i].exec = tokenize(cmd);
++    if (!Services[i].exec) fatal("out of memory", EX_UNAVAILABLE);
++
++    /* is this service actually there? */
++    if (!verify_service_file(Services[i].exec)) {
++	char buf[1024];
++	snprintf(buf, sizeof(buf),
++		 "cannot find executable for service '%s'", name);
++	
++	/* if it is not, we're misconfigured, die. */
++	fatal(buf, EX_CONFIG);
+     }
+ 
++    Services[i].maxforkrate = maxforkrate;
++    Services[i].maxfds = maxfds;
++
++    if (!strcmp(Services[i].proto, "tcp") ||
++	!strcmp(Services[i].proto, "tcp4") ||
++	!strcmp(Services[i].proto, "tcp6")) {
++	Services[i].desired_workers = prefork;
++	Services[i].babysit = babysit;
++	Services[i].max_workers = atoi(max);
++	if (Services[i].max_workers == -1) {
++	    Services[i].max_workers = INT_MAX;
++	}
++    } else {
++	/* udp */
++	if (prefork > 1) prefork = 1;
++	Services[i].desired_workers = prefork;
++	Services[i].max_workers = 1;
++    }
+     free(max);
++ 
++    if (reconfig) {
++	/* reconfiguring an existing service, update any other instances */
++	for (j = 0; j < nservices; j++) {
++	    if (Services[j].associate > 0 && Services[j].listen &&
++		Services[j].name && !strcmp(Services[j].name, name)) {
++		Services[j].maxforkrate = Services[i].maxforkrate;
++		Services[j].exec = Services[i].exec;
++		Services[j].desired_workers = Services[i].desired_workers;
++		Services[j].babysit = Services[i].babysit;
++		Services[j].max_workers = Services[i].max_workers;
++	    }
++	}
++    }
++
++    if (verbose > 2)
++	syslog(LOG_DEBUG, "%s: service '%s' (%s, %s:%s, %d, %d, %d)",
++	       reconfig ? "reconfig" : "add",
++	       Services[i].name, cmd,
++	       Services[i].proto, Services[i].listen,
++	       Services[i].desired_workers,
++	       Services[i].max_workers,
++	       (int) Services[i].maxfds);
+ }
+ 
+ void add_event(const char *name, struct entry *e, void *rock)
+@@ -1599,38 +1554,33 @@
+ 		       Services[i].name, Services[i].socket,
+ 		       Services[i].stat[0], Services[i].stat[1]);
+ 
+-	    /* Only free the service info once */
++	    /* Only free the service info on the primary */
+ 	    if(Services[i].associate == 0) {
+-		free(Services[i].name);
+ 		free(Services[i].listen);
+ 		free(Services[i].proto);
+ 	    }
+-	    Services[i].name = NULL;
++	    Services[i].listen = NULL;
++	    Services[i].proto = NULL;
+ 	    Services[i].desired_workers = 0;
+-	    Services[i].nforks = 0;
+-	    Services[i].nactive = 0;
+-	    Services[i].nconnections = 0;
+ 
+-	    /* close all listeners */
+-	    if (Services[i].socket > 0) {
+-		shutdown(Services[i].socket, SHUT_RDWR);
+-		close(Services[i].socket);
+-	    }
+-	    Services[i].socket = 0;
+-	    Services[i].saddr = NULL;
+-
+-	    if (Services[i].stat[0] > 0) close(Services[i].stat[0]);
+-	    if (Services[i].stat[1] > 0) close(Services[i].stat[1]);
+-	    memset(Services[i].stat, 0, sizeof(Services[i].stat));
+-
+-	    /* remove service from all children */
++	    /* send SIGHUP to all children */
+ 	    for (j = 0 ; j < child_table_size ; j++ ) {
+ 		c = ctable[j];
+ 		while (c != NULL) {
+-		    if (c->si == i) c->si = SERVICE_NONE;
++		    if ((c->si == i) &&
++			(c->service_state != SERVICE_STATE_DEAD)) {
++			kill(c->pid, SIGHUP);
++		    }
+ 		    c = c->next;
+ 		}
+ 	    }
++
++	    /* close all listeners */
++	    if (Services[i].socket > 0) {
++		shutdown(Services[i].socket, SHUT_RDWR);
++		close(Services[i].socket);
++	    }
++	    Services[i].socket = 0;
+ 	}
+ 	else if (Services[i].exec && !Services[i].socket) {
+ 	    /* initialize new services */
+@@ -2008,6 +1958,27 @@
+ 		       "Applying babysitter.",
+ 		       Services[i].name);
+ 		spawn_service(i);
++	    } else if (!Services[i].exec /* disabled */ &&
++		       Services[i].name /* not yet removed */ &&
++		       Services[i].nactive == 0) {
++		if (verbose > 2)
++		    syslog(LOG_DEBUG, "remove: service %s pipe %d %d",
++			   Services[i].name,
++			   Services[i].stat[0], Services[i].stat[1]);
++
++		/* Only free the service info on the primary */
++		if (Services[i].associate == 0) {
++		    free(Services[i].name);
++		}
++		Services[i].name = NULL;
++		Services[i].nforks = 0;
++		Services[i].nactive = 0;
++		Services[i].nconnections = 0;
++		Services[i].associate = 0;
++
++		if (Services[i].stat[0] > 0) close(Services[i].stat[0]);
++		if (Services[i].stat[1] > 0) close(Services[i].stat[1]);
++		memset(Services[i].stat, 0, sizeof(Services[i].stat));
+ 	    }
+ 	}
+ 
+Index: master/master.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/master/master.h,v
+retrieving revision 1.12
+diff -u -r1.12 master.h
+--- master/master.h	9 Dec 2004 17:54:57 -0000	1.12
++++ master/master.h	14 Dec 2004 21:24:48 -0000
+@@ -20,7 +20,6 @@
+ 
+     /* communication info */
+     int socket;			/* client/child communication channel */
+-    struct sockaddr *saddr;
+     int stat[2];		/* master/child communication channel */
+ 
+     /* limits */
+Index: master/service.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/master/service.c,v
+retrieving revision 1.52
+diff -u -r1.52 service.c
+--- master/service.c	13 Sep 2004 22:13:04 -0000	1.52
++++ master/service.c	14 Dec 2004 21:24:48 -0000
+@@ -70,6 +70,7 @@
+ #include "service.h"
+ #include "libconfig.h"
+ #include "xmalloc.h"
++#include "signals.h"
+ 
+ extern int optind, opterr;
+ extern char *optarg;
+@@ -77,8 +78,8 @@
+ /* number of times this service has been used */
+ static int use_count = 0;
+ static int verbose = 0;
+-static volatile int gotalrm = 0;
+ static int lockfd = -1;
++static int newfile = 0;
+ 
+ void notify_master(int fd, int msg)
+ {
+@@ -182,10 +183,10 @@
+ 	alockinfo.l_type = F_WRLCK;
+ 	while ((rc = fcntl(lockfd, F_SETLKW, &alockinfo)) < 0 && 
+ 	       errno == EINTR &&
+-	       !gotalrm)
++	       !signals_poll())
+ 	    /* noop */;
+ 	
+-	if (rc < 0 && gotalrm) {
++	if (rc < 0 && signals_poll()) {
+ 	    if (MESSAGE_MASTER_ON_EXIT) 
+ 		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(0);
+@@ -233,33 +234,6 @@
+     return 0;
+ }
+ 
+-static void sigalrm(int sig)
+-{
+-    /* syslog(LOG_DEBUG, "got signal %d", sig); */
+-    if (sig == SIGALRM) {
+-	gotalrm = 1;
+-    }
+-}
+-
+-int setsigalrm(void)
+-{
+-    struct sigaction action;
+-    
+-    sigemptyset(&action.sa_mask);
+-
+-    action.sa_flags = 0;
+-#ifdef SA_RESETHAND
+-    action.sa_flags |= SA_RESETHAND;
+-#endif
+-    action.sa_handler = sigalrm;
+-    if (sigaction(SIGALRM, &action, NULL) < 0) {
+-	syslog(LOG_ERR, "installing SIGALRM handler: sigaction: %m");
+-	return -1;
+-    }
+-
+-    return 0;
+-}
+-
+ #define ARGV_GROW 10
+ 
+ int main(int argc, char **argv, char **envp)
+@@ -426,14 +400,11 @@
+     for (;;) {
+ 	/* ok, listen to this socket until someone talks to us */
+ 
++	/* (re)set signal handlers, including SIGALRM */
++	signals_add_handlers(SIGALRM);
++
+ 	if (use_count > 0) {
+ 	    /* we want to time out after 60 seconds, set an alarm */
+-	    if (setsigalrm() < 0) {
+-		if (MESSAGE_MASTER_ON_EXIT) 
+-		    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+-		service_abort(EX_OSERR);
+-	    }
+-	    gotalrm = 0;
+ 	    alarm(reuse_timeout);
+ 	}
+ 
+@@ -441,13 +412,13 @@
+ 	lockaccept();
+ 
+ 	fd = -1;
+-	while (fd < 0 && !gotalrm) { /* loop until we succeed */
++	while (fd < 0 && !signals_poll()) { /* loop until we succeed */
+ 	    /* check current process file inode, size and mtime */
+ 	    stat(path, &sbuf);
+ 	    if (sbuf.st_ino != start_ino || sbuf.st_size != start_size ||
+ 		sbuf.st_mtime != start_mtime) {
+ 		syslog(LOG_INFO, "process file has changed");
+-		gotalrm = 1;
++		newfile = 1;
+ 		break;
+ 	    }
+ 
+@@ -470,6 +441,9 @@
+ 		    case EAGAIN:
+ 		    case EINTR:
+ 			break;
++
++		    case EINVAL:
++			if (signals_poll() == SIGHUP) break;
+ 			
+ 		    default:
+ 			syslog(LOG_ERR, "accept failed: %m");
+@@ -501,8 +475,8 @@
+ 	/* unlock */
+ 	unlockaccept();
+ 
+-	if (fd < 0 && gotalrm) {
+-	    /* timed out */
++	if (fd < 0 && (signals_poll() || newfile)) {
++	    /* timed out (SIGALRM), SIGHUP, or new process file */
+ 	    if (MESSAGE_MASTER_ON_EXIT) 
+ 		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(0);
+@@ -517,7 +491,6 @@
+ 
+ 	/* cancel the alarm */
+ 	alarm(0);
+-	gotalrm = 0;
+ 
+ 	/* tcp only */
+ 	if(soctype == SOCK_STREAM) {
+@@ -557,7 +530,8 @@
+ 	service_main(newargc, newargv, envp);
+ 	/* if we returned, we can service another client with this process */
+ 
+-	if (use_count >= max_use) {
++	if (signals_poll() || use_count >= max_use) {
++	    /* caught SIGHUP or exceeded max use count */
+ 	    break;
+ 	}
+ 
+Index: notifyd/notifyd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/notifyd/notifyd.c,v
+retrieving revision 1.17
+diff -u -r1.17 notifyd.c
+--- notifyd/notifyd.c	22 May 2004 03:45:56 -0000	1.17
++++ notifyd/notifyd.c	14 Dec 2004 21:24:48 -0000
+@@ -113,7 +113,10 @@
+ 	method = class = priority = user = mailbox = message = reply = NULL;
+ 	nopt = 0;
+ 
+-	signals_poll();
++	if (signals_poll() == SIGHUP) {
++	    /* caught a SIGHUP, return */
++	    return 0;
++	}
+ 	r = recvfrom(soc, buf, NOTIFY_MAXSIZE, 0,
+ 		     (struct sockaddr *) &sun_data, &sunlen);
+ 	if (r == -1) {
+@@ -244,7 +247,6 @@
+     if (!default_method) fatal("unknown notification method %s", EC_USAGE);
+ 
+     signals_set_shutdown(&shut_down);
+-    signals_add_handlers();
+ 
+     return 0;
+ }
+Index: ptclient/ptloader.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/ptclient/ptloader.c,v
+retrieving revision 1.38
+diff -u -r1.38 ptloader.c
+--- ptclient/ptloader.c	22 May 2004 03:45:57 -0000	1.38
++++ ptclient/ptloader.c	14 Dec 2004 21:24:49 -0000
+@@ -96,7 +96,6 @@
+     setproctitle_init(argc, argv, envp);
+ 
+     /* set signal handlers */
+-    signals_add_handlers();
+     signal(SIGPIPE, SIG_IGN);
+ 
+     syslog(LOG_NOTICE,

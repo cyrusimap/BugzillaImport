@@ -1,0 +1,107 @@
+Index: cyrus-imapd-2.3.12p2/lib/imapoptions
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/lib/imapoptions	2008-09-11 22:54:57.000000000 +1000
++++ cyrus-imapd-2.3.12p2/lib/imapoptions	2008-09-11 22:55:07.000000000 +1000
+@@ -542,6 +542,12 @@
+    messages larger than \fImaxmessagesize\fR bytes.  If set to 0, this
+    will allow messages of any size (the default). */
+ 
++{ "maxquoted", 131072, INT }
++/* Maximum size of a single quoted string for the parser.  Default 128k */
++
++{ "maxword", 131072, INT }
++/* Maximum size of a single word for the parser.  Default 128k */
++
+ { "mboxkey_db", "skiplist", STRINGLIST("berkeley", "skiplist") }
+ /* The cyrusdb backend to use for mailbox keys. */
+ 
+Index: cyrus-imapd-2.3.12p2/imap/imapparse.c
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/imap/imapparse.c	2008-09-11 22:54:57.000000000 +1000
++++ cyrus-imapd-2.3.12p2/imap/imapparse.c	2008-09-11 22:55:07.000000000 +1000
+@@ -53,8 +53,6 @@
+ #include "exitcodes.h"
+ 
+ enum {
+-    MAXQUOTED = 32768,
+-    MAXWORD = 32768,
+     MAXLITERAL = INT_MAX / 20
+ };
+ 
+@@ -94,7 +92,7 @@
+             /* xxx limit len */
+ 	    buf->alloc += BUFGROWSIZE;
+ 	    buf->s = xrealloc(buf->s, buf->alloc+1);
+-            if (len > MAXWORD) {
++            if (len > config_maxword) {
+                 fatal("word too long", EC_IOERR);
+             }
+ 	}
+@@ -159,7 +157,7 @@
+ 		buf->alloc += BUFGROWSIZE;
+ 		buf->s = xrealloc(buf->s, buf->alloc+1);
+ 
+-                if (len > MAXQUOTED) {
++                if (len > config_maxquoted) {
+                     fatal("word too long", EC_IOERR);
+                 }
+ 	    }
+Index: cyrus-imapd-2.3.12p2/imap/sync_support.c
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/imap/sync_support.c	2008-09-11 22:54:57.000000000 +1000
++++ cyrus-imapd-2.3.12p2/imap/sync_support.c	2008-09-11 22:55:07.000000000 +1000
+@@ -90,8 +90,6 @@
+ /* Parse routines */
+ 
+ enum {
+-    MAXQUOTED = 8192,
+-    MAXWORD = 8192,
+     MAXLITERAL = INT_MAX / 20
+ };
+ 
+@@ -123,7 +121,7 @@
+ 	if (len == buf->alloc) {
+ 	    buf->alloc += BUFGROWSIZE;
+ 	    buf->s = xrealloc(buf->s, buf->alloc+1);
+-            if (len > MAXWORD) {
++            if (len > config_maxword) {
+                 fatal("word too long", EC_IOERR);
+             }
+ 	}
+Index: cyrus-imapd-2.3.12p2/lib/libconfig.c
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/lib/libconfig.c	2008-09-11 22:54:57.000000000 +1000
++++ cyrus-imapd-2.3.12p2/lib/libconfig.c	2008-09-11 22:55:07.000000000 +1000
+@@ -79,6 +79,8 @@
+ int config_hashimapspool;	  /* f */
+ enum enum_value config_virtdomains;	          /* f */
+ enum enum_value config_mupdate_config;	/* IMAP_ENUM_MUPDATE_CONFIG_STANDARD */
++int config_maxword;
++int config_maxquoted;
+ 
+ /* declared in each binary that uses libconfig */
+ extern const int config_need_data;
+@@ -295,6 +297,10 @@
+     if (config_mupdate_server) {
+ 	config_mupdate_config = config_getenum(IMAPOPT_MUPDATE_CONFIG);
+     }
++
++    /* set some limits */
++    config_maxquoted = config_getint(IMAPOPT_MAXQUOTED);
++    config_maxword = config_getint(IMAPOPT_MAXWORD);
+ }
+ 
+ #define GROWSIZE 4096
+Index: cyrus-imapd-2.3.12p2/lib/libconfig.h
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/lib/libconfig.h	2008-09-11 22:55:14.000000000 +1000
++++ cyrus-imapd-2.3.12p2/lib/libconfig.h	2008-09-11 22:55:40.000000000 +1000
+@@ -78,6 +78,8 @@
+ extern int config_implicitrights;
+ extern enum enum_value config_virtdomains;
+ extern enum enum_value config_mupdate_config;
++extern int config_maxquoted;
++extern int config_maxword;
+ 
+ /* config requirement flags */
+ #define CONFIG_NEED_PARTITION_DATA (1<<0)

@@ -1,0 +1,1021 @@
+Index: acconfig.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/acconfig.h,v
+retrieving revision 1.45
+diff -u -r1.45 acconfig.h
+--- acconfig.h	15 Apr 2003 16:24:04 -0000	1.45
++++ acconfig.h	27 Jun 2003 17:58:51 -0000
+@@ -121,6 +121,12 @@
+ /* Does your system have the vsnprintf() call? */
+ #undef HAVE_VSNPRINTF
+ 
++/* Does your system have the strlcpy() call? */
++#undef HAVE_STRLCPY
++
++/* Does your system have the strlcat() call? */
++#undef HAVE_STRLCAT
++
+ /* does your system have gettimeofday()? */
+ #undef HAVE_GETTIMEOFDAY
+ 
+@@ -323,6 +329,16 @@
+ # else
+ #  include <time.h>
+ # endif
++#endif
++
++#ifndef HAVE_STRLCPY
++#define strlcpy(x,y,z) sasl_strlcpy((x),(y),(z))
++size_t sasl_strlcpy(char *dst, const char *src, size_t dstsize);
++#endif
++
++#ifndef HAVE_STRLCAT
++#define strlcat(x,y,z) sasl_strlcat((x),(y),(z))
++size_t sasl_strlcat(char *dst, const char *src, size_t dstsize);
+ #endif
+ 
+ #endif /* CONFIG_H */
+Index: configure.in
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/configure.in,v
+retrieving revision 1.165
+diff -u -r1.165 configure.in
+--- configure.in	26 Jun 2003 14:22:00 -0000	1.165
++++ configure.in	27 Jun 2003 17:58:51 -0000
+@@ -783,6 +783,30 @@
+ AC_SUBST(SNPRINTFOBJS)
+ AC_SUBST(LTSNPRINTFOBJS)
+ 
++dnl Check for strlcpy
++sasl_cv_strlcpy=no
++STRLCPYOBJS=""
++AC_CHECK_FUNC(strlcpy, [AC_DEFINE(HAVE_STRLCPY)], [sasl_cv_strlcpy=yes])
++if test $sasl_cv_strlcpy = yes; then
++	LIBOBJS="$LIBOBJS strlcpy.o"
++        STRLCPYOBJS="strlcpy.o"
++        LTSTRLCPYOBJS="strlcpy.lo"
++fi
++AC_SUBST(STRLCPYOBJS)
++AC_SUBST(LTSTRLCPYOBJS)
++
++dnl Check for strlcat
++sasl_cv_strlcat=no
++STRLCATOBJS=""
++AC_CHECK_FUNC(strlcat, [AC_DEFINE(HAVE_STRLCAT)], [sasl_cv_strlcat=yes])
++if test $sasl_cv_strlcat = yes; then
++	LIBOBJS="$LIBOBJS strlcat.o"
++        STRLCATOBJS="strlcat.o"
++        LTSTRLCATOBJS="strlcat.lo"
++fi
++AC_SUBST(STRLCATOBJS)
++AC_SUBST(LTSTRLCATOBJS)
++
+ dnl do we need to link in -lresolv?
+ AC_CHECK_LIB(resolv, inet_aton)
+ 
+Index: lib/auxprop.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/auxprop.c,v
+retrieving revision 1.10
+diff -u -r1.10 auxprop.c
+--- lib/auxprop.c	19 Mar 2003 18:25:27 -0000	1.10
++++ lib/auxprop.c	27 Jun 2003 17:58:52 -0000
+@@ -501,7 +501,7 @@
+ 	} else {
+ 	    flag = 1;
+ 	}
+-	strcat(outbuf, val->name);
++	strlcat(outbuf, val->name, outmax);
+     }
+     
+     return SASL_OK;
+Index: lib/checkpw.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/checkpw.c,v
+retrieving revision 1.62
+diff -u -r1.62 checkpw.c
+--- lib/checkpw.c	19 Mar 2003 18:25:27 -0000	1.62
++++ lib/checkpw.c	27 Jun 2003 17:58:53 -0000
+@@ -272,7 +272,7 @@
+ 
+     /* convert digest from binary to ASCII hex */
+     for (i = 0; i < 16; i++)
+-      sprintf(digeststr + (i*2), "%02x", digest[i]);
++      snprintf(digeststr + (i*2), sizeof(digeststr)-(i*2), "%02x", digest[i]);
+ 
+     if (!strncasecmp(digeststr, response, 32)) {
+       /* password verified! */
+@@ -369,8 +369,8 @@
+ 
+     if (strlen(PWCHECKDIR)+8+1 > sizeof(pwpath)) return SASL_FAIL;
+ 
+-    strcpy(pwpath, PWCHECKDIR);
+-    strcat(pwpath, "/pwcheck");
++    strlcpy(pwpath, PWCHECKDIR, sizeof(pwpath));
++    strlcat(pwpath, "/pwcheck", sizeof(pwpath));
+ 
+     s = socket(AF_UNIX, SOCK_STREAM, 0);
+     if (s == -1) return errno;
+@@ -471,8 +471,8 @@
+ 	if (strlen(PATH_SASLAUTHD_RUNDIR) + 4 + 1 > sizeof(pwpath))
+ 	    return SASL_FAIL;
+ 
+-	strcpy(pwpath, PATH_SASLAUTHD_RUNDIR);
+-	strcat(pwpath, "/mux");
++	strlcpy(pwpath, PATH_SASLAUTHD_RUNDIR, sizeof(pwpath));
++	strlcat(pwpath, "/mux", sizeof(pwpath));
+     }
+ 
+     /*
+Index: lib/common.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/common.c,v
+retrieving revision 1.92
+diff -u -r1.92 common.c
+--- lib/common.c	16 Apr 2003 19:36:00 -0000	1.92
++++ lib/common.c	27 Jun 2003 17:58:53 -0000
+@@ -727,7 +727,7 @@
+ 	  sasl_seterror(conn, 0, "Bad IPREMOTEPORT value");
+ 	  RETURN(conn, SASL_BADPARAM);
+       } else {
+-	  strcpy(conn->ipremoteport, ipremoteport);
++	  strlcpy(conn->ipremoteport, ipremoteport, sizeof(conn->ipremoteport));
+ 	  conn->got_ip_remote = 1;
+       }
+       
+@@ -768,7 +768,7 @@
+ 	  sasl_seterror(conn, 0, "Bad IPLOCALPORT value");
+ 	  RETURN(conn, SASL_BADPARAM);
+       } else {
+-	  strcpy(conn->iplocalport, iplocalport);
++	  strlcpy(conn->iplocalport, iplocalport, sizeof(conn->iplocalport));
+ 	  conn->got_ip_local = 1;
+       }
+ 
+Index: lib/dlopen.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/dlopen.c,v
+retrieving revision 1.44
+diff -u -r1.44 dlopen.c
+--- lib/dlopen.c	13 Feb 2003 19:55:54 -0000	1.44
++++ lib/dlopen.c	27 Jun 2003 17:58:53 -0000
+@@ -238,7 +238,8 @@
+ /* We'll use a static buffer for speed unless someone complains */
+ #define MAX_LINE 2048
+ 
+-static int _parse_la(const char *prefix, const char *in, char *out) 
++static int _parse_la(const char *prefix, const char *in,
++		     char *out, size_t size) 
+ {
+     FILE *file;
+     size_t length;
+@@ -255,11 +256,11 @@
+     if (strcmp(in + (length - strlen(LA_SUFFIX)), LA_SUFFIX)) {
+ 	if(!strcmp(in + (length - strlen(SO_SUFFIX)),SO_SUFFIX)) {
+ 	    /* check for a .la file */
+-	    strcpy(line, prefix);
+-	    strcat(line, in);
++	    strlcpy(line, prefix, sizeof(line));
++	    strlcat(line, in, sizeof(line));
+ 	    length = strlen(line);
+ 	    *(line + (length - strlen(SO_SUFFIX))) = '\0';
+-	    strcat(line, LA_SUFFIX);
++	    strlcat(line, LA_SUFFIX, sizeof(line));
+ 	    file = fopen(line, "r");
+ 	    if(file) {
+ 		/* We'll get it on the .la open */
+@@ -267,13 +268,13 @@
+ 		return SASL_FAIL;
+ 	    }
+ 	}
+-	strcpy(out, prefix);
+-	strcat(out, in);
++	strlcpy(out, prefix, size);
++	strlcat(out, in, size);
+ 	return SASL_OK;
+     }
+ 
+-    strcpy(line, prefix);
+-    strcat(line, in);
++    strlcpy(line, prefix, sizeof(line));
++    strlcat(line, in, sizeof(line));
+ 
+     file = fopen(line, "r");
+     if(!file) {
+@@ -308,8 +309,8 @@
+ 			      "dlname is empty in .la file: %s", in);
+ 		    return SASL_FAIL;
+ 		}
+-		strcpy(out, prefix);
+-		strcat(out, ntmp);
++		strlcpy(out, prefix, size);
++		strlcat(out, ntmp, size);
+ 	    }
+ 	    break;
+ 	}
+@@ -463,8 +464,8 @@
+ 	} while ((c!=':') && (c!='=') && (c!=0));
+ 	str[pos-1]='\0';
+ 
+-	strcpy(prefix,str);
+-	strcat(prefix,"/");
++	strlcpy(prefix,str,sizeof(prefix));
++	strlcat(prefix,"/",sizeof(prefix));
+ 
+ 	if ((dp=opendir(str)) !=NULL) /* ignore errors */    
+ 	{
+@@ -491,13 +492,13 @@
+ 		memcpy(name,dir->d_name,length);
+ 		name[length]='\0';
+ 
+-		result = _parse_la(prefix, name, tmp);
++		result = _parse_la(prefix, name, tmp, sizeof(tmp));
+ 		if(result != SASL_OK)
+ 		    continue;
+ 		
+ 		/* skip "lib" and cut off suffix --
+ 		   this only need be approximate */
+-		strcpy(plugname, name + 3);
++		strlcpy(plugname, name + 3, sizeof(plugname));
+ 		c = strchr(plugname, (int)'.');
+ 		if(c) *c = '\0';
+ 
+Index: lib/getnameinfo.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/getnameinfo.c,v
+retrieving revision 1.5
+diff -u -r1.5 getnameinfo.c
+--- lib/getnameinfo.c	13 Feb 2003 19:55:54 -0000	1.5
++++ lib/getnameinfo.c	27 Jun 2003 17:58:53 -0000
+@@ -74,18 +74,18 @@
+     char tmpserv[16];
+   
+     if (serv) {
+-	sprintf(tmpserv, "%d", ntohs(sin->sin_port));
++	snprintf(tmpserv, sizeof(tmpserv), "%d", ntohs(sin->sin_port));
+ 	if (strlen(tmpserv) > servlen)
+ 	    return EAI_MEMORY;
+ 	else
+-	    strcpy(serv, tmpserv);
++	    strlcpy(serv, tmpserv, servlen);
+     }
+     if (host) {
+ 	if (flags & NI_NUMERICHOST) {
+ 	    if (strlen(inet_ntoa(sin->sin_addr)) >= hostlen)
+ 		return EAI_MEMORY;
+ 	    else {
+-		strcpy(host, inet_ntoa(sin->sin_addr));
++		strlcpy(host, inet_ntoa(sin->sin_addr), hostlen);
+ 		return 0;
+ 	    }
+ 	} else {
+@@ -95,7 +95,7 @@
+ 		if (strlen(hp->h_name) >= hostlen)
+ 		    return EAI_MEMORY;
+ 		else {
+-		    strcpy(host, hp->h_name);
++		    strlcpy(host, hp->h_name, hostlen);
+ 		    return 0;
+ 		}
+ 	    }
+Index: lib/strlcat.c
+===================================================================
+RCS file: lib/strlcat.c
+diff -N lib/strlcat.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ lib/strlcat.c	27 Jun 2003 17:58:53 -0000
+@@ -0,0 +1,66 @@
++/*
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ * $Id$
++ */
++
++#include <config.h>
++
++#ifndef HAVE_STRLCAT
++#include <string.h>
++
++size_t sasl_strlcat(char *dst, const char *src, size_t len)
++{
++    size_t i, j, o;
++    
++    o = strlen(dst);
++    if (len < o + 1)
++	return o + strlen(src);
++    len -= o + 1;
++    for (i = 0, j = o; i < len; i++, j++) {
++	if ((dst[j] = src[i]) == '\0') break;
++    }
++    dst[j] = '\0';
++    if (src[i] == '\0') {
++	return j;
++    } else {
++	return j + strlen(src + i);
++    }
++}
++#endif /* HAVE_STRLCAT */
+Index: lib/strlcpy.c
+===================================================================
+RCS file: lib/strlcpy.c
+diff -N lib/strlcpy.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ lib/strlcpy.c	27 Jun 2003 17:58:53 -0000
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ * $Id$
++ */
++
++#include <config.h>
++
++#ifndef HAVE_STRLCPY
++#include <string.h>
++
++/* strlcpy -- copy string smartly.
++ *
++ * i believe/hope this is compatible with the BSD strlcpy(). 
++ */
++size_t sasl_strlcpy(char *dst, const char *src, size_t len)
++{
++    size_t n;
++
++    if (len <= 0) {
++        /* we can't do anything ! */
++        return strlen(src);
++    }
++
++    /* assert(len >= 1); */
++    for (n = 0; n < len-1; n++) {
++	if ((dst[n] = src[n]) == '\0') break;
++    }
++    if (n >= len-1) {
++	/* ran out of space */
++	dst[n] = '\0';
++	while(src[n]) n++;
++    }
++    return n;
++}
++#endif /* HAVE_STRLCPY */
+Index: lib/windlopen.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/windlopen.c,v
+retrieving revision 1.15
+diff -u -r1.15 windlopen.c
+--- lib/windlopen.c	13 Feb 2003 19:55:55 -0000	1.15
++++ lib/windlopen.c	27 Jun 2003 17:58:53 -0000
+@@ -211,12 +211,12 @@
+ 	    continue;
+ 	}
+ 
+-	strcpy (prefix, cur_dir);
++	strlcpy (prefix, cur_dir, sizeof(prefix));
+ 	prefix_len = strlen (prefix);
+ 
+ /* : Don't append trailing \ unless required */
+ 	if (prefix[prefix_len-1] != '\\') {
+-	    strcat (prefix,"\\");
++	    strlcat (prefix,"\\",sizeof(prefix));
+ 	    prefix_len++;
+ 	}
+ 
+@@ -228,7 +228,7 @@
+             continue;
+ 	}
+ 
+-	strcat (prefix + prefix_len, "*" DLL_SUFFIX);
++	strlcat (prefix + prefix_len, "*" DLL_SUFFIX, sizeof(prefix)-prefix_len);
+ 
+         fhandle = _findfirst (pattern, &finddata);
+         if (fhandle == -1) {	/* no matching files */
+@@ -263,11 +263,11 @@
+ 
+ /* : Construct full name from prefix and name */
+ 
+-	    strcpy (full_name, prefix);
+-	    strcat (full_name, finddata.name);
++	    strlcpy (full_name, prefix, sizeof(full_name));
++	    strlcat (full_name, finddata.name, sizeof(full_name));
+ 		
+ /* cut off .dll suffix -- this only need be approximate */
+-	    strcpy (plugname, finddata.name);
++	    strlcpy (plugname, finddata.name, sizeof(plugname));
+ 	    c = strrchr(plugname, '.');
+ 	    if (c != NULL) *c = '\0';
+ 
+Index: plugins/digestmd5.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/plugins/digestmd5.c,v
+retrieving revision 1.153
+diff -u -r1.153 digestmd5.c
+--- plugins/digestmd5.c	30 Mar 2003 22:17:06 -0000	1.153
++++ plugins/digestmd5.c	27 Jun 2003 17:58:59 -0000
+@@ -341,7 +341,7 @@
+     utils->MD5Update(&Md5Ctx, pszNonce, strlen((char *) pszNonce));
+     utils->MD5Update(&Md5Ctx, COLON, 1);
+     if (*pszQop) {
+-	sprintf(ncvalue, "%08x", pszNonceCount);
++	snprintf(ncvalue, sizeof(ncvalue), "%08x", pszNonceCount);
+ 	utils->MD5Update(&Md5Ctx, ncvalue, strlen(ncvalue));
+ 	utils->MD5Update(&Md5Ctx, COLON, 1);
+ 	utils->MD5Update(&Md5Ctx, pszCNonce, strlen((char *) pszCNonce));
+Index: plugins/otp.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/plugins/otp.c,v
+retrieving revision 1.27
+diff -u -r1.27 otp.c
+--- plugins/otp.c	13 Feb 2003 19:56:04 -0000	1.27
++++ plugins/otp.c	27 Jun 2003 17:58:59 -0000
+@@ -596,9 +596,9 @@
+ 
+ static int parse_secret(const sasl_utils_t *utils,
+ 			char *secret, size_t seclen,
+-			char *alg, unsigned *seq, char *seed,
+-			unsigned char *otp,
+-			time_t *timeout)
++			char *alg, size_t alglen, unsigned *seq,
++			char *seed, size_t seedlen,
++			unsigned char *otp, time_t *timeout)
+ {
+     unsigned char *c;
+     
+@@ -616,13 +616,13 @@
+     
+     c = secret;
+     
+-    strcpy(alg, (char*) c);
++    strlcpy(alg, (char*) c, alglen);
+     c += strlen(alg)+1;
+     
+     *seq = strtoul(c, NULL, 10);
+     c += 5;
+     
+-    strcpy(seed, (char*) c);
++    strlcpy(seed, (char*) c, seedlen);
+     c += strlen(seed)+1;
+     
+     memcpy(otp, c, OTP_HASH_SIZE);
+@@ -682,7 +682,7 @@
+     int alt_dict = 0;
+     
+     /* this is a destructive operation, so make a work copy */
+-    strcpy(buf, words);
++    strlcpy(buf, words, sizeof(buf));
+     memset(bits, 0, 9);
+     
+     for (c = buf, bit = 0, i = 0; i < 6; i++, c++, bit+=11) {
+@@ -885,7 +885,7 @@
+ 	    /* setup for new secret */
+ 	    text->alg = alg;
+ 	    text->seq = seq;
+-	    strcpy(text->seed, seed);
++	    strlcpy(text->seed, seed, sizeof(text->seed));
+ 	    memcpy(text->otp, new_otp, OTP_HASH_SIZE);
+ 	}
+     }
+@@ -992,8 +992,9 @@
+ 	    result = parse_secret(params->utils,
+ 				  (char*) auxprop_values[0].values[0],
+ 				  auxprop_values[0].valsize,
+-				  mda, &text->seq, text->seed, text->otp,
+-				  &timeout);
++				  mda, sizeof(mda), &text->seq,
++				  text->seed, sizeof(text->seed),
++				  text->otp, &timeout);
+ 	    
+ 	    if (result != SASL_OK) return result;
+ 	} else {
+@@ -1069,8 +1070,8 @@
+     if (result != SASL_OK) return result;
+     
+     /* create challenge */
+-    sprintf(text->out_buf, "otp-%s %u %s ext",
+-	    text->alg->name, text->seq-1, text->seed);
++    snprintf(text->out_buf, OTP_CHALLENGE_MAX+1, "otp-%s %u %s ext",
++	     text->alg->name, text->seq-1, text->seed);
+     
+     *serverout = text->out_buf;
+     *serveroutlen = strlen(text->out_buf);
+@@ -1281,7 +1282,8 @@
+ 	
+ 	sparams->utils->rand(sparams->utils->rpool,
+ 			     (char*) &randnum, sizeof(randnum));
+-	sprintf(seed, "%.2s%04u", sparams->serverFQDN, (randnum % 9999) + 1);
++	snprintf(seed, sizeof(seed),
++		 "%.2s%04u", sparams->serverFQDN, (randnum % 9999) + 1);
+ 	
+ 	r = generate_otp(sparams->utils, algs, OTP_SEQUENCE_DEFAULT,
+ 			 seed, (char*) pass, otp);
+@@ -1631,8 +1633,8 @@
+ 	    do {
+ 		params->utils->rand(params->utils->rpool,
+ 				    (char*) &randnum, sizeof(randnum));
+-		sprintf(new_seed, "%.2s%04u", params->serverFQDN,
+-			(randnum % 9999) + 1);
++		snprintf(new_seed, sizeof(new_seed),
++			 "%.2s%04u", params->serverFQDN, (randnum % 9999) + 1);
+ 	    } while (!strcasecmp(seed, new_seed));
+ 	    
+ 	    result = generate_otp(params->utils, alg, OTP_SEQUENCE_DEFAULT,
+@@ -1640,10 +1642,12 @@
+ 	    
+ 	    if (result == SASL_OK) {
+ 		/* create an init-hex response */
+-		strcpy(text->out_buf, OTP_INIT_HEX_TYPE);
++		strlcpy(text->out_buf, OTP_INIT_HEX_TYPE, OTP_RESPONSE_MAX+1);
+ 		bin2hex(otp, OTP_HASH_SIZE,
+ 			text->out_buf+strlen(text->out_buf));
+-		sprintf(text->out_buf+strlen(text->out_buf), ":%s %u %s:",
++		snprintf(text->out_buf+strlen(text->out_buf),
++			 OTP_RESPONSE_MAX+1 - strlen(text->out_buf),
++			 ":%s %u %s:",
+ 			alg->name, OTP_SEQUENCE_DEFAULT, new_seed);
+ 		bin2hex(new_otp, OTP_HASH_SIZE,
+ 			text->out_buf+strlen(text->out_buf));
+@@ -1656,7 +1660,7 @@
+ 	
+ 	if (!init_done) {
+ 	    /* created hex response */
+-	    strcpy(text->out_buf, OTP_HEX_TYPE);
++	    strlcpy(text->out_buf, OTP_HEX_TYPE, OTP_RESPONSE_MAX+1);
+ 	    bin2hex(otp, OTP_HASH_SIZE, text->out_buf+strlen(text->out_buf));
+ 	}
+ 	
+Index: saslauthd/Makefile.am
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/Makefile.am,v
+retrieving revision 1.33
+diff -u -r1.33 Makefile.am
+--- saslauthd/Makefile.am	28 Mar 2003 19:59:23 -0000	1.33
++++ saslauthd/Makefile.am	27 Jun 2003 17:58:59 -0000
+@@ -10,7 +10,7 @@
+ 		    auth_ldap.c auth_ldap.h cache.c cache.h utils.c utils.h \
+                     ipc_unix.c ipc_doors.c saslauthd-main.c saslauthd-main.h \
+ 		    md5.c saslauthd_md5.h md5global.h
+-EXTRA_saslauthd_sources = getaddrinfo.c getnameinfo.c
++EXTRA_saslauthd_sources = getaddrinfo.c getnameinfo.c strlcat.c strlcpy.c
+ saslauthd_DEPENDENCIES = saslauthd-main.o @COMPAT_OBJ@
+ saslauthd_LDADD	= @COMPAT_OBJ@ @SASL_KRB_LIB@ \
+ 		  @GSSAPIBASE_LIBS@ @GSSAPI_LIBS@ @LIB_CRYPT@ @LIB_SIA@ \
+@@ -25,7 +25,8 @@
+ saslcache_LDADD = @COMPAT_OBJ@
+ 
+ EXTRA_DIST	= saslauthd.8 saslauthd.mdoc config include \
+-		  getnameinfo.c getaddrinfo.c LDAP_SASLAUTHD
++		  getnameinfo.c getaddrinfo.c strlcat.c strlcpy.c \
++		  LDAP_SASLAUTHD
+ INCLUDES	= -I$(top_srcdir)/include -I../include
+ DEFS            = @DEFS@ -DSASLAUTHD_CONF_FILE_DEFAULT=\"@sysconfdir@/saslauthd.conf\" -I. -I$(srcdir) -I..
+ 
+Index: saslauthd/acconfig.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/acconfig.h,v
+retrieving revision 1.15
+diff -u -r1.15 acconfig.h
+--- saslauthd/acconfig.h	28 Mar 2003 19:59:23 -0000	1.15
++++ saslauthd/acconfig.h	27 Jun 2003 17:58:59 -0000
+@@ -73,6 +73,12 @@
+ #undef SASL_NDBM
+ #undef STATIC_SASLDB
+ 
++/* Does your system have the strlcpy() call? */
++#undef HAVE_STRLCPY
++
++/* Does your system have the strlcat() call? */
++#undef HAVE_STRLCAT
++
+ /* define if your system has getnameinfo() */
+ #undef HAVE_GETADDRINFO
+  
+@@ -158,6 +164,16 @@
+ 
+ #ifndef NI_WITHSCOPEID
+ #define NI_WITHSCOPEID  0
++#endif
++
++#ifndef HAVE_STRLCPY
++#define strlcpy(x,y,z) sasl_strlcpy((x),(y),(z))
++size_t sasl_strlcpy(char *dst, const char *src, size_t dstsize);
++#endif
++
++#ifndef HAVE_STRLCAT
++#define strlcat(x,y,z) sasl_strlcat((x),(y),(z))
++size_t sasl_strlcat(char *dst, const char *src, size_t dstsize);
+ #endif
+ 
+ #endif
+Index: saslauthd/auth_krb4.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/auth_krb4.c,v
+retrieving revision 1.9
+diff -u -r1.9 auth_krb4.c
+--- saslauthd/auth_krb4.c	3 Feb 2003 17:09:11 -0000	1.9
++++ saslauthd/auth_krb4.c	27 Jun 2003 17:58:59 -0000
+@@ -212,9 +212,9 @@
+       return strdup("NO saslauthd internal error");
+     }
+ 
+-    strcpy(tf_name, tf_dir);
+-    strcat(tf_name, login);
+-    strcat(tf_name, pidstr);
++    strlcpy(tf_name, tf_dir, sizeof(tf_name));
++    strlcat(tf_name, login, sizeof(tf_name));
++    strlcat(tf_name, pidstr, sizeof(tf_name));
+     krb_set_tkt_string(tf_name);
+     
+     strncpy(aname, login, ANAME_SZ-1);
+Index: saslauthd/cache.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/cache.c,v
+retrieving revision 1.4
+diff -u -r1.4 cache.c
+--- saslauthd/cache.c	21 May 2003 17:37:18 -0000	1.4
++++ saslauthd/cache.c	27 Jun 2003 17:58:59 -0000
+@@ -86,7 +86,7 @@
+ 		return 0;
+ 
+ 	memset(cache_magic, 0, 64);
+-	strcpy(cache_magic, CACHE_CACHE_MAGIC);
++	strlcpy(cache_magic, CACHE_CACHE_MAGIC, sizeof(cache_magic));
+ 
+ 	/**************************************************************
+ 	 * Compute the size of the hash table. This and a stats 
+@@ -204,9 +204,9 @@
+ 	 * the password.
+ 	 **************************************************************/
+ 
+-	strcpy(userrealmserv, user);
+-	strcat(userrealmserv, realm);
+-	strcat(userrealmserv, service);
++	strlcpy(userrealmserv, user, sizeof(userrealmserv));
++	strlcat(userrealmserv, realm, sizeof(userrealmserv));
++	strlcat(userrealmserv, service, sizeof(userrealmserv));
+ 
+ 	hash_offset = cache_pjwhash(userrealmserv);
+ 
+@@ -290,9 +290,12 @@
+ 	result->bucket.realm_offt = user_length;
+ 	result->bucket.service_offt = user_length + realm_length;
+ 
+-	strcpy(result->bucket.creds + result->bucket.user_offt, user);	
+-	strcpy(result->bucket.creds + result->bucket.realm_offt, realm);	
+-	strcpy(result->bucket.creds + result->bucket.service_offt, service);	
++	strlcpy(result->bucket.creds + result->bucket.user_offt, user,
++		sizeof(result->bucket.creds) - result->bucket.user_offt);
++	strlcpy(result->bucket.creds + result->bucket.realm_offt, realm,
++		sizeof(result->bucket.creds) - result->bucket.realm_offt);
++	strlcpy(result->bucket.creds + result->bucket.service_offt, service,
++		sizeof(result->bucket.creds) - result->bucket.service_offt);
+ 
+ 	memcpy(result->bucket.pwd_digest, pwd_digest, 16);
+ 	result->bucket.created = epoch;
+Index: saslauthd/configure.in
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/configure.in,v
+retrieving revision 1.43
+diff -u -r1.43 configure.in
+--- saslauthd/configure.in	26 Jun 2003 13:50:26 -0000	1.43
++++ saslauthd/configure.in	27 Jun 2003 17:58:59 -0000
+@@ -185,6 +185,20 @@
+ AC_CHECK_FUNCS(gethostname mkdir socket strdup)
+ AC_CHECK_FUNCS(getspnam getuserpw, break)
+ 
++dnl Check for strlcpy
++sasl_cv_strlcpy=no
++AC_CHECK_FUNC(strlcpy, [AC_DEFINE(HAVE_STRLCPY)], [sasl_cv_strlcpy=yes])
++if test $sasl_cv_strlcpy = yes; then
++	COMPAT_OBJ="$COMPAT_OBJ strlcpy.o"
++fi
++
++dnl Check for strlcat
++sasl_cv_strlcat=no
++AC_CHECK_FUNC(strlcat, [AC_DEFINE(HAVE_STRLCAT)], [sasl_cv_strlcat=yes])
++if test $sasl_cv_strlcat = yes; then
++	COMPAT_OBJ="$COMPAT_OBJ strlcat.o"
++fi
++
+ dnl Check for getaddrinfo
+ GETADDRINFOOBJS=""
+ sasl_cv_getaddrinfo=no
+Index: saslauthd/getnameinfo.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/getnameinfo.c,v
+retrieving revision 1.2
+diff -u -r1.2 getnameinfo.c
+--- saslauthd/getnameinfo.c	13 Feb 2003 19:56:07 -0000	1.2
++++ saslauthd/getnameinfo.c	27 Jun 2003 17:58:59 -0000
+@@ -72,18 +72,18 @@
+     char tmpserv[16];
+   
+     if (serv) {
+-	sprintf(tmpserv, "%d", ntohs(sin->sin_port));
++	snprintf(tmpserv, sizeof(tmpserv), "%d", ntohs(sin->sin_port));
+ 	if (strlen(tmpserv) > servlen)
+ 	    return EAI_MEMORY;
+ 	else
+-	    strcpy(serv, tmpserv);
++	    strlcpy(serv, tmpserv, sizeof(tmpserv));
+     }
+     if (host) {
+ 	if (flags & NI_NUMERICHOST) {
+ 	    if (strlen(inet_ntoa(sin->sin_addr)) >= hostlen)
+ 		return EAI_MEMORY;
+ 	    else {
+-		strcpy(host, inet_ntoa(sin->sin_addr));
++		strlcpy(host, inet_ntoa(sin->sin_addr), hostlen);
+ 		return 0;
+ 	    }
+ 	} else {
+@@ -93,7 +93,7 @@
+ 		if (strlen(hp->h_name) >= hostlen)
+ 		    return EAI_MEMORY;
+ 		else {
+-		    strcpy(host, hp->h_name);
++		    strlcpy(host, hp->h_name, hostlen);
+ 		    return 0;
+ 		}
+ 	    else
+Index: saslauthd/ipc_unix.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/ipc_unix.c,v
+retrieving revision 1.4
+diff -u -r1.4 ipc_unix.c
+--- saslauthd/ipc_unix.c	21 May 2003 12:58:59 -0000	1.4
++++ saslauthd/ipc_unix.c	27 Jun 2003 17:58:59 -0000
+@@ -152,7 +152,7 @@
+ 
+ 	unlink(sock_file);
+ 	memset(&server, 0, sizeof(server));
+-	strcpy(server.sun_path, sock_file);	
++	strlcpy(server.sun_path, sock_file, sizeof(server.sun_path));
+ 	server.sun_family = AF_UNIX;
+ 	
+ 	if ((sock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+Index: saslauthd/strlcat.c
+===================================================================
+RCS file: saslauthd/strlcat.c
+diff -N saslauthd/strlcat.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ saslauthd/strlcat.c	27 Jun 2003 17:58:59 -0000
+@@ -0,0 +1,66 @@
++/*
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ * $Id$
++ */
++
++#include <config.h>
++
++#ifndef HAVE_STRLCAT
++#include <string.h>
++
++size_t sasl_strlcat(char *dst, const char *src, size_t len)
++{
++    size_t i, j, o;
++    
++    o = strlen(dst);
++    if (len < o + 1)
++	return o + strlen(src);
++    len -= o + 1;
++    for (i = 0, j = o; i < len; i++, j++) {
++	if ((dst[j] = src[i]) == '\0') break;
++    }
++    dst[j] = '\0';
++    if (src[i] == '\0') {
++	return j;
++    } else {
++	return j + strlen(src + i);
++    }
++}
++#endif /* HAVE_STRLCAT */
+Index: saslauthd/strlcpy.c
+===================================================================
+RCS file: saslauthd/strlcpy.c
+diff -N saslauthd/strlcpy.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ saslauthd/strlcpy.c	27 Jun 2003 17:58:59 -0000
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ * $Id$
++ */
++
++#include <config.h>
++
++#ifndef HAVE_STRLCPY
++#include <string.h>
++
++/* strlcpy -- copy string smartly.
++ *
++ * i believe/hope this is compatible with the BSD strlcpy(). 
++ */
++size_t sasl_strlcpy(char *dst, const char *src, size_t len)
++{
++    size_t n;
++
++    if (len <= 0) {
++        /* we can't do anything ! */
++        return strlen(src);
++    }
++
++    /* assert(len >= 1); */
++    for (n = 0; n < len-1; n++) {
++	if ((dst[n] = src[n]) == '\0') break;
++    }
++    if (n >= len-1) {
++	/* ran out of space */
++	dst[n] = '\0';
++	while(src[n]) n++;
++    }
++    return n;
++}
++#endif /* HAVE_STRLCPY */
+Index: saslauthd/testsaslauthd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/saslauthd/testsaslauthd.c,v
+retrieving revision 1.12
+diff -u -r1.12 testsaslauthd.c
+--- saslauthd/testsaslauthd.c	28 Mar 2003 19:59:24 -0000	1.12
++++ saslauthd/testsaslauthd.c	27 Jun 2003 17:58:59 -0000
+@@ -124,8 +124,8 @@
+ 	if (strlen(PATH_SASLAUTHD_RUNDIR) + 4 + 1 > sizeof(pwpath))
+ 	    return -1;
+ 
+-	strcpy(pwpath, PATH_SASLAUTHD_RUNDIR);
+-	strcat(pwpath, "/mux");
++	strlcpy(pwpath, PATH_SASLAUTHD_RUNDIR, sizeof(pwpath));
++	strlcat(pwpath, "/mux", sizeof(pwpath));
+     }
+ 
+     /*
+Index: sasldb/db_testw32.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/sasldb/db_testw32.c,v
+retrieving revision 1.3
+diff -u -r1.3 db_testw32.c
+--- sasldb/db_testw32.c	13 Feb 2003 19:56:14 -0000	1.3
++++ sasldb/db_testw32.c	27 Jun 2003 17:59:00 -0000
+@@ -84,7 +84,7 @@
+   if (!auth_identity || !secret)
+     return SASL_FAIL;
+ 
+-  strcpy(filename, "c:\\tmp\\sasldata.txt");
++  strlcpy(filename, "c:\\tmp\\sasldata.txt", sizeof(filename));
+   db = fopen(filename, "rb");
+ 
+   if (! db) {
+@@ -136,7 +136,7 @@
+   if (!auth_identity)
+       return SASL_FAIL;
+ 
+-  strcpy(filename, "c:\\tmp\\sasldata.txt");
++  strlcpy(filename, "c:\\tmp\\sasldata.txt", sizeof(filename));
+   db = fopen(filename, "wb");
+ 
+   if (! db) {

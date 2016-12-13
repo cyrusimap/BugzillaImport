@@ -1,0 +1,131 @@
+commit 047d147c869723c7b042874029a2b989dd113b82
+Author: Bron Gondwana <brong@opera.com>
+Date:   Wed Mar 16 12:23:55 2011 +0100
+
+    Bug #3420 - use getpassphrase if it exists
+    
+    This fixes a bug with Solaris where getpass only returns the first
+    8 characters of the password.
+
+diff --git a/doc/bugs.html b/doc/bugs.html
+index 1081205..56f5d90 100644
+--- a/doc/bugs.html
++++ b/doc/bugs.html
+@@ -90,10 +90,6 @@ overridden.
+ <li> any utilities doing db operations should catch signals and poll
+ for them to see if it should exit (like mbpath, ipurge).
+ 
+-<li> <tt>imtest</tt> uses <tt>getpass()</tt> to grab passwords from
+-users. On some systems (Solaris reported), this will only return the
+-first 8 characters, causing authentication failures.
+-
+ </ul>
+ 
+ <h3>libraries</h3>
+diff --git a/imap/fetchnews.c b/imap/fetchnews.c
+index 9aa5058..e316bdb 100644
+--- a/imap/fetchnews.c
++++ b/imap/fetchnews.c
+@@ -352,7 +352,7 @@ int main(int argc, char *argv[])
+ 	else if (!strncmp("381", buf, 3)) {
+ 	    /* password required */
+ 	    if (!password)
+-		password = getpass("Please enter the password: ");
++		password = cyrus_getpass("Please enter the password: ");
+ 
+ 	    if (!password) {
+ 		fprintf(stderr, "failed to get password\n");
+diff --git a/imtest/imtest.c b/imtest/imtest.c
+index dc0c70e..c003ef8 100644
+--- a/imtest/imtest.c
++++ b/imtest/imtest.c
+@@ -941,7 +941,7 @@ void interaction (int id, const char *challenge, const char *prompt,
+     
+     if (id==SASL_CB_PASS && !cmdline_password) {
+ 	printf("%s: ", prompt);
+-	cur->str=strdup(getpass(""));
++	cur->str=strdup(cyrus_getpass(""));
+ 	*tlen=strlen(cur->str);
+ 	*tresult = cur->str;
+ 	return;
+@@ -972,7 +972,7 @@ void interaction (int id, const char *challenge, const char *prompt,
+ 	}
+ 	printf("%s: ",prompt);
+ 	if (id==SASL_CB_NOECHOPROMPT) {
+-	    strcpy(result, getpass(""));
++	    strcpy(result, cyrus_getpass(""));
+ 	} else {
+ 	    fgets(result, sizeof(result) - 1, stdin);
+ 	    c = strlen(result);
+diff --git a/installsieve/installscript.c b/installsieve/installscript.c
+index 038d9b5..82f7bea 100644
+--- a/installsieve/installscript.c
++++ b/installsieve/installscript.c
+@@ -116,7 +116,7 @@ getsecret(sasl_conn_t *conn,
+   return -1;
+ 
+   /*  printf("Password: ", prompt);
+-  *tresult=strdup(getpass(""));
++  *tresult=strdup(cyrus_getpass(""));
+   *tlen=strlen(*tresult);
+   if (! password)
+   return SASL_FAIL; */
+@@ -195,7 +195,7 @@ void interaction (int id, const char *prompt,
+ 	
+       } else {
+ 	printf("%s: ", prompt);
+-	*tresult=strdup(getpass(""));
++	*tresult=strdup(cyrus_getpass(""));
+ 	*tlen=strlen(*tresult);
+       }
+ 	return;
+diff --git a/lib/imclient.c b/lib/imclient.c
+index e244cd4..666dc14 100644
+--- a/lib/imclient.c
++++ b/lib/imclient.c
+@@ -1178,7 +1178,7 @@ void interaction (struct imclient *context, sasl_interact_t *t, char *user)
+   } else {
+       printf("%s: ", t->prompt);
+       if (t->id == SASL_CB_PASS) {
+-	  char *ptr = getpass("");
++	  char *ptr = cyrus_getpass("");
+ 	  strlcpy(result, ptr, sizeof(result));
+       } else {
+ 	  if (!fgets(result, sizeof(result)-1, stdin)) return;
+diff --git a/lib/util.h b/lib/util.h
+index 7cc4981..3985e44 100644
+--- a/lib/util.h
++++ b/lib/util.h
+@@ -51,6 +51,7 @@
+ #include <config.h>
+ #include <sys/types.h>
+ #include <limits.h>
++#include <unistd.h>
+ 
+ #define BIT32_MAX 4294967295U
+ 
+@@ -187,4 +188,11 @@ void buf_appendmap(struct buf *buf, char *base, int len);
+ void buf_putc(struct buf *buf, char c);
+ void buf_free(struct buf *buf);
+ 
++/* use getpassphrase on machines which support it */
++#ifdef getpassphrase
++#define cyrus_getpass getpassphrase
++#else
++#define cyrus_getpass getpass
++#endif
++
+ #endif /* INCLUDED_UTIL_H */
+diff --git a/perl/imap/IMAP.xs b/perl/imap/IMAP.xs
+index f9ef08f..ef43cf0 100644
+--- a/perl/imap/IMAP.xs
++++ b/perl/imap/IMAP.xs
+@@ -203,7 +203,7 @@ static int get_password(sasl_conn_t *conn, void *context, int id,
+ 	 * reason */ 
+ 	fprintf(stdout, "Password: ");
+ 	fflush(stdout);
+-	ptr = getpass("");
++	ptr = cyrus_getpass("");
+ 	text->password = safemalloc(sizeof(sasl_secret_t) + strlen(ptr));
+ 	text->password->len = strlen(ptr);
+ 	strncpy((char *) text->password->data, ptr, text->password->len);

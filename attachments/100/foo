@@ -1,0 +1,66 @@
+Index: master/master.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/master/master.c,v
+retrieving revision 1.26
+diff -u -r1.26 master.c
+--- master/master.c	9 Aug 2002 16:58:33 -0000	1.26
++++ master/master.c	6 Oct 2002 12:33:55 -0000
+@@ -395,6 +395,17 @@
+     return 1;
+ }
+ 
++int verify_service_file(char *const *filename)
++{
++    char path[PATH_MAX];
++    struct stat statbuf;
++
++    get_prog(path, PATH_MAX, filename);
++    if (stat(path, &statbuf)) return 0;
++    if (! S_ISREG(statbuf.st_mode)) return 0;
++    return statbuf.st_mode & S_IXUSR;
++}
++
+ void service_create(struct service *s)
+ {
+     struct sockaddr_in sin;
+@@ -492,7 +503,7 @@
+     r = bind(s->socket, sa, salen);
+     umask(oldumask);
+     if (r < 0) {
+-	syslog(LOG_ERR, "unable to bind %s socket: %m", s->name);
++	syslog(LOG_ERR, "unable to bind socket for service %s: %m", s->name);
+ 	close(s->socket);
+ 	s->socket = 0;
+ 	if (s->exec) free((void *)s->exec);
+@@ -1122,6 +1133,15 @@
+ 	Services[i].exec = tokenize(cmd);
+ 	if (!Services[i].exec) fatal("out of memory", EX_UNAVAILABLE);
+ 
++	/* is this service actually there? */
++	if (! verify_service_file(Services[i].exec)) {
++	    char buf[256];
++	    snprintf(buf, sizeof(buf), "cannot find executable for service '%s'", name);
++	    syslog(LOG_WARNING, "WARNING: %s -- ignored", buf);
++	    /* if it is not, we just skip it */
++	    return;
++	}
++
+ 	Services[i].maxforkrate = maxforkrate;
+ 
+ 	if (!strcmp(Services[i].proto, "tcp")) {
+@@ -1164,6 +1184,15 @@
+ 	Services[nservices].proto = proto;
+ 	Services[nservices].exec = tokenize(cmd);
+ 	if (!Services[nservices].exec) fatal("out of memory", EX_UNAVAILABLE);
++
++	/* is this service actually there? */
++	if (! verify_service_file(Services[i].exec)) {
++	    char buf[256];
++	    snprintf(buf, sizeof(buf), "cannot find executable for service '%s'", name);
++	    syslog(LOG_WARNING, "WARNING: %s -- ignored", buf);
++	    /* if it is not, we just skip it */
++	    return;
++	}
+ 
+ 	Services[nservices].socket = 0;
+ 	Services[nservices].saddr = NULL;

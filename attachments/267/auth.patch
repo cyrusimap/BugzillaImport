@@ -1,0 +1,1223 @@
+Index: imap/ctl_cyrusdb.c
+===================================================================
+RCS file: /cvs/src/cyrus/imap/ctl_cyrusdb.c,v
+retrieving revision 1.22
+diff -u -r1.22 ctl_cyrusdb.c
+--- imap/ctl_cyrusdb.c	26 Jan 2004 17:46:54 -0000	1.22
++++ imap/ctl_cyrusdb.c	28 Feb 2004 04:41:24 -0000
+@@ -100,9 +100,7 @@
+     { FNAME_ANNOTATIONS,	&config_annotation_db,	1 },
+     { FNAME_DELIVERDB,		&config_duplicate_db,	0 },
+     { FNAME_TLSSESSIONS,	&config_tlscache_db,	0 },
+-#ifdef WITH_PTS
+     { FNAME_PTSDB,              &config_ptscache_db,    0 },
+-#endif
+     { NULL,			NULL,			0 }
+ };
+ 
+Index: imap/global.c
+===================================================================
+RCS file: /cvs/src/cyrus/imap/global.c,v
+retrieving revision 1.11
+diff -u -r1.11 global.c
+--- imap/global.c	26 Feb 2004 18:03:06 -0000	1.11
++++ imap/global.c	28 Feb 2004 04:41:24 -0000
+@@ -90,9 +90,7 @@
+ struct cyrusdb_backend *config_seenstate_db;
+ struct cyrusdb_backend *config_duplicate_db;
+ struct cyrusdb_backend *config_tlscache_db;
+-#ifdef WITH_PTS
+ struct cyrusdb_backend *config_ptscache_db;
+-#endif
+ 
+ /* Called before a cyrus application starts (but after command line parameters
+  * are read) */
+@@ -180,10 +178,8 @@
+ 	    cyrusdb_fromname(config_getstring(IMAPOPT_DUPLICATE_DB));
+ 	config_tlscache_db =
+ 	    cyrusdb_fromname(config_getstring(IMAPOPT_TLSCACHE_DB));
+-#ifdef WITH_PTS
+ 	config_ptscache_db =
+ 	    cyrusdb_fromname(config_getstring(IMAPOPT_PTSCACHE_DB));
+-#endif
+ 
+ 	/* configure libcyrus as needed */
+ 	libcyrus_config_setstring(CYRUSOPT_CONFIG_DIR, config_dir);
+@@ -207,6 +203,8 @@
+ 				  config_getenum(IMAPOPT_VIRTDOMAINS));
+ 	libcyrus_config_setint(CYRUSOPT_BERKELEY_CACHESIZE,
+ 			       config_getint(IMAPOPT_BERKELEY_CACHESIZE));
++	libcyrus_config_setstring(CYRUSOPT_AUTH_MECH,
++				  config_getstring(IMAPOPT_AUTH_MECH));
+ 
+ 	/* Not until all configuration parameters are set! */
+ 	libcyrus_init();
+Index: imap/global.h
+===================================================================
+RCS file: /cvs/src/cyrus/imap/global.h,v
+retrieving revision 1.5
+diff -u -r1.5 global.h
+--- imap/global.h	26 Jan 2004 17:46:56 -0000	1.5
++++ imap/global.h	28 Feb 2004 04:41:24 -0000
+@@ -156,8 +156,6 @@
+ extern struct cyrusdb_backend *config_seenstate_db;
+ extern struct cyrusdb_backend *config_duplicate_db;
+ extern struct cyrusdb_backend *config_tlscache_db;
+-#ifdef WITH_PTS
+ extern struct cyrusdb_backend *config_ptscache_db;
+-#endif
+ 
+ #endif /* INCLUDED_GLOBAL_H */
+Index: imap/version.c
+===================================================================
+RCS file: /cvs/src/cyrus/imap/version.c,v
+retrieving revision 1.17
+diff -u -r1.17 version.c
+--- imap/version.c	3 Jan 2004 20:12:32 -0000	1.17
++++ imap/version.c	28 Feb 2004 04:41:24 -0000
+@@ -163,8 +163,6 @@
+ 	     "; lock = %s", lock_method_desc);
+     snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+ 	     "; nonblock = %s", nonblock_method_desc);
+-    snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+-	     "; auth = %s", auth_method_desc);
+ #ifdef HAVE_KRB
+     snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+ 	     " (%s)", krb4_version);
+Index: lib/Makefile.in
+===================================================================
+RCS file: /cvs/src/cyrus/lib/Makefile.in,v
+retrieving revision 1.58
+diff -u -r1.58 Makefile.in
+--- lib/Makefile.in	18 Feb 2004 18:44:22 -0000	1.58
++++ lib/Makefile.in	28 Feb 2004 04:41:24 -0000
+@@ -43,7 +43,7 @@
+ # $Id: Makefile.in,v 1.58 2004/02/18 18:44:22 rjs3 Exp $
+ 
+ # Authorization namespace.
+-AUTH=auth_@WITH_AUTH@.o
++AUTH=auth.o auth_krb.o auth_unix.o auth_krb5.o auth_pts.o
+ 
+ # ACL interpretation.  Only one choice for now:
+ ACL=acl_afs.o
+Index: lib/auth.h
+===================================================================
+RCS file: /cvs/src/cyrus/lib/auth.h,v
+retrieving revision 1.15
+diff -u -r1.15 auth.h
+--- lib/auth.h	22 Oct 2003 18:50:12 -0000	1.15
++++ lib/auth.h	28 Feb 2004 04:41:24 -0000
+@@ -44,20 +44,37 @@
+ #ifndef INCLUDED_AUTH_H
+ #define INCLUDED_AUTH_H
+ 
+-extern const char *auth_method_desc;
+-
+ struct auth_state;
+ 
++struct auth_mech {
++    const char *name;
++
++    char *(*canonifyid)(const char *identifier, size_t len);
++    int (*memberof)(struct auth_state *auth_state, 
++             const char *identifier);
++    struct auth_state *(*newstate)(const char *identifier);
++    void (*freestate)(struct auth_state *auth_state);
++};
++
++extern struct auth_mech *auth_mechs[];
++
++/* Note that some of these may be undefined symbols
++ * if libcyrus was not built with support for them */
++extern struct auth_mech auth_unix;
++extern struct auth_mech auth_pts;
++extern struct auth_mech auth_krb;
++extern struct auth_mech auth_krb5;
++
+ /* auth_canonifyid: canonify the given identifier and return a pointer
+  *                  to a static buffer with the canonified ID, or NULL on
+  *                  failure */
+ /* identifier: id to canonify */
+ /* len: length of id, or 0 to do strlen(identifier) */
+-extern char *auth_canonifyid(const char *identifier, size_t len);
++char *auth_canonifyid(const char *identifier, size_t len);
+ 
+-extern int auth_memberof(struct auth_state *auth_state, 
+-			 const char *identifier);
+-extern struct auth_state *auth_newstate(const char *identifier);
+-extern void auth_freestate(struct auth_state *auth_state);
++int auth_memberof(struct auth_state *auth_state, 
++ 	 const char *identifier);
++struct auth_state *auth_newstate(const char *identifier);
++void auth_freestate(struct auth_state *auth_state);
+ 
+ #endif /* INCLUDED_AUTH_H */
+Index: lib/auth_krb.c
+===================================================================
+RCS file: /cvs/src/cyrus/lib/auth_krb.c,v
+retrieving revision 1.40
+diff -u -r1.40 auth_krb.c
+--- lib/auth_krb.c	11 Nov 2003 03:26:00 -0000	1.40
++++ lib/auth_krb.c	28 Feb 2004 04:41:24 -0000
+@@ -42,6 +42,12 @@
+ 
+ #include <config.h>
+ #include <stdlib.h>
++
++#include "auth.h"
++#include "exitcodes.h"
++
++#ifdef HAVE_KRB
++
+ #include <limits.h>
+ #include <stdio.h>
+ #include <ctype.h>
+@@ -61,9 +67,6 @@
+ #include <krb.h>
+ 
+ #include "xmalloc.h"
+-#include "auth.h"
+-
+-const char *auth_method_desc = "krb";
+ 
+ #ifndef KRB_MAPNAME
+ #define KRB_MAPNAME (SYSCONFDIR "/krb.equiv")
+@@ -95,8 +98,7 @@
+  *	2	User is in the group that is identifier
+  *	3	User is identifer
+  */
+-int
+-auth_memberof(auth_state, identifier)
++static int mymemberof(auth_state, identifier)
+ struct auth_state *auth_state;
+ const char *identifier;
+ {
+@@ -172,7 +174,7 @@
+  * a NULL pointer is returned.
+  * Eventually, this may be more sophisticated than a simple file scan.
+  */
+-char *auth_map_krbid(real_aname, real_inst, real_realm)
++static char *auth_map_krbid(real_aname, real_inst, real_realm)
+ const char *real_aname;
+ const char *real_inst;
+ const char *real_realm;
+@@ -247,7 +249,7 @@
+  * Returns a pointer to a static buffer containing the canonical form
+  * or NULL if 'identifier' is invalid.
+  */
+-char *auth_canonifyid(identifier, len)
++static char *mycanonifyid(identifier, len)
+ const char *identifier;
+ size_t len;
+ {
+@@ -314,8 +316,8 @@
+  * points to a 16-byte binary key to cache identifier's information
+  * with.
+  */
+-struct auth_state *
+-auth_newstate(const char *identifier)
++static struct auth_state *mynewstate(identifier)
++const char *identifier;
+ {
+     struct auth_state *newstate;
+ 
+@@ -331,10 +333,48 @@
+     return newstate;
+ }
+ 
+-void
+-auth_freestate(auth_state)
++static void myfreestate(auth_state)
+ struct auth_state *auth_state;
+ {
+     free((char *)auth_state);
+ }
+ 
++#else /* HAVE_KRB */
++
++static int mymemberof(
++    struct auth_state *auth_state __attribute__((unused)), 
++    const char *identifier __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
++
++static char *mycanonifyid(
++    const char *identifier __attribute__((unused)), 
++    size_t len __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
++
++static struct auth_state *mynewstate(
++    const char *identifier __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
++
++static void myfreestate(
++    struct auth_state *auth_state __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
++
++#endif
++
++struct auth_mech auth_krb = 
++{
++    "krb",		/* name */
++
++    &mycanonifyid,
++    &mymemberof,
++    &mynewstate,
++    &myfreestate,
++};
+Index: lib/auth_krb5.c
+===================================================================
+RCS file: /cvs/src/cyrus/lib/auth_krb5.c,v
+retrieving revision 1.3
+diff -u -r1.3 auth_krb5.c
+--- lib/auth_krb5.c	16 Jan 2004 15:28:58 -0000	1.3
++++ lib/auth_krb5.c	28 Feb 2004 04:41:24 -0000
+@@ -42,6 +42,12 @@
+ 
+ #include <config.h>
+ #include <stdlib.h>
++
++#include "auth.h"
++#include "exitcodes.h"
++
++#ifdef HAVE_GSSAPI_H
++
+ #include <limits.h>
+ #include <stdio.h>
+ #include <ctype.h>
+@@ -53,8 +59,6 @@
+ #include "auth.h"
+ #include "xmalloc.h"
+ 
+-const char *auth_method_desc = "krb5";
+-
+ struct auth_state {
+     char *userid; /* Canonified Userid */
+ };
+@@ -67,7 +71,7 @@
+  *	2	User is in the group that is identifier
+  *	3	User is identifer
+  */
+-int auth_memberof(struct auth_state *auth_state, const char *identifier)
++static int mymemberof(struct auth_state *auth_state, const char *identifier)
+ {
+     char *ident;
+     int ret=0;
+@@ -92,7 +96,7 @@
+  * Returns a pointer to a static buffer containing the canonical form
+  * or NULL if 'identifier' is invalid.
+  */
+-char *auth_canonifyid(const char *identifier, size_t len)
++static char *mycanonifyid(const char *identifier, size_t len)
+ {
+     static char *retbuf = NULL;
+     krb5_context context;
+@@ -172,7 +176,7 @@
+ /*
+  * Set the current user to 'identifier'.
+  */
+-struct auth_state *auth_newstate(const char *identifier)
++static struct auth_state *mynewstate(const char *identifier)
+ {
+     struct auth_state *newstate;
+     char *ident;
+@@ -185,7 +189,7 @@
+     return newstate;
+ }
+ 
+-void auth_freestate(struct auth_state *auth_state)
++static void myfreestate(struct auth_state *auth_state)
+ {
+     if(!auth_state) return;
+     
+@@ -193,4 +197,42 @@
+     free(auth_state);
+ }
+ 
++#else /* HAVE_GSSAPI_H */
++
++static int mymemberof(
++    struct auth_state *auth_state __attribute__((unused)), 
++    const char *identifier __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
++
++static char *mycanonifyid(
++    const char *identifier __attribute__((unused)), 
++    size_t len __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
+ 
++static struct auth_state *mynewstate(
++    const char *identifier __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
++
++static void myfreestate(
++    struct auth_state *auth_state __attribute__((unused)))
++{
++	fatal("Authentication mechanism (krb) not compiled in", EC_CONFIG);
++}
++
++#endif
++
++struct auth_mech auth_krb5 = 
++{
++    "krb5",		/* name */
++
++    &mycanonifyid,
++    &mymemberof,
++    &mynewstate,
++    &myfreestate,
++};
+Index: lib/auth_pts.c
+===================================================================
+RCS file: /cvs/src/cyrus/lib/auth_pts.c,v
+retrieving revision 1.7
+diff -u -r1.7 auth_pts.c
+--- lib/auth_pts.c	24 Feb 2004 23:11:37 -0000	1.7
++++ lib/auth_pts.c	28 Feb 2004 04:41:24 -0000
+@@ -63,16 +63,15 @@
+ #include "strhash.h"
+ #include "xmalloc.h"
+ 
+-const char *auth_method_desc = "pts";
+-
+-char *canonuser_id = NULL;
+-struct auth_state *canonuser_cache = NULL;
++static char *canonuser_id = NULL;
++static struct auth_state *canonuser_cache = NULL;
+ 
+ /* Returns 0 on successful connection to ptloader/valid cache entry,
+  * complete with allocated & filled in struct auth_state.
+  *
+  * state must be a NULL pointer when passed in */
+-int ptload(const char *identifier,struct auth_state **state);
++static int ptload(const char *identifier,struct auth_state **state);
++static void myfreestate(struct auth_state *auth_state);
+ 
+ /*
+  * Determine if the user is a member of 'identifier'
+@@ -82,7 +81,7 @@
+  *      2       User is in the group that is identifier
+  *      3       User is identifer
+  */
+-int auth_memberof(struct auth_state *auth_state,
++static int mymemberof(struct auth_state *auth_state,
+ 		  const char *identifier)
+ {
+     int i;
+@@ -110,10 +109,8 @@
+     
+     /* is it a group i'm a member of ? */
+     for (i=0; i < auth_state->ngroups; i++)
+-        if ( idhash == auth_state->groups[i].hash &&
+-	        (( !strncmp(identifier, "group:", 6) && 
+-                !strcmp(identifier+6, auth_state->groups[i].id) ) ||
+-             !strcmp(identifier, auth_state->groups[i].id)) )
++        if (idhash == auth_state->groups[i].hash &&
++            !strcmp(identifier, auth_state->groups[i].id))
+             return 2;
+   
+     return 0;
+@@ -124,7 +121,7 @@
+  * Returns a pointer to a static buffer containing the canonical form
+  * or NULL if 'identifier' is invalid.
+  */
+-char *auth_canonifyid(const char *identifier,
++static char *mycanonifyid(const char *identifier,
+ 		      size_t len __attribute__((unused)))
+ {
+     static char retbuf[PTS_DB_KEYSIZE];
+@@ -136,7 +133,7 @@
+     } else if(canonuser_id) {
+ 	/* We've got a new one, invalidate our cache */
+ 	free(canonuser_id);
+-	auth_freestate(canonuser_cache);
++	myfreestate(canonuser_cache);
+ 
+ 	canonuser_id = NULL;
+ 	canonuser_cache = NULL;
+@@ -160,7 +157,7 @@
+ /* 
+  * Produce an auth_state structure for the given identifier
+  */
+-struct auth_state *auth_newstate(const char *identifier) 
++static struct auth_state *mynewstate(const char *identifier) 
+ {
+     struct auth_state *output = NULL;
+ 
+@@ -189,10 +186,10 @@
+     return output;
+ }
+ 
+-struct cyrusdb_backend *the_ptscache_db = NULL;
++static struct cyrusdb_backend *the_ptscache_db = NULL;
+ 
+ /* Returns 0 on success */
+-int ptload(const char *identifier, struct auth_state **state) 
++static int ptload(const char *identifier, struct auth_state **state) 
+ {
+     struct auth_state *fetched = NULL;
+     size_t id_len;
+@@ -345,7 +342,17 @@
+     return (*state) ? 0 : -1;
+ }
+ 
+-void auth_freestate(struct auth_state *auth_state)
++static void myfreestate(struct auth_state *auth_state)
+ {
+     free(auth_state);
+ }
++
++struct auth_mech auth_pts = 
++{
++    "pts",		/* name */
++
++    &mycanonifyid,
++    &mymemberof,
++    &mynewstate,
++    &myfreestate,
++};
+Index: lib/auth_unix.c
+===================================================================
+RCS file: /cvs/src/cyrus/lib/auth_unix.c,v
+retrieving revision 1.37
+diff -u -r1.37 auth_unix.c
+--- lib/auth_unix.c	22 Oct 2003 18:50:12 -0000	1.37
++++ lib/auth_unix.c	28 Feb 2004 04:41:24 -0000
+@@ -55,8 +55,6 @@
+ #include "libcyr_cfg.h"
+ #include "xmalloc.h"
+ 
+-const char *auth_method_desc = "unix";
+-
+ struct auth_state {
+     char userid[81];
+     char **group;
+@@ -75,7 +73,7 @@
+  *	2	User is in the group that is identifier
+  *	3	User is identifer
+  */
+-int auth_memberof(auth_state, identifier)
++static int mymemberof(auth_state, identifier)
+ struct auth_state *auth_state;
+ const char *identifier;
+ {
+@@ -154,7 +152,7 @@
+  * representations: one for getpwent calls and one for folder names.  The
+  * latter canonicalizes to a MUTF7 representation.
+  */
+-char *auth_canonifyid(identifier, len)
++static char *mycanonifyid(identifier, len)
+ const char *identifier;
+ size_t len;
+ {
+@@ -218,14 +216,14 @@
+  * points to a 16-byte binary key to cache identifier's information
+  * with.
+  */
+-struct auth_state *auth_newstate(const char *identifier)
++static struct auth_state *mynewstate(const char *identifier)
+ {
+     struct auth_state *newstate;
+     struct passwd *pwd;
+     struct group *grp;
+     char **mem;
+ 
+-    identifier = auth_canonifyid(identifier, 0);
++    identifier = mycanonifyid(identifier, 0);
+     if (!identifier) return 0;
+     if (!strncmp(identifier, "group:", 6)) return 0;
+     
+@@ -257,8 +255,7 @@
+     return newstate;
+ }
+ 
+-void
+-auth_freestate(auth_state)
++static void myfreestate(auth_state)
+ struct auth_state *auth_state;
+ {
+     if (auth_state->group) free((char *)auth_state->group);
+@@ -266,3 +263,12 @@
+ }
+ 
+ 
++struct auth_mech auth_unix = 
++{
++    "unix",		/* name */
++
++    &mycanonifyid,
++    &mymemberof,
++    &mynewstate,
++    &myfreestate,
++};
+Index: lib/imapoptions
+===================================================================
+RCS file: /cvs/src/cyrus/lib/imapoptions,v
+retrieving revision 1.16
+diff -u -r1.16 imapoptions
+--- lib/imapoptions	26 Feb 2004 22:41:32 -0000	1.16
++++ lib/imapoptions	28 Feb 2004 04:41:24 -0000
+@@ -138,6 +138,9 @@
+ { "annotation_db", "skiplist", STRINGLIST("berkeley", "skiplist")}
+ /* The cyrusdb backend to use for mailbox annotations. */
+ 
++{ "auth_mech", "unix", STRINGLIST("unix", "pts", "krb", "krb5")}
++/* The authorization mechanism to use. */
++
+ { "autocreatequota", 0, INT }
+ /* If nonzero, normal users may create their own IMAP accounts by
+    creating the mailbox INBOX.  The user's quota is set to the value
+@@ -585,6 +588,9 @@
+ /* A list of users and groups that are allowed to proxy for other
+    users, seperated by spaces.  Any user listed in this will be
+    allowed to login for any other user: use with caution. */ 
++
++{ "pts_module", "afskrb", STRINGLIST("afskrb", "ldap") }
++/* The PTS module. */
+ 
+ { "ptloader_sock", NULL, STRING }
+ /* Unix domain socket that ptloader listens on.
+Index: lib/libcyr_cfg.c
+===================================================================
+RCS file: /cvs/src/cyrus/lib/libcyr_cfg.c,v
+retrieving revision 1.9
+diff -u -r1.9 libcyr_cfg.c
+--- lib/libcyr_cfg.c	26 Feb 2004 22:41:32 -0000	1.9
++++ lib/libcyr_cfg.c	28 Feb 2004 04:41:24 -0000
+@@ -110,6 +110,10 @@
+       CFGVAL(int, 512 * 1024), /* 512KB */
+       CYRUS_OPT_INT },
+ 
++    { CYRUSOPT_AUTH_MECH,
++      CFGVAL(const char *, "unix"),
++      CYRUS_OPT_STRING },
++
+     { CYRUSOPT_LAST, { NULL }, CYRUS_OPT_NOTOPT }
+ };
+ 
+Index: lib/libcyr_cfg.h
+===================================================================
+RCS file: /cvs/src/cyrus/lib/libcyr_cfg.h,v
+retrieving revision 1.6
+diff -u -r1.6 libcyr_cfg.h
+--- lib/libcyr_cfg.h	26 Feb 2004 18:03:07 -0000	1.6
++++ lib/libcyr_cfg.h	28 Feb 2004 04:41:25 -0000
+@@ -93,6 +93,8 @@
+     CYRUSOPT_VIRTDOMAINS,
+     /* BDB cache size (512KB) */
+     CYRUSOPT_BERKELEY_CACHESIZE,
++    /* authorization mechanism (unix) */
++    CYRUSOPT_AUTH_MECH,
+ 
+     CYRUSOPT_LAST
+     
+Index: ptclient/Makefile.in
+===================================================================
+RCS file: /cvs/src/cyrus/ptclient/Makefile.in,v
+retrieving revision 1.26
+diff -u -r1.26 Makefile.in
+--- ptclient/Makefile.in	23 Jan 2004 16:35:28 -0000	1.26
++++ ptclient/Makefile.in	28 Feb 2004 04:41:25 -0000
+@@ -95,11 +95,11 @@
+ .c.o:
+ 	$(CC) -c $(CPPFLAGS) $(LDAP_CPPFLAGS) $(DEFS) $(CFLAGS) $<
+ 
+-ptloader: ptloader.o @WITH_PTS@.o ../imap/mutex_fake.o $(DEPLIBS)
+-	$(CC) $(LDFLAGS) -o $@ ptloader.o @WITH_PTS@.o ../imap/mutex_fake.o $(SERVICETHREAD) ${AFS_LDFLAGS} ${LDAP_LDFLAGS} $(AFS_LIBS) ${LDAP_LIBS} $(DEPLIBS) $(LIB_SASL) $(LIBS) $(LIB_WRAP) $(LIB_RT)
++ptloader: ptloader.o afskrb.o ldap.o ../imap/mutex_fake.o $(DEPLIBS)
++	$(CC) $(LDFLAGS) -o $@ ptloader.o afskrb.o ldap.o ../imap/mutex_fake.o $(SERVICETHREAD) ${AFS_LDFLAGS} ${LDAP_LDFLAGS} $(AFS_LIBS) ${LDAP_LIBS} $(DEPLIBS) $(LIB_SASL) $(LIBS) $(LIB_WRAP) $(LIB_RT)
+ 
+-ptloader.pure: ptloader.o @WITH_PTS@.o ../imap/mutex_fake.o $(DEPLIBS)
+-	$(PURIFY) $(PUREARGS) $(CC) $(LDFLAGS) -o $@ ptloader.o @WITH_PTS@.o ../imap/mutex_fake.o $(SERVICETHREAD) ${AFS_LDFLAGS} ${LDAP_LDFLAGS} $(AFS_LIBS) ${LDAP_LIBS} $(DEPLIBS) $(LIB_SASL) $(LIBS) $(LIB_WRAP) $(LIB_RT)
++ptloader.pure: ptloader.o afskrb.o ldap.o ../imap/mutex_fake.o $(DEPLIBS)
++	$(PURIFY) $(PUREARGS) $(CC) $(LDFLAGS) -o $@ ptloader.o afskrb.o ldap.o ../imap/mutex_fake.o $(SERVICETHREAD) ${AFS_LDFLAGS} ${LDAP_LDFLAGS} $(AFS_LIBS) ${LDAP_LIBS} $(DEPLIBS) $(LIB_SASL) $(LIBS) $(LIB_WRAP) $(LIB_RT)
+ 
+ ptexpire: ptexpire.o $(DEPLIBS) $(UTIL_LIBS)
+ 	$(CC) $(LDFLAGS) -o $@ ptexpire.o $(UTIL_LIBS) $(DEPLIBS) $(LIB_SASL) $(LIBS) $(LIB_RT)
+Index: ptclient/afskrb.c
+===================================================================
+RCS file: /cvs/src/cyrus/ptclient/afskrb.c,v
+retrieving revision 1.3
+diff -u -r1.3 afskrb.c
+--- ptclient/afskrb.c	11 Nov 2003 03:26:00 -0000	1.3
++++ ptclient/afskrb.c	28 Feb 2004 04:41:25 -0000
+@@ -44,6 +44,10 @@
+       "$Id: afskrb.c,v 1.3 2003/11/11 03:26:00 rjs3 Exp $";
+ 
+ #include <config.h>
++#include "ptloader.h"
++#include "exitcodes.h"
++
++#ifdef HAVE_AFSKRB
+ 
+ #include <string.h>
+ #include <stdio.h>
+@@ -65,7 +69,6 @@
+ #endif
+ 
+ #include "auth_pts.h"
+-#include "exitcodes.h"
+ #include "libconfig.h"
+ #include "strhash.h"
+ #include "xmalloc.h"
+@@ -369,9 +372,8 @@
+ #endif /* AFSPTS_USE_KRB5 */
+ 
+ /* API */
+-const char *ptsmodule_name = "afskrb";
+ 
+-void ptsmodule_init(void) 
++static void myinit(void) 
+ {
+     int r = pr_Initialize (1L, AFSCONF_CLIENTNAME, 0);
+     if (r) {
+@@ -381,7 +383,7 @@
+     return;
+ }
+ 
+-struct auth_state *ptsmodule_make_authstate(const char *identifier,
++static struct auth_state *myauthstate(const char *identifier,
+ 					    size_t size,
+ 					    const char **reply, int *dsize) 
+ {
+@@ -444,3 +446,29 @@
+ 
+     return newstate;
+ }
++
++#else /* HAVE_AFSKRB */
++
++static void myinit(void)
++{
++	fatal("PTS module (afskrb) not compiled in", EC_CONFIG);
++}
++
++static struct auth_state *myauthstate(
++    const char *identifier __attribute__((unused)),
++    size_t size __attribute__((unused)),
++    const char **reply __attribute__((unused)), 
++    int *dsize __attribute__((unused))) 
++{
++	fatal("PTS module (afskrb) not compiled in", EC_CONFIG);
++}
++
++#endif /* HAVE_AFSKRB */
++
++struct pts_module pts_afskrb = 
++{
++    "afskrb",		/* name */
++
++    &myinit,
++    &myauthstate,
++};
+Index: ptclient/ldap.c
+===================================================================
+RCS file: /cvs/src/cyrus/ptclient/ldap.c,v
+retrieving revision 1.5
+diff -u -r1.5 ldap.c
+--- ptclient/ldap.c	25 Feb 2004 16:36:31 -0000	1.5
++++ ptclient/ldap.c	28 Feb 2004 04:41:25 -0000
+@@ -44,6 +44,10 @@
+       "$Id: ldap.c,v 1.5 2004/02/25 16:36:31 rjs3 Exp $";
+ 
+ #include <config.h>
++#include "ptloader.h"
++#include "exitcodes.h"
++
++#ifdef HAVE_LDAP
+ 
+ #include <string.h>
+ #include <stdio.h>
+@@ -69,7 +73,6 @@
+ 
+ /* libcyrus */
+ #include "auth_pts.h"
+-#include "exitcodes.h"
+ #include "strhash.h"
+ #include "xmalloc.h"
+ 
+@@ -426,9 +429,8 @@
+ }
+ 
+ /* API */
+-const char *ptsmodule_name = "ldap";
+ 
+-void ptsmodule_init(void) 
++static void myinit(void) 
+ {
+     const char *p = NULL;
+ 
+@@ -921,7 +923,8 @@
+             (*newstate)->ngroups = numvals;
+ 
+             for (i = 0; vals[i] != NULL; i++) {
+-                strlcpy((*newstate)->groups[i].id, vals[i], 
++                strcpy((*newstate)->groups[i].id, "group:");
++                strlcat((*newstate)->groups[i].id, vals[i], 
+                     sizeof((*newstate)->groups[i].id));
+                 (*newstate)->groups[i].hash = strhash((*newstate)->groups[i].id);
+             }
+@@ -1049,7 +1052,8 @@
+             if (vals == NULL)
+                 continue;
+ 
+-            strlcpy((*newstate)->groups[i].id, vals[0], 
++            strcpy((*newstate)->groups[i].id, "group:");
++            strlcat((*newstate)->groups[i].id, vals[0], 
+                 sizeof((*newstate)->groups[i].id));
+             (*newstate)->groups[i].hash = strhash((*newstate)->groups[i].id);
+ 
+@@ -1163,7 +1167,7 @@
+     return rc;
+ }
+ 
+-struct auth_state *ptsmodule_make_authstate(
++static struct auth_state *myauthstate(
+     const char *identifier,
+     size_t size,
+     const char **reply, 
+@@ -1201,3 +1205,29 @@
+ 
+     return newstate;
+ }
++
++#else /* HAVE_LDAP */
++
++static void myinit(void)
++{
++	fatal("PTS module (ldap) not compiled in", EC_CONFIG);
++}
++
++static struct auth_state *myauthstate(
++    const char *identifier __attribute__((unused)),
++    size_t size __attribute__((unused)),
++    const char **reply __attribute__((unused)), 
++    int *dsize __attribute__((unused))) 
++{
++	fatal("PTS module (ldap) not compiled in", EC_CONFIG);
++}
++
++#endif /* HAVE_LDAP */
++
++struct pts_module pts_ldap = 
++{
++    "ldap",		/* name */
++
++    &myinit,
++    &myauthstate,
++};
+Index: ptclient/ptloader.c
+===================================================================
+RCS file: /cvs/src/cyrus/ptclient/ptloader.c,v
+retrieving revision 1.37
+diff -u -r1.37 ptloader.c
+--- ptclient/ptloader.c	25 Feb 2004 16:05:08 -0000	1.37
++++ ptclient/ptloader.c	28 Feb 2004 04:41:25 -0000
+@@ -65,17 +65,61 @@
+ #include "lock.h"
+ #include "retry.h"
+ #include "xmalloc.h"
++#include "ptloader.h"
+ 
+ static char rcsid[] __attribute__((unused)) = 
+       "$Id: ptloader.c,v 1.37 2004/02/25 16:05:08 rjs3 Exp $";
+ 
+-extern const char *ptsmodule_name;
+-extern void ptsmodule_init(void);
++struct pts_module *pts_modules[] = {
++#ifdef HAVE_LDAP
++    &pts_ldap,
++#endif
++#ifdef HAVE_AFSKRB
++    &pts_afskrb,
++#endif
++    NULL };
++
+ extern void setproctitle_init(int argc, char **argv, char **envp);
+-extern struct auth_state *ptsmodule_make_authstate(const char *identifier,
+-						   size_t size,
+-						   const char **reply,
+-						   int *dsize);
++
++static struct pts_module *pts_fromname()
++{
++    int i;
++    const char *name = config_getstring(IMAPOPT_PTS_MODULE);
++    static struct pts_module *pts = NULL;
++
++    if (pts)
++        return pts;
++
++    for (i = 0; pts_modules[i]; i++) {
++	if (!strcmp(pts_modules[i]->name, name)) {
++	    pts = pts_modules[i]; break;
++	}
++    }
++    if (!pts) {
++	char errbuf[1024];
++	snprintf(errbuf, sizeof(errbuf),
++		 "PTS module %s not supported", name);
++	fatal(errbuf, EC_CONFIG);
++    }
++
++    return pts;
++}
++
++void ptsmodule_init(void)
++{
++    struct pts_module *pts = pts_fromname();
++
++    pts->init();
++}
++
++struct auth_state *ptsmodule_make_authstate(const char *identifier,
++					    size_t size,
++					    const char **reply, int *dsize)
++{
++    struct pts_module *pts = pts_fromname();
++
++    return pts->make_authstate(identifier, size, reply, dsize);
++}
+ 
+ /* config.c info (libimap) */
+ const int config_need_data = 0;
+@@ -101,8 +145,7 @@
+     signal(SIGPIPE, SIG_IGN);
+ 
+     syslog(LOG_NOTICE,
+-	   "starting: $Id: ptloader.c,v 1.37 2004/02/25 16:05:08 rjs3 Exp $ (%s)",
+-	   ptsmodule_name);
++	   "starting: $Id: ptloader.c,v 1.37 2004/02/25 16:05:08 rjs3 Exp $");
+ 
+     while ((opt = getopt(argc, argv, "d:")) != EOF) {
+ 	switch (opt) {
+Index: configure.in
+===================================================================
+RCS file: /cvs/src/cyrus/configure.in,v
+retrieving revision 1.280
+diff -u -r1.280 configure.in
+--- configure.in	8 Feb 2004 18:31:12 -0000	1.280
++++ configure.in	28 Feb 2004 04:41:25 -0000
+@@ -153,16 +153,6 @@
+ AC_SUBST(LOCALDEFS)
+ AC_FUNC_VPRINTF
+ 
+-dnl check authorization method before databases, to find out
+-dnl if we need a PTS database or not
+-AC_ARG_WITH(auth,[  --with-auth=METHOD      use authorization module METHOD
+-                          METHOD is 'unix' (default), 'krb', 'krb5', or 'pts'],
+-	WITH_AUTH="$withval", WITH_AUTH="unix")
+-AC_SUBST(WITH_AUTH)
+-
+-AC_MSG_CHECKING(authorization method)
+-AC_MSG_RESULT($WITH_AUTH)
+-
+ dnl function for doing each of the database backends
+ dnl parameters: backend name, variable to set, withval
+ 
+@@ -465,97 +455,86 @@
+ 
+ AC_ARG_WITH(afs,[  --with-afs=PATH         use AFS libraries from PATH],
+ 	[with_afs="${withval}"
+-	CFLAGS="${CFLAGS} -I${withval}/include"],with_afs="/usr/local")
++	CFLAGS="${CFLAGS} -I${withval}/include"],with_afs="no")
+ 
+-AC_ARG_WITH(ldap, [  --with-ldap=DIR         use LDAP (in DIR) (experimental) [/usr/local] ],
++AC_ARG_WITH(ldap, [  --with-ldap=DIR         use LDAP (in DIR) (experimental) ],
+ 	with_ldap=$withval, with_ldap="/usr/local")
+ 
+-dnl select module for ptloader
+-AC_ARG_WITH(pts,[  --with-pts=MODULE       use PTS module MODULE
+-                          MODULE is 'afskrb' (default) or 'ldap' (experimental)],
+-	    WITH_PTS="$withval", WITH_PTS="afskrb")
+-AC_SUBST(WITH_PTS)
+-
+ dnl select mode of afspts
+ AC_ARG_ENABLE(krb5afspts,[  --enable-krb5afspts     compile afskrb PTS module with krb5 support],
+ 	[SASL_SET_GSSAPI_LIBS
+          AC_DEFINE(AFSPTS_USE_KRB5,[],[Should the AFS PTS plugin use krb5?])])
+ 
+-if test "$WITH_AUTH" = "pts"; then
+-	AC_MSG_CHECKING(which pts module to use)
+-	AC_MSG_RESULT($WITH_PTS)
+-
+-	EXTRA_SUBDIRS="${EXTRA_SUBDIRS} ptclient"
+-	EXTRA_OUTPUT="${EXTRA_OUTPUT} ptclient/Makefile"
+-
+-	LDAP_CPPFLAGS=""
+-	LDAP_LDFLAGS=""
+-	LDAP_LIBS=""
+-
+-  	if test "$WITH_PTS" = "afskrb"; then
+-	    AFS_LIBS="${with_afs}/lib/afs/libkauth.a ${with_afs}/lib/afs/libprot.a  ${with_afs}/lib/afs/libauth.a ${with_afs}/lib/afs/libsys.a ${with_afs}/lib/librxkad.a ${with_afs}/lib/librx.a ${with_afs}/lib/afs/libsys.a ${with_afs}/lib/libubik.a  ${with_afs}/lib/liblwp.a ${with_afs}/lib/afs/util.a"
+-	    if test -f ${with_afs}/lib/afs/libaudit.a; then
+-		AFS_LIBS="$AFS_LIBS ${with_afs}/lib/afs/libaudit.a"
+-	    fi
+-	    if test -f /usr/ucblib/libucb.a; then
+-		CMU_ADD_LIBPATH_TO(/usr/ucblib, AFS_LDFLAGS)
+-		AFS_LIBS="$AFS_LIBS -lc -lucb"
+-	    fi
+-
+-	    AC_CACHE_VAL(cyrus_afs_sigvec,[
+-		SAVE_LIBS="$LIBS"
+-		LIBS="${with_afs}/lib/liblwp.a"
+-		AC_MSG_CHECKING(if AFS libraries need sigvec)
+-		dnl Does AFS need sigvec?  We have to link against lwp and see
+-		dnl if IOMGR_Initialize wants it
+-		AC_TRY_LINK([IOMGR_Initialize();],
+-			[IOMGR_Initialize()],
+-			[
+-				dnl it linked; don't need it
+-				AC_MSG_RESULT(no)
+-				cyrus_afs_sigvec="no"
+-			], [
+-				dnl didn't link; pick up sigvec
+-				AC_MSG_RESULT(yes)
+-				cyrus_afs_sigvec="yes"
+-			])
+-		])
+-	    if test "$cyrus_afs_sigvec" = yes; then
+-	      if test "$cant_find_sigvec" = yes; then
+-                AC_MSG_WARN([Can't find a sigvec for AFS libraries which seem])
+-	        AC_MSG_WARN([to need one; ptloader may not build.])
+-              else
+-	        AFS_LIBS="${AFS_LIBS} $cyrus_sigveclib"
+-	      fi
+-	    fi
+-	    LIBS="$SAVE_LIBS"
+-	    AC_SUBST(AFS_LIBS)
+-	    AC_SUBST(AFS_LDFLAGS)
+-	elif test "$WITH_PTS" = "ldap"; then
+-	    AC_MSG_WARN([*** WARNING: COMPILING WITH EXPERIMENTAL LDAP PTLOADER MODULE ***])
+-	    if test -d $with_ldap; then
+-	        LDAP_CPPFLAGS="$CPPFLAGS -I${with_ldap}/include"
+-	        LDAP_LDFLAGS="$LDFLAGS -L${with_ldap}/lib"
+-	    else
+-	 	AC_ERROR(LDAP path isn't a directory)
+-	    fi	
+-
+-	    LDAP_LIBS=""
+-	    AC_CHECK_LIB(ldap, ldap_initialize, [
+-                         LDAP_LIBS="-lldap -llber" ],,-llber)
+-	else
+-	    AC_ERROR(unknown with-pts value)
+-	fi
++EXTRA_SUBDIRS="${EXTRA_SUBDIRS} ptclient"
++EXTRA_OUTPUT="${EXTRA_OUTPUT} ptclient/Makefile"
+ 
+-   	AC_SUBST(LDAP_CPPFLAGS)
+-	AC_SUBST(LDAP_LDFLAGS)
+-	AC_SUBST(LDAP_LIBS)	
++if test "x$with_afs" != "xno"; then
++    if test ! -d $with_afs; then
++        $with_afs=/usr/local
++    fi
++    AFS_LIBS="${with_afs}/lib/afs/libkauth.a ${with_afs}/lib/afs/libprot.a  ${with_afs}/lib/afs/libauth.a ${with_afs}/lib/afs/libsys.a ${with_afs}/lib/librxkad.a ${with_afs}/lib/librx.a ${with_afs}/lib/afs/libsys.a ${with_afs}/lib/libubik.a  ${with_afs}/lib/liblwp.a ${with_afs}/lib/afs/util.a"
++    if test -f ${with_afs}/lib/afs/libaudit.a; then
++    AFS_LIBS="$AFS_LIBS ${with_afs}/lib/afs/libaudit.a"
++    fi
++    if test -f /usr/ucblib/libucb.a; then
++    CMU_ADD_LIBPATH_TO(/usr/ucblib, AFS_LDFLAGS)
++    AFS_LIBS="$AFS_LIBS -lc -lucb"
++    fi
++
++    AC_CACHE_VAL(cyrus_afs_sigvec,[
++    SAVE_LIBS="$LIBS"
++    LIBS="${with_afs}/lib/liblwp.a"
++    AC_MSG_CHECKING(if AFS libraries need sigvec)
++    dnl Does AFS need sigvec?  We have to link against lwp and see
++    dnl if IOMGR_Initialize wants it
++    AC_TRY_LINK([IOMGR_Initialize();],
++        [IOMGR_Initialize()],
++        [
++            dnl it linked; don't need it
++            AC_MSG_RESULT(no)
++            cyrus_afs_sigvec="no"
++        ], [
++            dnl didn't link; pick up sigvec
++            AC_MSG_RESULT(yes)
++            cyrus_afs_sigvec="yes"
++        ])
++    ])
++    if test "$cyrus_afs_sigvec" = yes; then
++      if test "$cant_find_sigvec" = yes; then
++            AC_MSG_WARN([Can't find a sigvec for AFS libraries which seem])
++        AC_MSG_WARN([to need one; ptloader may not build.])
++          else
++        AFS_LIBS="${AFS_LIBS} $cyrus_sigveclib"
++      fi
++    fi
++    LIBS="$SAVE_LIBS"
++    AC_SUBST(AFS_LIBS)
++    AC_SUBST(AFS_LDFLAGS)
++    AC_DEFINE(HAVE_AFSKRB,[],[Should we build afskrb pts module?])
++fi
++
++LDAP_CPPFLAGS=""
++LDAP_LDFLAGS=""
++LDAP_LIBS=""
++
++if test "x$with_ldap" != "xno"; then
++    if test ! -d $with_ldap; then
++        $with_ldap=/usr/local
++    fi
++
++    LDAP_CPPFLAGS="$CPPFLAGS -I${with_ldap}/include"
++    LDAP_LDFLAGS="$LDFLAGS -L${with_ldap}/lib"
++    LDAP_LIBS=""
++    AC_CHECK_LIB(ldap, ldap_initialize, 
++        [ AC_DEFINE(HAVE_LDAP,[],[Should we build ldap pts module?])
++          AC_SUBST(LDAP_CPPFLAGS)
++          AC_SUBST(LDAP_LDFLAGS)
++          AC_SUBST(LDAP_LIBS)	
++          LDAP_LIBS="-lldap -llber" ],,-llber)
+ 
+-	AC_DEFINE(WITH_PTS,[],[Build in PTS support?])
+ fi
+ 
+ 
+-
+ SERVER_SUBDIRS="master imap"
+ AC_ARG_ENABLE(server,
+ 	[  --disable-server        disable compiling servers],
+@@ -574,76 +553,67 @@
+ 		[  --enable-statickrb      link Kerberos statically],
+ 	with_statickrb="yes", with_statickrb="no")
+ 
+-if test "$WITH_AUTH" = "krb" -o "$WITH_AUTH" = "krb_pts" -o "$with_krb" != "no"; then
+-  dnl In order to compile kerberos4, we need libkrb and libdes.
+-
+-  dnl we might need -lresolv for kerberos
+-  AC_CHECK_LIB(resolv,res_search)
++dnl In order to compile kerberos4, we need libkrb and libdes.
+ 
+-  if test "$with_statickrb" = "yes" -a ! -d "$with_krb"; then
+-	AC_MSG_ERROR([--enable-statickrb specified but --with-krb did not specify a valid directory])
+-  fi 
+-
+-  dnl Do we need DES for kerberos?
+-  AC_ARG_WITH(krbdes,[  --with-krbdes           use Kerberos DES implementation [[yes]]],
+-	with_krbdes="$withval", with_krbdes="yes")
+-  if test "$with_krbdes" = "yes"; then
+-    AC_CHECK_LIB(des,des_ecb_encrypt,
+-	if test "$with_statickrb" = "yes"; then
+-	    KRB_LIBS="$with_krb/lib/libdes.a"
+-	else
+-	    KRB_LIBS="-ldes"
+-	fi,
+-    AC_MSG_ERROR([The Kerberos DES library is required for Kerberos support.  You might want --with-auth=unix.]))
+-  fi
++dnl we might need -lresolv for kerberos
++AC_CHECK_LIB(resolv,res_search)
+ 
+-  dnl if we were ambitious, we'd look more aggressively for the
+-  dnl krb4 install
+-  if test -d ${with_krb}; then
+-     AC_CACHE_CHECK(for Kerberos includes, cyrus_krbinclude, [
+-       for krbhloc in include/kerberosIV include
+-       do
+-         if test -f ${with_krb}/${krbhloc}/krb.h ; then
+-           cyrus_krbinclude=${with_krb}/${krbhloc}
+-           break
+-         fi
+-       done
+-       ])
++if test "$with_statickrb" = "yes" -a ! -d "$with_krb"; then
++AC_MSG_ERROR([--enable-statickrb specified but --with-krb did not specify a valid directory])
++fi 
++
++dnl Do we need DES for kerberos?
++AC_ARG_WITH(krbdes,[  --with-krbdes           use Kerberos DES implementation [[yes]]],
++with_krbdes="$withval", with_krbdes="yes")
++if test "$with_krbdes" = "yes"; then
++AC_CHECK_LIB(des,des_ecb_encrypt,
++if test "$with_statickrb" = "yes"; then
++    KRB_LIBS="$with_krb/lib/libdes.a"
++else
++    KRB_LIBS="-ldes"
++fi)
++fi
+ 
+-     if test -n "${cyrus_krbinclude}"; then
+-       CPPFLAGS="$CPPFLAGS -I${cyrus_krbinclude}"
++dnl if we were ambitious, we'd look more aggressively for the
++dnl krb4 install
++if test -d ${with_krb}; then
++ AC_CACHE_CHECK(for Kerberos includes, cyrus_krbinclude, [
++   for krbhloc in include/kerberosIV include
++   do
++     if test -f ${with_krb}/${krbhloc}/krb.h ; then
++       cyrus_krbinclude=${with_krb}/${krbhloc}
++       break
+      fi
+-     CMU_ADD_LIBPATH(${with_krb}/lib)
+-  fi
++   done
++   ])
+ 
+-  if test "$with_des" != no; then
+-    AC_CHECK_HEADER(krb.h,
+-      AC_CHECK_LIB(krb, krb_mk_priv,
+-	if test "$with_statickrb" = "yes"; then
+-	    KRB_LIBS="$KRB_LIBS $with_krb/lib/libkrb.a"
+-	else
+-	    KRB_LIBS="$KRB_LIBS -lkrb"
+-	fi,
+-                   AC_WARN(No Kerberos V4 found); krb4=no,
+-		   $KRB_LIBS),
+-      AC_WARN(No Kerberos V4 found); krb4=no)
+-  else
+-    AC_WARN(No DES library found for Kerberos V4 support)
+-    krb4=no
+-  fi
++ if test -n "${cyrus_krbinclude}"; then
++   CPPFLAGS="$CPPFLAGS -I${cyrus_krbinclude}"
++ fi
++ CMU_ADD_LIBPATH(${with_krb}/lib)
++fi
+ 
+-  if test "${krb4}" != no; then
+-    AC_DEFINE(HAVE_KRB,[],[Support for Kerberos?])
+-  else
+-    AC_ERROR([Kerberos not found for authorization module])
+-  fi
++if test "$with_des" != no; then
++AC_CHECK_HEADER(krb.h,
++  AC_CHECK_LIB(krb, krb_mk_priv,
++if test "$with_statickrb" = "yes"; then
++    KRB_LIBS="$KRB_LIBS $with_krb/lib/libkrb.a"
++else
++    KRB_LIBS="$KRB_LIBS -lkrb"
++fi,
++               AC_WARN(No Kerberos V4 found); krb4=no,
++       $KRB_LIBS), krb4=no)
++else
++krb4=no
++fi
++
++if test "${krb4}" != no; then
++AC_DEFINE(HAVE_KRB,[],[Support for Kerberos?])
+ fi
+ 
+ LIBS="$KRB_LIBS $LIBS"
+ 
+-if test "$WITH_AUTH" = "krb5"; then
+-    SASL_SET_GSSAPI_LIBS
+-fi
++SASL_SET_GSSAPI_LIBS
+ 
+ dnl
+ dnl Test for OpenSSL

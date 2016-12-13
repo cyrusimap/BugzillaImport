@@ -1,0 +1,73 @@
+diff -udNr cyrus-imapd-2.4.13/imap/index.c cyrus-imapd/imap/index.c
+--- cyrus-imapd-2.4.13/imap/index.c	2011-12-30 21:19:18.000000000 +0000
++++ cyrus-imapd/imap/index.c	2012-01-19 14:52:06.000000000 +0000
+@@ -295,6 +295,7 @@
+     uint32_t msgno;
+     struct index_map *im;
+     struct seqset *seq = NULL;
++    int numexpunged = 0;
+ 
+     r = index_lock(state);
+     if (r) return r;
+@@ -322,6 +323,7 @@
+ 	    state->numrecent--;
+ 
+ 	im->record.system_flags |= FLAG_EXPUNGED;
++        numexpunged++;
+ 
+ 	r = mailbox_rewrite_index_record(state->mailbox, &im->record);
+ 	if (r) break;
+@@ -332,6 +334,10 @@
+     /* unlock before responding */
+     index_unlock(state);
+ 
++    if (!r && (numexpunged > 0)) {
++	syslog(LOG_NOTICE, "Expunged %d messages from %s",
++	       numexpunged, state->mailbox->name);
++    }
+     return r;
+ }
+ 
+diff -udNr cyrus-imapd-2.4.13/imap/mboxlist.c cyrus-imapd/imap/mboxlist.c
+--- cyrus-imapd-2.4.13/imap/mboxlist.c	2011-12-30 21:19:18.000000000 +0000
++++ cyrus-imapd/imap/mboxlist.c	2012-01-19 14:52:06.000000000 +0000
+@@ -1113,6 +1113,8 @@
+     }
+ 
+     /* Rename the actual mailbox */
++    syslog(LOG_INFO, "Rename: %s -> %s", oldname, newname);
++
+     r = mailbox_rename_copy(oldmailbox, newname, newpartition,
+ 			    isusermbox ? userid : NULL, ignorequota,
+ 			    &newmailbox);
+diff -udNr cyrus-imapd-2.4.13/imap/pop3d.c cyrus-imapd/imap/pop3d.c
+--- cyrus-imapd-2.4.13/imap/pop3d.c	2011-12-30 21:19:18.000000000 +0000
++++ cyrus-imapd/imap/pop3d.c	2012-01-19 14:52:06.000000000 +0000
+@@ -816,6 +816,7 @@
+     struct index_record record;
+     uint32_t msgno;
+     int r = 0;
++    int numexpunged = 0;
+ 
+     /* loop over all known messages looking for deletes */
+     for (msgno = 1; msgno <= popd_exists; msgno++) {
+@@ -833,6 +834,7 @@
+ 
+ 	/* mark expunged */
+ 	record.system_flags |= FLAG_EXPUNGED;
++        numexpunged++;
+ 
+ 	/* store back to the mailbox */
+ 	r = mailbox_rewrite_index_record(popd_mailbox, &record);
+@@ -844,6 +846,11 @@
+ 	       popd_mailbox->name, msgno, popd_msg[msgno].uid);
+     }
+ 
++    if (!r && (numexpunged > 0)) {
++	syslog(LOG_NOTICE, "Expunged %d messages from %s",
++	       numexpunged, popd_mailbox->name);
++    }
++
+     return r;
+ }
+ 

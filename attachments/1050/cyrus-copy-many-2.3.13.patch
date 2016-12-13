@@ -1,0 +1,83 @@
+diff -r -u cyrus-imapd-2.3.13.orig/imap/append.c cyrus-imapd-2.3.13/imap/append.c
+--- cyrus-imapd-2.3.13.orig/imap/append.c	2008-09-23 16:19:42.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/append.c	2008-12-18 13:25:06.000000000 +0000
+@@ -107,7 +107,7 @@
+  */
+ int append_check(const char *name, int format, 
+ 		 struct auth_state *auth_state,
+-		 long aclcheck, long quotacheck)
++		 long aclcheck, quota_t quotacheck)
+ {
+     struct mailbox m;
+     int r;
+@@ -173,7 +173,7 @@
+ int append_setup(struct appendstate *as, const char *name,
+ 		 int format, 
+ 		 const char *userid, struct auth_state *auth_state,
+-		 long aclcheck, long quotacheck)
++		 long aclcheck, quota_t quotacheck)
+ {
+     int r;
+ 
+@@ -251,7 +251,7 @@
+ /* may return non-zero, indicating that the entire append has failed
+  and the mailbox is probably in an inconsistent state. */
+ int append_commit(struct appendstate *as, 
+-		  long quotacheck __attribute__((unused)),
++		  quota_t quotacheck __attribute__((unused)),
+ 		  unsigned long *uidvalidity, 
+ 		  unsigned long *start,
+ 		  unsigned long *num)
+@@ -323,7 +323,7 @@
+     else {
+ 	quota_abort(&as->tid);
+ 	syslog(LOG_ERR,
+-	       "LOSTQUOTA: unable to record use of %u bytes in quota file %s",
++	       "LOSTQUOTA: unable to record use of " QUOTA_T_FMT " bytes in quota file %s",
+ 	       as->quota_used, as->m.quota.root);
+     }
+ 
+diff -r -u cyrus-imapd-2.3.13.orig/imap/append.h cyrus-imapd-2.3.13/imap/append.h
+--- cyrus-imapd-2.3.13.orig/imap/append.h	2008-03-24 17:09:16.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/append.h	2008-12-18 13:22:56.000000000 +0000
+@@ -91,7 +91,7 @@
+     int seen_alloced;
+ 
+     /* the amount of quota we've used so far in this append */
+-    int quota_used;
++    quota_t quota_used;
+ 
+     /* txn for updating quota */
+     struct txn *tid;
+@@ -103,16 +103,16 @@
+ 
+ extern int append_check(const char *name, int format, 
+ 			struct auth_state *auth_state,
+-			long aclcheck, long quotacheck);
++			long aclcheck, quota_t quotacheck);
+ 
+ /* appendstate must be allocated by client */
+ extern int append_setup(struct appendstate *mailbox, const char *name,
+ 			int format, 
+ 			const char *userid, struct auth_state *auth_state,
+-			long aclcheck, long quotacheck);
++			long aclcheck, quota_t quotacheck);
+ 
+ extern int append_commit(struct appendstate *mailbox,
+-			 long quotacheck,
++			 quota_t quotacheck,
+ 			 unsigned long *uidvalidity, 
+ 			 unsigned long *startuid, 
+ 			 unsigned long *num);
+diff -r -u cyrus-imapd-2.3.13.orig/imap/index.c cyrus-imapd-2.3.13/imap/index.c
+--- cyrus-imapd-2.3.13.orig/imap/index.c	2008-10-09 13:59:53.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/index.c	2008-12-18 13:22:56.000000000 +0000
+@@ -1389,7 +1389,7 @@
+ {
+     static struct copyargs copyargs;
+     int i;
+-    unsigned long totalsize = 0;
++    quota_t totalsize = 0;
+     int r;
+     struct appendstate append_mailbox;
+     char *copyuid;

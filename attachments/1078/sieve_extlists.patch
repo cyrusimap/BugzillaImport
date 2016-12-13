@@ -1,0 +1,876 @@
+diff -rc cyrus-imapd-2.3.14/lib/imapoptions cyrus-imapd-2.3.14-patched/lib/imapoptions
+*** cyrus-imapd-2.3.14/lib/imapoptions	2009-03-06 03:52:55.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/lib/imapoptions	2009-05-28 18:31:18.000000000 +0000
+***************
+*** 931,937 ****
+     user's scripts reside on a remote server (in a Murder).
+     Otherwise, timsieved will proxy traffic to the remote server. */
+  
+! { "sieve_extensions", "fileinto reject vacation imapflags notify envelope relational regex subaddress copy", BITFIELD("fileinto", "reject", "vacation", "imapflags", "notify", "include", "envelope", "body", "relational", "regex", "subaddress", "copy") }
+  /* Space-separated list of Sieve extensions allowed to be used in
+     sieve scripts, enforced at submission by timsieved(8).  Any
+     previously installed script will be unaffected by this option and
+--- 931,937 ----
+     user's scripts reside on a remote server (in a Murder).
+     Otherwise, timsieved will proxy traffic to the remote server. */
+  
+! { "sieve_extensions", "fileinto reject vacation imapflags notify envelope relational regex subaddress copy", BITFIELD("fileinto", "reject", "vacation", "imapflags", "notify", "include", "envelope", "body", "relational", "regex", "subaddress", "copy", "extlists") }
+  /* Space-separated list of Sieve extensions allowed to be used in
+     sieve scripts, enforced at submission by timsieved(8).  Any
+     previously installed script will be unaffected by this option and
+diff -rc cyrus-imapd-2.3.14/sieve/bc_dump.c cyrus-imapd-2.3.14-patched/sieve/bc_dump.c
+*** cyrus-imapd-2.3.14/sieve/bc_dump.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/bc_dump.c	2009-06-02 12:08:12.000000000 +0000
+***************
+*** 153,164 ****
+  	print_spaces(level*4);
+  	if (d->data[ip].value == B_COUNT || d->data[ip].value == B_VALUE)
+  	{
+! 	    printf("      MATCH:%d  RELATION:%d  COMP:%d HEADERS:\n", 
+! 		   d->data[ip].value, d->data[ip+1].value,d->data[ip+2].value);
+  	} else {
+! 	    printf("      MATCH:%d COMP:%d HEADERS:\n",d->data[ip].value, d->data[ip+2].value);
+  	}
+! 	ip+=3;
+  	ip = dump_sl(d,ip,level);
+  	ip++;
+  	print_spaces(level*4);
+--- 153,164 ----
+  	print_spaces(level*4);
+  	if (d->data[ip].value == B_COUNT || d->data[ip].value == B_VALUE)
+  	{
+! 	    printf("      MATCH:%d  RELATION:%d  COMP:%d EXTLISTS:%d HEADERS:\n", 
+! 		   d->data[ip].value, d->data[ip+1].value,d->data[ip+2].value,d->data[ip+3]);
+  	} else {
+! 	  printf("      MATCH:%d COMP:%d EXTLISTS:%d HEADERS:\n",d->data[ip].value, d->data[ip+2].value,d->data[ip+3]);
+  	}
+! 	ip+=4;
+  	ip = dump_sl(d,ip,level);
+  	ip++;
+  	print_spaces(level*4);
+***************
+*** 173,185 ****
+  	print_spaces(level*4);
+  	if (d->data[ip].value == B_COUNT || d->data[ip].value == B_VALUE)
+  	{
+! 	    printf("      MATCH:%d RELATION: %d COMP: %d TYPE: %d HEADERS:\n", 
+! 		   d->data[ip].value, d->data[ip+1].value, d->data[ip+2].value, d->data[ip+3].value);
+  	} else {
+! 	    printf("      MATCH:%d COMP:%d TYPE:%d HEADERS:\n",
+! 		   d->data[ip].value,d->data[ip+1].value,d->data[ip+3].value);
+  	}
+! 	ip+=4;
+  	ip = dump_sl(d,ip,level); ip++;
+  	print_spaces(level*4);
+  	printf("      DATA:\n");
+--- 173,185 ----
+  	print_spaces(level*4);
+  	if (d->data[ip].value == B_COUNT || d->data[ip].value == B_VALUE)
+  	{
+! 	    printf("      MATCH:%d RELATION: %d COMP: %d EXTLISTS: %d TYPE: %d HEADERS:\n", 
+! 		   d->data[ip].value, d->data[ip+1].value, d->data[ip+2].value, d->data[ip+3].value, d->data[ip+4].value);
+  	} else {
+! 	    printf("      MATCH:%d COMP:%d EXTISTS:%d TYPE:%d HEADERS:\n",
+! 		   d->data[ip].value,d->data[ip+1].value, d->data[ip+3], d->data[ip+4].value);
+  	}
+! 	ip+=5;
+  	ip = dump_sl(d,ip,level); ip++;
+  	print_spaces(level*4);
+  	printf("      DATA:\n");
+***************
+*** 272,280 ****
+  	    break;
+  
+  	case B_REDIRECT:
+! 	    printf("%d: REDIRECT COPY(%d) ADDRESS({%d}%s)\n",i,
+! 		   d->data[i+1].value,d->data[i+2].len,d->data[i+3].str);
+! 	    i+=3;
+  	    break;
+  
+  	case B_SETFLAG:
+--- 277,285 ----
+  	    break;
+  
+  	case B_REDIRECT:
+! 	    printf("%d: REDIRECT COPY(%d) EXTLISTS(%d) ADDRESS({%d}%s)\n",i,
+! 		   d->data[i+1].value,d->data[i+2], d->data[i+3].len,d->data[i+4].str);
+! 	    i+=4;
+  	    break;
+  
+  	case B_SETFLAG:
+diff -rc cyrus-imapd-2.3.14/sieve/bc_emit.c cyrus-imapd-2.3.14-patched/sieve/bc_emit.c
+*** cyrus-imapd-2.3.14/sieve/bc_emit.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/bc_emit.c	2009-06-02 12:27:57.000000000 +0000
+***************
+*** 266,272 ****
+  	    return -1;
+  	wrote += sizeof(int);
+  	(*codep)++;    
+! 	/*now drop relation*/
+  	if(write_int(fd, bc->data[(*codep)].value) == -1)
+  	    return -1;
+  	wrote += sizeof(int);
+--- 266,277 ----
+  	    return -1;
+  	wrote += sizeof(int);
+  	(*codep)++;    
+! 	/* Now drop relation */
+! 	if(write_int(fd, bc->data[(*codep)].value) == -1)
+! 	    return -1;
+! 	wrote += sizeof(int);
+! 	(*codep)++;
+! 	/* Now drop extlists */
+  	if(write_int(fd, bc->data[(*codep)].value) == -1)
+  	    return -1;
+  	wrote += sizeof(int);
+***************
+*** 301,306 ****
+--- 306,316 ----
+  	    return -1;
+  	wrote += sizeof(int);
+  	(*codep)++;
++ 	/* Now drop extlists */
++ 	if(write_int(fd, bc->data[(*codep)].value) == -1)
++ 	    return -1;
++ 	wrote += sizeof(int);
++ 	(*codep)++;
+  	/*now drop address part*/
+  	if(write_int(fd, bc->data[(*codep)].value) == -1)
+  	    return -1;
+***************
+*** 511,517 ****
+  	}
+  	
+  	case B_FILEINTO:
+- 	case B_REDIRECT:
+  	    /* Copy (word), Folder/Address String */
+  
+  	    if(write_int(fd,bc->data[codep++].value) == -1)
+--- 521,526 ----
+***************
+*** 536,541 ****
+--- 545,580 ----
+  
+  	    break;
+  
++ 	case B_REDIRECT:
++ 	    /* Copy (word), Extlists (word) Folder/Address String */
++             
++             /* copy */
++ 	    if(write_int(fd,bc->data[codep++].value) == -1)
++ 		return -1;
++ 
++             /* extlists */
++ 	    if(write_int(fd,bc->data[codep++].value) == -1)
++ 		return -1;
++ 
++ 	    filelen += 2 * sizeof(int);
++ 
++ 	    len = bc->data[codep++].len;
++ 	    if(write_int(fd,len) == -1)
++ 		return -1;
++ 
++ 	    filelen+=sizeof(int);
++ 	    
++ 	    if(write(fd,bc->data[codep++].str,len) == -1)
++ 		return -1;
++ 	    
++ 	    ret = align_string(fd, len);
++ 	    if(ret == -1)
++ 		return -1;
++ 
++ 	    filelen += len + ret;
++ 
++ 	    break;
++ 
+  	case B_REJECT:
+  	    /*just a string*/
+  	    len = bc->data[codep++].len;
+diff -rc cyrus-imapd-2.3.14/sieve/bc_eval.c cyrus-imapd-2.3.14-patched/sieve/bc_eval.c
+*** cyrus-imapd-2.3.14/sieve/bc_eval.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/bc_eval.c	2009-06-02 12:39:07.000000000 +0000
+***************
+*** 486,492 ****
+  	char * addr;
+  	int addrpart=ADDRESS_ALL;/* XXX correct default behavior?*/
+  
+!  	int headersi=i+5;/* the i value for the begining of the headers */
+  	int datai=(ntohl(bc[headersi+1].value)/4);
+  
+  	int numheaders=ntohl(bc[headersi].len);
+--- 486,492 ----
+  	char * addr;
+  	int addrpart=ADDRESS_ALL;/* XXX correct default behavior?*/
+  
+!  	int headersi=i+6;/* the i value for the begining of the headers */
+  	int datai=(ntohl(bc[headersi+1].value)/4);
+  
+  	int numheaders=ntohl(bc[headersi].len);
+***************
+*** 497,503 ****
+  	int match=ntohl(bc[i+1].value);
+  	int relation=ntohl(bc[i+2].value);
+  	int comparator=ntohl(bc[i+3].value);
+! 	int apart=ntohl(bc[i+4].value);
+  	int count=0;
+  	char scount[3];
+  	int isReg = (match==B_REGEX);
+--- 497,504 ----
+  	int match=ntohl(bc[i+1].value);
+  	int relation=ntohl(bc[i+2].value);
+  	int comparator=ntohl(bc[i+3].value);
+! 	int extlists = ntohl(bc[i+4].value);//unused yet
+! 	int apart=ntohl(bc[i+5].value);
+  	int count=0;
+  	char scount[3];
+  	int isReg = (match==B_REGEX);
+***************
+*** 656,662 ****
+      {
+  	const char** val;
+  
+! 	int headersi=i+4;/*the i value for the begining of hte headers*/
+  	int datai=(ntohl(bc[headersi+1].value)/4);
+  
+  	int numheaders=ntohl(bc[headersi].len);
+--- 657,663 ----
+      {
+  	const char** val;
+  
+! 	int headersi=i+5;/*the i value for the begining of the headers*/
+  	int datai=(ntohl(bc[headersi+1].value)/4);
+  
+  	int numheaders=ntohl(bc[headersi].len);
+***************
+*** 667,672 ****
+--- 668,674 ----
+  	int match=ntohl(bc[i+1].value);
+  	int relation=ntohl(bc[i+2].value);
+  	int comparator=ntohl(bc[i+3].value);
++ 	int extlists =ntohl(bc[i+4].value);
+  	int count=0;	
+  	char scount[3];
+  	int isReg = (match==B_REGEX);
+***************
+*** 1020,1025 ****
+--- 1022,1028 ----
+  	    ip++;
+  	    break;
+  
++         case B_EREJECT: /* 21 */
+  	case B_REJECT:/*3*/
+  	    ip = unwrap_string(bc, ip+1, &data, NULL);
+  	    
+***************
+*** 1051,1057 ****
+  	    ip+=1;
+  
+  	case B_REDIRECT_ORIG:/*5*/
+! 	{
+  	    ip = unwrap_string(bc, ip+1, &data, NULL);
+  
+  	    res = do_redirect(actions, data, !copy);
+--- 1054,1062 ----
+  	    ip+=1;
+  
+  	case B_REDIRECT_ORIG:/*5*/
+! 	{ 
+! 	  ; int extlists = ntohl(bc[ip+1].value);
+! 	    ip+= 1;
+  	    ip = unwrap_string(bc, ip+1, &data, NULL);
+  
+  	    res = do_redirect(actions, data, !copy);
+diff -rc cyrus-imapd-2.3.14/sieve/bc_generate.c cyrus-imapd-2.3.14-patched/sieve/bc_generate.c
+*** cyrus-imapd-2.3.14/sieve/bc_generate.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/bc_generate.c	2009-06-02 12:27:29.000000000 +0000
+***************
+*** 303,310 ****
+  	if (codep == -1) return -1;
+  	break;
+      case HEADER:
+! 	/* BC_HEADER { c: comparator } { headers : string list }
+! 	   { patterns : string list } 
+  	*/
+        
+  	if(!atleast(retval,codep + 1)) return -1;
+--- 303,310 ----
+  	if (codep == -1) return -1;
+  	break;
+      case HEADER:
+! 	/* BC_HEADER { c: comparator } { b: extlists 0/1}
+!            { headers : string list }  { patterns : string list } 
+  	*/
+        
+  	if(!atleast(retval,codep + 1)) return -1;
+***************
+*** 317,322 ****
+--- 317,325 ----
+  				       t->u.h.comparator);
+  	if (codep == -1) return -1;
+        
++ 	/* extlists */
++ 	retval->data[codep++].value = t->u.h.extlists;
++ 
+  	/* headers */
+  	codep = bc_stringlist_generate(codep, retval, t->u.h.sl);
+  	if (codep == -1) return -1;
+***************
+*** 327,333 ****
+  	break;
+      case ADDRESS:
+      case ENVELOPE:
+! 	/* (BC_ADDRESS | BC_ENVELOPE) {c : comparator} 
+  	   (B_ALL | B_LOCALPART | ...) { header : string list }
+  	   { pattern : string list } */
+        
+--- 330,336 ----
+  	break;
+      case ADDRESS:
+      case ENVELOPE:
+! 	/* (BC_ADDRESS | BC_ENVELOPE) {c : comparator} {b : extlists}
+  	   (B_ALL | B_LOCALPART | ...) { header : string list }
+  	   { pattern : string list } */
+        
+***************
+*** 335,346 ****
+        
+  	retval->data[codep++].op = (t->type == ADDRESS)
+  	    ? BC_ADDRESS : BC_ENVELOPE;
+!             
+  	codep = bc_comparator_generate(codep, retval,t->u.ae.comptag,
+  				       t->u.ae.relation, 
+  				       t->u.ae.comparator);
+  	if (codep == -1) return -1;
+  
+  	if(!atleast(retval,codep+1)) return -1;
+  
+  	/*address part*/
+--- 338,352 ----
+        
+  	retval->data[codep++].op = (t->type == ADDRESS)
+  	    ? BC_ADDRESS : BC_ENVELOPE;
+!         /* comparator */
+  	codep = bc_comparator_generate(codep, retval,t->u.ae.comptag,
+  				       t->u.ae.relation, 
+  				       t->u.ae.comparator);
+  	if (codep == -1) return -1;
+  
++ 	/* extlists */
++        	retval->data[codep++].value = t->u.ae.extlists;
++ 
+  	if(!atleast(retval,codep+1)) return -1;
+  
+  	/*address part*/
+***************
+*** 550,560 ****
+  	    case REDIRECT:
+  		/* REDIRECT
+  		   VALUE copy
+  		   STRING address
+  		*/
+! 		if(!atleast(retval,codep+4)) return -1;
+  		retval->data[codep++].op = B_REDIRECT;
+  		retval->data[codep++].value = c->u.r.copy;
+  		retval->data[codep++].len = strlen(c->u.r.address);
+  		retval->data[codep++].str = c->u.r.address;
+  		break;
+--- 563,575 ----
+  	    case REDIRECT:
+  		/* REDIRECT
+  		   VALUE copy
++                    VALUE extlists
+  		   STRING address
+  		*/
+! 		if(!atleast(retval,codep+5)) return -1;
+  		retval->data[codep++].op = B_REDIRECT;
+  		retval->data[codep++].value = c->u.r.copy;
++ 		retval->data[codep++].value = c->u.r.extlists;
+  		retval->data[codep++].len = strlen(c->u.r.address);
+  		retval->data[codep++].str = c->u.r.address;
+  		break;
+diff -rc cyrus-imapd-2.3.14/sieve/bytecode.h cyrus-imapd-2.3.14-patched/sieve/bytecode.h
+*** cyrus-imapd-2.3.14/sieve/bytecode.h	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/bytecode.h	2009-06-02 12:03:54.000000000 +0000
+***************
+*** 96,103 ****
+   * version 0x03 scripts implemented short-circuiting of testlists (recompile)
+   * version 0x04 scripts implemented BODY, INCLUDE and COPY extensions
+   * version 0x05 scripts implemented updated VACATION (:from and :handle)
+   */
+! #define BYTECODE_VERSION 0x05
+  #define BYTECODE_MIN_VERSION 0x03 /* minimum supported version */
+  #define BYTECODE_MAGIC "CyrSBytecode"
+  #define BYTECODE_MAGIC_LEN 12 /* Should be multiple of 4 */
+--- 96,104 ----
+   * version 0x03 scripts implemented short-circuiting of testlists (recompile)
+   * version 0x04 scripts implemented BODY, INCLUDE and COPY extensions
+   * version 0x05 scripts implemented updated VACATION (:from and :handle)
++  * version 0x06 scripts implemented external-lists
+   */
+! #define BYTECODE_VERSION 0x06
+  #define BYTECODE_MIN_VERSION 0x03 /* minimum supported version */
+  #define BYTECODE_MAGIC "CyrSBytecode"
+  #define BYTECODE_MAGIC_LEN 12 /* Should be multiple of 4 */
+diff -rc cyrus-imapd-2.3.14/sieve/interp.c cyrus-imapd-2.3.14-patched/sieve/interp.c
+*** cyrus-imapd-2.3.14/sieve/interp.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/interp.c	2009-05-28 18:02:57.000000000 +0000
+***************
+*** 145,150 ****
+--- 148,156 ----
+  	    strlcat(extensions, " subaddress", sizeof(extensions));
+  	if (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_COPY)
+  	    strlcat(extensions, " copy", sizeof(extensions));
++         if (//i->extlists &&
++  	    (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_EXTLISTS))
++ 	    strlcat(extensions, " extlists", sizeof(extensions));
+      }
+  
+      return extensions;
+diff -rc cyrus-imapd-2.3.14/sieve/script.c cyrus-imapd-2.3.14-patched/sieve/script.c
+*** cyrus-imapd-2.3.14/sieve/script.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/script.c	2009-05-28 18:17:27.000000000 +0000
+***************
+*** 165,170 ****
+--- 173,182 ----
+  	       (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_COPY)) {
+  	s->support.copy = 1;
+  	return 1;
++     } else if (!strcmp("extlists", req) &&
++  	       (config_sieve_extensions & IMAP_ENUM_SIEVE_EXTENSIONS_EXTLISTS)) {
++  	s->support.extlists = 1;
++  	return 1;
+      }
+      return 0;
+  }
+diff -rc cyrus-imapd-2.3.14/sieve/script.h cyrus-imapd-2.3.14-patched/sieve/script.h
+*** cyrus-imapd-2.3.14/sieve/script.h	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/script.h	2009-05-28 17:59:34.000000000 +0000
+***************
+*** 72,77 ****
+--- 72,78 ----
+  	int i_ascii_numeric: 1;
+  	int include        : 1;
+  	int copy           : 1;
++         int extlists       : 1; 
+      } support;
+  
+      void *script_context;
+diff -rc cyrus-imapd-2.3.14/sieve/sievec.c cyrus-imapd-2.3.14-patched/sieve/sievec.c
+diff -rc cyrus-imapd-2.3.14/sieve/sieved.c cyrus-imapd-2.3.14-patched/sieve/sieved.c
+*** cyrus-imapd-2.3.14/sieve/sieved.c	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieved.c	2009-06-02 12:35:51.000000000 +0000
+***************
+*** 270,275 ****
+--- 270,277 ----
+      case BC_ADDRESS:/*7*/
+  	printf("Address [");
+  	i=printComparison(d, i+1);
++         if (ntohl(d[i++].value))
++ 	  printf("               extlists\n");
+  	printf("               type: ");
+  	switch(ntohl(d[i++].value))
+  	{
+***************
+*** 288,293 ****
+--- 290,297 ----
+      case BC_ENVELOPE:/*8*/
+  	printf("Envelope [");
+  	i=printComparison(d, i+1);
++         if (ntohl(d[i++].value))
++ 	  printf("               extlists\n");
+  	printf("                type: ");
+  	switch(ntohl(d[i++].value))
+  	{
+***************
+*** 306,311 ****
+--- 310,317 ----
+      case BC_HEADER:/*9*/
+  	printf("Header [");
+  	i= printComparison(d, i+1);
++         if (ntohl(d[i++].value))
++ 	  printf("               extlists\n");
+  	printf("              Headers: ");
+  	i=write_list(ntohl(d[i].len), i+1, d);
+  	printf("              Data: ");
+***************
+*** 377,382 ****
+--- 382,391 ----
+  	    i = unwrap_string(d, i, &data, &len);
+  	    printf("REJECT {%d}%s\n", len, data);
+  	    break;
++ 	case B_EREJECT: /*21*/
++ 	    i = unwrap_string(d, i, &data, &len);
++ 	    printf("EREJECT {%d}%s\n", len, data);
++ 	    break;
+  
+  	case B_FILEINTO: /*19*/
+  	    copy = ntohl(d[i++].value);
+***************
+*** 387,395 ****
+  
+  	case B_REDIRECT: /*20*/
+  	    copy = ntohl(d[i++].value);
+! 	case B_REDIRECT_ORIG: /*5*/
+  	    i = unwrap_string(d, i, &data, &len);
+! 	    printf("REDIRECT COPY(%d) ADDRESS({%d}%s)\n",copy,len,data);
+  	    break;
+  	     
+  	case B_IF:/*6*/
+--- 396,405 ----
+  
+  	case B_REDIRECT: /*20*/
+  	    copy = ntohl(d[i++].value);
+! 	case B_REDIRECT_ORIG: /*5*/ ;
+! 	    int extlists = ntohl(d[i++].value);
+  	    i = unwrap_string(d, i, &data, &len);
+! 	    printf("REDIRECT COPY(%d) EXTLISTS(%d) ADDRESS({%d}%s)\n",copy, extlists, len,data);
+  	    break;
+  	     
+  	case B_IF:/*6*/
+diff -rc cyrus-imapd-2.3.14/sieve/sieve_interface.h cyrus-imapd-2.3.14-patched/sieve/sieve_interface.h
+*** cyrus-imapd-2.3.14/sieve/sieve_interface.h	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieve_interface.h	2009-05-31 22:32:19.000000000 +0000
+***************
+*** 104,109 ****
+--- 104,110 ----
+  
+  typedef struct sieve_redirect_context {
+      const char *addr;
++     const char extlists;
+  } sieve_redirect_context_t;
+  
+  typedef struct sieve_reject_context {
+*** cyrus-imapd-2.3.14/sieve/sieve-lex.l	2008-03-24 20:08:46.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieve-lex.l	2009-05-28 17:50:32.000000000 +0000
+***************
+*** 160,165 ****
+--- 161,167 ----
+  <INITIAL>:global	return GLOBAL;
+  <INITIAL>return		return RETURN;
+  <INITIAL>:copy		return COPY;
++ <INITIAL>:list          return LIST;
+  <INITIAL>[ \t\n\r] ;	/* ignore whitespace */
+  <INITIAL>#.* ;		/* ignore hash comments */
+  <INITIAL>"/*"([^\*]|\*[^\/])*\*?"*/" ;	/* ignore bracket comments */
+diff -rc cyrus-imapd-2.3.14/sieve/sieve.y cyrus-imapd-2.3.14-patched/sieve/sieve.y
+*** cyrus-imapd-2.3.14/sieve/sieve.y	2008-10-02 13:36:56.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/sieve.y	2009-05-28 23:13:43.000000000 +0000
+***************
+*** 65,71 ****
+  
+      /* definitions */
+      extern int addrparse(void);
+! 
+  struct vtags {
+      int days;
+      stringlist_t *addresses;
+--- 65,75 ----
+  
+      /* definitions */
+      extern int addrparse(void);
+! struct rtags {
+!    char copy;
+!    char extlists;
+! };
+!  
+  struct vtags {
+      int days;
+      stringlist_t *addresses;
+***************
+*** 79,84 ****
+--- 83,89 ----
+      char *comparator;
+      int comptag;
+      int relation;
++     char extlists;
+  };
+  
+  struct aetags {
+***************
+*** 86,91 ****
+--- 91,97 ----
+      char *comparator;
+      int comptag;
+      int relation;
++     char extlists;
+  };
+  
+  struct btags {
+***************
+*** 124,130 ****
+  static commandlist_t *build_notify(int t, struct ntags *n);
+  static commandlist_t *build_denotify(int t, struct dtags *n);
+  static commandlist_t *build_fileinto(int t, int c, char *f);
+! static commandlist_t *build_redirect(int t, int c, char *a);
+  static struct aetags *new_aetags(void);
+  static struct aetags *canon_aetags(struct aetags *ae);
+  static void free_aetags(struct aetags *ae);
+--- 130,138 ----
+  static commandlist_t *build_notify(int t, struct ntags *n);
+  static commandlist_t *build_denotify(int t, struct dtags *n);
+  static commandlist_t *build_fileinto(int t, int c, char *f);
+! static commandlist_t *build_redirect(int t, struct rtags *c, char *a);
+! static struct rtags *new_rtags(void);
+! static void free_rtags(struct rtags *r);
+  static struct aetags *new_aetags(void);
+  static struct aetags *canon_aetags(struct aetags *ae);
+  static void free_aetags(struct aetags *ae);
+***************
+*** 174,179 ****
+--- 182,188 ----
+      commandlist_t *cl;
+      struct vtags *vtag;
+      struct aetags *aetag;
++     struct rtags *rtag;
+      struct htags *htag;
+      struct btags *btag;
+      struct ntags *ntag;
+***************
+*** 194,200 ****
+  %token DAYS ADDRESSES SUBJECT FROM HANDLE MIME
+  %token METHOD ID OPTIONS LOW NORMAL HIGH ANY MESSAGE
+  %token INCLUDE PERSONAL GLOBAL RETURN
+! %token COPY
+  
+  %type <cl> commands command action elsif block
+  %type <sl> stringlist strings
+--- 203,209 ----
+  %token DAYS ADDRESSES SUBJECT FROM HANDLE MIME
+  %token METHOD ID OPTIONS LOW NORMAL HIGH ANY MESSAGE
+  %token INCLUDE PERSONAL GLOBAL RETURN
+! %token COPY LIST
+  
+  %type <cl> commands command action elsif block
+  %type <sl> stringlist strings
+***************
+*** 203,208 ****
+--- 212,218 ----
+  %type <testl> testlist tests
+  %type <htag> htags
+  %type <aetag> aetags
++ %type <rtag> rtags
+  %type <btag> btags
+  %type <vtag> vtags
+  %type <ntag> ntags
+***************
+*** 256,262 ****
+  				     YYERROR; /* vm should call yyerror() */
+  				   }
+  	                           $$ = build_fileinto(FILEINTO, $2, $3); }
+! 	| REDIRECT copy STRING   { if (!verify_address($3)) {
+  				     YYERROR; /* va should call yyerror() */
+  				   }
+  	                           $$ = build_redirect(REDIRECT, $2, $3); }
+--- 283,289 ----
+  				     YYERROR; /* vm should call yyerror() */
+  				   }
+  	                           $$ = build_fileinto(FILEINTO, $2, $3); }
+!         | REDIRECT rtags STRING   { if ($2->extlists == 0 && !verify_address($3)) {
+  				     YYERROR; /* va should call yyerror() */
+  				   }
+  	                           $$ = build_redirect(REDIRECT, $2, $3); }
+***************
+*** 346,351 ****
+--- 373,399 ----
+  	| PERSONAL		 { $$ = PERSONAL; }
+  	| GLOBAL		 { $$ = GLOBAL; }
+  	;
++  rtags: /* empty */		 { $$ = new_rtags(); }
++  	| rtags COPY		 { $$ = $1;
++                                     if (!parse_script->support.copy) {
++  				     yyerror("copy MUST be enabled with \"require\"");
++  				     YYERROR;
++  				   } else
++  				   if ($$->copy != 0) {
++  					yyerror("duplicate :copy"); YYERROR; }
++  				   else {$$->copy = 1;}
++                                   }
++  	| rtags LIST		 { $$ = $1;
++  				   if (!parse_script->support.extlists) {
++  				     yyerror("extlists MUST be enabled with \"require\"");
++  				     YYERROR;
++  				   } else
++  				   if ($$->extlists != 0) {
++  					yyerror("duplicate :list"); YYERROR; }
++  				   else {$$->extlists = 1;}
++  				 }
++ 	;
++  
+  
+  ntags: /* empty */		 { $$ = new_ntags(); }
+  	| ntags ID STRING	 { if ($$->id != NULL) { 
+***************
+*** 564,569 ****
+--- 612,624 ----
+  			yyerror("comparator-i;ascii-numeric MUST be enabled with \"require\"");
+  			YYERROR; }
+  				   else { $$->comparator = $3; } }
++  	| aetags LIST		{ $$ = $1;
++                 	            	  if ($$->extlists != 0) {
++  			yyerror("duplicate :list"); YYERROR; }
++  				  else if (!parse_script->support.extlists) {
++  				    yyerror("extlists MUST be enabled with \"require\"");
++  				    YYERROR; }
++  				  else { $$->extlists = 1; } }
+  	;
+  
+  htags: /* empty */		 { $$ = new_htags(); }
+***************
+*** 587,592 ****
+--- 642,654 ----
+  			 yyerror("comparator-i;ascii-numeric MUST be enabled with \"require\"");  YYERROR; }
+  				   else { 
+  				     $$->comparator = $3; } }
++  	| htags LIST		  { $$ = $1;
++  				   if ($$->extlists != 0) {
++  			yyerror("duplicate :list"); YYERROR; }
++  				   else if (!parse_script->support.extlists) {
++  			yyerror("extlists MUST be enabled with \"require\""); YYERROR; }
++  				   else { $$->extlists = 1; } }
++ 
+          ;
+  
+  btags: /* empty */		 { $$ = new_btags(); }
+***************
+*** 749,754 ****
+--- 816,822 ----
+  	ret->u.ae.sl = sl;
+  	ret->u.ae.pl = pl;
+  	ret->u.ae.addrpart = ae->addrtag;
++ 	ret->u.ae.extlists = ae->extlists;
+  	free_aetags(ae);
+  
+      }
+***************
+*** 768,773 ****
+--- 836,842 ----
+  	ret->u.h.comparator=xstrdup(h->comparator);
+  	ret->u.h.sl = sl;
+  	ret->u.h.pl = pl;
++ 	ret->u.h.extlists = h->extlists;
+  	free_htags(h);
+      }
+      return ret;
+***************
+*** 863,887 ****
+      return ret;
+  }
+  
+! static commandlist_t *build_redirect(int t, int copy, char *address)
+  {
+      commandlist_t *ret = new_command(t);
+  
+      assert(t == REDIRECT);
+  
+      if (ret) {
+! 	ret->u.r.copy = copy;
+  	ret->u.r.address = address;
+      }
+      return ret;
+  }
+  
+  static struct aetags *new_aetags(void)
+  {
+      struct aetags *r = (struct aetags *) xmalloc(sizeof(struct aetags));
+  
+      r->addrtag = r->comptag = r->relation=-1;
+      r->comparator=NULL;
+  
+      return r;
+  }
+--- 932,976 ----
+      return ret;
+  }
+  
+! static commandlist_t *build_redirect(int t, struct rtags* r, char *address)
+  {
+      commandlist_t *ret = new_command(t);
+  
+      assert(t == REDIRECT);
+  
+      if (ret) {
+! 	ret->u.r.copy = r->copy;
+!         ret->u.r.extlists = r->extlists;
+  	ret->u.r.address = address;
++         free(r);
+      }
+      return ret;
+  }
+  
++ static struct rtags *new_rtags(void)
++ {
++      struct rtags *r = (struct rtags *) xmalloc(sizeof(struct rtags));
++  
++      r->extlists = 0;
++      r->copy = 0;
++  
++      return r;
++ }
++  
++ static void free_rtags(struct rtags *r)
++ {
++      free(r);
++ }
++  
++ 
++ 
+  static struct aetags *new_aetags(void)
+  {
+      struct aetags *r = (struct aetags *) xmalloc(sizeof(struct aetags));
+  
+      r->addrtag = r->comptag = r->relation=-1;
+      r->comparator=NULL;
++     r->extlists = 0;
+  
+      return r;
+  }
+***************
+*** 907,913 ****
+      struct htags *r = (struct htags *) xmalloc(sizeof(struct htags));
+  
+      r->comptag = r->relation= -1;
+!     
+      r->comparator = NULL;
+  
+      return r;
+--- 996,1002 ----
+      struct htags *r = (struct htags *) xmalloc(sizeof(struct htags));
+  
+      r->comptag = r->relation= -1;
+!     r->extlists = 0;    
+      r->comparator = NULL;
+  
+      return r;
+diff -rc cyrus-imapd-2.3.14/sieve/tree.h cyrus-imapd-2.3.14-patched/sieve/tree.c
+*** cyrus-imapd-2.3.14/sieve/tree.h	2008-03-24 20:08:47.000000000 +0000
+--- cyrus-imapd-2.3.14-patched/sieve/tree.h	2009-06-02 12:22:49.000000000 +0000
+***************
+*** 82,87 ****
+--- 82,88 ----
+  	    char * comparator;
+  	    int relation;
+  	    void *comprock;
++ 	    int extlists;
+  	    stringlist_t *sl;
+  	    stringlist_t *pl;
+  	} h;
+***************
+*** 89,94 ****
+--- 90,96 ----
+  	    int comptag;
+  	    char * comparator;
+  	    int relation; 
++ 	    int extlists;
+  	    void *comprock;
+  	    stringlist_t *sl;
+  	    stringlist_t *pl;
+***************
+*** 139,144 ****
+--- 141,147 ----
+  	struct { /* it's a redirect action */
+  	    char *address;
+  	    int copy;
++ 	    int extlists;
+  	} r;
+  	struct { /* it's a vacation action */
+  	    char *subject;

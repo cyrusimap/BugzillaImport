@@ -1,0 +1,89 @@
+? no_msg_body.patch
+Index: imap_err.et
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imap_err.et,v
+retrieving revision 1.52
+diff -u -r1.52 imap_err.et
+--- imap_err.et	22 Oct 2003 20:05:11 -0000	1.52
++++ imap_err.et	8 Jul 2004 16:39:05 -0000
+@@ -97,9 +97,6 @@
+ ec IMAP_MESSAGE_BADHEADER,
+    "Message contains invalid header"
+ 
+-ec IMAP_MESSAGE_NOBLANKLINE,
+-   "Message has no header/body separator"
+-
+ ec IMAP_QUOTAROOT_NONEXISTENT,
+    "Quota root does not exist"
+ 
+Index: imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.474
+diff -u -r1.474 imapd.c
+--- imapd.c	6 Jul 2004 20:02:19 -0000	1.474
++++ imapd.c	8 Jul 2004 16:39:05 -0000
+@@ -2426,10 +2426,6 @@
+ 	    r = IMAP_PROTOCOL_ERROR;
+ 	    goto done;
+ 	}
+-	if (size < 2) {
+-	    r = IMAP_MESSAGE_NOBLANKLINE;
+-	    goto done;
+-	}
+ 
+ 	if (!isnowait) {
+ 	    /* Tell client to send the message */
+Index: lmtpengine.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/lmtpengine.c,v
+retrieving revision 1.113
+diff -u -r1.113 lmtpengine.c
+--- lmtpengine.c	29 May 2004 05:18:20 -0000	1.113
++++ lmtpengine.c	8 Jul 2004 16:39:05 -0000
+@@ -240,11 +240,6 @@
+ 	prot_printf(pout, "554 5.6.0 Message contains invalid header\r\n");
+ 	break;
+ 
+-    case IMAP_MESSAGE_NOBLANKLINE:
+-	prot_printf(pout, 
+-		    "554 5.6.0 Message has no header/body separator\r\n");
+-	break;
+-
+     case IMAP_MAILBOX_NONEXISTENT:
+ 	/* XXX Might have been moved to other server */
+ 	if (LMTP_LONG_ERROR_MSGS) {
+Index: message.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/message.c,v
+retrieving revision 1.98
+diff -u -r1.98 message.c
+--- message.c	27 Feb 2004 17:44:55 -0000	1.98
++++ message.c	8 Jul 2004 16:39:05 -0000
+@@ -285,7 +285,9 @@
+     /* Go back and check headers */
+     sawnl = 1;
+     for (;;) {
+-	if (!fgets(buf, sizeof(buf), to)) return IMAP_MESSAGE_NOBLANKLINE;
++	if (!fgets(buf, sizeof(buf), to)) {
++	    return sawnl ? 0 : IMAP_MESSAGE_BADHEADER;
++	}
+ 
+ 	/* End of header section */
+ 	if (sawnl && buf[0] == '\r') return 0;
+Index: spool.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/spool.c,v
+retrieving revision 1.5
+diff -u -r1.5 spool.c
+--- spool.c	4 Mar 2004 16:09:34 -0000	1.5
++++ spool.c	8 Jul 2004 16:39:05 -0000
+@@ -165,7 +165,7 @@
+ 		
+ 		if (peek == '\r' || peek == '\n') {
+ 		    /* just reached the end of message */
+-		    r = IMAP_MESSAGE_NOBLANKLINE;
++		    r = 0;
+ 		    goto ph_error;
+ 		}
+ 	    }

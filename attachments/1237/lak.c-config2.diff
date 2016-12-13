@@ -1,0 +1,83 @@
+--- lak.c.config1	2009-11-07 17:28:53.000000000 +1100
++++ lak.c	2009-11-15 16:53:25.000000000 +1100
+@@ -77,7 +77,7 @@
+ 	void *rock;
+ } LAK_PASSWORD_SCHEME;
+ 
+-static int lak_config_read(LAK_CONF *, const char *);
++static int lak_config_read(LAK_CONF *, const char *, const char *);
+ static void lak_config_error(const int, const char *, const char *);
+ static int lak_config_int(const char *);
+ static int lak_config_switch(const char *);
+@@ -152,12 +152,14 @@
+ 
+ static int lak_config_read(
+ 	LAK_CONF *conf,
+-	const char *configfile)
++	const char *configfile,
++	const char *configrealm)
+ {
+ 	FILE *infile;
+ 	int lineno = 0;
+ 	char buf[4096];
+ 	char *p, *key;
++	int in_realm = 1;
+ 
+ 	infile = fopen(configfile, "r");
+ 	if (!infile) {
+@@ -205,7 +207,19 @@
+ 			return LAK_FAIL;
+ 		}
+ 
+-		if (!strcasecmp(key, "ldap_servers"))
++		if (!strcasecmp(key, "realm")) {
++			if(!strcasecmp(p, configrealm)) {
++				in_realm = 1;
++			} else {
++				in_realm = 0;
++			}
++		}
++		if(!in_realm)
++			continue;
++
++		if (!strcasecmp(key, "realm")) {
++			
++		} else if (!strcasecmp(key, "ldap_servers"))
+ 			strlcpy(conf->servers, p, LAK_URL_LEN);
+ 
+ 		else if (!strcasecmp(key, "ldap_bind_dn"))
+@@ -357,7 +371,6 @@
+ 
+ 		else if (!strcasecmp(key, "ldap_debug"))
+ 			conf->debug = lak_config_int(p);
+-
+ 		else {
+ 	    	syslog(LOG_ERR|LOG_AUTH,
+ 			   "Error in saslauthd config file on line %d: Unknown key %s",
+@@ -446,7 +459,7 @@
+ 
+ 	strlcpy(conf->path, configfile, LAK_PATH_LEN);
+ 
+-	rc = lak_config_read(conf, conf->path);
++	rc = lak_config_read(conf, conf->path, "");
+ 	if (rc != LAK_OK) {
+ 		lak_config_free(conf);
+ 		return rc;
+@@ -1583,8 +1596,16 @@
+ 	if (EMPTY(user))
+ 		return LAK_FAIL;
+ 
+-	if (EMPTY(realm))
++	if (EMPTY(realm)) {
+ 		realm = lak->conf->default_realm;
++	} else {
++		syslog(LOG_DEBUG|LOG_AUTH, "lak_authenticate for realm %s", realm);
++		rc = lak_config_read(lak->conf, lak->conf->path, realm);
++		if (rc != LAK_OK) {
++			syslog(LOG_ERR|LOG_AUTH, "lak_authenticate error reading config for realm %s", realm);
++			return LAK_FAIL;
++		}
++	}
+ 
+ 	for (i = 0; authenticator[i].method != -1; i++) {
+ 		if (authenticator[i].method == lak->conf->auth_method) {

@@ -1,0 +1,173 @@
+diff --git a/imap/imapd.c b/imap/imapd.c
+index d8109cc..e954413 100644
+--- a/imap/imapd.c
++++ b/imap/imapd.c
+@@ -8899,6 +8899,10 @@ int getsortcriteria(char *tag, struct sortcrit **sortcrit)
+ 	    (*sortcrit)[n].key = SORT_CC;
+ 	else if (!strcmp(criteria.s, "date"))
+ 	    (*sortcrit)[n].key = SORT_DATE;
++        else if (!strcmp(criteria.s, "displayfrom"))
++            (*sortcrit)[n].key = SORT_DISPLAYFROM;
++        else if (!strcmp(criteria.s, "displayto"))
++            (*sortcrit)[n].key = SORT_DISPLAYTO;
+ 	else if (!strcmp(criteria.s, "from"))
+ 	    (*sortcrit)[n].key = SORT_FROM;
+ 	else if (!strcmp(criteria.s, "size"))
+diff --git a/imap/imapd.h b/imap/imapd.h
+index c251e04..74eddfb 100644
+--- a/imap/imapd.h
++++ b/imap/imapd.h
+@@ -218,6 +218,8 @@ enum {
+     SORT_ARRIVAL,
+     SORT_CC,
+     SORT_DATE,
++    SORT_DISPLAYFROM,
++    SORT_DISPLAYTO,
+     SORT_FROM,
+     SORT_SIZE,
+     SORT_SUBJECT,
+diff --git a/imap/index.c b/imap/index.c
+index db16383..c56edec 100644
+--- a/imap/index.c
++++ b/imap/index.c
+@@ -143,6 +143,8 @@ static void index_printflags(struct index_state *state, uint32_t msgno, int usin
+ static void index_checkflags(struct index_state *state, int dirty);
+ static char *find_msgid(char *str, char **rem);
+ static char *get_localpart_addr(const char *header);
++static char *get_addr(const char *header);
++static char *get_displayname_addr(const char *header);
+ static char *index_extract_subject(const char *subj, size_t len, int *is_refwd);
+ static char *_index_extract_subject(char *s, int *is_refwd);
+ static void index_get_ids(MsgData *msgdata,
+@@ -1354,8 +1356,9 @@ int index_sort(struct index_state *state, struct sortcrit *sortcrit,
+     /* debug */
+     if (CONFIG_TIMING_VERBOSE) {
+ 	int len;
+-	char *key_names[] = { "SEQUENCE", "ARRIVAL", "CC", "DATE", "FROM",
+-			      "SIZE", "SUBJECT", "TO", "ANNOTATION", "MODSEQ" };
++        char *key_names[] = { "SEQUENCE", "ARRIVAL", "CC", "DATE", "FROM",
++                              "SIZE", "SUBJECT", "TO", "ANNOTATION", "MODSEQ",
++                              "DISPLAYFROM", "DISPLAYTO" };
+ 	char buf[1024] = "";
+ 
+ 	while (sortcrit->key && sortcrit->key < VECTOR_SIZE(key_names)) {
+@@ -3500,10 +3503,11 @@ static MsgData *index_msgdata_load(struct index_state *state,
+ 	for (j = 0; sortcrit[j].key; j++) {
+ 	    label = sortcrit[j].key;
+ 
+-	    if ((label == SORT_CC || 
+-		 label == SORT_FROM || label == SORT_SUBJECT ||
+-		 label == SORT_TO || label == LOAD_IDS) &&
+-		!did_cache) {
++            if ((label == SORT_CC || label == SORT_DATE ||
++                 label == SORT_FROM || label == SORT_SUBJECT ||
++                 label == SORT_TO || label == LOAD_IDS ||
++                 label == SORT_DISPLAYFROM || label == SORT_DISPLAYTO) &&
++                !did_cache) {
+ 
+ 		/* fetch cached info */
+ 		if (mailbox_cacherecord(mailbox, &im->record))
+@@ -3573,6 +3577,16 @@ static MsgData *index_msgdata_load(struct index_state *state,
+ 		index_get_ids(cur, envtokens, cacheitem_base(&im->record, CACHE_HEADERS),
+ 					      cacheitem_size(&im->record, CACHE_HEADERS));
+ 		break;
++            case SORT_DISPLAYFROM:
++                cur->displayfrom = get_displayname_addr(cacheitem_base(&im->record, CACHE_FROM));
++                if ( ((cur->displayfrom) == NULL) || ((*cur->displayfrom) == 0) )
++                        cur->displayfrom = get_addr(cacheitem_base(&im->record, CACHE_FROM));
++                break;
++            case SORT_DISPLAYTO:
++                cur->displayto = get_displayname_addr(cacheitem_base(&im->record, CACHE_TO));
++                if ( ((cur->displayto) == NULL) || ((*cur->displayto) == 0) )
++                        cur->displayto = get_addr(cacheitem_base(&im->record, CACHE_TO));
++                break;
+ 	    }
+ 	}
+ 
+@@ -3597,6 +3611,37 @@ static char *get_localpart_addr(const char *header)
+ }
+ 
+ /*
++ * Get the 'addr-mailbox|addr-host' of an address from a header
++ */
++static char *get_addr(const char *header)
++{
++    struct address *addr = NULL;
++    char *ret;
++    char *domain;
++    parseaddr_list(header, &addr);
++    ret = xstrdup(addr && addr->mailbox ? addr->mailbox : "");
++    domain = (addr && addr->domain ? addr->domain : "");
++    ret = (char *) xrealloc(ret, strlen(ret)+strlen(domain)+1);
++    ret = strcat(ret,domain);
++    parseaddr_free(addr);
++    return ret;
++}
++
++/*
++ * Get the 'display-name' of an address from a header
++ */
++static char *get_displayname_addr(const char *header)
++{
++    struct address *addr = NULL;
++    char *ret;
++
++    parseaddr_list(header, &addr);
++    ret = xstrdup(addr && addr->name ? addr->name : "");
++    parseaddr_free(addr);
++    return ret;
++}
++
++/*
+  * Extract base subject from subject header
+  *
+  * This is a wrapper around _index_extract_subject() which preps the
+@@ -3997,6 +4042,12 @@ static int index_sort_compare(MsgData *md1, MsgData *md2,
+ 	case SORT_MODSEQ:
+ 	    ret = numcmp(md1->modseq, md2->modseq);
+ 	    break;
++        case SORT_DISPLAYFROM:
++            ret = strcmp(md1->displayfrom, md2->displayfrom);
++            break;
++        case SORT_DISPLAYTO:
++            ret = strcmp(md1->displayto, md2->displayto);
++            break;
+ 	}
+     } while (!ret && sortcrit[i++].key != SORT_SEQUENCE);
+ 
+@@ -4016,6 +4067,8 @@ static void index_msgdata_free(MsgData *md)
+     FREE(md->cc);
+     FREE(md->from);
+     FREE(md->to);
++    FREE(md->displayfrom);
++    FREE(md->displayto);
+     FREE(md->xsubj);
+     FREE(md->msgid);
+     for (i = 0; i < md->nref; i++)
+diff --git a/imap/index.h b/imap/index.h
+index 60dcf8b..e782de4 100644
+--- a/imap/index.h
++++ b/imap/index.h
+@@ -145,6 +145,8 @@ typedef struct msgdata {
+     char *cc;			/* local-part of first "cc" address */
+     char *from;			/* local-part of first "from" address */
+     char *to;			/* local-part of first "to" address */
++    char *displayfrom;          /* display-name of first "from" address */
++    char *displayto;            /* display-name of first "to" address */
+     char *xsubj;		/* extracted subject text */
+     unsigned xsubj_hash;	/* hash of extracted subject text */
+     int is_refwd;		/* is message a reply or forward? */
+diff --git a/imap/version.h b/imap/version.h
+index fd0b0c0..5f851cd 100644
+--- a/imap/version.h
++++ b/imap/version.h
+@@ -80,7 +80,8 @@ enum {
+ 	"MAILBOX-REFERRALS NAMESPACE UIDPLUS " \
+ 	"NO_ATOMIC_RENAME UNSELECT " \
+ 	"CHILDREN MULTIAPPEND BINARY CATENATE CONDSTORE ESEARCH " \
+-	"SORT SORT=MODSEQ THREAD=ORDEREDSUBJECT THREAD=REFERENCES " \
++	"SORT SORT=MODSEQ SORT=DISPLAY " \
++	"THREAD=ORDEREDSUBJECT THREAD=REFERENCES " \
+ 	"ANNOTATEMORE LIST-EXTENDED WITHIN QRESYNC SCAN XLIST" \
+ 	CAPA_URLAUTH CAPA_NETSCAPE
+ 

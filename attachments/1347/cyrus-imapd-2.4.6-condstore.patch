@@ -1,0 +1,118 @@
+diff -Naur cyrus-imapd-2.4.6.orig/doc/man/cyradm.1.html cyrus-imapd-2.4.6/doc/man/cyradm.1.html
+--- cyrus-imapd-2.4.6.orig/doc/man/cyradm.1.html	2010-12-20 14:20:47.000000000 +0100
++++ cyrus-imapd-2.4.6/doc/man/cyradm.1.html	2011-01-18 12:05:02.000000000 +0100
+@@ -205,11 +205,6 @@
+ <dd>
+ <p>Sets a comment or description associated with the mailbox.</p>
+ </dd>
+-<dt><strong><a name="condstore" class="item"><code>condstore</code></a></strong></dt>
+-
+-<dd>
+-<p>Enables the IMAP CONDSTORE extension (modification sequences) on the mailbox.</p>
+-</dd>
+ <dt><strong><a name="expire" class="item"><code>expire</code></a></strong></dt>
+ 
+ <dd>
+diff -Naur cyrus-imapd-2.4.6.orig/doc/man/imapd.conf.5.html cyrus-imapd-2.4.6/doc/man/imapd.conf.5.html
+--- cyrus-imapd-2.4.6.orig/doc/man/imapd.conf.5.html	2010-12-20 14:20:44.000000000 +0100
++++ cyrus-imapd-2.4.6/doc/man/imapd.conf.5.html	2011-01-18 12:05:33.000000000 +0100
+@@ -957,8 +957,7 @@
+ <p style="margin-left:18%;">Default &quot;options&quot;
+ field for the mailbox on create. You&rsquo;ll want to know
+ what you&rsquo;re doing before setting this, but it can
+-apply some default annotations like condstore or duplicate
+-supression</p>
++apply some default annotations like duplicate supression</p>
+ 
+ <p style="margin-left:11%;"><b>mailnotifier:</b>
+ &lt;none&gt;</p>
+diff -Naur cyrus-imapd-2.4.6.orig/lib/imapoptions cyrus-imapd-2.4.6/lib/imapoptions
+--- cyrus-imapd-2.4.6.orig/lib/imapoptions	2010-12-20 14:15:49.000000000 +0100
++++ cyrus-imapd-2.4.6/lib/imapoptions	2011-01-18 12:06:19.000000000 +0100
+@@ -608,7 +608,7 @@
+ { "mailbox_default_options", 0, INT }
+ /* Default "options" field for the mailbox on create.  You'll want to know
+    what you're doing before setting this, but it can apply some default
+-   annotations like condstore or duplicate supression */
++   annotations like duplicate supression */
+ 
+ { "mailnotifier", NULL, STRING }
+ /* Notifyd(8) method to use for "MAIL" notifications.  If not set, "MAIL"
+diff -Naur cyrus-imapd-2.4.6.orig/man/imapd.conf.5 cyrus-imapd-2.4.6/man/imapd.conf.5
+--- cyrus-imapd-2.4.6.orig/man/imapd.conf.5	2010-12-20 14:20:42.000000000 +0100
++++ cyrus-imapd-2.4.6/man/imapd.conf.5	2011-01-18 12:03:24.000000000 +0100
+@@ -521,7 +521,7 @@
+ .IP "\fBmailbox_default_options:\fR 0" 5
+ Default "options" field for the mailbox on create.  You'll want to know
+ what you're doing before setting this, but it can apply some default
+-annotations like condstore or duplicate supression 
++annotations like duplicate supression 
+ .IP "\fBmailnotifier:\fR <none>" 5
+ Notifyd(8) method to use for "MAIL" notifications.  If not set, "MAIL"
+ notifications are disabled. 
+diff -Naur cyrus-imapd-2.4.6.orig/perl/imap/cyradm.sh cyrus-imapd-2.4.6/perl/imap/cyradm.sh
+--- cyrus-imapd-2.4.6.orig/perl/imap/cyradm.sh	2010-12-20 14:15:49.000000000 +0100
++++ cyrus-imapd-2.4.6/perl/imap/cyradm.sh	2011-01-18 12:07:47.000000000 +0100
+@@ -212,10 +212,6 @@
+ 
+ Sets a comment or description associated with the mailbox.
+ 
+-=item C<condstore>
+-
+-Enables the IMAP CONDSTORE extension (modification sequences) on the mailbox.
+-
+ =item C<expire>
+ 
+ Sets the number of days after which messages will be expired from the mailbox.
+diff -Naur cyrus-imapd-2.4.6.orig/perl/imap/IMAP/Admin.pm cyrus-imapd-2.4.6/perl/imap/IMAP/Admin.pm
+--- cyrus-imapd-2.4.6.orig/perl/imap/IMAP/Admin.pm	2010-12-20 14:15:49.000000000 +0100
++++ cyrus-imapd-2.4.6/perl/imap/IMAP/Admin.pm	2011-01-18 12:06:54.000000000 +0100
+@@ -785,7 +785,6 @@
+   my ($self, $mailbox, $entry, $value) = @_;
+ 
+   my %values = ( "comment" => "/comment",
+-		 "condstore" => "/vendor/cmu/cyrus-imapd/condstore",
+ 		 "expire" => "/vendor/cmu/cyrus-imapd/expire",
+ 		 "news2mail" => "/vendor/cmu/cyrus-imapd/news2mail",
+ 		 "sharedseen" => "/vendor/cmu/cyrus-imapd/sharedseen",
+diff -Naur cyrus-imapd-2.4.6.orig/perl/imap/IMAP/Shell.pm cyrus-imapd-2.4.6/perl/imap/IMAP/Shell.pm
+--- cyrus-imapd-2.4.6.orig/perl/imap/IMAP/Shell.pm	2010-12-20 14:15:49.000000000 +0100
++++ cyrus-imapd-2.4.6/perl/imap/IMAP/Shell.pm	2011-01-18 12:07:28.000000000 +0100
+@@ -127,7 +127,7 @@
+ 		  [\&_sc_info, '[mailbox]',
+ 		   'display mailbox/server metadata'],
+ 		mboxcfg =>
+-		  [\&_sc_mboxcfg, 'mailbox [comment|condstore|expire|news2mail|sieve|squat|/<explicit annotation>] value',
++		  [\&_sc_mboxcfg, 'mailbox [comment|expire|news2mail|sieve|squat|/<explicit annotation>] value',
+ 		   'configure mailbox'],
+ 		mboxconfig => 'mboxcfg',
+ 		reconstruct =>
+@@ -1437,7 +1437,7 @@
+   while (defined ($opt = shift(@argv))) {
+     last if $opt eq '--';
+     if ($opt =~ /^-/) {
+-      die "usage: mboxconfig mailbox [comment|condstore|expire|news2mail|sharedseen|sieve|squat|/<explicit annotation>] value\n";
++      die "usage: mboxconfig mailbox [comment|expire|news2mail|sharedseen|sieve|squat|/<explicit annotation>] value\n";
+     }
+     else {
+       push(@nargv, $opt);
+@@ -1446,7 +1446,7 @@
+   }
+   push(@nargv, @argv);
+   if (@nargv < 2) {
+-    die "usage: mboxconfig mailbox [comment|condstore|expire|news2mail|sharedseen|sieve|squat|/<explicit annotation>] value\n";
++    die "usage: mboxconfig mailbox [comment|expire|news2mail|sharedseen|sieve|squat|/<explicit annotation>] value\n";
+   }
+   if (!$cyrref || !$$cyrref) {
+     die "mboxconfig: no connection to server\n";
+@@ -1676,10 +1676,6 @@
+ 
+ Sets a comment or description associated with the mailbox.
+ 
+-=item C<condstore>
+-
+-Enables the IMAP CONDSTORE extension (modification sequences) on the mailbox.
+-
+ =item C<expire>
+ 
+ Sets the number of days after which messages will be expired from the mailbox.

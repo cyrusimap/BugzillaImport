@@ -1,0 +1,74 @@
+--- ptclient/ldap.c.orig	Mon Mar 10 09:48:40 2003
++++ ptclient/ldap.c	Mon Mar 10 09:48:28 2003
+@@ -145,6 +145,7 @@
+     static char retbuf[81];
+     char sawalpha;
+     char *p;
++    int username_tolower = 0;
+ 
+     if(!len) len = strlen(identifier);
+     if(len >= sizeof(retbuf)) return NULL;
+@@ -154,9 +155,14 @@
+ 
+     /* Copy the string and look up values in the allowedchars array above.
+      * If we see any we don't like, reject the string.
++     * Lowercase usernames if requested.
+      */
++    username_tolower = libcyrus_config_getswitch(CYRUSOPT_USERNAME_TOLOWER);
+     sawalpha = 0;
+     for(p = retbuf; *p; p++) {
++	if (username_tolower && isupper((unsigned char)*p))
++	    *p = tolower((unsigned char)*p);
++
+ 	switch (allowedchars[*(unsigned char*) p]) {
+ 	case 0:
+ 	    return NULL;
+--- lib/libcyr_cfg.h.orig	Mon Mar 10 09:49:18 2003
++++ lib/libcyr_cfg.h	Mon Mar 10 09:48:07 2003
+@@ -71,6 +71,8 @@
+ 
+     /* Use unix groups with auth_unix? (ON) */
+     CYRUSOPT_AUTH_UNIX_GROUP_ENABLE,
++    /* Lowercase usernames? (OFF) */
++    CYRUSOPT_USERNAME_TOLOWER,
+     /* Don't fsync() the skiplist backend (OFF) */
+     CYRUSOPT_SKIPLIST_UNSAFE,
+     /* Temporary Storage Directory ("/tmp") */
+--- lib/libcyr_cfg.c.orig	Mon Mar 10 09:49:18 2003
++++ lib/libcyr_cfg.c	Mon Mar 10 09:48:11 2003
+@@ -59,6 +59,10 @@
+       (union cyrus_config_value)((int)1),
+       CYRUS_OPT_SWITCH },
+ 
++    { CYRUSOPT_USERNAME_TOLOWER,
++      (union cyrus_config_value)((int)0),
++      CYRUS_OPT_SWITCH },
++
+     { CYRUSOPT_SKIPLIST_UNSAFE,
+       (union cyrus_config_value)((int)0),
+       CYRUS_OPT_SWITCH },
+--- lib/auth_unix.c.orig	Mon Mar 10 09:49:09 2003
++++ lib/auth_unix.c	Mon Mar 10 09:48:22 2003
+@@ -162,6 +162,7 @@
+     struct group *grp;
+     char sawalpha;
+     char *p;
++    int username_tolower = 0;
+ 
+     if(!len) len = strlen(identifier);
+     if(len >= sizeof(retbuf)) return NULL;
+@@ -186,9 +187,14 @@
+ 
+     /* Copy the string and look up values in the allowedchars array above.
+      * If we see any we don't like, reject the string.
++     * Lowercase usernames if requested.
+      */
++    username_tolower = libcyrus_config_getswitch(CYRUSOPT_USERNAME_TOLOWER);
+     sawalpha = 0;
+     for(p = retbuf; *p; p++) {
++	if (username_tolower && isupper((unsigned char)*p))
++	    *p = tolower((unsigned char)*p);
++
+ 	switch (allowedchars[*(unsigned char*) p]) {
+ 	case 0:
+ 	    return NULL;

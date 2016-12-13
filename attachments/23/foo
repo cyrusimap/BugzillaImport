@@ -1,0 +1,62 @@
+From amos@utdallas.edu Mon Jan 21 12:11:20 2002
+Date: Mon, 21 Jan 2002 11:01:59 -0600 (CST)
+From: Amos Gouaux <amos@utdallas.edu>
+To: Rob Siemborski <rjs3@andrew.cmu.edu>
+Cc: cyrus-bugs@andrew.cmu.edu
+Subject: Re: tooo bleeding edge?
+
+I just restarted saslauthd after all threads froze.  This time I had
+a truss on all of them.  They all end with a sequence like this:
+
+20194:  close(255)                                      = 0
+20194:  munmap(0xFF2E0000, 8192)                        = 0
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  open("/etc/.ldap_cache_door", O_RDONLY)         = 255
+20194:  fcntl(255, F_SETFD, 0x00000001)                 = 0
+20194:  door_info(255, 0xFF0BFEF8)                      = 0
+20194:  door_call(255, 0xFFBE8E58)                      = 0
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  open("/dev/udp", O_RDONLY)                      Err#24 EMFILE
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  so_socket(2, 2, 0, "", 1)                       Err#24 EMFILE
+20194:  so_socket(2, 2, 0, "", 1)                       Err#24 EMFILE
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  open("/dev/udp", O_RDONLY)                      Err#24 EMFILE
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  sysinfo(SI_SRPC_DOMAIN, "utdallas.edu", 256)    = 13
+20194:  so_socket(2, 2, 0, "", 1)                       Err#24 EMFILE
+
+and then everything is dead in the water.
+
+Ah....
+
+     24 EMFILE
+           Too many open files
+
+           No process may have more than  OPEN_MAX file  descrip-
+           tors open at a time.
+
+Now that looks familar.
+
+In /etc/system I've got:
+
+set rlim_fd_max=4096
+
+Could there be a file descriptor leak?  Didn't run into this before
+upgrading cyrus/sasl....
+
+
+

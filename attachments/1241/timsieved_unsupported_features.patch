@@ -1,0 +1,62 @@
+--- cyrus-imapd-2.3.14/sieve/sieve.y	2008-10-02 13:36:56.000000000 +0000
++++ cyrus-imapd-2.3.14-patched/sieve/sieve.y	2009-05-28 23:13:43.000000000 +0000
+@@ -114,7 +120,7 @@
+ 
+ static commandlist_t *ret;
+ static sieve_script_t *parse_script;
+-static int check_reqs(stringlist_t *sl);
++static char* check_reqs(stringlist_t *sl);
+ static test_t *build_address(int t, struct aetags *ae,
+ 			     stringlist_t *sl, stringlist_t *pl);
+ static test_t *build_header(int t, struct htags *h,
+@@ -219,8 +229,16 @@
+ 	| require reqs
+ 	;
+ 
+-require: REQUIRE stringlist ';'	{ if (!check_reqs($2)) {
+-                                    yyerror("Unsupported feature(s) in \"require\"");
++require: REQUIRE stringlist ';'	{ char *x = check_reqs($2);
++				  if (x[0]) {
++				    char *z = malloc(strlen(x) + 40);
++				    if (strchr(x, ','))
++				      sprintf(z, "Unsupported features in \"require\": %s", x);
++				    else
++				      sprintf(z, "Unsupported feature in \"require\": %s", x);
++				    yyerror(z);
++				    free(z);
++				    free(x);
+ 				    YYERROR; 
+                                   } }
+ 	;
+@@ -718,21 +780,26 @@
+     return 0;
+ }
+ 
+-static int check_reqs(stringlist_t *sl)
++static char* check_reqs(stringlist_t *sl)
+ {
+     int i = 1;
+     stringlist_t *s;
+-    
++    char* ret = malloc(1000); //POTENTIAL BUFFER OVERFLOW
++    ret[0] = '\0';
+     while (sl != NULL) {
+ 	s = sl;
+ 	sl = sl->next;
+-
+-	i &= script_require(parse_script, s->s);
++	if (script_require(parse_script, s->s) == 0) {
++	  strcat(ret, s->s);
++	  strcat(ret, ", ");
++	}
+ 
+ 	if (s->s) free(s->s);
+ 	free(s);
+     }
+-    return i;
++    if (ret[0])
++      ret[strlen(ret)-2] = '\0';
++    return ret;
+ }
+ 
+ static test_t *build_address(int t, struct aetags *ae,

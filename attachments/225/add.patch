@@ -1,0 +1,49 @@
+Index: master/master.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/master/master.c,v
+retrieving revision 1.46
+diff -u -r1.46 master.c
+--- master/master.c	22 Sep 2003 23:04:03 -0000	1.46
++++ master/master.c	26 Sep 2003 15:46:14 -0000
+@@ -826,9 +826,14 @@
+ 		break;
+ 	    default:
+ 		syslog(LOG_CRIT, 
+-		       "service %s pid %d in ILLEGAL STATE: exited. Serious software bug or memory corruption detected!",
+-		       c->s->name, pid);
++		       "service %s pid %d in ILLEGAL state: exited. Serious software bug or memory corruption detected!",
++		       ((c->s) ? c->s->name : "unknown"), pid);
++		syslog(LOG_DEBUG,
++		       "service %s pid %d in ILLEGAL state: forced to valid UNKNOWN state",
++		       ((c->s) ? c->s->name : "unknown"), pid);
++		c->service_state = SERVICE_STATE_UNKNOWN;
+ 	    }
++
+ 	    if (c->s) {
+ 	        /* update counters for known services */
+ 		switch (c->service_state) {
+@@ -1048,6 +1053,11 @@
+ {
+     struct centry * c;
+ 
++    /* s must NOT be null
++     * but we don't assert(s) since the current code 
++     * makes NULL s an impossibility anyway 
++     */
++
+     /* Search hash table with linked list for pid */
+     c = ctable[msg->service_pid % child_table_size];
+     while (c && c->pid != msg->service_pid) c = c->next;
+@@ -1066,6 +1076,12 @@
+     }
+ 
+     /* paranoia */
++    if (s != c->s) {
++	syslog(LOG_ERR, 
++	       "service %s pid %d: changing from service %s due to received message",
++	       s->name, c->pid, ( (c->s) ? c->s->name : "unknown" ));
++	c->s = s;
++    }
+     switch (c->service_state) {
+     case SERVICE_STATE_UNKNOWN:
+ 	syslog(LOG_WARNING, 

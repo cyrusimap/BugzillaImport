@@ -1,0 +1,31 @@
+Index: imapd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.435
+diff -u -r1.435 imapd.c
+--- imapd.c	22 Jul 2003 19:17:10 -0000	1.435
++++ imapd.c	23 Jul 2003 21:15:24 -0000
+@@ -6279,11 +6279,18 @@
+ 	acl = xstrdup(inacl);
+     }
+ 
+-    if(!r) {
+-	r = (*imapd_namespace.mboxname_toexternal)(&imapd_namespace,
+-						   name,
+-						   imapd_userid,
+-						   externalname);
++    if (!r) {
++	size_t res_size = strlcpy(externalname, name, sizeof(externalname));
++	
++	if(res_size >= sizeof(externalname)) {
++	    /* Overflow */
++	    r = IMAP_MAILBOX_BADNAME;
++	} else {
++	    /* Don't do full namespace tointernal, since for altnamespace
++	     * that will assume we're in this admin's inbox namespace, which
++	     * we aren't! */
++	    mboxname_hiersep_toexternal(&imapd_namespace, externalname);
++	}
+     }
+ 
+     if(!r) {

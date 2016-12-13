@@ -1,0 +1,70 @@
+commit 06260404c047e111f86b67de2862ec124f8fe2ec
+Author: Sergio Gelato <Sergio.Gelato@astro.su.se>
+Date:   Wed Oct 21 20:45:17 2015 +0200
+
+    Postpone computing maxbufsize until after security layers have been set.
+    
+    Prior to this commit it was possible for the GSSAPI mechanism acceptor to
+    return a zero maxbufsize together with the integrity and/or confidentiality
+    layer bits set. This is not a workable combination.
+    
+    Solve this by not zeroing maxbufsize (as required by RFC 4752 when only
+    the only security layer selected is authentication) until computation of
+    the security layer mask is complete. The condition for zeroing maxbufsize
+    then becomes much more straightforward.
+
+diff --git a/plugins/gssapi.c b/plugins/gssapi.c
+index 2fd1b3b..e861864 100644
+--- a/plugins/gssapi.c
++++ b/plugins/gssapi.c
+@@ -1007,21 +1007,14 @@ gssapi_server_mech_ssfcap(context_t *text,
+     }
+ 
+     /* build up our security properties token */
+-    if (text->requiressf != 0 &&
+-	(text->qop & (LAYER_INTEGRITY|LAYER_CONFIDENTIALITY))) {
+-	if (params->props.maxbufsize > 0xFFFFFF) {
+-	    /* make sure maxbufsize isn't too large */
+-	    /* maxbufsize = 0xFFFFFF */
+-	    sasldata[1] = sasldata[2] = sasldata[3] = 0xFF;
+-	} else {
+-	    sasldata[1] = (params->props.maxbufsize >> 16) & 0xFF;
+-	    sasldata[2] = (params->props.maxbufsize >> 8) & 0xFF;
+-	    sasldata[3] = (params->props.maxbufsize >> 0) & 0xFF;
+-	}
++    if (params->props.maxbufsize > 0xFFFFFF) {
++	/* make sure maxbufsize isn't too large */
++	/* maxbufsize = 0xFFFFFF */
++	sasldata[1] = sasldata[2] = sasldata[3] = 0xFF;
+     } else {
+-	/* From RFC 4752: "The client verifies that the server maximum buffer is 0
+-	   if the server does not advertise support for any security layer." */
+-	sasldata[1] = sasldata[2] = sasldata[3] = 0;
++	sasldata[1] = (params->props.maxbufsize >> 16) & 0xFF;
++	sasldata[2] = (params->props.maxbufsize >> 8) & 0xFF;
++	sasldata[3] = (params->props.maxbufsize >> 0) & 0xFF;
+     }
+ 
+     sasldata[0] = 0;
+@@ -1047,6 +1040,12 @@ gssapi_server_mech_ssfcap(context_t *text,
+ 	sasldata[0] |= LAYER_CONFIDENTIALITY;
+     }
+ 
++    if ((sasldata[0] & ~LAYER_NONE) == 0) {
++	/* From RFC 4752: "The client verifies that the server maximum buffer is 0
++	   if the server does not advertise support for any security layer." */
++	sasldata[1] = sasldata[2] = sasldata[3] = 0;
++    }
++
+     /* Remember what we want and can offer */
+     text->qop = sasldata[0];
+ 
+@@ -1401,7 +1400,7 @@ int gssapiv2_server_plug_init(
+ 		       keytab, errno);
+ 	    return SASL_FAIL;
+ 	}
+-	
++
+ 	if(strlen(keytab) > 1024) {
+ 	    utils->log(NULL, SASL_LOG_ERR,
+ 		       "path to keytab is > 1024 characters");

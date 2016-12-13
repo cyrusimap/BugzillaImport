@@ -1,0 +1,144 @@
+Subject: Re: SETACL on user mailbox
+Date: Tue, 1 Oct 2002 13:49:57 -0400
+From: Lawrence Greenfield <leg+@andrew.cmu.edu>
+To: Ken Murchison <ken@oceana.com>
+CC: Lawrence Greenfield <leg+@andrew.cmu.edu>,
+     Rob Siemborski <rjs3@andrew.cmu.edu>, Rob Mueller <robm@fastmail.fm>
+
+Searching my memory.
+
+If I recall, I would prefer a solution that had this run-time
+configurable with an option like:
+
+implicit_owner_rights: cla
+
+which are then added where appropriate and modifies the output from
+myrights, etc.
+
+Regardless, the patch below doesn't work since it uses an enum (C
+level constant) in a preprocessor test (cpp level branch).
+
+If there's not a bug for this, there probably should be.
+
+Larry
+
+   Date: Tue, 01 Oct 2002 13:25:55 -0400
+   From: Ken Murchison <ken@oceana.com>
+
+   [1  <text/plain; us-ascii (7bit)>]
+
+   Jeremy Howard wrote:
+   >
+   > <off list>
+   >
+   > On Mon, 30 Sep 2002 12:34:39 -0400, "Ken Murchison"
+   > <ken@oceana.com> said:
+   > > Yes, it is more complex than just one check.  I have a patch floating
+   > > around from the first time your guys brought this up.  I can dust it
+   > > off and see if its complete.  IIRC, I was blocking on input/review
+   > > from Larry on my patch.
+   > >
+   > Could you please send it to us?
+
+   Here's what I worked on a while ago.  Currently its a compile-time
+   option which you'll have to set in acconfig.h
+
+   I believe Larry looked at it once and thought it wasn't enough.
+   Hopefully either Larry and/or Rob S. can take a look and see what, if
+   anything, I missed.
+
+   In the meantime, if you guys want to play with it and see what
+   does/doesn't work, feel free.
+
+   --
+   Kenneth Murchison     Oceana Matrix Ltd.
+   Software Engineer     21 Princeton Place
+   716-662-8973 x26      Orchard Park, NY 14127
+   --PGP Public Key--    http://www.oceana.com/~ken/ksm.pgp
+   [2 acl.diffs <text/plain; us-ascii (7bit)>]
+   Index: acconfig.h
+   ===================================================================
+   RCS file: /afs/andrew/system/cvs/src/cyrus/acconfig.h,v
+   retrieving revision 1.35
+   diff -u -r1.35 acconfig.h
+   --- acconfig.h       2002/05/15 15:21:36     1.35
+   +++ acconfig.h       2002/06/11 20:06:09
+   @@ -241,7 +241,10 @@
+        SQUAT_ENGINE = 1,
+
+        /* should we have long LMTP error messages? */
+   -    LMTP_LONG_ERROR_MSGS = 1
+   +    LMTP_LONG_ERROR_MSGS = 1,
+   +
+   +    /* should mailbox owner be granted 'a' rights implicitly? */
+   +    OWNER_IS_ADMIN = 1
+    };
+
+    #endif /* _CYRUS_IMAPD_CONFIG_H_ */
+   Index: imap/imapd.c
+   ===================================================================
+   RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+   retrieving revision 1.397
+   diff -u -r1.397 imapd.c
+   --- imapd.c  2002/06/07 02:05:32     1.397
+   +++ imapd.c  2002/06/11 20:06:13
+   @@ -4227,7 +4227,11 @@
+                    !strncmp(mailboxname+5, canon_identifier, canonidlen) &&
+                    (mailboxname[5+canonidlen] == '\0' ||
+                     mailboxname[5+canonidlen] == '.')) {
+   +#ifdef OWNER_IS_ADMIN
+               rightsdesc = "lca r s w i p d 0 1 2 3 4 5 6 7 8 9";
+   +#else
+   +        rightsdesc = "lc r s w i p d a 0 1 2 3 4 5 6 7 8 9";
+   +#endif
+           }
+           else {
+               rightsdesc = "\"\" l r s w i p c d a 0 1 2 3 4 5 6 7 8 9";
+   @@ -4273,9 +4277,15 @@
+           rights = cyrus_acl_myrights(imapd_authstate, acl);
+
+           /* Add in implicit rights */
+   -    if (imapd_userisadmin ||
+   -        mboxname_userownsmailbox(imapd_userid, mailboxname)) {
+   -        rights |= ACL_LOOKUP|ACL_ADMIN;
+   +    if (imapd_userisadmin) {
+   +        rights |= ACL_LOOKUP|ACL_ADMIN|ACL_CREATE;
+   +    }
+   +    else if (mboxname_userownsmailbox(imapd_userid, mailboxname)) {
+   +        rights |= ACL_LOOKUP|
+   +#ifdef OWNER_IS_ADMIN
+   +            ACL_ADMIN|
+   +#endif
+   +            ACL_CREATE;
+           }
+
+           if (!rights) {
+   Index: imap/mboxlist.c
+   ===================================================================
+   RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mboxlist.c,v
+   retrieving revision 1.196
+   diff -u -r1.196 mboxlist.c
+   --- mboxlist.c       2002/06/03 19:39:29     1.196
+   +++ mboxlist.c       2002/06/11 20:06:13
+   @@ -1351,7 +1351,7 @@
+        }
+
+        /* 2. Check Rights */
+   -    if (!r && !isadmin && !isusermbox) {
+   +    if (!r && !isadmin) {
+           access = cyrus_acl_myrights(auth_state, acl);
+           if (!(access & ACL_ADMIN)) {
+               r = (access & ACL_LOOKUP) ?
+   @@ -2100,7 +2100,11 @@
+    {
+        char *owner = (char *)rock;
+        if (strcmp(identifier, owner) != 0) return access;
+   -    return access|ACL_LOOKUP|ACL_ADMIN|ACL_CREATE;
+   +    return access|ACL_LOOKUP|
+   +#ifdef OWNER_IS_ADMIN
+   +    ACL_ADMIN|
+   +#endif
+   +    ACL_CREATE;
+    }
+
+    /*

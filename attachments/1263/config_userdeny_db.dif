@@ -1,0 +1,48 @@
+--- lib/imapoptions	2010/04/13 14:38:32	1.1
++++ lib/imapoptions	2010/04/13 15:10:39
+@@ -1183,6 +1183,9 @@
+ { "userdeny_db", "flat", STRINGLIST("flat", "berkeley", "berkeley-hash", "skiplist", "sql")}
+ /* The cyrusdb backend to use for the user access list. */
+ 
++{ "userdeny_db_enable", 0, SWITCH }
++/* Enable/disable the user access list (user_deny.db) checks. */
++
+ { "user_folder_limit", 0, INT }
+ /* Limit the number of folders a user can create in their INBOX.  
+    Set to 0 (default) for no limit.  Only affects folders in user. */
+--- imap/global.c	2010/04/13 13:22:58	1.1
++++ imap/global.c	2010/04/13 15:12:45
+@@ -88,6 +88,7 @@
+ 
+ int config_fulldirhash;				/* 0 */
+ int config_implicitrights;			/* "lkxa" */
++int config_userdeny_db_enable;                  /* 0 */
+ unsigned long config_metapartition_files;	/* 0 */
+ struct cyrusdb_backend *config_mboxlist_db;
+ struct cyrusdb_backend *config_quota_db;
+@@ -175,6 +176,8 @@
+ 
+     config_metapartition_files = config_getbitfield(IMAPOPT_METAPARTITION_FILES);
+ 
++    config_userdeny_db_enable = config_getswitch(IMAPOPT_USERDENY_DB_ENABLE);
++
+     if (!cyrus_init_nodb) {
+ 	/* lookup the database backends */
+ 	config_mboxlist_db =
+@@ -552,6 +555,7 @@
+ 	strcat(fname, FNAME_USERDENYDB);
+     }
+ 
++    if ( config_userdeny_db_enable ) {
+     /* try to open database */
+     r = DENYDB->open(fname, 0, &db);
+     if (r) {
+@@ -645,7 +649,7 @@
+ 		   cyrusdb_strerror(r));
+ 	}
+     }
+-
++    }
+     return ret;
+ }
+ 

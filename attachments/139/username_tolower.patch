@@ -1,0 +1,120 @@
+--- imap/global.c.orig	Tue Mar 11 22:45:48 2003
++++ imap/global.c	Tue Mar 11 22:44:40 2003
+@@ -153,6 +153,8 @@
+     libcyrus_config_setstring(CYRUSOPT_CONFIG_DIR, config_dir);
+     libcyrus_config_setswitch(CYRUSOPT_AUTH_UNIX_GROUP_ENABLE,
+ 			      config_getswitch(IMAPOPT_UNIX_GROUP_ENABLE));
++    libcyrus_config_setswitch(CYRUSOPT_USERNAME_TOLOWER,
++			      config_getswitch(IMAPOPT_USERNAME_TOLOWER));
+     libcyrus_config_setswitch(CYRUSOPT_SKIPLIST_UNSAFE,
+ 			      config_getswitch(IMAPOPT_SKIPLIST_UNSAFE));
+     libcyrus_config_setstring(CYRUSOPT_TEMP_PATH,
+--- lib/libcyr_cfg.c.orig	Mon Mar 10 09:49:18 2003
++++ lib/libcyr_cfg.c	Mon Mar 10 09:48:11 2003
+@@ -59,6 +59,10 @@
+       (union cyrus_config_value)((int)1),
+       CYRUS_OPT_SWITCH },
+ 
++    { CYRUSOPT_USERNAME_TOLOWER,
++      (union cyrus_config_value)((int)0),
++      CYRUS_OPT_SWITCH },
++
+     { CYRUSOPT_SKIPLIST_UNSAFE,
+       (union cyrus_config_value)((int)0),
+       CYRUS_OPT_SWITCH },
+--- lib/imapoptions.orig	Tue Mar 11 22:35:24 2003
++++ lib/imapoptions	Tue Mar 11 22:41:46 2003
+@@ -560,6 +560,12 @@
+    with a backend (such as LDAP) that can make getgrent() calls very
+    slow) */
+ 
++# xxx help with wording
++{ "username_tolower", 1, SWITCH }
++/* Lowercase username before login/autheticate.  This is useful with
++   authentication backends which ignore case during username lookups (such
++   as LDAP).  */
++
+ { "unixhierarchysep", 0, SWITCH }
+ /* Use the UNIX separator character '/' for delimiting levels of
+    mailbox hierarchy.  The default is to use the netnews separator
+--- lib/imapopts.c.orig	Tue Mar 11 22:42:11 2003
++++ lib/imapopts.c	Tue Mar 11 22:43:02 2003
+@@ -131,6 +131,7 @@
+   { IMAPOPT_USERPREFIX, "userprefix", 0, (union config_value)((const char *)"Other Users"), OPT_STRING },
+   { IMAPOPT_UNIX_GROUP_ENABLE, "unix_group_enable", 0, (union config_value)((int)1), OPT_SWITCH },
+   { IMAPOPT_UNIXHIERARCHYSEP, "unixhierarchysep", 0, (union config_value)((int)0), OPT_SWITCH },
++  { IMAPOPT_USERNAME_TOLOWER, "username_tolower", 0, (union config_value)((int)0), OPT_SWITCH },
+   { IMAPOPT_VIRTDOMAINS, "virtdomains", 0, (union config_value)((int)0), OPT_SWITCH },
+ 
+   { IMAPOPT_LAST, NULL, 0, { NULL }, OPT_NOTOPT }
+--- lib/imapopts.h.orig	Tue Mar 11 22:43:43 2003
++++ lib/imapopts.h	Tue Mar 11 22:44:05 2003
+@@ -113,6 +113,7 @@
+   IMAPOPT_USERPREFIX,
+   IMAPOPT_UNIX_GROUP_ENABLE,
+   IMAPOPT_UNIXHIERARCHYSEP,
++  IMAPOPT_USERNAME_TOLOWER,
+   IMAPOPT_VIRTDOMAINS,
+ 
+   IMAPOPT_LAST
+--- lib/libcyr_cfg.h.orig	Mon Mar 10 09:49:18 2003
++++ lib/libcyr_cfg.h	Mon Mar 10 09:48:07 2003
+@@ -71,6 +71,8 @@
+ 
+     /* Use unix groups with auth_unix? (ON) */
+     CYRUSOPT_AUTH_UNIX_GROUP_ENABLE,
++    /* Lowercase usernames? (OFF) */
++    CYRUSOPT_USERNAME_TOLOWER,
+     /* Don't fsync() the skiplist backend (OFF) */
+     CYRUSOPT_SKIPLIST_UNSAFE,
+     /* Temporary Storage Directory ("/tmp") */
+--- lib/auth_unix.c.orig	Mon Mar 10 09:49:09 2003
++++ lib/auth_unix.c	Mon Mar 10 09:48:22 2003
+@@ -162,6 +162,7 @@
+     struct group *grp;
+     char sawalpha;
+     char *p;
++    int username_tolower = 0;
+ 
+     if(!len) len = strlen(identifier);
+     if(len >= sizeof(retbuf)) return NULL;
+@@ -186,9 +187,14 @@
+ 
+     /* Copy the string and look up values in the allowedchars array above.
+      * If we see any we don't like, reject the string.
++     * Lowercase usernames if requested.
+      */
++    username_tolower = libcyrus_config_getswitch(CYRUSOPT_USERNAME_TOLOWER);
+     sawalpha = 0;
+     for(p = retbuf; *p; p++) {
++	if (username_tolower && isupper((unsigned char)*p))
++	    *p = tolower((unsigned char)*p);
++
+ 	switch (allowedchars[*(unsigned char*) p]) {
+ 	case 0:
+ 	    return NULL;
+--- ptclient/ldap.c.orig	Mon Mar 10 09:48:40 2003
++++ ptclient/ldap.c	Mon Mar 10 09:48:28 2003
+@@ -145,6 +145,7 @@
+     static char retbuf[81];
+     char sawalpha;
+     char *p;
++    int username_tolower = 0;
+ 
+     if(!len) len = strlen(identifier);
+     if(len >= sizeof(retbuf)) return NULL;
+@@ -154,9 +155,14 @@
+ 
+     /* Copy the string and look up values in the allowedchars array above.
+      * If we see any we don't like, reject the string.
++     * Lowercase usernames if requested.
+      */
++    username_tolower = libcyrus_config_getswitch(CYRUSOPT_USERNAME_TOLOWER);
+     sawalpha = 0;
+     for(p = retbuf; *p; p++) {
++	if (username_tolower && isupper((unsigned char)*p))
++	    *p = tolower((unsigned char)*p);
++
+ 	switch (allowedchars[*(unsigned char*) p]) {
+ 	case 0:
+ 	    return NULL;

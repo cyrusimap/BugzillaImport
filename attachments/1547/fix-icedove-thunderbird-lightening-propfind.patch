@@ -1,0 +1,46 @@
+Description: Fix DAV PROPFIND for Icedove/Thunderbird Lightening
+   Fix DAV PROPFIND for Icedove/Thunderbird Lightening plugin
+   which applies PROPFIND at the calendar level instead of at
+   the top-level /dav/ URI (i.e. Lightening requires a full
+   path AND issues PROPFIND on the full path rather than as a
+   discovery mechanism at the top level.  Cyrus currently only
+   allows PROPFIND in / or /dav
+ .
+ cyrus-imapd-2.4 (2.4.17+caldav~beta10-12~dfd1) unstable; urgency=low
+ .
+   * Fix DAV PROPFIND for Icedove/Thunderbird Lightening plugin
+     which applies PROPFIND at the calendar level instead of at
+     the top-level /dav/ URI (i.e. Lightening requires a full
+     path AND issues PROPFIND on the full path rather than as a
+     discovery mechanism at the top level.  Cyrus currently only
+     allows PROPFIND in / or /dav
+Author: Daniel Dickinson <debian@daniel.thecshore.com>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: other
+Bug: <url in upstream bugtracker>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- cyrus-imapd-2.4-2.4.17+caldav~beta10.orig/imap/httpd.c
++++ cyrus-imapd-2.4-2.4.17+caldav~beta10/imap/httpd.c
+@@ -3690,8 +3690,11 @@ static int meth_propfind_root(struct tra
+ 
+ #ifdef WITH_DAV
+     /* Apple iCal and Evolution both check "/" */
++    /* Thunderbird checks full path under /dav/... so limit
++       URI check to /dav/ portion of URI (if present)
++     */
+     if (!strcmp(txn->req_uri->path, "/") ||
+-	!strcmp(txn->req_uri->path, "/dav/")) {
++	!strncmp(txn->req_uri->path, "/dav/", 5)) {
+ 	/* Array of known "live" properties */
+ 	const struct prop_entry root_props[] = {
+ 

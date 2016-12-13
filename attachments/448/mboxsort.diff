@@ -1,0 +1,232 @@
+Index: imap/mboxlist.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mboxlist.c,v
+retrieving revision 1.221.2.22
+diff -u -r1.221.2.22 mboxlist.c
+--- imap/mboxlist.c	22 May 2006 20:37:25 -0000	1.221.2.22
++++ imap/mboxlist.c	25 Jul 2006 17:08:25 -0000
+@@ -2708,7 +2708,7 @@
+ 	strlcat(fname, FNAME_MBOXLIST, fname_len);
+     }
+ 
+-    ret = DB->open(fname, CYRUSDB_CREATE, &mbdb);
++    ret = DB->open(fname, CYRUSDB_CREATE|CYRUSDB_MBOXSORT, &mbdb);
+     if (ret != 0) {
+ 	syslog(LOG_ERR, "DBERROR: opening %s: %s", fname,
+ 	       cyrusdb_strerror(ret));
+@@ -2781,7 +2781,7 @@
+ 
+     /* Build subscription list filename */
+     subsfname = mboxlist_hash_usersubs(userid);
+-    r = SUBDB->open(subsfname, CYRUSDB_CREATE, ret);
++    r = SUBDB->open(subsfname, CYRUSDB_CREATE|CYRUSDB_MBOXSORT, ret);
+     if (r != CYRUSDB_OK) {
+ 	r = IMAP_IOERROR;
+     }
+Index: lib/bsearch.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/bsearch.c,v
+retrieving revision 1.19
+diff -u -r1.19 bsearch.c
+--- lib/bsearch.c	13 Feb 2003 20:15:39 -0000	1.19
++++ lib/bsearch.c	25 Jul 2006 17:08:26 -0000
+@@ -213,3 +213,22 @@
+ 	s2++;
+     }
+ }
++
++int bsearch_ncompare(const char *s1, int l1, const char *s2, int l2)
++{
++    int min = l1 < l2 ? l1 : l2;
++    int cmp = 0;
++
++    while (min-- > 0 && (cmp = TOCOMPARE(*s1) - TOCOMPARE(*s2)) == 0) {
++        s1++;
++        s2++;
++    }
++    if (min >= 0) {
++        return cmp;
++    } else {
++        if (l2 > l1) return -1;
++        else if (l1 > l2) return 1;
++        else return 0;
++    }
++}
++
+Index: lib/bsearch.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/bsearch.h,v
+retrieving revision 1.7
+diff -u -r1.7 bsearch.h
+--- lib/bsearch.h	13 Feb 2003 20:15:39 -0000	1.7
++++ lib/bsearch.h	25 Jul 2006 17:08:26 -0000
+@@ -51,4 +51,6 @@
+ 
+ extern int bsearch_compare(const char *s1, const char *s2);
+ 
++extern int bsearch_ncompare(const char *s1, int l1, const char *s2, int l2);
++
+ #endif /* INCLUDED_BSEARCH_H */
+Index: lib/cyrusdb.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb.h,v
+retrieving revision 1.25.2.4
+diff -u -r1.25.2.4 cyrusdb.h
+--- lib/cyrusdb.h	4 Jan 2006 02:14:14 -0000	1.25.2.4
++++ lib/cyrusdb.h	25 Jul 2006 17:08:26 -0000
+@@ -67,7 +67,8 @@
+ };
+ 
+ enum cyrusdb_openflags {
+-    CYRUSDB_CREATE = 0x01       /* Create the database if not existant */
++    CYRUSDB_CREATE   = 0x01,	/* Create the database if not existant */
++    CYRUSDB_MBOXSORT = 0x02	/* Use mailbox sort order ('.' sorts 1st) */
+ };
+ 
+ typedef int foreach_p(void *rock,
+Index: lib/cyrusdb_berkeley.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb_berkeley.c,v
+retrieving revision 1.2.2.12
+diff -u -r1.2.2.12 cyrusdb_berkeley.c
+--- lib/cyrusdb_berkeley.c	28 Feb 2006 12:58:07 -0000	1.2.2.12
++++ lib/cyrusdb_berkeley.c	25 Jul 2006 17:08:26 -0000
+@@ -51,6 +51,7 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ 
++#include "bsearch.h"
+ #include "cyrusdb.h"
+ #include "exitcodes.h"
+ #include "libcyr_cfg.h"
+@@ -376,6 +377,12 @@
+     return 0;
+ }
+ 
++static int mbox_compar(DB *db, const DBT *a, const DBT *b)
++{
++    return bsearch_ncompare((const char *) a->data, a->size,
++			    (const char *) b->data, b->size);
++}
++
+ static int myopen(const char *fname, DBTYPE type, int flags, struct db **ret)
+ {
+     DB *db = NULL;
+@@ -392,6 +399,7 @@
+ 	return CYRUSDB_IOERROR;
+     }
+     /* xxx set comparator! */
++    if (flags & CYRUSDB_MBOXSORT) db->set_bt_compare(db, mbox_compar);
+ 
+ #if DB_VERSION_MAJOR == 4 && DB_VERSION_MINOR >= 1
+     r = db->open(db, NULL, fname, NULL, type, dbflags | DB_AUTO_COMMIT, 0664);
+Index: lib/cyrusdb_skiplist.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb_skiplist.c,v
+retrieving revision 1.42.2.3
+diff -u -r1.42.2.3 cyrusdb_skiplist.c
+--- lib/cyrusdb_skiplist.c	9 Jun 2004 19:42:47 -0000	1.42.2.3
++++ lib/cyrusdb_skiplist.c	25 Jul 2006 17:08:26 -0000
+@@ -61,6 +61,7 @@
+ #endif
+ #include <netinet/in.h>
+ 
++#include "bsearch.h"
+ #include "cyrusdb.h"
+ #include "libcyr_cfg.h"
+ #include "lock.h"
+@@ -153,6 +154,8 @@
+     int listsize;
+     int logstart;		/* where the log starts from last chkpnt */
+     time_t last_recovery;
++
++    int (*compar) (const char *s1, int l1, const char *s2, int l2);
+ };
+ 
+ struct txn {
+@@ -175,6 +178,8 @@
+     use_osync = 0
+ };
+ 
++static int compare(const char *s1, int l1, const char *s2, int l2);
++
+ static void newtxn(struct db *db, struct txn *t)
+ {
+     /* fill in t */
+@@ -778,6 +783,8 @@
+ 	}
+     }
+ 
++    db->compar = (flags & CYRUSDB_MBOXSORT) ? bsearch_ncompare : compare;
++
+     *ret = db;
+     return 0;
+ }
+@@ -824,7 +831,7 @@
+ 
+     for (i = db->curlevel - 1; i >= 0; i--) {
+ 	while ((offset = FORWARD(ptr, i)) && 
+-	       compare(KEY(db->map_base + offset), KEYLEN(db->map_base + offset), 
++	       db->compar(KEY(db->map_base + offset), KEYLEN(db->map_base + offset), 
+ 		       key, keylen) < 0) {
+ 	    /* move forward at level 'i' */
+ 	    ptr = db->map_base + offset;
+@@ -875,7 +882,7 @@
+ 
+     ptr = find_node(db, key, keylen, 0);
+ 
+-    if (ptr == db->map_base || compare(KEY(ptr), KEYLEN(ptr), key, keylen)) {
++    if (ptr == db->map_base || db->compar(KEY(ptr), KEYLEN(ptr), key, keylen)) {
+ 	/* failed to find key/keylen */
+ 	r = CYRUSDB_NOTFOUND;
+     } else {
+@@ -963,7 +970,7 @@
+     while (ptr != db->map_base) {
+ 	/* does it match prefix? */
+ 	if (KEYLEN(ptr) < (bit32) prefixlen) break;
+-	if (prefixlen && compare(KEY(ptr), prefixlen, prefix, prefixlen)) break;
++	if (prefixlen && db->compar(KEY(ptr), prefixlen, prefix, prefixlen)) break;
+ 
+ 	if (!goodp ||
+ 	    goodp(rock, KEY(ptr), KEYLEN(ptr), DATA(ptr), DATALEN(ptr))) {
+@@ -1116,7 +1123,7 @@
+     newoffset = tp->logend;
+     ptr = find_node(db, key, keylen, updateoffsets);
+     if (ptr != db->map_base && 
+-	!compare(KEY(ptr), KEYLEN(ptr), key, keylen)) {
++	!db->compar(KEY(ptr), KEYLEN(ptr), key, keylen)) {
+ 	    
+ 	if (!overwrite) {
+ 	    myabort(db, tp);	/* releases lock */
+@@ -1282,7 +1289,7 @@
+ 
+     ptr = find_node(db, key, keylen, updateoffsets);
+     if (ptr == db->map_base ||
+-	!compare(KEY(ptr), KEYLEN(ptr), key, keylen)) {
++	!db->compar(KEY(ptr), KEYLEN(ptr), key, keylen)) {
+ 	/* gotcha */
+ 	offset = ptr - db->map_base;
+ 
+@@ -1825,11 +1832,11 @@
+ 		const char *q = db->map_base + offset;
+ 		int cmp;
+ 
+-		cmp = compare(KEY(ptr), KEYLEN(ptr), KEY(q), KEYLEN(q));
++		cmp = db->compar(KEY(ptr), KEYLEN(ptr), KEY(q), KEYLEN(q));
+ 		if (cmp >= 0) {
+ 		    fprintf(stdout, 
+ 			    "skiplist inconsistent: %04X: ptr %d is %04X; "
+-			    "compare() = %d\n", 
++			    "db->compar() = %d\n", 
+ 			    ptr - db->map_base,
+ 			    i,
+ 			    offset, cmp);
+@@ -2058,7 +2065,7 @@
+ 	if (TYPE(ptr) == ADD) {
+ 	    keyptr = find_node(db, KEY(ptr), KEYLEN(ptr), updateoffsets);
+ 	    if (keyptr == db->map_base ||
+-		compare(KEY(ptr), KEYLEN(ptr), KEY(keyptr), KEYLEN(keyptr))) {
++		db->compar(KEY(ptr), KEYLEN(ptr), KEY(keyptr), KEYLEN(keyptr))) {
+ 		/* didn't find exactly this node */
+ 		keyptr = NULL;
+ 	    }

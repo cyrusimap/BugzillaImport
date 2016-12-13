@@ -1,0 +1,188 @@
+diff -c2 -r cyrus-imapd-2.1.12.orig/imap/duplicate.c cyrus-imapd-2.1.12/imap/duplicate.c
+*** cyrus-imapd-2.1.12.orig/imap/duplicate.c	Sat Mar 15 17:17:24 2003
+--- cyrus-imapd-2.1.12/imap/duplicate.c	Sat Mar 15 17:17:44 2003
+***************
+*** 165,169 ****
+  
+      syslog(LOG_DEBUG, "duplicate_check: %-40s %-20s %ld",
+! 	   buf, buf+idlen+1, mark);
+  
+      return mark;
+--- 165,169 ----
+  
+      syslog(LOG_DEBUG, "duplicate_check: %-40s %-20s %ld",
+! 	   buf, buf+idlen+1, (long) mark);
+  
+      return mark;
+***************
+*** 191,195 ****
+  
+      syslog(LOG_DEBUG, "duplicate_mark: %-40s %-20s %ld",
+! 	   buf, buf+idlen+1, mark);
+  
+      return;
+--- 191,195 ----
+  
+      syslog(LOG_DEBUG, "duplicate_mark: %-40s %-20s %ld",
+! 	   buf, buf+idlen+1, (long) mark);
+  
+      return;
+diff -c2 -r cyrus-imapd-2.1.12.orig/imap/fud.c cyrus-imapd-2.1.12/imap/fud.c
+*** cyrus-imapd-2.1.12.orig/imap/fud.c	Wed Nov  6 13:43:20 2002
+--- cyrus-imapd-2.1.12/imap/fud.c	Sat Mar 15 17:17:44 2003
+***************
+*** 99,103 ****
+--- 99,105 ----
+  char who[16];
+  
++ #ifndef MAXLOGNAME
+  #define MAXLOGNAME 16		/* should find out for real */
++ #endif
+  
+  int begin_handling(void)
+diff -c2 -r cyrus-imapd-2.1.12.orig/imap/imapd.c cyrus-imapd-2.1.12/imap/imapd.c
+*** cyrus-imapd-2.1.12.orig/imap/imapd.c	Sat Jan 11 11:45:14 2003
+--- cyrus-imapd-2.1.12/imap/imapd.c	Sat Mar 15 17:17:44 2003
+***************
+*** 3858,3864 ****
+  	    if(recursive) {
+  		execl(buf, buf, "-C", config_filename, "-r", "-f",
+! 		      mailboxname, NULL);
+  	    } else {
+! 		execl(buf, buf, "-C", config_filename, mailboxname, NULL);
+  	    }
+  	    
+--- 3858,3865 ----
+  	    if(recursive) {
+  		execl(buf, buf, "-C", config_filename, "-r", "-f",
+! 		      mailboxname, (void*) NULL);
+  	    } else {
+! 		execl(buf, buf, "-C", config_filename, mailboxname,
+! 		      (void*) NULL);
+  	    }
+  	    
+***************
+*** 3918,3922 ****
+  	    }
+  
+! 	    execl(buf, buf, "-C", config_filename, "-f", quotaroot, NULL);
+  	    
+  	    /* if we are here, we have a problem */
+--- 3919,3924 ----
+  	    }
+  
+! 	    execl(buf, buf, "-C", config_filename, "-f", quotaroot, 
+! 	          (void*) NULL);
+  	    
+  	    /* if we are here, we have a problem */
+diff -c2 -r cyrus-imapd-2.1.12.orig/imap/index.c cyrus-imapd-2.1.12/imap/index.c
+*** cyrus-imapd-2.1.12.orig/imap/index.c	Sat Jan 11 11:45:14 2003
+--- cyrus-imapd-2.1.12/imap/index.c	Sat Mar 15 17:19:15 2003
+***************
+*** 1344,1349 ****
+  {    
+  
+!     prot_printf(imapd_out, "* XSTATE %lu %lu\r\n", mailbox->index_mtime,
+! 		seen_last_change);
+  
+      return 0;
+--- 1344,1350 ----
+  {    
+  
+!     prot_printf(imapd_out, "* XSTATE %lu %lu\r\n",
+! 		(unsigned long) mailbox->index_mtime,
+! 		(unsigned long) seen_last_change);
+  
+      return 0;
+diff -c2 -r cyrus-imapd-2.1.12.orig/lib/prot.c cyrus-imapd-2.1.12/lib/prot.c
+*** cyrus-imapd-2.1.12.orig/lib/prot.c	Mon Jan  6 14:07:00 2003
+--- cyrus-imapd-2.1.12/lib/prot.c	Sat Mar 15 17:21:09 2003
+***************
+*** 491,495 ****
+  
+  		time(&newtime);
+! 		snprintf(timebuf, sizeof(timebuf), "<%ld<", newtime);
+  		write(s->logfd, timebuf, strlen(timebuf));
+  
+--- 491,495 ----
+  
+  		time(&newtime);
+! 		snprintf(timebuf, sizeof(timebuf), "<%ld<", (long) newtime);
+  		write(s->logfd, timebuf, strlen(timebuf));
+  
+***************
+*** 539,543 ****
+  
+  	time(&newtime);
+! 	snprintf(timebuf, sizeof(timebuf), ">%ld>", newtime);
+  	write(s->logfd, timebuf, strlen(timebuf));
+  
+--- 539,543 ----
+  
+  	time(&newtime);
+! 	snprintf(timebuf, sizeof(timebuf), ">%ld>", (long) newtime);
+  	write(s->logfd, timebuf, strlen(timebuf));
+  
+diff -c2 -r cyrus-imapd-2.1.12.orig/master/master.c cyrus-imapd-2.1.12/master/master.c
+*** cyrus-imapd-2.1.12.orig/master/master.c	Wed Jan  8 12:17:21 2003
+--- cyrus-imapd-2.1.12/master/master.c	Sat Mar 15 17:20:23 2003
+***************
+*** 1148,1160 ****
+      rl.rlim_max = x;
+      if (setrlimit(RLIMIT_NUMFDS, &rl) < 0) {
+! 	syslog(LOG_ERR, "setrlimit: Unable to set file descriptors limit to %ld: %m", x);
+  
+  #ifdef HAVE_GETRLIMIT
+  
+  	if (!getrlimit(RLIMIT_NUMFDS, &rl)) {
+! 	    syslog(LOG_ERR, "retrying with %ld (current max)", rl.rlim_max);
+  	    rl.rlim_cur = rl.rlim_max;
+  	    if (setrlimit(RLIMIT_NUMFDS, &rl) < 0) {
+! 		syslog(LOG_ERR, "setrlimit: Unable to set file descriptors limit to %ld: %m", x);
+  	    }
+  	}
+--- 1148,1160 ----
+      rl.rlim_max = x;
+      if (setrlimit(RLIMIT_NUMFDS, &rl) < 0) {
+! 	syslog(LOG_ERR, "setrlimit: Unable to set file descriptors limit to %ld: %m", (long) x);
+  
+  #ifdef HAVE_GETRLIMIT
+  
+  	if (!getrlimit(RLIMIT_NUMFDS, &rl)) {
+! 	    syslog(LOG_ERR, "retrying with %ld (current max)", (long) rl.rlim_max);
+  	    rl.rlim_cur = rl.rlim_max;
+  	    if (setrlimit(RLIMIT_NUMFDS, &rl) < 0) {
+! 		syslog(LOG_ERR, "setrlimit: Unable to set file descriptors limit to %ld: %m", (long) x);
+  	    }
+  	}
+***************
+*** 1164,1169 ****
+      if (verbose > 1) {
+  	r = getrlimit(RLIMIT_NUMFDS, &rl);
+! 	syslog(LOG_DEBUG, "set maximum file descriptors to %ld/%ld", rl.rlim_cur,
+! 	       rl.rlim_max);
+      }
+  #else
+--- 1164,1169 ----
+      if (verbose > 1) {
+  	r = getrlimit(RLIMIT_NUMFDS, &rl);
+! 	syslog(LOG_DEBUG, "set maximum file descriptors to %ld/%ld",
+! 	       (long) rl.rlim_cur, (long) rl.rlim_max);
+      }
+  #else
+diff -c2 -r cyrus-imapd-2.1.12.orig/notifyd/notify_mailto.c cyrus-imapd-2.1.12/notifyd/notify_mailto.c
+*** cyrus-imapd-2.1.12.orig/notifyd/notify_mailto.c	Wed Jul  3 07:57:44 2002
+--- cyrus-imapd-2.1.12/notifyd/notify_mailto.c	Sat Mar 15 17:17:45 2003
+***************
+*** 116,120 ****
+      t = time(NULL);
+      snprintf(outmsgid, sizeof(outmsgid), "<cmu-sieve-%u-%lu-%d@%s>", 
+! 	     sm_pid, t, global_outgoing_count++, config_servername);
+      
+      fprintf(sm, "Message-ID: %s\r\n", outmsgid);
+--- 116,120 ----
+      t = time(NULL);
+      snprintf(outmsgid, sizeof(outmsgid), "<cmu-sieve-%u-%lu-%d@%s>", 
+! 	     sm_pid, (unsigned long) t, global_outgoing_count++, config_servername);
+      
+      fprintf(sm, "Message-ID: %s\r\n", outmsgid);

@@ -1,0 +1,50 @@
+--- pop3d.c-nodrac	Mon Feb  5 12:41:48 2007
++++ pop3d.c	Wed Apr 11 10:49:59 2007
+@@ -105,6 +105,10 @@
+ extern int opterr;
+ 
+ 
++#ifdef DRAC_AUTH
++static int drac_enabled;
++extern int dracauth(char *server, unsigned long userip, char **errmsg);
++#endif /* DRAC_AUTH */
+ 
+ #ifdef HAVE_SSL
+ static SSL *tls_conn;
+@@ -522,6 +526,10 @@
+     prot_settimeout(popd_in, timeout*60);
+     prot_setflushonread(popd_in, popd_out);
+ 
++#ifdef DRAC_AUTH
++    drac_enabled = (config_getint(IMAPOPT_DRACINTERVAL) > 0);
++#endif /* DRAC_AUTH */
++
+     if (kflag) kpop();
+ 
+     /* we were connected on pop3s port so we should do 
+@@ -1653,8 +1661,25 @@
+ 	popd_mailbox = &mboxstruct;
+ 	proc_register("pop3d", popd_clienthost, popd_userid,
+ 		      popd_mailbox->name);
++
+     }
+ 
++#ifdef DRAC_AUTH
++    /* Make this work for backend connections too */
++    if (drac_enabled &&
++	((struct sockaddr *)&popd_remoteaddr)->sa_family == AF_INET) {
++      char *err;
++
++      if (dracauth((char*) config_getstring(IMAPOPT_DRACHOST),
++		   ((struct sockaddr_in *)&popd_remoteaddr)->sin_addr.s_addr, &err) != 0) {
++	/* disable DRAC */
++	drac_enabled = 0;
++	syslog(LOG_ERR, "dracauth: %s", err);
++	syslog(LOG_ERR, "DRAC notifications disabled");
++      }
++    }
++#endif /* DRAC_AUTH */
++
+     /* Create telemetry log */
+     popd_logfd = telemetry_log(popd_userid, popd_in, popd_out, 0);
+ 

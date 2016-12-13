@@ -1,0 +1,171 @@
+diff -c -r cyrus-sasl.git/lib/config.c cyrus-sasl/lib/config.c
+*** cyrus-sasl.git/lib/config.c	2012-01-16 22:04:40.181817500 +0100
+--- cyrus-sasl/lib/config.c	2012-02-27 11:56:50.000000000 +0100
+***************
+*** 90,95 ****
+--- 90,96 ----
+  	    p++;
+  	}
+  	if (*p != ':') {
++ 	    fclose(infile);
+  	    return SASL_FAIL;
+  	}
+  	*p++ = '\0';
+***************
+*** 97,102 ****
+--- 98,104 ----
+  	while (*p && isspace((int) *p)) p++;
+  	
+  	if (!*p) {
++ 	    fclose(infile);
+  	    return SASL_FAIL;
+  	}
+  
+***************
+*** 111,127 ****
+  	    alloced += CONFIGLISTGROWSIZE;
+  	    configlist=sasl_REALLOC((char *)configlist, 
+  				    alloced * sizeof(struct configlist));
+! 	    if (configlist==NULL) return SASL_NOMEM;
+  	}
+  
+  	result = _sasl_strdup(key,
+  			      &(configlist[nconfiglist].key),
+  			      NULL);
+! 	if (result!=SASL_OK) return result;
+  	result = _sasl_strdup(p,
+  			      &(configlist[nconfiglist].value),
+  			      NULL);
+! 	if (result!=SASL_OK) return result;
+  
+  	nconfiglist++;
+      }
+--- 113,138 ----
+  	    alloced += CONFIGLISTGROWSIZE;
+  	    configlist=sasl_REALLOC((char *)configlist, 
+  				    alloced * sizeof(struct configlist));
+! 	    if (configlist==NULL) {
+! 	    	fclose(infile);
+! 	    	return SASL_NOMEM;
+! 	    }
+  	}
+  
+  	result = _sasl_strdup(key,
+  			      &(configlist[nconfiglist].key),
+  			      NULL);
+! 	if (result!=SASL_OK) {
+! 		fclose(infile);
+! 		return result;
+! 	}
+  	result = _sasl_strdup(p,
+  			      &(configlist[nconfiglist].value),
+  			      NULL);
+! 	if (result!=SASL_OK) {
+! 		fclose(infile);
+! 		return result;
+! 	}
+  
+  	nconfiglist++;
+      }
+diff -c -r cyrus-sasl.git/saslauthd/cfile.c cyrus-sasl/saslauthd/cfile.c
+*** cyrus-sasl.git/saslauthd/cfile.c	2012-01-16 22:04:40.397829800 +0100
+--- cyrus-sasl/saslauthd/cfile.c	2011-07-08 14:36:58.000000000 +0200
+***************
+*** 116,121 ****
+--- 116,122 ----
+  	  if (complaint)
+  	    snprintf(complaint, complaint_len, "%s: line %d: no colon separator", filename, lineno);
+  	  cfile_free(cf);
++ 	  fclose(infile);
+  	  return 0;
+  	}
+  	*p++ = '\0';
+***************
+*** 126,131 ****
+--- 127,133 ----
+  	  if (complaint)
+  	    snprintf(complaint, complaint_len, "%s: line %d: keyword %s: no value", filename, lineno, key);
+  	  cfile_free(cf);
++ 	  fclose(infile);
+  	  return 0;
+  	}
+  
+***************
+*** 137,142 ****
+--- 139,145 ----
+  	      if (complaint)
+  	        snprintf(complaint, complaint_len, "cfile_read: no memory");
+  	      cfile_free(cf);
++ 	      fclose(infile);
+  	      return 0;
+  	    }
+  	}
+***************
+*** 147,152 ****
+--- 150,156 ----
+  	        snprintf(complaint, complaint_len, "cfile_read: no memory");
+  	      cf->n_kv++; /* maybe one strdup() worked */
+  	      cfile_free(cf);
++ 	      fclose(infile);
+  	      return 0;
+  	}
+  
+diff -c -r cyrus-sasl.git/saslauthd/lak.c cyrus-sasl/saslauthd/lak.c
+*** cyrus-sasl.git/saslauthd/lak.c	2012-01-16 22:04:40.409830500 +0100
+--- cyrus-sasl/saslauthd/lak.c	2011-07-08 14:36:58.000000000 +0200
+***************
+*** 169,184 ****
+  				*p = tolower(*p);
+  			p++;
+  		}
+! 		if (*p != ':')
+  			return LAK_FAIL;
+  		
+  		*p++ = '\0';
+  
+  		while (*p && isspace((int) *p)) 
+  			p++;
+  
+! 		if (!*p)
+  			return LAK_FAIL;
+  
+  		if (!strcasecmp(key, "ldap_servers"))
+  			strlcpy(conf->servers, p, LAK_URL_LEN);
+--- 169,188 ----
+  				*p = tolower(*p);
+  			p++;
+  		}
+! 		if (*p != ':') {
+! 			fclose(infile);
+  			return LAK_FAIL;
++ 		}
+  		
+  		*p++ = '\0';
+  
+  		while (*p && isspace((int) *p)) 
+  			p++;
+  
+! 		if (!*p) {
+! 			fclose(infile);
+  			return LAK_FAIL;
++ 		}
+  
+  		if (!strcasecmp(key, "ldap_servers"))
+  			strlcpy(conf->servers, p, LAK_URL_LEN);
+***************
+*** 833,839 ****
+  	if (rc != LDAP_OPT_SUCCESS) {
+  		syslog(LOG_WARNING|LOG_AUTH, "Unable to set LDAP_OPT_NETWORK_TIMEOUT %d.%d.", lak->conf->timeout.tv_sec, lak->conf->timeout.tv_usec);
+  	}
+! 
+  	rc = ldap_set_option(lak->ld, LDAP_OPT_TIMELIMIT, &(lak->conf->time_limit));
+  	if (rc != LDAP_OPT_SUCCESS) {
+  		syslog(LOG_WARNING|LOG_AUTH, "Unable to set LDAP_OPT_TIMELIMIT %d.", lak->conf->time_limit);
+--- 837,843 ----
+  	if (rc != LDAP_OPT_SUCCESS) {
+  		syslog(LOG_WARNING|LOG_AUTH, "Unable to set LDAP_OPT_NETWORK_TIMEOUT %d.%d.", lak->conf->timeout.tv_sec, lak->conf->timeout.tv_usec);
+  	}
+! 	
+  	rc = ldap_set_option(lak->ld, LDAP_OPT_TIMELIMIT, &(lak->conf->time_limit));
+  	if (rc != LDAP_OPT_SUCCESS) {
+  		syslog(LOG_WARNING|LOG_AUTH, "Unable to set LDAP_OPT_TIMELIMIT %d.", lak->conf->time_limit);

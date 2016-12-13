@@ -1,0 +1,190 @@
+Index: master/service.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/master/service.c,v
+retrieving revision 1.16
+diff -u -r1.16 service.c
+--- master/service.c	22 Sep 2003 23:04:03 -0000	1.16
++++ master/service.c	17 Oct 2003 21:56:55 -0000
+@@ -73,8 +73,10 @@
+ 
+ /* number of times this service has been used */
+ static int use_count = 0;
++
+ static int verbose = 0;
+-static volatile int gotalrm = 0;
++static volatile int gotsigalrm = 0;
++static volatile int gotsigterm = 0;
+ static int lockfd = -1;
+ 
+ void notify_master(int fd, int msg)
+@@ -178,10 +180,10 @@
+ 	alockinfo.l_type = F_WRLCK;
+ 	while ((rc = fcntl(lockfd, F_SETLKW, &alockinfo)) < 0 && 
+ 	       errno == EINTR &&
+-	       !gotalrm)
++	       !gotsigalrm)
+ 	    /* noop */;
+ 	
+-	if (rc < 0 && gotalrm) {
++	if (rc < 0 && gotsigalrm) {
+ 	    if (MESSAGE_MASTER_ON_EXIT) 
+ 		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	    service_abort(0);
+@@ -229,11 +231,43 @@
+     return 0;
+ }
+ 
+-static void sigalrm(int sig)
++static void sigalrm_handler(int sig)
+ {
+     /* syslog(LOG_DEBUG, "got signal %d", sig); */
+     if (sig == SIGALRM) {
+-	gotalrm = 1;
++	gotsigalrm = 1;
++    }
++}
++
++static void sigterm_handler(int sig)
++{
++    gotsigterm = 1;
++    syslog(LOG_DEBUG, "got SIGTERM/SIGINT, trying to exit cleanly...");
++    service_abort(128 | sig);
++    /* should not reach this */
++    exit (EX_SOFTWARE);
++}
++
++void sighandler_setup(void)
++{
++    struct sigaction action;
++    
++    sigemptyset(&action.sa_mask);
++    action.sa_flags = 0;
++
++    action.sa_handler = sigterm_handler;
++#ifdef SA_RESTART
++    action.sa_flags |= SA_RESTART;
++#endif
++    /* Handle SIGTERM and SIGINT the same way */
++    action.sa_handler = sigterm_handler;
++    if (sigaction(SIGTERM, &action, NULL) < 0) {
++	syslog(LOG_ERR, "unable to install signal handler for SIGTERM: %m");
++	service_abort(EX_OSERR);
++    }
++    if (sigaction(SIGINT, &action, NULL) < 0) {
++	syslog(LOG_ERR, "unable to install signal handler for SIGINT: %m");
++	service_abort(EX_OSERR);
+     }
+ }
+ 
+@@ -247,7 +281,7 @@
+ #ifdef SA_RESETHAND
+     action.sa_flags |= SA_RESETHAND;
+ #endif
+-    action.sa_handler = sigalrm;
++    action.sa_handler = sigalrm_handler;
+     if (sigaction(SIGALRM, &action, NULL) < 0) {
+ 	syslog(LOG_ERR, "installing SIGALRM handler: sigaction: %m");
+ 	return -1;
+@@ -369,6 +403,8 @@
+     }
+     syslog(LOG_DEBUG, "executed");
+ 
++    sighandler_setup();
++
+     /* set close on exec */
+     fdflags = fcntl(LISTEN_FD, F_GETFD, 0);
+     if (fdflags != -1) fdflags = fcntl(LISTEN_FD, F_SETFD, 
+@@ -415,7 +451,7 @@
+ 		    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 		service_abort(EX_OSERR);
+ 	    }
+-	    gotalrm = 0;
++	    gotsigalrm = 0;
+ 	    alarm(reuse_timeout);
+ 	}
+ 
+@@ -423,7 +459,7 @@
+ 	lockaccept();
+ 
+ 	fd = -1;
+-	while (fd < 0 && !gotalrm) { /* loop until we succeed */
++	while (fd < 0 && !gotsigalrm) { /* loop until we succeed */
+ 	    if (soctype == SOCK_STREAM) {
+ 		fd = accept(LISTEN_FD, NULL, NULL);
+ 		if (fd < 0) {
+@@ -474,7 +510,7 @@
+ 	/* unlock */
+ 	unlockaccept();
+ 
+-	if (fd < 0 && gotalrm) {
++	if (fd < 0 && gotsigalrm) {
+ 	    /* timed out */
+ 	    if (MESSAGE_MASTER_ON_EXIT) 
+ 		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+@@ -490,7 +526,7 @@
+ 
+ 	/* cancel the alarm */
+ 	alarm(0);
+-	gotalrm = 0;
++	gotsigalrm = 0;
+ 
+ 	/* tcp only */
+ 	if(soctype == SOCK_STREAM) {
+Index: master/service-thread.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/master/service-thread.c,v
+retrieving revision 1.13
+diff -u -r1.13 service-thread.c
+--- master/service-thread.c	22 Sep 2003 23:12:51 -0000	1.13
++++ master/service-thread.c	17 Oct 2003 22:43:34 -0000
+@@ -74,6 +74,41 @@
+ static int use_count = 0;
+ static int verbose = 0;
+ 
++
++static volatile int gotsigterm = 0;
++
++static void sigterm_handler(int sig)
++{
++    gotsigterm = 1;
++    syslog(LOG_DEBUG, "got SIGTERM/SIGINT, trying to exit cleanly...");
++    service_abort(128 | sig);
++    /* should not reach this */
++    exit (EX_SOFTWARE);
++}
++
++void sighandler_setup(void)
++{
++    struct sigaction action;
++    
++    sigemptyset(&action.sa_mask);
++    action.sa_flags = 0;
++
++    action.sa_handler = sigterm_handler;
++#ifdef SA_RESTART
++    action.sa_flags |= SA_RESTART;
++#endif
++    /* Handle SIGTERM and SIGINT the same way */
++    action.sa_handler = sigterm_handler;
++    if (sigaction(SIGTERM, &action, NULL) < 0) {
++       syslog(LOG_ERR, "unable to install signal handler for SIGTERM: %m");
++       service_abort(EX_OSERR);
++    }
++    if (sigaction(SIGINT, &action, NULL) < 0) {
++       syslog(LOG_ERR, "unable to install signal handler for SIGINT: %m");
++       service_abort(EX_OSERR);
++    }
++}
++
+ void notify_master(int fd, int msg)
+ {
+     struct notify_message notifymsg;
+@@ -229,6 +264,8 @@
+     }
+     syslog(LOG_DEBUG, "executed");
+ 
++    sighandler_setup();
++
+     /* set close on exec */
+     fdflags = fcntl(LISTEN_FD, F_GETFD, 0);
+     if (fdflags != -1) fdflags = fcntl(LISTEN_FD, F_SETFD, 

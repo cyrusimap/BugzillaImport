@@ -1,0 +1,150 @@
+Index: lock_fcntl.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/lib/lock_fcntl.c,v
+retrieving revision 1.1.1.1
+retrieving revision 1.4
+diff -u -r1.1.1.1 -r1.4
+--- lock_fcntl.c	2 Oct 2001 21:08:13 -0000	1.1.1.1
++++ lock_fcntl.c	7 May 2002 16:57:38 -0000	1.4
+@@ -49,6 +49,10 @@
+ #include <errno.h>
+ 
+ #include "lock.h"
++#include <syslog.h>
++
++/* Locking timeout parameter */
++#define MAXTIME 99
+ 
+ const char *lock_method_desc = "fcntl";
+ 
+@@ -67,6 +71,19 @@
+  * 'failaction' is provided, it is filled in with a pointer to a fixed
+  * string naming the action that failed.
+  *
++ * Modified by hmh@debian.org 2002-05-06 to work around seen file locking
++ * problem.  Added locking timeout parameter to allow processes that are 
++ * waiting for a lock to eventually time out, based on patch by jwade
++ *
++ * Sets lock in non-blocking fashion and then retries until a 
++ * maximum delay is reached or the lock succeeds.
++ *
++ * As written, uses a quadratic backoff on retries with MAXTIME being
++ * the longest interval delay.   Total delay time is the sum of the squares
++ * of all integers whose square is less than MAXTIME.  In the case of 
++ * MAXTIME = 99 this is 0+1+4+9+16+25+36+49+64+81= 285 Seconds   
++ * This time is arbitrary and can be adjusted
++ * 
+  */
+ int lock_reopen(fd, filename, sbuf, failaction)
+ int fd;
+@@ -78,18 +95,35 @@
+     struct flock fl;
+     struct stat sbuffile, sbufspare;
+     int newfd;
++    int delay, i;
+ 
+     if (!sbuf) sbuf = &sbufspare;
+ 
+-    for (;;) {
++    for (i=0,delay=0;;) {
+ 	fl.l_type= F_WRLCK;
+ 	fl.l_whence = SEEK_SET;
+ 	fl.l_start = 0;
+ 	fl.l_len = 0;
+-	r = fcntl(fd, F_SETLKW, &fl);
++	r = fcntl(fd, F_SETLK, &fl);
+ 	if (r == -1) {
+-	    if (errno == EINTR) continue;
+-	    if (failaction) *failaction = "locking";
++	    if (errno == EINTR) {
++	       continue;
++	    }
++	    else if (((errno==EAGAIN) || (errno==EACCES)) && (delay < MAXTIME)) {
++	       syslog(LOG_DEBUG, "lock_reopen: blocked, sleeping for %d on interval %d (%d, %s)",
++		      delay, i, fd, filename);
++	       sleep(delay);
++	       i++;
++	       delay = i*i;
++	       continue;
++	    }
++	    if (failaction) {
++	       if (delay >= MAXTIME) {
++		   *failaction = "locking_timeout";
++	       } else {
++	           *failaction = "locking";
++	       }
++	    }
+ 	    return -1;
+ 	}
+ 
+Index: lock_flock.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/lib/lock_flock.c,v
+retrieving revision 1.1.1.1
+retrieving revision 1.2
+diff -u -r1.1.1.1 -r1.2
+--- lock_flock.c	2 Oct 2001 21:08:13 -0000	1.1.1.1
++++ lock_flock.c	6 May 2002 13:12:39 -0000	1.2
+@@ -51,6 +51,10 @@
+ #endif
+ 
+ #include "lock.h"
++#include <syslog.h>
++
++/* Locking timeout parameter */
++#define MAXTIME 99
+ 
+ const char *lock_method_desc = "flock";
+ 
+@@ -69,6 +73,18 @@
+  * 'failaction' is provided, it is filled in with a pointer to a fixed
+  * string naming the action that failed.
+  *
++ *  Modified by jwade 4/16/2002 to work around seen file locking problem
++ *  Added locking timeout parameter to allow processes that are  
++ *  waiting for a lock to eventually time out
++ *
++ *  Calls flock() in non-blocking fashion and then retries until a 
++ *  maximum delay is reached or the lock succeeds.
++ *  
++ *  As written, uses a quadratic backoff on retries with MAXTIME being
++ *  the longest interval delay.   Total delay time is the sum of the squares
++ *  of all integers whose square is less than MAXTIME.  In the case of 
++ *  MAXTIME = 99 this is 0+1+4+9+16+25+36+49+64+81= 285 Seconds   
++ *  This time is arbitrary and can be adjusted
+  */
+ int lock_reopen(fd, filename, sbuf, failaction)
+ int fd;
+@@ -79,14 +95,28 @@
+     int r;
+     struct stat sbuffile, sbufspare;
+     int newfd;
++    int delay, i;
+ 
+     if (!sbuf) sbuf = &sbufspare;
+ 
+-    for (;;) {
+-	r = flock(fd, LOCK_EX);
++    for(i=0,delay=0;;) {
++	r = flock(fd, LOCK_EX|LOCK_NB);
+ 	if (r == -1) {
+-	    if (errno == EINTR) continue;
+-	    if (failaction) *failaction = "locking";
++	    if (errno == EINTR) {
++                 continue;
++            }
++            else if ((errno == EWOULDBLOCK) && (delay < MAXTIME)) {
++                syslog(LOG_DEBUG, "lock_reopen: blocked, sleeping for %d on interval %d (%d, %s)",
++		       delay, i, fd, filename);
++                sleep(delay);
++                i++;
++                delay = i*i;
++                continue;
++            }
++	    if (failaction) {
++                if (delay >= MAXTIME) *failaction = "locking_timeout";
++                else *failaction = "locking";
++            }
+ 	    return -1;
+ 	}
+ 

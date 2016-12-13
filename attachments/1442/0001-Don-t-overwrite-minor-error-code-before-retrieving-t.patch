@@ -1,0 +1,57 @@
+From df039a4aba685990e47e5edb7bc9e09ff7daf56a Mon Sep 17 00:00:00 2001
+From: Ralf Haferkamp <rhafer@suse.de>
+Date: Fri, 18 Nov 2011 10:06:22 +0100
+Subject: [PATCH] Don't overwrite minor error code before retrieving the error
+ message
+
+---
+ plugins/gs2.c |   16 +++++++++-------
+ 1 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/plugins/gs2.c b/plugins/gs2.c
+index 025f7fc..0da85cc 100644
+--- a/plugins/gs2.c
++++ b/plugins/gs2.c
+@@ -528,6 +528,11 @@ gs2_server_mech_step(void *conn_context,
+     ret = SASL_OK;
+ 
+ cleanup:
++    if (ret == SASL_OK && maj_stat != GSS_S_COMPLETE) {
++        sasl_gs2_seterror(text->utils, maj_stat, min_stat);
++        ret = SASL_FAIL;
++    }
++
+     if (initialContextToken)
+         gss_release_buffer(&min_stat, &input_token);
+     gss_release_buffer(&min_stat, &name_buf);
+@@ -535,10 +540,6 @@ cleanup:
+     gss_release_buffer(&min_stat, &output_token);
+     gss_release_name(&min_stat, &without);
+ 
+-    if (ret == SASL_OK && maj_stat != GSS_S_COMPLETE) {
+-        sasl_gs2_seterror(text->utils, maj_stat, min_stat);
+-        ret = SASL_FAIL;
+-    }
+     if (ret < SASL_OK)
+         sasl_gs2_free_context_contents(text);
+ 
+@@ -835,13 +836,14 @@ static int gs2_client_mech_step(void *conn_context,
+     oparams->doneflag = 1;
+ 
+ cleanup:
+-    gss_release_buffer(&min_stat, &output_token);
+-    gss_release_buffer(&min_stat, &name_buf);
+-
+     if (ret == SASL_OK && maj_stat != GSS_S_COMPLETE) {
+         sasl_gs2_seterror(text->utils, maj_stat, min_stat);
+         ret = SASL_FAIL;
+     }
++
++    gss_release_buffer(&min_stat, &output_token);
++    gss_release_buffer(&min_stat, &name_buf);
++
+     if (ret < SASL_OK)
+         sasl_gs2_free_context_contents(text);
+ 
+-- 
+1.7.7

@@ -1,0 +1,40 @@
+diff -Naru cyrus-imapd-2.2.10.orig/lib/auth_unix.c cyrus-imapd-2.2.10/lib/auth_unix.c
+--- cyrus-imapd-2.2.10.orig/lib/auth_unix.c     2005-10-05 14:56:20.000000000 +0200
++++ cyrus-imapd-2.2.10/lib/auth_unix.c  2005-10-05 14:57:07.000000000 +0200
+@@ -55,6 +55,8 @@
+ #include "libcyr_cfg.h"
+ #include "xmalloc.h"
+ 
++#include <pthread.h>
++
+ const char *auth_method_desc = "unix";
+ 
+ struct auth_state {
+@@ -67,6 +69,8 @@
+     "anonymous", 0, 0
+ };
+ 
++static pthread_mutex_t group_mutex = PTHREAD_MUTEX_INITIALIZER;
++
+ /*
+  * Determine if the user is a member of 'identifier'
+  * Returns one of:
+@@ -252,6 +258,8 @@
+        return newstate;
+ 
+     pwd = getpwnam(identifier);
++
++    pthread_mutex_lock(&group_mutex);
+ 
+     setgrent();
+     while ((grp = getgrent())) {
+@@ -272,6 +280,9 @@
+        }
+     }
+     endgrent();
++
++    pthread_mutex_unlock(&group_mutex);
++
+     return newstate;
+ }
+ 

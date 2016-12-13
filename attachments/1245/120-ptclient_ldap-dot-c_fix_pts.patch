@@ -1,0 +1,77 @@
+## Author: Simon Kjikàqawej <simon.raven@gmail.com>
+## Subject: fixes issue #3183
+## Description: isue where logins fails (possibly arch-dependent)
+## Source: https://bugzilla.andrew.cmu.edu/show_bug.cgi?id=3183
+##
+
+Index: cyrus-imapd-2.3_2.3.15/ptclient/ldap.c
+===================================================================
+--- cyrus-imapd-2.3_2.3.15.orig/ptclient/ldap.c	2009-12-12 22:13:43.000000000 -0500
++++ cyrus-imapd-2.3_2.3.15/ptclient/ldap.c	2009-12-12 22:13:46.000000000 -0500
+@@ -793,8 +793,6 @@
+     char *attrs[] = {NULL};
+     LDAPMessage *res;
+     LDAPMessage *entry;
+-    char *attr, **vals;
+-    BerElement *ber;
+ 
+     *ret = NULL;
+ 
+@@ -886,7 +884,8 @@
+     char *dn = NULL;
+     LDAPMessage *res = NULL;
+     LDAPMessage *entry = NULL;
+-    char **vals = NULL;
++    char *attr = NULL, **vals = NULL;
++    BerElement *ber = NULL;
+     int rc;
+     char *attrs[] = {(char *)ptsm->member_attribute,NULL};
+ 
+@@ -915,11 +914,17 @@
+     }
+ 
+     if ((entry = ldap_first_entry(ptsm->ld, res)) != NULL) {
++        for (attr = ldap_first_attribute(ptsm->ld, entry, &ber); attr != NULL;
++            attr = ldap_next_attribute(ptsm->ld, entry, ber)) {
+ 	int i, numvals;
+ 
+-	vals = ldap_get_values(ptsm->ld, entry, (char *)ptsm->member_attribute);
+-	if (vals != NULL) {
+-	    numvals = ldap_count_values( vals );
++	vals = ldap_get_values(ptsm->ld, entry, attr);
++	if (vals == NULL)
++		continue;
++
++	for (i = 0; vals[i] != NULL; i++)
++		numvals = i;
++		numvals++;
+ 
+ 	    *dsize = sizeof(struct auth_state) +
+ 		     (numvals * sizeof(struct auth_ident));
+@@ -972,6 +977,8 @@
+         ldap_msgfree(res);
+     if (vals)
+         ldap_value_free(vals);
++    if (ber)
++        ber_free(ber, 0);
+     if (dn)
+         free(dn);
+ 
+@@ -990,7 +997,8 @@
+     int i; int n;
+     LDAPMessage *res = NULL;
+     LDAPMessage *entry = NULL;
+-    char **vals = NULL;
++    char *attr = NULL, **vals = NULL;
++    BerElement *ber = NULL;
+     char *attrs[] = {(char *)ptsm->member_attribute,NULL};
+     char *dn = NULL;
+ 
+@@ -1109,7 +1117,6 @@
+     int i; int n;
+     LDAPMessage *res = NULL;
+     LDAPMessage *entry = NULL;
+-    char **vals = NULL;
+     char *attrs[] = {NULL};
+ 
+     if (strncmp(canon_id, "group:", 6))  { // Sanity check

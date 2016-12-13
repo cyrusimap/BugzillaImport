@@ -1,0 +1,989 @@
+Here's my main local patch set including fixes to make static linking
+actually work properly.  These are in the configure.in and Makefile.am
+changes.
+
+Also included are some minor patches to make debugging easier, as well
+as some fixes to make things work properly on Solaris-10 with system
+password authentication.  These are in the *.c changes.
+
+
+Index: utils/Makefile.am
+===================================================================
+RCS file: /cvs/src/sasl/utils/Makefile.am,v
+retrieving revision 1.34
+diff -u -r1.34 Makefile.am
+--- utils/Makefile.am	18 May 2006 18:33:47 -0000	1.34
++++ utils/Makefile.am	17 Dec 2011 03:09:03 -0000
+@@ -43,7 +43,6 @@
+ ################################################################
+ 
+ all_sasl_libs = ../lib/libsasl2.la $(SASL_DB_LIB) $(LIB_SOCKET)
+-all_sasl_static_libs = ../lib/.libs/libsasl2.a $(SASL_DB_LIB) $(LIB_SOCKET) $(GSSAPIBASE_LIBS) $(GSSAPI_LIBS) $(SASL_KRB_LIB) $(LIB_DES) $(PLAIN_LIBS) $(SRP_LIBS) $(LIB_MYSQL) $(LIB_PGSQL) $(LIB_SQLITE)
+ 
+ sbin_PROGRAMS = @SASL_DB_UTILS@ @SMTPTEST_PROGRAM@ pluginviewer
+ EXTRA_PROGRAMS = saslpasswd2 sasldblistusers2 testsuite testsuitestatic smtptest pluginviewer
+@@ -58,9 +57,12 @@
+ 
+ saslpasswd2_LDADD = ../sasldb/libsasldb.la $(all_sasl_libs)
+ saslpasswd2_SOURCES = saslpasswd.c
++
+ sasldblistusers2_LDADD = ../sasldb/libsasldb.la $(all_sasl_libs)
+ sasldblistusers2_SOURCES = sasldblistusers.c
++
+ dbconverter_2_LDADD = ../sasldb/libsasldb.la $(all_sasl_libs)
++
+ pluginviewer_LDADD = $(all_sasl_libs)
+ pluginviewer_SOURCES = pluginviewer.c
+ 
+@@ -69,8 +71,11 @@
+ CLEANFILES=$(EXTRA_PROGRAMS)
+ 
+ testsuitestatic_SOURCES = testsuite.c
+-testsuitestatic_LDADD = $(all_sasl_static_libs) @DMALLOC_LIBS@ @SASL_DL_LIB@
+-testsuitestatic_DEPENDENCIES = ../lib/.libs/libsasl2.a
++# XXX what/why SASL_DL_LIB!?!?!?
++testsuitestatic_LDADD = $(all_sasl_libs) @DMALLOC_LIBS@ @SASL_DL_LIB@
++# libtool translates -static properly, and gets all dependent libs too using .la files!
++testsuitestatic_LDFLAGS = -static
++testsuitestatic_DEPENDENCIES = ../lib/libsasl2.la
+ 
+ smtptest_SOURCES =
+ smtptest_DEPENDENCIES = ./smtptest.lo ./libsfsasl2.la
+Index: saslauthd/utils.c
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/utils.c,v
+retrieving revision 1.4
+diff -u -r1.4 utils.c
+--- saslauthd/utils.c	9 Sep 2003 15:38:15 -0000	1.4
++++ saslauthd/utils.c	17 Dec 2011 03:09:03 -0000
+@@ -227,6 +227,51 @@
+ 	}
+ }
+ 
++#ifndef HAVE_ASPRINTF
++
++# include <stdarg.h>
++
++/*
++ * asprintf -- work around lame systems that haven't added their own yet
++ *
++ * XXX relies on a valid working (SuSv3) vsnprintf(), OK on SunOS-5.10 BUT NOT BEFORE!
++ */
++int
++asprintf(char **str,
++	 const char *fmt,
++	 ...)
++{
++        va_list ap;
++	char *newstr;
++	size_t len;
++	int ret;
++
++	*str = NULL;
++
++	va_start(ap, fmt);
++	ret = vsnprintf((char *) NULL, (size_t) 0, fmt, ap);
++	va_end(ap);
++	if (ret < 0) {
++		return ret;
++	}
++	len = (size_t) ret + 1;		/* allow for nul */
++	if ((newstr = malloc(len)) == NULL) {
++		return (-1);
++	}
++	va_start(ap, fmt);
++	ret = vsnprintf(newstr, len, fmt, ap);
++	va_end(ap);
++	if (ret >= 0 && (size_t) ret < len) { /* XXX (ret == len-1) */
++		*str = newstr;
++	} else {
++		free(newstr);
++		return ret;
++	}
++
++	return ret;
++}
++#endif /* HAVE_ASPRINTF */
++
+ #ifndef HAVE_STRLCPY
+ /* strlcpy -- copy string smartly.
+  *
+Index: saslauthd/saslauthd.mdoc
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/saslauthd.mdoc,v
+retrieving revision 1.19
+diff -u -r1.19 saslauthd.mdoc
+--- saslauthd/saslauthd.mdoc	11 Apr 2009 20:08:48 -0000	1.19
++++ saslauthd/saslauthd.mdoc	17 Dec 2011 03:09:03 -0000
+@@ -10,7 +10,7 @@
+ .\" manpage in saslauthd.8 whenever you change this source
+ .\" version. Only the pre-formatted manpage is installed.
+ .\"
+-.Dd 10 24 2002
++.Dd 12 12 2005
+ .Dt SASLAUTHD 8
+ .Os "CMU-SASL"
+ .Sh NAME
+@@ -98,8 +98,13 @@
+ Disable the use of a lock file for controlling access to accept().
+ .It Fl r
+ Combine the realm with the login (with an '@' sign in between).  e.g.
+-login: "foo" realm: "bar" will get passed as login: "foo@bar".  Note that
+-the realm will still be passed, which may lead to unexpected behaviour.
++login: "foo" realm: "bar" will get passed as login: "foo@bar".  Note
++that the realm will still be passed, which may lead to unexpected
++behavior for authentication mechanisms that make use of the realm,
++however for mechanisms which don't, such as
++.Ar getpwent ,
++this is the only way to authenticate domain-specific users sharing the
++same userid.
+ .It Fl v
+ Print the version number and available authentication
+ mechanisms on standard error, then exit.
+@@ -119,7 +124,7 @@
+ .Qq authentication mechanisms ,
+ dependent upon the facilities provided by the underlying operating system.
+ The mechanism is selected by the
+-.Fl aho
++.Fl a
+ flag from the following list of choices:
+ .Bl -tag -width "kerberos4"
+ .It Li dce
+Index: saslauthd/configure.in
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/configure.in,v
+retrieving revision 1.64
+diff -u -r1.64 configure.in
+--- saslauthd/configure.in	5 Sep 2011 14:18:10 -0000	1.64
++++ saslauthd/configure.in	17 Dec 2011 03:09:03 -0000
+@@ -77,7 +77,7 @@
+   AC_DEFINE(AUTH_SASLDB,[],[Include SASLdb Support])
+   SASL_DB_PATH_CHECK()
+   SASL_DB_CHECK()
+-  SASL_DB_LIB="$SASL_DB_LIB ../sasldb/.libs/libsasldb.al"
++  SASL_DB_LIB="$SASL_DB_LIB ../sasldb/.libs/libsasldb.la"
+ fi
+ 
+ AC_ARG_ENABLE(httpform, [  --enable-httpform       enable HTTP form authentication [[no]] ],
+@@ -195,8 +195,9 @@
+ dnl Checks for library functions.
+ AC_TYPE_SIGNAL
+ AC_CHECK_FUNCS(gethostname mkdir socket strdup)
++dnl Only look for one or the other
+ AC_CHECK_FUNCS(getspnam getuserpw, break)
+-AC_CHECK_FUNCS(strlcat strlcpy)
++AC_CHECK_FUNCS(asprintf strlcat strlcpy)
+ 
+ if test $ac_cv_func_getspnam = yes; then
+ 	AC_MSG_CHECKING(if getpwnam_r/getspnam_r take 5 arguments)
+Index: saslauthd/auth_shadow.c
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/auth_shadow.c,v
+retrieving revision 1.12
+diff -u -r1.12 auth_shadow.c
+--- saslauthd/auth_shadow.c	14 Aug 2009 14:58:38 -0000	1.12
++++ saslauthd/auth_shadow.c	17 Dec 2011 03:09:03 -0000
+@@ -44,6 +44,7 @@
+ # include <sys/types.h>
+ # include <time.h>
+ # include <pwd.h>
++# include <errno.h>
+ # include <syslog.h>
+ 
+ #ifdef HAVE_CRYPT_H
+@@ -60,7 +61,8 @@
+ #  endif /* WITH_SSL_DES */
+ # endif /* WITH_DES */
+ 
+-#endif /* ! HAVE_GETSPNAM */
++# endif /* ! HAVE_GETSPNAM */
++
+ # ifdef HAVE_GETUSERPW
+ #  include <userpw.h>
+ #  include <usersec.h>
+@@ -109,6 +111,7 @@
+     char *cpw;				/* pointer to crypt() result */
+     struct passwd	*pw;		/* return from getpwnam_r() */
+     struct spwd   	*sp;		/* return from getspnam_r() */
++    int errnum;
+ #  ifdef _REENTRANT
+     struct passwd pwbuf;
+     char pwdata[PWBUFSZ];		/* pwbuf indirect data goes in here */
+@@ -121,11 +124,10 @@
+ #  define RETURN(x) return strdup(x)
+ 
+     /*
+-     * "Magic" password field entries for SunOS.
++     * "Magic" password field entries for SunOS/SysV
+      *
+-     * *LK* is hinted at in the shadow(4) man page, but the
+-     * only definition for it (that I could find) is in the passmgmt(1M)
+-     * man page.
++     * "*LK*" is defined at in the shadow(4) man page, but of course any string
++     * inserted in front of the password will prevent the strings from matching
+      *
+      * *NP* is documented in getspnam(3) and indicates the caller had
+      * insufficient permission to read the shadow password database
+@@ -144,12 +146,27 @@
+ #  else
+     pw = getpwnam(login);
+ #  endif /* _REENTRANT */
++    errnum = errno;
+     endpwent();
++
+     if (pw == NULL) {
+-	if (flags & VERBOSE) {
+-	    syslog(LOG_DEBUG, "DEBUG: auth_shadow: getpwnam(%s) returned NULL", login);
++	if (errnum != 0) {
++	    char *errstr;
++
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getpwnam(%s) failure: %m", login);
++	    }
++	    if (asprintf(&errstr, "NO Username lookup failure: %s", strerror(errno)) == -1) {
++		/* XXX the hidden strdup() will likely fail and return NULL here.... */
++		RETURN("NO Username lookup failure: unknown error (ENOMEM formatting strerror())");
++	    }
++	    return errstr;
++	} else {
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getpwnam(%s): invalid username", login);
++	    }
++	    RETURN("NO Invalid username");
+ 	}
+-	RETURN("NO");
+     }
+ 
+     today = (long)time(NULL)/(24L*60*60);
+@@ -163,13 +180,27 @@
+ #  else
+     sp = getspnam(login);
+ #  endif /* _REENTRANT */
++    errnum = errno;
+     endspent();
+ 
+     if (sp == NULL) {
+-	if (flags & VERBOSE) {
+-	    syslog(LOG_DEBUG, "DEBUG: auth_shadow: getspnam(%s) returned NULL", login);
++	if (errnum != 0) {
++	    char *errstr;
++
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getspnam(%s) failure: %m", login);
++	    }
++	    if (asprintf(&errstr, "NO Username shadow lookup failure: %s", strerror(errno)) == -1) {
++		/* XXX the hidden strdup() will likely fail and return NULL here.... */
++		RETURN("NO Username shadow lookup failure: unknown error (ENOMEM formatting strerror())");
++	    }
++	    return errstr;
++	} else {
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getspnam(%s): invalid shadow username", login);
++	    }
++	    RETURN("NO Invalid shadow username");
+ 	}
+-	RETURN("NO");
+     }
+ 
+     if (!strcmp(sp->sp_pwdp, SHADOW_PW_EPERM)) {
+@@ -179,20 +210,19 @@
+ 	RETURN("NO Insufficient permission to access NIS authentication database (saslauthd)");
+     }
+ 
+-    /*
+-     * Note: no check for SHADOW_PW_LOCKED. Returning a "locked" notification
+-     * would allow login-id namespace probes, and violates our policy of
+-     * not returning any information about a login until we have validated
+-     * the password.
+-     */
+     cpw = strdup((const char *)crypt(password, sp->sp_pwdp));
+     if (strcmp(sp->sp_pwdp, cpw)) {
+ 	if (flags & VERBOSE) {
++	    /*
++	     * This _should_ reveal the SHADOW_PW_LOCKED prefix to an
++	     * administrator trying to debug the situation, though maybe we
++	     * should do the check here and be less obtuse about it....
++	     */
+ 	    syslog(LOG_DEBUG, "DEBUG: auth_shadow: pw mismatch: '%s' != '%s'",
+ 		   sp->sp_pwdp, cpw);
+ 	}
+ 	free(cpw);
+-	RETURN("NO");
++	RETURN("NO Incorrect password");
+     }
+     free(cpw);
+ 
+@@ -250,10 +280,10 @@
+   
+     if (upw == 0) {
+ 	if (flags & VERBOSE) {
+-	    syslog(LOG_DEBUG, "auth_shadow: getuserpw(%s) == 0",
++	    syslog(LOG_DEBUG, "auth_shadow: getuserpw(%s) failed: %m",
+ 		   login);
+ 	}
+-	RETURN("NO");
++	RETURN("NO Invalid username");
+     }
+   
+     if (strcmp(upw->upw_passwd, crypt(password, upw->upw_passwd)) != 0) {
+@@ -261,7 +291,7 @@
+ 	    syslog(LOG_DEBUG, "auth_shadow: pw mismatch: %s != %s",
+ 		   password, upw->upw_passwd);
+ 	}
+-	RETURN("NO");
++	RETURN("NO Incorrect password");
+     }
+ 
+     RETURN("OK");
+Index: saslauthd/auth_getpwent.c
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/auth_getpwent.c,v
+retrieving revision 1.9
+diff -u -r1.9 auth_getpwent.c
+--- saslauthd/auth_getpwent.c	13 Feb 2009 14:23:26 -0000	1.9
++++ saslauthd/auth_getpwent.c	17 Dec 2011 03:09:03 -0000
+@@ -40,6 +40,8 @@
+ #include <unistd.h>
+ #include <string.h>
+ #include <pwd.h>
++#include <errno.h>
++#include <syslog.h>
+ 
+ #ifdef HAVE_CRYPT_H
+ #include <crypt.h>
+@@ -55,6 +57,8 @@
+ #   include <des.h>
+ #  endif /* WITH_SSL_DES */
+ # endif /* WITH_DES */
++
++# include "globals.h"
+ /* END PUBLIC DEPENDENCIES */
+ 
+ #define RETURN(x) return strdup(x)
+@@ -73,19 +77,44 @@
+ {
+     /* VARIABLES */
+     struct passwd *pw;			/* pointer to passwd file entry */
++    int errnum;
+     /* END VARIABLES */
+   
++    errno = 0;
+     pw = getpwnam(login);
++    errnum = errno;
+     endpwent();
+ 
+     if (pw == NULL) {
+-	RETURN("NO");
++	if (errnum != 0) {
++	    char *errstr;
++
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_getpwent: getpwnam(%s) failure: %m", login);
++	    }
++	    if (asprintf(&errstr, "NO Username lookup failure: %s", strerror(errno)) == -1) {
++		/* XXX the hidden strdup() will likely fail and return NULL here.... */
++		RETURN("NO Username lookup failure: unknown error (ENOMEM formatting strerror())");
++	    }
++	    return errstr;
++	} else {
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_getpwent: getpwnam(%s): invalid username", login);
++	    }
++	    RETURN("NO Invalid username");
++	}
+     }
+ 
+     if (strcmp(pw->pw_passwd, (const char *)crypt(password, pw->pw_passwd))) {
+-	RETURN("NO");
++	if (flags & VERBOSE) {
++	    syslog(LOG_DEBUG, "DEBUG: auth_getpwent: %s: invalid password", login);
++	}
++	RETURN("NO Incorrect password");
+     }
+ 
++    if (flags & VERBOSE) {
++	syslog(LOG_DEBUG, "DEBUG: auth_getpwent: OK: %s", login);
++    }
+     RETURN("OK");
+ }
+ 
+Index: saslauthd/Makefile.am
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/Makefile.am,v
+retrieving revision 1.41
+diff -u -r1.41 Makefile.am
+--- saslauthd/Makefile.am	24 Apr 2006 18:02:04 -0000	1.41
++++ saslauthd/Makefile.am	17 Dec 2011 03:09:03 -0000
+@@ -1,4 +1,5 @@
+ AUTOMAKE_OPTIONS = 1.7
++ACLOCAL_AMFLAGS = -I ../cmulocal -I ../config
+ sbin_PROGRAMS	= saslauthd testsaslauthd
+ EXTRA_PROGRAMS  = saslcache
+ 
+Index: plugins/ldapdb.c
+===================================================================
+RCS file: /cvs/src/sasl/plugins/ldapdb.c,v
+retrieving revision 1.7
+diff -u -r1.7 ldapdb.c
+--- plugins/ldapdb.c	12 Apr 2011 10:46:31 -0000	1.7
++++ plugins/ldapdb.c	17 Dec 2011 03:09:04 -0000
+@@ -395,8 +395,7 @@
+ 
+     if (ret != LDAP_SUCCESS) goto done;
+ 
+-    for(msg=ldap_first_message(cp.ld, res); msg; msg=ldap_next_message(cp.ld, msg))
+-    {
++    for(msg=ldap_first_message(cp.ld, res); msg; msg=ldap_next_message(cp.ld, msg)) {
+     	if (ldap_msgtype(msg) != LDAP_RES_SEARCH_ENTRY) continue;
+ 	bvals = ldap_get_values_len(cp.ld, msg, attrs[0]);
+ 	if (!bvals) continue;
+@@ -462,41 +461,42 @@
+     const char *s;
+     unsigned len;
+ 
+-    if(p->inited) return SASL_OK;
++    if (p->inited)
++	return SASL_OK;
+ 
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_uri", &p->uri, NULL);
+-    if(!p->uri) return SASL_BADPARAM;
++    if (!p->uri)
++	return SASL_NOMECH;
+ 
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_id",
+-    	(const char **)&p->id.bv_val, &len);
++		  (const char **)&p->id.bv_val, &len);
+     p->id.bv_len = len;
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_pw",
+-    	(const char **)&p->pw.bv_val, &len);
++		  (const char **)&p->pw.bv_val, &len);
+     p->pw.bv_len = len;
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_mech",
+-    	(const char **)&p->mech.bv_val, &len);
++		  (const char **)&p->mech.bv_val, &len);
+     p->mech.bv_len = len;
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_starttls", &s, NULL);
+-    if (s)
+-    {
+-    	if (!strcasecmp(s, "demand")) p->use_tls = 2;
+-	else if (!strcasecmp(s, "try")) p->use_tls = 1;
++    if (s) {
++    	if (!strcasecmp(s, "demand"))
++	    p->use_tls = 2;
++	else if (!strcasecmp(s, "try"))
++	    p->use_tls = 1;
+     }
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_rc", &s, &len);
+-    if (s)
+-    {
++    if (s) {
+     	char *str = utils->malloc(sizeof("LDAPRC=")+len);
+ 	if (!str) return SASL_NOMEM;
+ 	strcpy( str, "LDAPRC=" );
+ 	strcpy( str + sizeof("LDAPRC=")-1, s );
+-	if (putenv(str))
+-	{
++	if (putenv(str)) {
+ 	    utils->free(str);
+ 	    return SASL_NOMEM;
+ 	}
+     }
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_canon_attr",
+-	(const char **)&p->canon.bv_val, &len);
++		  (const char **)&p->canon.bv_val, &len);
+     p->canon.bv_len = len;
+     p->inited = 1;
+ 
+Index: plugins/Makefile.am
+===================================================================
+RCS file: /cvs/src/sasl/plugins/Makefile.am,v
+retrieving revision 1.86
+diff -u -r1.86 Makefile.am
+--- plugins/Makefile.am	5 Sep 2011 14:18:10 -0000	1.86
++++ plugins/Makefile.am	17 Dec 2011 03:09:04 -0000
+@@ -133,7 +133,7 @@
+ libsql_la_LDFLAGS = $(LIB_MYSQL) $(LIB_PGSQL) $(LIB_SQLITE) $(LIB_SQLITE3) \
+ 	$(AM_LDFLAGS)
+ libsql_la_DEPENDENCIES = $(COMPAT_OBJS)
+-libsql_la_LIBADD = $(COMPAT_OBJS)
++libsql_la_LIBADD =  $(LIB_MYSQL) $(LIB_PGSQL) $(LIB_SQLITE) $(COMPAT_OBJS)
+ 
+ 
+ # Instructions for making the _init files
+Index: lib/server.c
+===================================================================
+RCS file: /cvs/src/sasl/lib/server.c,v
+retrieving revision 1.177
+diff -u -r1.177 server.c
+--- lib/server.c	8 Nov 2011 17:22:40 -0000	1.177
++++ lib/server.c	17 Dec 2011 03:09:04 -0000
+@@ -440,16 +440,19 @@
+     if ((result != SASL_OK) && (result != SASL_NOUSER)
+         && (result != SASL_CONTINUE)) {
+ 	_sasl_log(NULL, SASL_LOG_DEBUG,
+-		  "server add_plugin entry_point error %z\n", result);
++		  "%s_client_plug_init() failed in sasl_server_add_plugin(): %z\n",
++		  plugname, result);
+ 	return result;
+     }
+ 
+     /* Make sure plugin is using the same SASL version as us */
++    /* XXX why check this again?  *_server_plug_init() functions do this check already! */
+     if (version != SASL_SERVER_PLUG_VERSION)
+     {
+ 	_sasl_log(NULL,
+ 		  SASL_LOG_ERR,
+-		  "version mismatch on plugin: %d expected, but %d reported",
++		  "version mismatch on  sasl_server_add_plugin for '%s': %d expected, but %d reported",
++		  plugname,
+ 		  SASL_SERVER_PLUG_VERSION,
+ 		  version);
+ 	return SASL_BADVERS;
+Index: lib/client.c
+===================================================================
+RCS file: /cvs/src/sasl/lib/client.c,v
+retrieving revision 1.86
+diff -u -r1.86 client.c
+--- lib/client.c	1 Sep 2011 14:12:53 -0000	1.86
++++ lib/client.c	17 Dec 2011 03:09:04 -0000
+@@ -195,11 +195,12 @@
+     if (result != SASL_OK)
+     {
+ 	_sasl_log(NULL, SASL_LOG_WARN,
+-	      "entry_point failed in sasl_client_add_plugin for %s",
+-	      plugname);
++		  " sasl_client_add_plugin(): entry_point(): failed for plugname %s: %z",
++		  plugname, result);
+ 	return result;
+     }
+ 
++    /* XXX why check this again?  *_client_plug_init() functions do this check already! */
+     if (version != SASL_CLIENT_PLUG_VERSION)
+     {
+ 	_sasl_log(NULL, SASL_LOG_WARN,
+@@ -683,6 +684,17 @@
+  * Apps should be encouraged to simply use space or comma space
+  * though
+  */
++/*
++ * XXX Debugging client/server "No worthy mechs found" failures from the logic
++ * herein is next to impossible!
++ *
++ * Error flags should be set so that users can determine which requirements
++ * were met and which were not.
++ *
++ * In the mean time the best one can do is stop execution in this function,
++ * print *conn, *mechlist, etc., and then, if necessary, i.e. it's not
++ * blatantly obvious, step through each rule to see what happens.
++ */
+ int sasl_client_start(sasl_conn_t *conn,
+ 		      const char *mechlist,
+ 		      sasl_interact_t **prompt_need,
+@@ -752,7 +764,8 @@
+ 
+ 	/* for each mechanism in client's list */
+ 	for (m = c_conn->mech_list; m != NULL; m = m->next) {
+-	    int myflags, plus;
++	    unsigned int myflags;
++	    int plus;
+ 
+ 	    if (!_sasl_is_equal_mech(name, m->m.plug->mech_name, name_len, &plus)) {
+ 		continue;
+@@ -766,15 +779,16 @@
+ 	    if (minssf > m->m.plug->max_ssf)
+ 		break;
+ 
+-	    /* Does it meet our security properties? */
++	    /* if there's an external layer with a better SSF then this is no
++	     * longer considered a plaintext mechanism
++	     */
+ 	    myflags = conn->props.security_flags;
+-	    
+-	    /* if there's an external layer this is no longer plaintext */
+ 	    if ((conn->props.min_ssf <= conn->external.ssf) && 
+ 		(conn->external.ssf > 1)) {
+ 		myflags &= ~SASL_SEC_NOPLAINTEXT;
+ 	    }
+ 
++	    /* Does it meet our security properties? */
+ 	    if (((myflags ^ m->m.plug->security_flags) & myflags) != 0) {
+ 		break;
+ 	    }
+Index: lib/canonusr.c
+===================================================================
+RCS file: /cvs/src/sasl/lib/canonusr.c,v
+retrieving revision 1.22
+diff -u -r1.22 canonusr.c
+--- lib/canonusr.c	1 Sep 2011 16:33:42 -0000	1.22
++++ lib/canonusr.c	17 Dec 2011 03:09:04 -0000
+@@ -316,14 +316,15 @@
+ 			   &out_version, &plug, plugname);
+ 
+     if(result != SASL_OK) {
+-	_sasl_log(NULL, SASL_LOG_ERR, "canonuserfunc error %i\n",result);
++	_sasl_log(NULL, SASL_LOG_ERR, "%s_canonuser_plug_init() failed in sasl_canonuser_add_plugin(): %z\n",
++		  plugname, result);
+ 	return result;
+     }
+ 
+     if(!plug->canon_user_server && !plug->canon_user_client) {
+ 	/* We need at least one of these implemented */
+ 	_sasl_log(NULL, SASL_LOG_ERR,
+-		  "canonuser plugin without either client or server side");
++		  "canonuser plugin '%s' without either client or server side", plugname);
+ 	return SASL_BADPROT;
+     }
+     
+Index: lib/auxprop.c
+===================================================================
+RCS file: /cvs/src/sasl/lib/auxprop.c,v
+retrieving revision 1.21
+diff -u -r1.21 auxprop.c
+--- lib/auxprop.c	1 Sep 2011 14:12:53 -0000	1.21
++++ lib/auxprop.c	17 Dec 2011 03:09:04 -0000
+@@ -813,13 +813,15 @@
+ 
+     /* Check if out_version is too old.
+        We only support the current at the moment */
++    /* XXX why check this again?  *_auxprop_plug_init() functions do this check already! */
+     if (result == SASL_OK && out_version < SASL_AUXPROP_PLUG_VERSION) {
+         result = SASL_BADVERS;
+     }
+ 
+     if(result != SASL_OK) {
+-	_sasl_log(NULL, SASL_LOG_ERR, "auxpropfunc error %s\n",
+-		  sasl_errstring(result, NULL, NULL));
++	_sasl_log(NULL, (result != SASL_NOMECH) ? SASL_LOG_WARN : SASL_LOG_NOTE,
++		  "%s_auxprop_plug_init() failed in sasl_auxprop_add_plugin(): %z\n",
++		  plugname, result);
+ 	return result;
+     }
+ 
+Index: lib/Makefile.am
+===================================================================
+RCS file: /cvs/src/sasl/lib/Makefile.am,v
+retrieving revision 1.88
+diff -u -r1.88 Makefile.am
+--- lib/Makefile.am	5 Sep 2011 14:18:10 -0000	1.88
++++ lib/Makefile.am	17 Dec 2011 03:09:04 -0000
+@@ -46,9 +46,6 @@
+ INCLUDES=-I$(top_srcdir)/include -I$(top_srcdir)/plugins -I$(top_builddir)/include -I$(top_srcdir)/sasldb
+ 
+ EXTRA_DIST = windlopen.c staticopen.h NTMakefile
+-EXTRA_LIBRARIES = libsasl2.a
+-noinst_LIBRARIES = @SASL_STATIC_LIBS@
+-libsasl2_a_SOURCES=
+ 
+ BUILT_SOURCES = $(SASL_STATIC_SRCS)
+ 
+@@ -76,10 +73,32 @@
+ install-exec-hook:
+ endif
+ 
++# we have to update libsasl2.a and libsasl2.la after they have been
++# built so as to include the desired statically compiled plugin module
++# code as well
++#
++all-local: fix-libsasl2-la
++
++# we should probably use the already compiled plugin code .o files
++# instead of recompiling them again (we already depend on the plugin
++# .la files being created)
++#
+ libsasl2.a: libsasl2.la $(SASL_STATIC_OBJS)
+ 	@echo adding static plugins and dependencies
+ 	$(AR) cru .libs/$@ $(SASL_STATIC_OBJS)
+-	@for i in ./libsasl2.la ../sasldb/libsasldb.la ../plugins/lib*.la; do \
++	rm -f $@
++	ln -s .libs/$@ $@
++
++clean-local:
++	rm -f libsasl2.a
++
++# here we accumulate the -L and -l options from all the plugin module
++# libtool .la files and add them to libsasl2.la so libtool will see
++# them on install.
++#
++fix-libsasl2-la: libsasl2.a $(SASL_MECHS_LIBS)
++	@echo updating dependency_libs in libsasl2.la
++	@for i in ./libsasl2.la $(SASL_MECHS_LIBS); do \
+ 	if test ! -f $$i; then continue; fi; . $$i; \
+ 	for j in $$dependency_libs foo; do \
+ 	case $$j in foo) ;; \
+@@ -92,11 +111,10 @@
+ 	esac; done; dependency_libs=""; done; \
+ 	sed -e "/^dependency_libs=/s%=.*%='$${depdirs}$${deplibs}'%" \
+ 	libsasl2.la >TMP.$$ && mv TMP.$$ libsasl2.la
+-	rm -f $@
+-	ln -s .libs/$@ $@
++###	rm -f $@
++###	ln -s .libs/$@ $@
+ 
+ $(SASL_STATIC_SRCS): linksrcs
+ 
+ linksrcs:
+ 	-ln -s $(SASL_STATIC_SRCS) .
+-
+Index: configure.in
+===================================================================
+RCS file: /cvs/src/sasl/configure.in,v
+retrieving revision 1.224
+diff -u -r1.224 configure.in
+--- configure.in	22 Sep 2011 14:44:15 -0000	1.224
++++ configure.in	17 Dec 2011 03:09:04 -0000
+@@ -108,7 +108,7 @@
+ fi
+ 
+ # new libtool
+-AM_DISABLE_STATIC
++#AM_DISABLE_STATIC
+ AC_PROG_LIBTOOL
+ 
+ target=$save_target
+@@ -119,12 +119,14 @@
+ 	SASL_STATIC_LIBS=
+ fi
+ 
++# this is stupid and impossible on most sane platforms!
++#
+ AC_ARG_ENABLE(staticdlopen, [  --enable-staticdlopen   try dynamic plugins when we are a static libsasl [[no]] ],
+                 enable_staticdlopen=$enableval,
+                 enable_staticdlopen=no)
+ 
+ if test "$enable_staticdlopen" = yes; then
+-  AC_DEFINE(TRY_DLOPEN_WHEN_STATIC,[],[Should we try to dlopen() plugins while staticly compiled?])
++  AC_DEFINE(TRY_DLOPEN_WHEN_STATIC,[],[Should we try to dlopen() plugins while statically compiled?])
+ fi
+ 
+ if test "$ac_cv_prog_gcc" = yes; then
+@@ -392,15 +394,54 @@
+     CPPFLAGS="$CPPFLAGS -DOBSOLETE_CRAM_ATTR=1"
+   fi
+   if test "$enable_static" = yes; then
+-    SASL_STATIC_OBJS="$SASL_STATIC_OBJS cram.o"
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/cram.c"
+-    AC_DEFINE(STATIC_CRAMMD5, [], [Link CRAM-MD5 Staticly])
++    SASL_STATIC_OBJS="$SASL_STATIC_OBJS cram.o"
++    AC_DEFINE(STATIC_CRAMMD5, [], [Link CRAM-MD5 Statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+ fi
+ 
+-CMU_HAVE_OPENSSL
++dnl
++dnl Test for OpenSSL
++dnl
++IMAP_PROGS=""
++AC_ARG_WITH(openssl,[  --with-openssl=PATH     use OpenSSL from PATH],
++	with_openssl="${withval}")
++
++OPENSSL_INC=
++OPENSSL_LIB=
++case "$with_openssl" in
++	no) with_openssl="no";;
++	""|yes) 
++	  dnl if openssl has been compiled with the rsaref2 libraries,
++	  dnl we need to include the rsaref libraries in the crypto check
++                LIB_RSAREF=""
++	        AC_CHECK_LIB(rsaref, RSAPublicEncrypt,
++		       LIB_RSAREF="-lRSAglue -lrsaref"; cmu_have_rsaref=yes,
++		       cmu_have_rsaref=no)
++
++		with_openssl="yes"
++		AC_CHECK_LIB(crypt,des_cipher,
++				LIBS="-lcrypt ${LIBS}",
++				with_openssl="no")
++		AC_CHECK_LIB(crypto,BIO_accept,
++                                    LIBS="-lcrypto $LIB_RSAREF ${LIBS}",
++		                    with_openssl="no", -lcrypt $LIB_RSAREF)
++		AC_CHECK_LIB(ssl, SSL_CTX_new,
++				  LIBS="-lssl ${LIBS}",
++				  with_openssl="no", -lcrypto -lcrypt $LIB_RSAREF)
++		
++		;;
++	*)  OPENSSL_INC="-I${with_openssl}/include"
++	    OPENSSL_LIBPATH="${with_openssl}/lib"
++	    OPENSSL_LIB="-L${OPENSSL_LIBPATH}"
++	    CPPFLAGS="${CPPFLAGS} ${OPENSSL_INC}"
++	    CMU_ADD_LIBPATH(${OPENSSL_LIBPATH})
++	    CMU_ADD_LIBPATH_TO(${OPENSSL_LIBPATH}, OPENSSL_LIB)
++	    LIBS="${LIBS} -lssl -lcrypto -lcrypt";;
++esac
++
+ AC_MSG_CHECKING(for OpenSSL)
+ AC_MSG_RESULT($with_openssl)
+ 
+@@ -429,7 +470,7 @@
+   if test "$enable_static" = yes; then
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/digestmd5.c"
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS digestmd5.o"
+-    AC_DEFINE(STATIC_DIGESTMD5, [], [Link DIGEST-MD5 Staticly])
++    AC_DEFINE(STATIC_DIGESTMD5, [], [Link DIGEST-MD5 Statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -481,7 +522,7 @@
+   if test "$enable_static" = yes; then
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/otp.c"
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS otp.o"
+-    AC_DEFINE(STATIC_OTP, [], [Link OTP Staticly])
++    AC_DEFINE(STATIC_OTP, [], [Link OTP Statically])
+   fi
+ 
+   dnl Test for OPIE
+@@ -538,7 +579,7 @@
+   if test "$enable_static" = yes; then
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/srp.c"
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS srp.o"
+-    AC_DEFINE(STATIC_SRP, [], [Link SRP Staticly])
++    AC_DEFINE(STATIC_SRP, [], [Link SRP Statically])
+   fi
+ 
+ dnl srp_setpass support
+@@ -564,7 +605,7 @@
+ SASL_GSSAPI_CHK
+ 
+ if test "$gssapi" != "no"; then
+-  AC_DEFINE(STATIC_GSSAPIV2,[],[Link GSSAPI Staticly])
++  AC_DEFINE(STATIC_GSSAPIV2,[],[Link GSSAPI Statically])
+   mutex_default="no"
+   if test "$gss_impl" = "mit"; then
+      mutex_default="yes"
+@@ -592,9 +633,9 @@
+   AC_MSG_RESULT(enabled)
+   SASL_MECHS="$SASL_MECHS libanonymous.la"
+   if test "$enable_static" = yes; then
+-    SASL_STATIC_OBJS="$SASL_STATIC_OBJS anonymous.o"
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/anonymous.c"
+-    AC_DEFINE(STATIC_ANONYMOUS, [], [Link ANONYMOUS Staticly])
++    SASL_STATIC_OBJS="$SASL_STATIC_OBJS anonymous.o"
++    AC_DEFINE(STATIC_ANONYMOUS, [], [Link ANONYMOUS Statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -612,7 +653,7 @@
+   if test "$enable_static" = yes; then
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/login.c"
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS login.o"
+-    AC_DEFINE(STATIC_LOGIN,[],[Link LOGIN Staticly])
++    AC_DEFINE(STATIC_LOGIN,[],[Link LOGIN Statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -638,7 +679,7 @@
+   if test "$enable_static" = yes; then
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/ntlm.c"
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS ntlm.o"
+-    AC_DEFINE(STATIC_NTLM,[],[Link NTLM Staticly])
++    AC_DEFINE(STATIC_NTLM,[],[Link NTLM Statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -662,9 +703,9 @@
+ 
+   SASL_MECHS="$SASL_MECHS libpassdss.la"
+   if test "$enable_static" = yes; then
+-    SASL_STATIC_OBJS="$SASL_STATIC_OBJS passdss.o"
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/passdss.c"
+-    AC_DEFINE(STATIC_PASSDSS,[],[Link PASSDSS Staticly])
++    SASL_STATIC_OBJS="$SASL_STATIC_OBJS passdss.o"
++    AC_DEFINE(STATIC_PASSDSS,[],[Link PASSDSS Statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -695,7 +736,7 @@
+   if test "$enable_static" = yes; then
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/sql.c"
+     SASL_STATIC_OBJS="$SASL_STATIC_OBJS sql.o"
+-    AC_DEFINE(STATIC_SQL,[],[Link SQL plugin staticly])
++    AC_DEFINE(STATIC_SQL,[],[Link SQL plugin statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+@@ -946,6 +987,12 @@
+ AC_ARG_ENABLE(ldapdb, [  --enable-ldapdb         enable LDAPDB plugin [no] ],
+   ldapdb=$enableval,
+   ldapdb=no)
++
++if test "$with_openssl" = no; then
++  AC_WARN([OpenSSL not found -- LDAPDB will be disabled])
++  ldapdb=no
++fi
++
+ AC_MSG_CHECKING(LDAPDB)
+ if test "$ldapdb" != no; then
+     AC_MSG_RESULT(enabled)
+@@ -987,7 +1034,7 @@
+             if test "$enable_static" = yes; then
+                 SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/ldapdb.c"
+                 SASL_STATIC_OBJS="$SASL_STATIC_OBJS ldapdb.o"
+-                AC_DEFINE(STATIC_LDAPDB,[],[Link ldapdb plugin Staticly])
++                AC_DEFINE(STATIC_LDAPDB,[],[Link ldapdb plugin Statically])
+             fi
+         fi
+     fi
+@@ -1001,10 +1048,16 @@
+ fi
+ 
+ AC_SUBST(SASL_MECHS)
++SASL_MECHS_LIBS=""
++for lib in ${SASL_MECHS}; do
++    SASL_MECHS_LIBS="$SASL_MECHS_LIBS ../plugins/${lib}"
++done
++AC_SUBST(SASL_MECHS_LIBS)
+ AC_SUBST(SASL_STATIC_SRCS)
+ AC_SUBST(SASL_STATIC_OBJS)
+ AC_SUBST(SASL_STATIC_LIBS)
+ 
++plugindir=/usr/lib/sasl2
+ AC_ARG_WITH(plugindir, [  --with-plugindir=DIR    set the directory where plugins will
+                           be found [[/usr/lib/sasl2]] ],
+   plugindir=$withval,
+@@ -1013,7 +1066,7 @@
+ AC_SUBST(plugindir)
+ 
+ AC_ARG_WITH(configdir, [   --with-configdir=DIR    set the directory where config files will
+-                          be found [/usr/lib/sasl2] ],
++                          be found [$plugindir:/etc/sasl2] ],
+   configdir=$withval,
+   configdir=$plugindir:/etc/sasl2)
+ AC_DEFINE_UNQUOTED(CONFIGDIR, "$configdir", [Runtime config file location])
+Index: README
+===================================================================
+RCS file: /cvs/src/sasl/README,v
+retrieving revision 1.33
+diff -u -r1.33 README
+--- README	25 Jan 2008 01:57:40 -0000	1.33
++++ README	17 Dec 2011 03:09:04 -0000
+@@ -16,7 +16,7 @@
+ If you are looking to port SASLv1 applications to SASLv2, please see
+ doc/appconvert.html
+ 
+-Bugs can be searched/reported at: http://bugzilla.andrew.cmu.edu
++Bugs can be searched/reported at: http://bugzilla.cyrusimap.org/
+ 
+ DOCUMENTATION
+ --------------
+Index: Makefile.am
+===================================================================
+RCS file: /cvs/src/sasl/Makefile.am,v
+retrieving revision 1.30
+diff -u -r1.30 Makefile.am
+--- Makefile.am	22 Sep 2011 14:41:12 -0000	1.30
++++ Makefile.am	17 Dec 2011 03:09:05 -0000
+@@ -1,4 +1,5 @@
+ AUTOMAKE_OPTIONS = 1.7
++ACLOCAL_AMFLAGS = -I cmulocal -I config
+ # Top-level Makefile.am for SASL
+ # Rob Earhart
+ #
+@@ -69,7 +70,7 @@
+ INSTALLOSX = 
+ endif
+ 
+-SUBDIRS=include sasldb lib plugins utils doc man $(PWC) $(SAM) $(JAV) $(SAD)
++SUBDIRS=include sasldb plugins lib utils doc man $(PWC) $(SAM) $(JAV) $(SAD)
+ EXTRA_DIST=config cmulocal win32 mac dlcompat-20010505 NTMakefile INSTALL.TXT
+ 
+ dist-hook:

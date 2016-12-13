@@ -1,0 +1,547 @@
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/duplicate.c b/GIT/TEMP/cyrus-imapd-2.4.10/imap/duplicate.c
+index 3a72c43..822a291 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/duplicate.c
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/duplicate.c
+@@ -121,9 +121,12 @@ int duplicate_init(const char *fname, int myflags __attribute__((unused)))
+     return r;
+ }
+ 
+-time_t duplicate_check(char *id, int idlen, const char *to, int tolen)
++time_t duplicate_check(duplicate_key_t *dkey)
+ {
+     char buf[1024];
++    int idlen = strlen(dkey->id);
++    int tolen = strlen(dkey->to);
++    int datelen = strlen(dkey->date); 
+     int r;
+     const char *data = NULL;
+     int len = 0;
+@@ -131,16 +134,18 @@ time_t duplicate_check(char *id, int idlen, const char *to, int tolen)
+ 
+     if (!duplicate_dbopen) return 0;
+ 
+-    if (idlen + tolen > (int) sizeof(buf) - 30) return 0;
+-    memcpy(buf, id, idlen);
++    if (idlen + tolen + datelen > (int) sizeof(buf) - 30) return 0;
++    memcpy(buf, dkey->id, idlen);
+     buf[idlen] = '\0';
+-    memcpy(buf + idlen + 1, to, tolen);
++    memcpy(buf + idlen + 1, dkey->to, tolen);
+     buf[idlen + tolen + 1] = '\0';
++    assert(dkey->date != NULL);
++    memcpy(buf + idlen + tolen + 2, dkey->date, datelen);
++    buf[idlen + tolen + datelen + 2] = '\0';
+ 
+     do {
+ 	r = DB->fetch(dupdb, buf,
+-		      idlen + tolen + 2, /* +2 b/c 1 for the center null;
+-					    +1 for the terminating null */
++		      idlen + tolen + datelen + 3, /* We have three concatenated values now, all parts ending with '\0' */
+ 		      &data, &len, NULL);
+     } while (r == CYRUSDB_AGAIN);
+ 
+@@ -152,54 +157,59 @@ time_t duplicate_check(char *id, int idlen, const char *to, int tolen)
+ 	memcpy(&mark, data, sizeof(time_t));
+     } else if (r != CYRUSDB_OK) {
+ 	if (r != CYRUSDB_NOTFOUND) {
+-	    syslog(LOG_ERR, "duplicate_check: error looking up %s/%s: %s",
+-		   id, to,
+-		   cyrusdb_strerror(r));
++	    syslog(LOG_ERR, "duplicate_check: error looking up %s/%s/%s: %s",
++		   dkey->id, dkey->to, dkey->date, 
++		   cyrusdb_strerror(r)); 
+ 	}
+ 	mark = 0;
+     }
+ 
+-    syslog(LOG_DEBUG, "duplicate_check: %-40s %-20s %ld",
+-	   buf, buf+idlen+1, mark);
++    syslog(LOG_DEBUG, "duplicate_check: %-40s %-20s %-40s %ld",
++	   buf, buf+idlen+1, buf+idlen+tolen+2, mark); 
+ 
+     return mark;
+ }
+ 
+-void duplicate_log(char *msgid, const char *name, char *action)
++void duplicate_log(duplicate_key_t *dkey, char *action) 
+ {
+-    syslog(LOG_INFO, "dupelim: eliminated duplicate message to %s id %s (%s)",
+-	   name, msgid, action);
++    assert(dkey->date != NULL);
++    syslog(LOG_INFO, "dupelim: eliminated duplicate message to %s id %s date %s (%s)",
++      dkey->to, dkey->id, dkey->date, action);    
+     if (config_auditlog)
+-	syslog(LOG_NOTICE, "auditlog: duplicate sessionid=<%s> action=<%s> message-id=%s user=<%s>",
+-	       session_id(), action, msgid, name); 
++	syslog(LOG_NOTICE, "auditlog: duplicate sessionid=<%s> action=<%s> message-id=%s user=<%s> date=<%s>",
++	       session_id(), action, dkey->id, dkey->to, dkey->date); 
+ }
+ 
+-void duplicate_mark(char *id, int idlen, const char *to, int tolen, time_t mark,
+-		    unsigned long uid)
++void duplicate_mark(duplicate_key_t *dkey, time_t mark, unsigned long uid)
+ {
+     char buf[1024], data[100];
++    int idlen = strlen(dkey->id);
++    int tolen = strlen(dkey->to);
++    int datelen = strlen(dkey->date); 
+     int r;
+ 
+     if (!duplicate_dbopen) return;
+ 
+-    if (idlen + tolen > (int) sizeof(buf) - 30) return;
+-    memcpy(buf, id, idlen);
++    if (idlen + tolen + datelen > (int) sizeof(buf) - 30) return; 
++    memcpy(buf, dkey->id, idlen);
+     buf[idlen] = '\0';
+-    memcpy(buf + idlen + 1, to, tolen);
++    memcpy(buf + idlen + 1, dkey->to, tolen);
+     buf[idlen + tolen + 1] = '\0';
++    assert(dkey->date != NULL);
++    memcpy(buf + idlen + tolen + 2, dkey->date, datelen);
++    buf[idlen + tolen + datelen + 2] = '\0';
+ 
+     memcpy(data, &mark, sizeof(mark));
+     memcpy(data + sizeof(mark), &uid, sizeof(uid));
+ 
+     do {
+ 	r = DB->store(dupdb, buf,
+-		      idlen + tolen + 2, /* +2 b/c 1 for the center null;
+-					    +1 for the terminating null */
++		      idlen + tolen + datelen + 3, /* We have three concatenated values now, all parts ending with '\0' */
+ 		      data, sizeof(mark)+sizeof(uid), NULL);
+     } while (r == CYRUSDB_AGAIN);
+ 
+-    syslog(LOG_DEBUG, "duplicate_mark: %-40s %-20s %ld %lu",
+-	   buf, buf+idlen+1, mark, uid);
++    syslog(LOG_DEBUG, "duplicate_mark: %-40s %-20s %-40s %ld %lu",
++	   buf, buf+idlen+1, buf+idlen+tolen+2, mark, uid); 
+ 
+     return;
+ }
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/duplicate.h b/GIT/TEMP/cyrus-imapd-2.4.10/imap/duplicate.h
+index d1d8737..8a36a89 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/duplicate.h
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/duplicate.h
+@@ -49,12 +49,17 @@
+ /* name of the duplicate delivery database */
+ #define FNAME_DELIVERDB "/deliver.db"
+ 
++typedef struct duplicate_key {
++    char *id;
++    char *to;
++    char *date;
++} duplicate_key_t;
++
+ int duplicate_init(const char *fname, int myflags);
+ 
+-time_t duplicate_check(char *id, int idlen, const char *to, int tolen);
+-void duplicate_log(char *msgid, const char *name, char *action);
+-void duplicate_mark(char *id, int idlen, const char *to, int tolen, time_t mark,
+-		    unsigned long uid);
++time_t duplicate_check(duplicate_key_t *dkey);
++void duplicate_log(duplicate_key_t *dkey, char *action);
++void duplicate_mark(duplicate_key_t *dkey, time_t mark, unsigned long uid);
+ int duplicate_find(char *msgid, int (*proc)(), void *rock);
+ 
+ int duplicate_prune(int seconds, struct hash_table *expire_table);
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtp_sieve.c b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtp_sieve.c
+index 379befd..1075d9e 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtp_sieve.c
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtp_sieve.c
+@@ -225,6 +225,7 @@ static int send_rejection(const char *origid,
+     time_t t;
+     char datestr[80];
+     pid_t sm_pid, p;
++    duplicate_key_t dkey = {NULL, NULL, NULL};
+ 
+     smbuf[0] = "sendmail";
+     smbuf[1] = "-i";		/* ignore dots */
+@@ -244,10 +245,13 @@ static int send_rejection(const char *origid,
+ 	     global_outgoing_count++, config_servername);
+     
+     namebuf = make_sieve_db(mailreceip);
+-    duplicate_mark(buf, strlen(buf), namebuf, strlen(namebuf), t, 0);
+-    fprintf(sm, "Message-ID: %s\r\n", buf);
+ 
++    dkey.id = buf;
++    dkey.to = namebuf;
+     rfc822date_gen(datestr, sizeof(datestr), t);
++    dkey.date = datestr;
++    duplicate_mark(&dkey, t, 0);
++    fprintf(sm, "Message-ID: %s\r\n", buf);
+     fprintf(sm, "Date: %s\r\n", datestr);
+ 
+     fprintf(sm, "X-Sieve: %s\r\n", SIEVE_VERSION);
+@@ -368,6 +372,7 @@ static int sieve_redirect(void *ac,
+     script_data_t *sd = (script_data_t *) sc;
+     message_data_t *m = ((deliver_data_t *) mc)->m;
+     char buf[8192], *sievedb = NULL;
++    duplicate_key_t dkey = {NULL, NULL, NULL};
+     int res;
+ 
+     /* if we have a msgid, we can track our redirects */
+@@ -375,17 +380,19 @@ static int sieve_redirect(void *ac,
+ 	snprintf(buf, sizeof(buf), "%s-%s", m->id, rc->addr);
+ 	sievedb = make_sieve_db(sd->username);
+ 
++	dkey.id = buf;
++	dkey.to = sievedb;
++	dkey.date = ((deliver_data_t *) mc)->m->date;
+ 	/* ok, let's see if we've redirected this message before */
+-	if (duplicate_check(buf, strlen(buf), sievedb, strlen(sievedb))) {
+-	    duplicate_log(m->id, sd->username, "redirect");
++	if (duplicate_check(&dkey)) {
++	    duplicate_log(&dkey, "redirect");
+ 	    return SIEVE_OK;
+ 	}
+     }
+ 
+     if ((res = send_forward(rc->addr, m->return_path, m->data)) == 0) {
+ 	/* mark this message as redirected */
+-	if (sievedb) duplicate_mark(buf, strlen(buf), 
+-				    sievedb, strlen(sievedb), time(NULL), 0);
++	if (sievedb) duplicate_mark(&dkey, time(NULL), 0);
+ 
+ 	snmp_increment(SIEVE_REDIRECT, 1);
+ 	syslog(LOG_INFO, "sieve redirected: %s to: %s",
+@@ -494,7 +501,7 @@ static int sieve_fileinto(void *ac,
+ 			      fc->imapflags->flag, fc->imapflags->nflags,
+ 			      (char *) sd->username, sd->authstate, md->id,
+ 			      sd->username, mdata->notifyheader,
+-			      namebuf, quotaoverride, 0);
++			      namebuf, md->date, quotaoverride, 0);
+     }
+ 
+     if (!ret) {
+@@ -564,14 +571,18 @@ static int autorespond(void *ac,
+     script_data_t *sd = (script_data_t *) sc;
+     time_t t, now;
+     int ret;
++    duplicate_key_t dkey = {NULL, NULL, ""};
+ 
+     snmp_increment(SIEVE_VACATION_TOTAL, 1);
+ 
+     now = time(NULL);
+ 
+     /* ok, let's see if we've responded before */
+-    t = duplicate_check((char *) arc->hash, SIEVE_HASHLEN, 
+-			sd->username, strlen(sd->username));
++    dkey.id = xmalloc(SIEVE_HASHLEN + 1);
++    memcpy(dkey.id, (char *) arc->hash, SIEVE_HASHLEN);
++    dkey.id[SIEVE_HASHLEN] = '\0';
++    dkey.to = sd->username;
++    t = duplicate_check(&dkey);
+     if (t) {
+ 	if (now >= t) {
+ 	    /* yay, we can respond again! */
+@@ -585,11 +596,10 @@ static int autorespond(void *ac,
+     }
+ 
+     if (ret == SIEVE_OK) {
+-	duplicate_mark((char *) arc->hash, SIEVE_HASHLEN, 
+-		       sd->username, strlen(sd->username), 
+-		       now + arc->days * (24 * 60 * 60), 0);
++	duplicate_mark(&dkey, now + arc->days * (24 * 60 * 60), 0);
+     }
+ 
++    if (dkey.id != NULL) free(dkey.id);
+     return ret;
+ }
+ 
+@@ -607,6 +617,7 @@ static int send_response(void *ac,
+     sieve_send_response_context_t *src = (sieve_send_response_context_t *) ac;
+     message_data_t *md = ((deliver_data_t *) mc)->m;
+     script_data_t *sdata = (script_data_t *) sc;
++    duplicate_key_t dkey = {NULL, NULL, NULL};
+ 
+     smbuf[0] = "sendmail";
+     smbuf[1] = "-i";		/* ignore dots */
+@@ -667,8 +678,10 @@ static int send_response(void *ac,
+     if (sm_stat == 0) { /* sendmail exit value */
+ 	sievedb = make_sieve_db(sdata->username);
+ 
+-	duplicate_mark(outmsgid, strlen(outmsgid), 
+-		       sievedb, strlen(sievedb), t, 0);
++	dkey.id = outmsgid;
++	dkey.to = sievedb;
++	dkey.date = ((deliver_data_t *) mc)->m->date;
++	duplicate_mark(&dkey, t, 0);
+ 
+ 	snmp_increment(SIEVE_VACATION_REPLIED, 1);
+ 
+@@ -879,6 +892,7 @@ int run_sieve(const char *user, const char *domain, const char *mailbox,
+     char userbuf[MAX_MAILBOX_BUFFER] = "";
+     char authuserbuf[MAX_MAILBOX_BUFFER];
+     int r = 0;
++    duplicate_key_t dkey = {NULL, NULL, NULL};
+ 
+     if (!user) {
+ 	/* shared mailbox, check for annotation */
+@@ -935,8 +949,10 @@ int run_sieve(const char *user, const char *domain, const char *mailbox,
+ 		 domain ? domain : "");
+ 	sdb = make_sieve_db(namebuf);
+ 		
+-	duplicate_mark(msgdata->m->id, strlen(msgdata->m->id), 
+-		       sdb, strlen(sdb), time(NULL), 0);
++	dkey.id = msgdata->m->id;
++	dkey.to = sdb;
++	dkey.date = msgdata->m->date;
++	duplicate_mark(&dkey, time(NULL), 0);
+     }
+ 		
+     /* free everything */
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpd.c b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpd.c
+index ed34c7c..ca35331 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpd.c
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpd.c
+@@ -496,6 +496,7 @@ int deliver_mailbox(FILE *f,
+ 		    const char *user,
+ 		    char *notifyheader,
+ 		    const char *mailboxname,
++		    char *date,
+ 		    int quotaoverride,
+ 		    int acloverride)
+ {
+@@ -503,6 +504,7 @@ int deliver_mailbox(FILE *f,
+     struct appendstate as;
+     unsigned long uid;
+     const char *notifier;
++    duplicate_key_t dkey = {NULL, NULL, NULL};
+ 
+     r = append_setup(&as, mailboxname,
+ 		     authuser, authstate, acloverride ? 0 : ACL_POST, 
+@@ -511,9 +513,12 @@ int deliver_mailbox(FILE *f,
+ 		     (long) size : 0);
+ 
+     /* check for duplicate message */
++    dkey.id = id;
++    dkey.to = mailboxname;
++    dkey.date = date;
+     if (!r && id && dupelim && !(as.mailbox->i.options & OPT_IMAP_DUPDELIVER) &&
+-	duplicate_check(id, strlen(id), mailboxname, strlen(mailboxname))) {
+-	duplicate_log(id, mailboxname, "delivery");
++	duplicate_check(&dkey)) {
++	duplicate_log(&dkey, "delivery");
+ 	append_abort(&as);
+ 	return 0;
+     }
+@@ -539,8 +544,7 @@ int deliver_mailbox(FILE *f,
+ 		syslog(LOG_INFO, "Delivered: %s to mailbox: %s",
+ 		       id, mailboxname);
+ 		if (dupelim && id) {
+-		    duplicate_mark(id, strlen(id), mailboxname, 
+-				   strlen(mailboxname), time(NULL), uid);
++		    duplicate_mark(&dkey, time(NULL), uid);
+ 		}
+ 		mailbox_close(&mailbox);
+ 	    }
+@@ -690,7 +694,7 @@ int deliver_local(deliver_data_t *mydata, char **flag, int nflags,
+ 			       md->size, flag, nflags,
+ 			       mydata->authuser, mydata->authstate, md->id,
+ 			       NULL, mydata->notifyheader,
+-			       namebuf, quotaoverride, 0);
++			       namebuf, md->date, quotaoverride, 0);
+     }
+ 
+     /* case 2: ordinary user */
+@@ -710,7 +714,7 @@ int deliver_local(deliver_data_t *mydata, char **flag, int nflags,
+ 				   md->size, flag, nflags,
+ 				   mydata->authuser, mydata->authstate, md->id,
+ 				   username, mydata->notifyheader,
+-				   namebuf, quotaoverride, 0);
++				   namebuf, md->date, quotaoverride, 0);
+ 	}
+ 	if (ret2 == IMAP_MAILBOX_NONEXISTENT && mailboxname &&
+ 	    config_getswitch(IMAPOPT_LMTP_FUZZY_MAILBOX_MATCH) &&
+@@ -720,7 +724,7 @@ int deliver_local(deliver_data_t *mydata, char **flag, int nflags,
+ 				   md->size, flag, nflags,
+ 				   mydata->authuser, mydata->authstate, md->id,
+ 				   username, mydata->notifyheader,
+-				   namebuf, quotaoverride, 0);
++				   namebuf, md->date, quotaoverride, 0);
+ 	}
+ 	if (ret2) {
+ 	    /* normal delivery to INBOX */
+@@ -732,7 +736,7 @@ int deliver_local(deliver_data_t *mydata, char **flag, int nflags,
+ 				  md->size, flag, nflags,
+ 				  (char *) username, authstate, md->id,
+ 				  username, mydata->notifyheader,
+-				  namebuf, quotaoverride, 1);
++				  namebuf, md->date, quotaoverride, 1);
+ 
+ 	    if (authstate) auth_freestate(authstate);
+ 	}
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpd.h b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpd.h
+index d865777..7561a5a 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpd.h
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpd.h
+@@ -89,6 +89,7 @@ extern int deliver_mailbox(FILE *f,
+ 			   const char *user,
+ 			   char *notifyheader,
+ 			   const char *mailboxname,
++			   char *date,
+ 			   int quotaoverride,
+ 			   int acloverride);
+ 
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpengine.c b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpengine.c
+index 3005ed6..f0357be 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpengine.c
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpengine.c
+@@ -282,6 +282,7 @@ int msg_new(message_data_t **m)
+     ret->return_path = NULL;
+     ret->rcpt = NULL;
+     ret->rcpt_num = 0;
++    ret->date = NULL;
+ 
+     ret->authuser = NULL;
+     ret->authstate = NULL;
+@@ -319,6 +320,9 @@ void msg_free(message_data_t *m)
+ 	}
+ 	free(m->rcpt);
+     }
++    if (m->date) {
++      free(m->date);
++     }
+ 
+     if (m->authuser) {
+ 	free(m->authuser);
+@@ -741,12 +745,16 @@ static int savemsg(struct clientdata *cd,
+     }
+ 
+     /* get date */
+-    if (!spool_getheader(m->hdrcache, "date")) {
++    if (!(body = spool_getheader(m->hdrcache, "date"))) {
+ 	/* no date, create one */
+ 	addbody = xstrdup(datestr);
++	m->date = xstrdup(datestr);
+ 	fprintf(f, "Date: %s\r\n", addbody);
+ 	spool_cache_header(xstrdup("Date"), addbody, m->hdrcache);
+     }
++    else {
++	m->date = xstrdup(body[0]);
++    }
+ 
+     if (!m->return_path &&
+ 	(body = msg_getheader(m, "return-path"))) {
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpengine.h b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpengine.h
+index c3585da..16b6bc3 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/lmtpengine.h
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/lmtpengine.h
+@@ -65,6 +65,7 @@ struct message_data {
+     char *return_path;		/* where to return message */
+     address_data_t **rcpt;	/* to recipients of this message */
+     int rcpt_num;		/* number of recipients */
++    char *date; 		/* date field of header */
+ 
+     /* auth state */
+     char *authuser;
+diff --git a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/nntpd.c b/GIT/TEMP/cyrus-imapd-2.4.10/imap/nntpd.c
+index 9f6431d..f749449 100644
+--- a/GIT/TEMP/cyrus-imapd-2.4.10-ori/imap/nntpd.c
++++ b/GIT/TEMP/cyrus-imapd-2.4.10/imap/nntpd.c
+@@ -2874,6 +2874,7 @@ struct message_data {
+ 
+     char **rcpt;		/* mailboxes to post message */
+     int rcpt_num;		/* number of groups */
++    char *date;		/* date field of header */ 
+ 
+     hdrcache_t hdrcache;
+ };
+@@ -2891,6 +2892,7 @@ int msg_new(message_data_t **m)
+     ret->size = 0;
+     ret->rcpt = NULL;
+     ret->rcpt_num = 0;
++    ret->date = NULL;
+ 
+     ret->hdrcache = spool_new_hdrcache();
+ 
+@@ -2924,6 +2926,9 @@ void msg_free(message_data_t *m)
+ 	}
+ 	free(m->rcpt);
+     }
++    if (m->date) {
++	free(m->date);
++    }
+ 
+     spool_free_hdrcache(m->hdrcache);
+ 
+@@ -3047,9 +3052,13 @@ static int savemsg(message_data_t *m, FILE *f)
+ 	char datestr[80];
+ 
+ 	rfc822date_gen(datestr, sizeof(datestr), now);
++	m->date = xstrdup(datestr);
+ 	fprintf(f, "Date: %s\r\n", datestr);
+ 	spool_cache_header(xstrdup("Date"), xstrdup(datestr), m->hdrcache);
+     }
++    else {
++	m->date = xstrdup(body[0]);
++    }
+ 
+     /* get control */
+     if ((body = spool_getheader(m->hdrcache, "control")) != NULL) {
+@@ -3279,6 +3288,7 @@ static int deliver(message_data_t *msg)
+     unsigned long uid;
+     struct body *body = NULL;
+     struct dest *dlist = NULL;
++    duplicate_key_t dkey = {msg->id, NULL, msg->date};
+ 
+     /* check ACLs of all mailboxes */
+     for (n = 0; n < msg->rcpt_num; n++) {
+@@ -3286,6 +3296,7 @@ static int deliver(message_data_t *msg)
+ 
+ 	/* look it up */
+ 	r = mlookup(rcpt, &server, &acl, NULL);
++	dkey.to = rcpt;
+ 	if (r) return IMAP_MAILBOX_NONEXISTENT;
+ 
+ 	if (!(acl && (myrights = cyrus_acl_myrights(nntp_authstate, acl)) &&
+@@ -3301,9 +3312,9 @@ static int deliver(message_data_t *msg)
+ 	    struct appendstate as;
+ 
+ 	    if (msg->id && 
+-		duplicate_check(msg->id, strlen(msg->id), rcpt, strlen(rcpt))) {
++		duplicate_check(&dkey)) {
+ 		/* duplicate message */
+-		duplicate_log(msg->id, rcpt, "nntp delivery");
++		duplicate_log(&dkey, "nntp delivery");
+ 		continue;
+ 	    }
+ 
+@@ -3319,14 +3330,12 @@ static int deliver(message_data_t *msg)
+ 		    r = append_fromstream(&as, &body, msg->data, msg->size, 0,
+ 					  (const char **) NULL, 0);
+ 		}
+-		if (r || (msg->id &&   
+-			  duplicate_check(msg->id, strlen(msg->id),
+-					  rcpt, strlen(rcpt)))) {  
++		if (r || ( msg->id && duplicate_check(&dkey) ) ) {    
+ 		    append_abort(&as);
+                    
+ 		    if (!r) {
+ 			/* duplicate message */
+-			duplicate_log(msg->id, rcpt, "nntp delivery");
++			duplicate_log(&dkey, "nntp delivery");
+ 			continue;
+ 		    }            
+ 		}                
+@@ -3336,8 +3345,7 @@ static int deliver(message_data_t *msg)
+ 	    }
+ 
+ 	    if (!r && msg->id)
+-		duplicate_mark(msg->id, strlen(msg->id), rcpt, strlen(rcpt),
+-			       time(NULL), uid);
++		duplicate_mark(&dkey, time(NULL), uid);
+ 
+ 	    if (r) return r;
+ 
+@@ -3509,7 +3517,8 @@ static int cancel(message_data_t *msg)
+     /* store msgid of cancelled message for IHAVE/CHECK/TAKETHIS
+      * (in case we haven't received the message yet)
+      */
+-    duplicate_mark(msgid, strlen(msgid), "", 0, 0, time(NULL));
++    duplicate_key_t dkey = {msgid, "", ""};
++    duplicate_mark(&dkey, 0, time(NULL));
+ 
+     return r;
+ }

@@ -1,0 +1,94 @@
+Index: man/master.8
+===================================================================
+--- man/master.8	(revision 305)
++++ man/master.8	(working copy)
+@@ -66,9 +66,13 @@
+ ]
+ [
+ .B \-j
+-.I janitor period
++.I janitor frequency
+ ]
+ [
++.B \-J
++.I janitor mourning time interval
++]
++[
+ .B \-d
+ ]
+ [
+@@ -110,6 +114,12 @@
+ fork rate (and you have not increased the child hash table size when you
+ compiled Cyrus from its default of 10000 entries).
+ .TP
++.BI \-J " janitor mourning time interval"
++Sets the amount of time, in seconds, to remember a child process after
++it exits.  You only need to increase this from the default of 2 seconds,
++if you see messages in syslog complaining of messages from unknown or
++unregistered children.
++.TP
+ .BI \-p " pidfile"
+ Use
+ .I pidfile
+Index: master/master.c
+===================================================================
+--- master/master.c	(revision 305)
++++ master/master.c	(working copy)
+@@ -162,6 +162,8 @@
+ static struct centry *ctable[child_table_size];
+ static struct centry *cfreelist;
+ 
++static int child_mourning_time = 2;	/* Time in seconds to remember child
++					   after processing SIGCHLD */
+ static int janitor_frequency = 1;	/* Janitor sweeps per second */
+ static int janitor_position;		/* Entry to begin at in next sweep */
+ static struct timeval janitor_mark;	/* Last time janitor did a sweep */
+@@ -911,7 +913,7 @@
+ 		}
+ 	    }
+ 	    c->service_state = SERVICE_STATE_DEAD;
+-	    c->janitor_deadline = time(NULL) + 2;
++	    c->janitor_deadline = time(NULL) + child_mourning_time;
+ 	} else {
+ 	    /* weird. Are we multithreaded now? we don't know this child */
+ 	    syslog(LOG_WARNING,
+@@ -920,7 +922,7 @@
+ 	    c = get_centry();
+ 	    c->pid = pid;
+ 	    c->service_state = SERVICE_STATE_DEAD;
+-	    c->janitor_deadline = time(NULL) + 2;
++	    c->janitor_deadline = time(NULL) + child_mourning_time;
+ 	    c->si = SERVICE_NONE;
+ 	    c->next = ctable[pid % child_table_size];
+ 	    ctable[pid % child_table_size] = c;
+@@ -1644,9 +1646,9 @@
+     p = getenv("CYRUS_VERBOSE");
+     if (p) verbose = atoi(p) + 1;
+ #ifdef HAVE_NETSNMP
+-    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:P:x:")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:J:P:x:")) != EOF) {
+ #else
+-    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:J:")) != EOF) {
+ #endif
+ 	switch (opt) {
+ 	case 'C': /* alt imapd.conf file */
+@@ -1679,8 +1681,16 @@
+ 	    /* Janitor frequency */
+ 	    janitor_frequency = atoi(optarg);
+ 	    if(janitor_frequency < 1)
+-		fatal("The janitor period must be at least 1 second", EX_CONFIG);
+-	    break;   
++		fatal("The janitor frequency must be at least once per second",
++		      EX_CONFIG);
++	    break;
++	case 'J':
++	    /* Janitor delay before cleanup of a child */
++	    child_mourning_time = atoi(optarg);
++	    if(child_mourning_time < 1)
++		fatal("The janitor's mourning time interval must be at least 1 second",
++		      EX_CONFIG);
++	    break;
+ #ifdef HAVE_NETSNMP
+ 	case 'P': /* snmp AgentXPingInterval */
+ 	    agentxpinginterval = atoi(optarg);

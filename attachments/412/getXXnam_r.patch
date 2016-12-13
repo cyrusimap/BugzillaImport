@@ -1,0 +1,57 @@
+--- cyrus-sasl-2.1.22/saslauthd/configure.in.old	2005-05-18 21:55:19.000000000 -0700
++++ cyrus-sasl-2.1.22/saslauthd/configure.in	2005-05-18 21:55:19.000000000 -0700
+@@ -191,6 +191,28 @@
+ AC_CHECK_FUNCS(getspnam getuserpw, break)
+ AC_CHECK_FUNCS(strlcat strlcpy)
+ 
++if test $ac_cv_func_getspnam = yes; then
++	AC_MSG_CHECKING(if getpwnam_r/getspnam_r take 5 arguments)
++	AC_TRY_COMPILE(
++		[
++#include <sys/types.h>
++#include <pwd.h>
++#include <shadow.h>
++		],
++		[
++struct passwd *pw;
++struct passwd pwbuf;
++char pwdata[512];
++(void) getpwnam_r("bin", &pwbuf, pwdata, sizeof(pwdata), &pw);
++		],
++		[AC_MSG_RESULT(yes)
++		 AC_DEFINE(GETXXNAM_R_5ARG, 1,
++			[Define if your getpwnam_r()/getspnam_r()
++			functions take 5 arguments])],
++		[AC_MSG_RESULT(no)]
++	)
++fi
++
+ dnl Check for getaddrinfo
+ GETADDRINFOOBJS=""
+ sasl_cv_getaddrinfo=no
+--- cyrus-sasl-2.1.22/saslauthd/auth_shadow.c.old	2004-04-27 08:56:23.000000000 -0700
++++ cyrus-sasl-2.1.22/saslauthd/auth_shadow.c	2006-01-15 12:55:26.719175008 -0800
+@@ -131,7 +131,11 @@
+ #  define SHADOW_PW_EPERM  "*NP*"	/* insufficient database perms */
+ 
+ #  ifdef _REENTRANT
++#    ifdef GETXXNAM_R_5ARG
++	(void) getpwnam_r(login, &pwbuf, pwdata, sizeof(pwdata), &pw);
++#    else
+     pw = getpwnam_r(login, &pwbuf, pwdata, sizeof(pwdata));
++#    endif /* GETXXNAM_R_5ARG */
+ #  else
+     pw = getpwnam(login);
+ #  endif /* _REENTRANT */
+@@ -146,7 +150,11 @@
+     today = (long)time(NULL)/(24L*60*60);
+ 
+ #  ifdef _REENTRANT
++#    ifdef GETXXNAM_R_5ARG
++	(void) getspnam_r(login, &spbuf, spdata, sizeof(spdata), &sp);
++#    else
+     sp = getspnam_r(login, &spbuf, spdata, sizeof(spdata));
++#    endif /* GETXXNAM_R_5ARG */
+ #  else
+     sp = getspnam(login);
+ #  endif /* _REENTRANT */

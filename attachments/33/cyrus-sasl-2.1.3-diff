@@ -1,0 +1,174 @@
+diff -cwbr cyrus-sasl-2.1.3-BETA/saslauthd/auth_ldap.c cyrus-sasl-2.1.3-ONL/saslauthd/auth_ldap.c
+*** cyrus-sasl-2.1.3-BETA/saslauthd/auth_ldap.c	Fri May  3 14:55:21 2002
+--- cyrus-sasl-2.1.3-ONL/saslauthd/auth_ldap.c	Thu May  9 13:34:31 2002
+***************
+*** 48,53 ****
+--- 48,54 ----
+  
+  #ifdef AUTH_LDAP
+  
++ #include <sys/time.h>
+  #include "lak.h"
+  
+  #define CONFIGLISTGROWSIZE 100
+diff -cwbr cyrus-sasl-2.1.3-BETA/saslauthd/lak.c cyrus-sasl-2.1.3-ONL/saslauthd/lak.c
+*** cyrus-sasl-2.1.3-BETA/saslauthd/lak.c	Fri May  3 13:45:31 2002
+--- cyrus-sasl-2.1.3-ONL/saslauthd/lak.c	Fri May 10 11:00:53 2002
+***************
+*** 25,38 ****
+   * DAMAGE.
+   * END COPYRIGHT */
+  
+! #ifdef WITH_LDAP
+  
+  #include <sys/time.h>
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include <strings.h>
+  #include <syslog.h>
+! #include <crypt.h>
+  
+  #include "lak.h"
+  
+--- 25,41 ----
+   * DAMAGE.
+   * END COPYRIGHT */
+  
+! 
+! #include "mechanisms.h"
+! 
+! #ifdef AUTH_LDAP
+  
+  #include <sys/time.h>
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include <strings.h>
+  #include <syslog.h>
+! #include <rpcsvc/crypt.h>
+  
+  #include "lak.h"
+  
+***************
+*** 78,97 ****
+  		return NULL;
+  	}
+  
+! 	buf = malloc(sizeof(s) * 2 + 1);
+  	if (buf == NULL) {
+  		syslog(LOG_ERR|LOG_AUTH, "%s: Cannot allocate memory", myname);
+  		return NULL;
+  	}
+  
+  	ptr = s;
+! 	end = (char *) ptr + strlen((char *) ptr);
+! 
+! 	while (((temp = (char *)strpbrk((char *)ptr, "*()\\\0"))!=NULL) && (temp < end)) {
+  
+  		if ((temp-ptr) > 0)
+  			strncat(buf, ptr, temp-ptr);
+- 
+  		switch (*temp) {
+  			case '*':
+  				strcat(buf, "\\2a");
+--- 81,99 ----
+  		return NULL;
+  	}
+  
+! 	buf = malloc(strlen(s) * 2 + 1);
+! 	buf[0] = '\0';
+  	if (buf == NULL) {
+  		syslog(LOG_ERR|LOG_AUTH, "%s: Cannot allocate memory", myname);
+  		return NULL;
+  	}
+  
+  	ptr = s;
+! 	end = ptr + strlen(ptr);
+  
++ 	while ((temp = strpbrk(ptr, "*()\\")) && (temp < end)) {
+  		if ((temp - ptr) > 0)
+  			strncat(buf, ptr, temp-ptr);
+  		switch (*temp) {
+  			case '*':
+  				strcat(buf, "\\2a");
+***************
+*** 105,118 ****
+  			case '\\':
+  				strcat(buf, "\\5c");
+  				break;
+  			case '\0':
+  				strcat(buf, "\\00");
+  				break;
+  		}
+  		ptr=temp+1;
+  	}
+  	if (temp<end)
+! 		strcat(buf, (char *) ptr);
+  
+  	if (conf->verbose)
+  		syslog(LOG_INFO|LOG_AUTH,"%s: After escaping, it's %s", myname, buf);
+--- 107,123 ----
+  			case '\\':
+  				strcat(buf, "\\5c");
+  				break;
++ #if 0
++ 			/* the strpbrk second arg contained \0 */
+  			case '\0':
+  				strcat(buf, "\\00");
+  				break;
++ #endif
+  		}
+  		ptr = temp + 1;
+  	}
+  	if (temp < end)
+! 		strcat(buf, ptr);
+  
+  	if (conf->verbose)
+  		syslog(LOG_INFO|LOG_AUTH,"%s: After escaping, it's %s", myname, buf);
+***************
+*** 146,155 ****
+  		return NULL;
+  	}
+  
+! 	if ((buf=(char *)malloc(sizeof(conf->filter)+sizeof(user)+sizeof(realm)+1))==NULL) {
+  		syslog(LOG_ERR|LOG_AUTH, "%s: Cannot allocate memory", myname);
+  		return NULL;
+  	}
+  	
+  	ptr=conf->filter;
+  	end = (char *) ptr + strlen((char *) ptr);
+--- 151,161 ----
+  		return NULL;
+  	}
+  
+! 	if ((buf=(char *)malloc(strlen(conf->filter)+strlen(user)+strlen(realm)+1))==NULL) {
+  		syslog(LOG_ERR|LOG_AUTH, "%s: Cannot allocate memory", myname);
+  		return NULL;
+  	}
++ 	buf[0] = '\0';
+  	
+  	ptr=conf->filter;
+  	end = (char *) ptr + strlen((char *) ptr);
+***************
+*** 525,528 ****
+  	}
+  }
+  
+! #endif /* WITH_LDAP */
+--- 531,534 ----
+  	}
+  }
+  
+! #endif /* AUTH_LDAP */
+diff -cwbr cyrus-sasl-2.1.3-BETA/saslauthd/lak.h cyrus-sasl-2.1.3-ONL/saslauthd/lak.h
+*** cyrus-sasl-2.1.3-BETA/saslauthd/lak.h	Fri May  3 12:05:49 2002
+--- cyrus-sasl-2.1.3-ONL/saslauthd/lak.h	Fri May 10 10:46:39 2002
+***************
+*** 30,35 ****
+--- 30,36 ----
+  
+  #include <ldap.h>
+  #include <lber.h>
++ #include <sys/time.h>
+  
+  #define LAK_OK 0
+  #define LAK_FAIL -1

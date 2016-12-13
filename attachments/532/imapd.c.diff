@@ -1,0 +1,29 @@
+--- imapd.Oc	Sat Feb 10 13:14:04 2007
++++ imapd.c	Sun Mar 18 20:42:39 2007
+@@ -4967,6 +4967,13 @@
+ 				 &backend_current, &backend_inbox, imapd_in);
+ 	    if (!s) r = IMAP_SERVER_UNAVAILABLE;
+ 
++	    if (!r && imapd_userisadmin && supports_referrals) {
++	      /* They aren't an admin remotely, so let's refer them */
++	      imapd_refer(tag, server, name);
++	      referral_kick = 1;
++	      return;
++	    }
++
+ 	    if (!r) {
+ 		if (!CAPA(s, CAPA_MUPDATE)) {
+ 		    /* reserve mailbox on MUPDATE */
+@@ -4977,9 +4984,9 @@
+ 		/* ok, send the create to that server */
+ 		if (partition)
+ 		    prot_printf(s->out,
+-				"%s CREATE {%d+}\r\n%s {%d+}\r\n%s\r\n", 
+-				tag, strlen(name), name,
+-				strlen(partition), partition);
++				/* need to send partition as an atom */
++				"%s CREATE {%d+}\r\n%s %s\r\n", 
++				tag, strlen(name), name, partition);
+ 		else
+ 		    prot_printf(s->out, "%s CREATE {%d+}\r\n%s\r\n", 
+ 				tag, strlen(name), name);

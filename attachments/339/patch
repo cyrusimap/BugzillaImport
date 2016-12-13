@@ -1,0 +1,188 @@
+---------------------
+PatchSet 1840 
+Date: 2004/08/06 15:54:55
+Author: hmh
+Branch: HEAD
+Tag: (none) 
+Log:
+  * Time to remember dead children is now a command line option (-J)
+  * Make sure to process all pending messages of children of
+    a service in one go.  Thanks to Jules Agee <julesa@pcf.com> for
+    tracking down this problem, and testing the new code
+    (REQUIRED FOR HIGH-VOLUME SITES)
+  *** SYNC TO 2.1.16-0woody.6.2 ***
+
+Members: 
+	master/master.c:1.52->1.53 
+
+Index: debian/cyrus21-imapd/master/master.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/master/master.c,v
+retrieving revision 1.52
+retrieving revision 1.53
+diff -u -r1.52 -r1.53
+--- debian/cyrus21-imapd/master/master.c	19 Dec 2003 09:29:22 -0000	1.52
++++ debian/cyrus21-imapd/master/master.c	6 Aug 2004 15:54:55 -0000	1.53
+@@ -154,6 +154,8 @@
+ static struct centry *ctable[child_table_size];
+ static struct centry *cfreelist;
+ 
++static int child_mourning_time = 2;	/* Time in seconds to remember child
++					   after processing SIGCHLD */
+ static int janitor_frequency = 1;	/* Janitor sweeps per second */
+ static int janitor_position;		/* Entry to begin at in next sweep */
+ static struct timeval janitor_mark;	/* Last time janitor did a sweep */
+@@ -884,16 +886,16 @@
+ 		}
+ 	    }
+ 	    c->service_state = SERVICE_STATE_DEAD;
+-	    c->janitor_deadline = time(NULL) + 2;
++	    c->janitor_deadline = time(NULL) + child_mourning_time;
+ 	} else {
+ 	    /* weird. Are we multithreaded now? we don't know this child */
+ 	    syslog(LOG_WARNING,
+-		   "receiving signals from unregistered child %d. Handling it anyway",
++		   "notified of death of unregistered child %d. Handling it anyway",
+ 		   pid);
+ 	    c = get_centry();
+ 	    c->pid = pid;
+ 	    c->service_state = SERVICE_STATE_DEAD;
+-	    c->janitor_deadline = time(NULL) + 2;
++	    c->janitor_deadline = time(NULL) + child_mourning_time;
+ 	    c->s = NULL;
+ 	    c->next = ctable[pid % child_table_size];
+ 	    ctable[pid % child_table_size] = c;
+@@ -1052,6 +1054,36 @@
+     }
+ }
+ 
++/*
++ * Receives a message from a service.
++ *
++ * Returns zero if all goes well
++ * 1 if no msg available
++ * 2 if bad message received (incorrectly sized)
++ * -1 on error (errno set)
++ */
++int read_msg(int fd, struct notify_message *msg)
++{
++	ssize_t r;
++	size_t off = 0;
++	int s = sizeof(struct notify_message);
++
++	while (s > 0) {
++	    do
++		r = read(fd, msg + off, s);
++	    while ((r == -1) && (errno == EINTR));
++	    if (r <= 0) break;
++	    s -= r;
++	    off += r;
++	}
++	if ( ((r == 0) && (off == 0)) ||
++	     ((r == -1) && (errno == EAGAIN)) )
++	    return 1;
++	if (r == -1) return -1;
++	if (s != 0) return 2;
++	return 0;
++}
++
+ void process_msg(struct service *s, struct notify_message *msg)
+ {
+     struct centry * c;
+@@ -1655,7 +1687,7 @@
+ 
+     p = getenv("CYRUS_VERBOSE");
+     if (p) verbose = atoi(p) + 1;
+-    while ((opt = getopt(argc, argv, "p:l:Ddj:")) != EOF) {
++    while ((opt = getopt(argc, argv, "p:l:Ddj:J:")) != EOF) {
+ 	switch (opt) {
+ 	case 'l':
+             /* user defined listen queue backlog */
+@@ -1681,7 +1713,15 @@
+ 	    /* Janitor frequency */
+ 	    janitor_frequency = atoi(optarg);
+ 	    if(janitor_frequency < 1)
+-		fatal("The janitor period must be at least 1 second", EX_CONFIG);
++		fatal("The janitor frequency must be at least once per second",
++			EX_CONFIG);
++	    break;
++	case 'J':
++	    /* Janitor delay before cleanup of a child */
++	    child_mourning_time = atoi(optarg);
++	    if(child_mourning_time < 1)
++		fatal("The janitor's mourning time interval must be at least 1 second", 
++			EX_CONFIG);
+ 	    break;
+ 	default:
+ 	    break;
+@@ -2016,13 +2056,19 @@
+ 	    int j;
+ 
+ 	    if (FD_ISSET(x, &rfds)) {
+-		r = read(x, &msg, sizeof(msg));
+-		if (r != sizeof(msg)) {
+-		    syslog(LOG_ERR, "got incorrectly sized response from child: %x", i);
++		while ((r = read_msg(x, &msg)) == 0)
++		    process_msg(&Services[i], &msg);
++
++		if (r == 2) {
++		    syslog(LOG_ERR, 
++			"got incorrectly sized response from child: %x", i);
++		    continue;
++		}
++		if (r < 0) {
++		    syslog(LOG_ERR,
++			"error while receiving message from child %x: %m", i);
+ 		    continue;
+ 		}
+-
+-		process_msg(&Services[i], &msg);
+ 	    }
+ 
+ 	    if (Services[i].exec &&
+---------------------
+PatchSet 1841 
+Date: 2004/08/06 17:50:00
+Author: hmh
+Branch: HEAD
+Tag: (none) 
+Log:
+  * Time to remember dead children is now a command line option (-J)
+
+Members: 
+	man/master.8:1.5->1.6 
+
+Index: debian/cyrus21-imapd/man/master.8
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/man/master.8,v
+retrieving revision 1.5
+retrieving revision 1.6
+diff -u -r1.5 -r1.6
+--- debian/cyrus21-imapd/man/master.8	25 Mar 2003 14:37:33 -0000	1.5
++++ debian/cyrus21-imapd/man/master.8	6 Aug 2004 17:50:04 -0000	1.6
+@@ -54,7 +54,11 @@
+ ]
+ [
+ .B \-j
+-.I janitor period
++.I janitor frequency
++]
++[
++.B \-J
++.I janitor's mourning time interval
+ ]
+ [
+ .B \-d
+@@ -86,6 +90,12 @@
+ fork rate (and you have not increased the child hash table size when you
+ compiled Cyrus from its default of 10000 entries).
+ .TP
++.BI \-J " janitor mourining time interval"
++Sets the amount of time, in seconds, to remember a child process after
++it exits.  You only need to increase this from the default of 2 seconds,
++if you see messages in syslog complaining of messages from unknown or
++unregistered children.
++.TP
+ .BI \-p " pidfile"
+ Use
+ .I pidfile

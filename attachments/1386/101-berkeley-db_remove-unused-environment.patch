@@ -1,0 +1,43 @@
+Index: cyrus-imapd-2.4-2.4.8/lib/cyrusdb_berkeley.c
+===================================================================
+--- cyrus-imapd-2.4-2.4.8.orig/lib/cyrusdb_berkeley.c	2011-05-12 08:42:47.013426896 +0000
++++ cyrus-imapd-2.4-2.4.8/lib/cyrusdb_berkeley.c	2011-05-12 08:54:06.393374893 +0000
+@@ -261,9 +261,18 @@
+ static int done(void)
+ {
+     int r;
++    char dstname[1024], *dirname;
+ 
+     if (--dbinit) return 0;
+ 
++    r = (dbenv->get_home)(dbenv, &dirname);
++    strlcpy(dstname, dirname, sizeof(dstname));
++    if (r) {
++	syslog(LOG_ERR, "DBERROR: error exiting application: %s",
++	       db_strerror(r));
++	return CYRUSDB_IOERROR;
++    }
++
+     r = (dbenv->close)(dbenv, 0);
+     dbinit = 0;
+     if (r) {
+@@ -271,6 +280,19 @@
+ 	       db_strerror(r));
+ 	return CYRUSDB_IOERROR;
+     }
++
++    r = db_env_create(&dbenv, 0);
++    if (r) {
++	syslog(LOG_ERR, "DBERROR: error creating new dbenv handle: %s", db_strerror(r));
++	return CYRUSDB_IOERROR;
++    }
++
++    r = (dbenv->remove)(dbenv, dstname ,0);
++    if (r && (r != EBUSY)) {
++	syslog(LOG_ERR, "DBERROR: error removing Berkeley DB environemnt %s",
++	       db_strerror(r));
++	return CYRUSDB_IOERROR;
++    }
+ 
+     return 0;
+ }

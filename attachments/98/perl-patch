@@ -1,0 +1,86 @@
+From jrhett@isite.net Thu Dec 19 15:50:40 2002
+Date: Sat, 20 Jul 2002 00:37:58 -0700
+From: Joe Rhett <jrhett@isite.net>
+To: Cyrus Mailing List <info-cyrus@andrew.cmu.edu>
+Subject: PATCH - fixes perl INC path for cyradm
+
+After installing 2.1.5 I found that I had the same problems various other
+people on the list have reported, namely:
+
+  Can't locate Cyrus/IMAP/Shell.pm in @INC (@INC contains: [localdirs] )
+  BEGIN failed--compilation aborted.
+ 
+There were a number of suggestions in the mailing list about how to fix
+this -- which essentially came down to modifying the script (post install!)
+to set the INC path properly. Since this path is known at compile time, 
+I couldn't figure out why this wasn't being set.
+
+Frankly, I'm sure that MakeMaker can make the appropriate modification ...
+but I simply couldn't figure out how to do it. I lost 4 hours this way ;-(
+
+Instead, I've come up with the following patch, to use autoconf to make the
+appropriate change. This probably isn't the best way. In fact, if this
+pisses someone off enough to make a better patch, then I'll be happy ;-)
+
+For this patch to work, one must rename ${srcdir}/perl/imap/cyradm.sh to 
+${srcdir}/perl/imap/cyradm.sh.in, and then apply this patch.
+
+*** configure.in_orig	Sat Jul 20 00:18:57 2002
+--- configure.in	Sat Jul 20 00:18:04 2002
+***************
+*** 922,925 ****
+  AC_SUBST(PERL_SUBDIRS)
+  
+  dnl make sure that Makefile is the last thing output
+! AC_OUTPUT(man/Makefile master/Makefile lib/Makefile acap/Makefile imap/Makefile imap/feedcyrus imtest/Makefile netnews/Makefile snmp/Makefile perl/Makefile $EXTRA_OUTPUT Makefile)
+--- 922,925 ----
+  AC_SUBST(PERL_SUBDIRS)
+  
+  dnl make sure that Makefile is the last thing output
+! AC_OUTPUT(man/Makefile master/Makefile lib/Makefile acap/Makefile imap/Makefile imap/feedcyrus imtest/Makefile netnews/Makefile snmp/Makefile perl/Makefile perl/imap/cyradm.sh $EXTRA_OUTPUT Makefile)
+*** configure_orig	Sat Jul 20 00:19:28 2002
+--- configure	Sat Jul 20 00:13:17 2002
+***************
+*** 6340,6346 ****
+  
+  cat >> $CONFIG_STATUS <<EOF
+  
+! CONFIG_FILES=\${CONFIG_FILES-"man/Makefile master/Makefile lib/Makefile acap/Makefile imap/Makefile imap/feedcyrus imtest/Makefile netnews/Makefile snmp/Makefile perl/Makefile $EXTRA_OUTPUT Makefile"}
+  EOF
+  cat >> $CONFIG_STATUS <<\EOF
+  for ac_file in .. $CONFIG_FILES; do if test "x$ac_file" != x..; then
+--- 6340,6346 ----
+  
+  cat >> $CONFIG_STATUS <<EOF
+  
+! CONFIG_FILES=\${CONFIG_FILES-"man/Makefile master/Makefile lib/Makefile acap/Makefile imap/Makefile imap/feedcyrus imtest/Makefile netnews/Makefile snmp/Makefile perl/Makefile perl/imap/cyradm.sh $EXTRA_OUTPUT Makefile"}
+  EOF
+  cat >> $CONFIG_STATUS <<\EOF
+  for ac_file in .. $CONFIG_FILES; do if test "x$ac_file" != x..; then
+*** perl/imap/cyradm.sh_orig	Sat Jul 20 00:29:18 2002
+--- perl/imap/cyradm.sh.in	Sat Jul 20 00:27:55 2002
+***************
+*** 40,48 ****
+  #
+  #
+  # $Id: cyradm.sh,v 1.10 2002/05/25 19:57:49 leg Exp $
+  case "x$BASH_VERSION" in
+! x) exec perl -MCyrus::IMAP::Shell -e shell -- ${1+"$@"} ;;
+! *) exec perl -MCyrus::IMAP::Shell -e shell -- "$@" ;;
+  esac
+  echo "$0: how did I get here?" >&2
+  exit 1
+--- 40,51 ----
+  #
+  #
+  # $Id: cyradm.sh,v 1.10 2002/05/25 19:57:49 leg Exp $
++ prefix=@prefix@ ; export prefix
++ exec_prefix=@exec_prefix@ ; export exec_prefix
++ 
+  case "x$BASH_VERSION" in
+! x) exec perl -I@libdir@/site_perl -MCyrus::IMAP::Shell -e shell -- ${1+"$@"} ;;
+! *) exec perl -I@libdir@/site_perl -MCyrus::IMAP::Shell -e shell -- "$@" ;;
+  esac
+  echo "$0: how did I get here?" >&2
+  exit 1
+

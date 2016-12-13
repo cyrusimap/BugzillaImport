@@ -1,0 +1,215 @@
+diff --git a/imap/imapd.c b/imap/imapd.c
+index b32f0ab..873ce84 100644
+--- a/imap/imapd.c
++++ b/imap/imapd.c
+@@ -2198,6 +2198,7 @@ void cmd_login(char *tag, char *user)
+     char *passwd;
+     const char *reply = NULL;
+     int r;
++    int failedloginpause;
+     
+     if (imapd_userid) {
+ 	eatline(imapd_in, ' ');
+@@ -2277,7 +2278,10 @@ void cmd_login(char *tag, char *user)
+ 	syslog(LOG_NOTICE, "badlogin: %s plaintext %s %s",
+ 	       imapd_clienthost, canon_user, sasl_errdetail(imapd_saslconn));
+ 
+-	sleep(3);
++	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	if (failedloginpause != 0) {
++	    sleep(failedloginpause);
++	}
+ 
+ 	/* Don't allow user probing */
+ 	if (r == SASL_NOUSER) r = SASL_BADAUTH;
+@@ -2358,6 +2362,7 @@ void cmd_authenticate(char *tag, char *authtype, char *resp)
+     const char *canon_user;
+ 
+     int r;
++    int failedloginpause;
+ 
+     r = saslserver(imapd_saslconn, authtype, resp, "", "+ ", "",
+ 		   imapd_in, imapd_out, &sasl_result, NULL);
+@@ -2385,7 +2390,10 @@ void cmd_authenticate(char *tag, char *authtype, char *resp)
+ 	    snmp_increment_args(AUTHENTICATION_NO, 1,
+ 				VARIABLE_AUTH, 0, /* hash_simple(authtype) */ 
+ 				VARIABLE_LISTEND);
+-	    sleep(3);
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	    if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
+ 
+ 	    /* Don't allow user probing */
+ 	    if (sasl_result == SASL_NOUSER) sasl_result = SASL_BADAUTH;
+diff --git a/imap/mupdate.c b/imap/mupdate.c
+index 386a08b..13c2e76 100644
+--- a/imap/mupdate.c
++++ b/imap/mupdate.c
+@@ -1535,6 +1535,7 @@ void cmd_authenticate(struct conn *C,
+ {
+     int r, sasl_result;
+     const void *val;
++    int failedloginpause;
+ 
+     r = saslserver(C->saslconn, mech, clientstart, "", "", "",
+ 		   C->pin, C->pout, &sasl_result, NULL);
+@@ -1555,7 +1556,10 @@ void cmd_authenticate(struct conn *C,
+ 			tag, errorstring ? errorstring : "");
+ 	    break;
+ 	default:
+-	    sleep(3);
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	    if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
+ 	
+ 	    syslog(LOG_ERR, "badlogin: %s %s %s",
+ 		   C->clienthost,
+diff --git a/imap/nntpd.c b/imap/nntpd.c
+index d868d78..b8ec1ac 100644
+--- a/imap/nntpd.c
++++ b/imap/nntpd.c
+@@ -1997,6 +1997,7 @@ static void cmd_authinfo_user(char *user)
+ 
+ static void cmd_authinfo_pass(char *pass)
+ {
++    int failedloginpause;
+     /* Conceal password in telemetry log */
+     if (nntp_logfd != -1 && pass) {
+ 	int r; /* avoid warnings */
+@@ -2036,7 +2037,10 @@ static void cmd_authinfo_pass(char *pass)
+ 			    strlen(pass))!=SASL_OK) { 
+ 	syslog(LOG_NOTICE, "badlogin: %s plaintext %s %s",
+ 	       nntp_clienthost, nntp_userid, sasl_errdetail(nntp_saslconn));
+-	sleep(3);
++	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	if (failedloginpause != 0) {
++	    sleep(failedloginpause);
++	}
+ 	prot_printf(nntp_out, "481 Invalid login\r\n");
+ 	free(nntp_userid);
+ 	nntp_userid = 0;
+@@ -2065,6 +2069,7 @@ static void cmd_authinfo_sasl(char *cmd, char *mech, char *resp)
+     sasl_ssf_t ssf;
+     char *ssfmsg = NULL;
+     const void *val;
++    int failedloginpause;
+ 
+     /* Conceal initial response in telemetry log */
+     if (nntp_logfd != -1 && resp) {
+@@ -2157,7 +2162,10 @@ static void cmd_authinfo_sasl(char *cmd, char *mech, char *resp)
+ 	    syslog(LOG_NOTICE, "badlogin: %s %s [%s]",
+ 		   nntp_clienthost, mech, sasl_errdetail(nntp_saslconn));
+ 
+-	    sleep(3);
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	    if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
+ 
+ 	    /* Don't allow user probing */
+ 	    if (sasl_result == SASL_NOUSER) sasl_result = SASL_BADAUTH;
+diff --git a/imap/pop3d.c b/imap/pop3d.c
+index 41f14db..b7a05b9 100644
+--- a/imap/pop3d.c
++++ b/imap/pop3d.c
+@@ -1286,6 +1286,7 @@ static void cmd_apop(char *response)
+ {
+     int sasl_result;
+     const void *canon_user;
++    int failedloginpause;
+ 
+     assert(response != NULL);
+ 
+@@ -1307,7 +1308,10 @@ static void cmd_apop(char *response)
+ 	       popd_clienthost, popd_apop_chal,
+ 	       sasl_errdetail(popd_saslconn));
+ 	
+-	sleep(3);      
++	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	if (failedloginpause != 0) {
++	    sleep(failedloginpause);
++	}
+ 
+ 	/* Don't allow user probing */
+ 	if (sasl_result == SASL_NOUSER) sasl_result = SASL_BADAUTH;
+@@ -1389,6 +1393,8 @@ void cmd_user(char *user)
+ 
+ void cmd_pass(char *pass)
+ {
++    int failedloginpause;
++
+     if (!popd_userid) {
+ 	prot_printf(popd_out, "-ERR [AUTH] Must give USER command\r\n");
+ 	return;
+@@ -1438,7 +1444,10 @@ void cmd_pass(char *pass)
+ 			    strlen(pass))!=SASL_OK) { 
+ 	syslog(LOG_NOTICE, "badlogin: %s plaintext %s %s",
+ 	       popd_clienthost, popd_userid, sasl_errdetail(popd_saslconn));
+-	sleep(3);
++	failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	if (failedloginpause != 0) {
++	    sleep(failedloginpause);
++	}
+ 	prot_printf(popd_out, "-ERR [AUTH] Invalid login\r\n");
+ 	free(popd_userid);
+ 	popd_userid = 0;
+@@ -1547,6 +1556,7 @@ void cmd_auth(char *arg)
+     char *authtype;
+     const void *val;
+     const char *canon_user;
++    int failedloginpause;
+ 
+     /* if client didn't specify an argument we give them the list
+      *
+@@ -1620,7 +1630,10 @@ void cmd_auth(char *arg)
+ 		       popd_clienthost, authtype);
+ 	    }
+ 
+-	    sleep(3);
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	    if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
+ 
+ 	    /* Don't allow user probing */
+ 	    if (sasl_result == SASL_NOUSER) sasl_result = SASL_BADAUTH;
+diff --git a/imap/sync_server.c b/imap/sync_server.c
+index aac3cc2..2b0d187 100644
+--- a/imap/sync_server.c
++++ b/imap/sync_server.c
+@@ -756,6 +756,7 @@ static void cmd_authenticate(char *mech, char *resp)
+     sasl_ssf_t ssf;
+     char *ssfmsg = NULL;
+     const void *val;
++    int failedloginpause;
+ 
+     if (sync_userid) {
+ 	prot_printf(sync_out, "BAD Already authenticated\r\n");
+@@ -787,7 +788,10 @@ static void cmd_authenticate(char *mech, char *resp)
+ 	    syslog(LOG_NOTICE, "badlogin: %s %s [%s]",
+ 		   sync_clienthost, mech, sasl_errdetail(sync_saslconn));
+ 
+-	    sleep(3);
++	    failedloginpause = config_getint(IMAPOPT_FAILEDLOGINPAUSE);
++	    if (failedloginpause != 0) {
++	        sleep(failedloginpause);
++	    }
+ 
+ 	    if (errorstring) {
+ 		prot_printf(sync_out, "NO %s\r\n", errorstring);
+diff --git a/lib/imapoptions b/lib/imapoptions
+index 322a8a7..28600f6 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -328,6 +328,9 @@ Blank lines and lines beginning with ``#'' are ignored.
+    to work correctly.  If combined with delayed expunge (above) you
+    will also be able to unexpunge messages during this time. */
+ 
++{ "failedloginpause", 3, INT }
++/* Number of seconds to pause after a failed login. */
++
+ { "flushseenstate", 0, SWITCH }
+ /* If enabled, changes to the seen state will be flushed to disk
+    immediately, otherwise changes will be cached and flushed when the

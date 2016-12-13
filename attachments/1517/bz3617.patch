@@ -1,0 +1,80 @@
+commit 19d64cdcb5ec3e2b26f74f63a0ae4b78ab0c77a7
+Author: Greg Banks <gnb@fastmail.fm>
+Date:   Wed Mar 13 13:28:37 2013 +1100
+
+    Bug 3617: fix ACL check setting flags in delivery
+    
+    When setting IMAP flags on a message during delivery, for example due to
+    a Sieve script requesting it, check for the 'p' = ACL_POST right instead
+    of the 'w' = ACL_WRITE or 't' = ACL_DELETEMSG right.  This seems to be
+    the correct interpretation of the following text in RFC2068
+    
+       [...] The currently defined standard rights are:
+    [...]
+       w - write (STORE flags other than SEEN and DELETED)
+    [...]
+       p - post (send mail to submission address for mailbox,
+           not enforced by IMAP4 itself)
+    
+    which implies that 'w' only applies for the IMAP STORE command.
+
+diff --git a/imap/append.c b/imap/append.c
+index d3c2bd4..2585841 100644
+--- a/imap/append.c
++++ b/imap/append.c
+@@ -592,26 +592,26 @@ int append_fromstream(struct appendstate *as, struct body **body,
+ 	    append_setseen(as, &message_index);
+ 	}
+ 	else if (!strcmp(flag[i], "\\deleted")) {
+-	    if (as->myrights & ACL_DELETEMSG) {
++	    if (as->myrights & (as->is_deliver ? ACL_POST : ACL_DELETEMSG)) {
+ 		message_index.system_flags |= FLAG_DELETED;
+ 	    }
+ 	}
+ 	else if (!strcmp(flag[i], "\\draft")) {
+-	    if (as->myrights & ACL_WRITE) {
++	    if (as->myrights & (as->is_deliver ? ACL_POST : ACL_WRITE)) {
+ 		message_index.system_flags |= FLAG_DRAFT;
+ 	    }
+ 	}
+ 	else if (!strcmp(flag[i], "\\flagged")) {
+-	    if (as->myrights & ACL_WRITE) {
++	    if (as->myrights & (as->is_deliver ? ACL_POST : ACL_WRITE)) {
+ 		message_index.system_flags |= FLAG_FLAGGED;
+ 	    }
+ 	}
+ 	else if (!strcmp(flag[i], "\\answered")) {
+-	    if (as->myrights & ACL_WRITE) {
++	    if (as->myrights & (as->is_deliver ? ACL_POST : ACL_WRITE)) {
+ 		message_index.system_flags |= FLAG_ANSWERED;
+ 	    }
+ 	}
+-	else if (as->myrights & ACL_WRITE) {
++	else if (as->myrights & (as->is_deliver ? ACL_POST : ACL_WRITE)) {
+ 	    r = mailbox_user_flag(mailbox, flag[i], &userflag);
+ 	    if (!r)
+ 		message_index.user_flags[userflag/32] |= 1<<(userflag&31);
+diff --git a/imap/append.h b/imap/append.h
+index f49efbd..67d37d5 100644
+--- a/imap/append.h
++++ b/imap/append.h
+@@ -72,6 +72,7 @@ struct copymsg {
+ struct appendstate {
+     /* mailbox we're appending to */
+     struct mailbox *mailbox;
++    int is_deliver:1;		/* is this a deliver? */
+     int myrights;
+     char userid[MAX_MAILBOX_BUFFER];
+ 
+diff --git a/imap/lmtpd.c b/imap/lmtpd.c
+index f70f587..7331059 100644
+--- a/imap/lmtpd.c
++++ b/imap/lmtpd.c
+@@ -513,6 +513,7 @@ int deliver_mailbox(FILE *f,
+ 		     quotaoverride ? (long) -1 :
+ 		     config_getswitch(IMAPOPT_LMTP_STRICT_QUOTA) ?
+ 		     (long) size : 0);
++    as.is_deliver = 1;
+ 
+     /* check for duplicate message */
+     dkey.id = id;

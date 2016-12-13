@@ -1,0 +1,47 @@
+Index: saslauthd/auth_getpwent.c
+===================================================================
+RCS file: /cvs/misc/cyrus-sasl/saslauthd/auth_getpwent.c,v
+retrieving revision 1.1.1.2
+diff -u -r1.1.1.2 auth_getpwent.c
+--- saslauthd/auth_getpwent.c	20 Jul 2008 20:44:48 -0000	1.1.1.2
++++ saslauthd/auth_getpwent.c	18 Jan 2009 16:58:42 -0000
+@@ -40,6 +40,7 @@
+ #include <unistd.h>
+ #include <string.h>
+ #include <pwd.h>
++#include <errno.h>
+ 
+ # ifdef WITH_DES
+ #  ifdef WITH_SSL_DES
+@@ -70,17 +71,29 @@
+ {
+     /* VARIABLES */
+     struct passwd *pw;			/* pointer to passwd file entry */
++    int errnum;
+     /* END VARIABLES */
+   
++    errno = 0;
+     pw = getpwnam(login);
++    errnum = errno;
+     endpwent();
+ 
+     if (pw == NULL) {
+-	RETURN("NO");
++	if (errnum != 0) {
++	    char *errstr;
++
++	    if (asprintf(&errstr, "NO Username lookup failure: %s", strerror(errno)) == -1) {
++		RETURN("NO Username lookup failure: unknown error (ENOMEM)");
++	    }
++	    return errstr;
++	} else {
++	    RETURN("NO Invalid username");
++	}
+     }
+ 
+     if (strcmp(pw->pw_passwd, (const char *)crypt(password, pw->pw_passwd))) {
+-	RETURN("NO");
++	RETURN("NO Incorrect password");
+     }
+ 
+     RETURN("OK");

@@ -1,0 +1,249 @@
+Thu May 15 18:57:37 2003  Rainer Orth  <ro@TechFak.Uni-Bielefeld.DE>
+
+	* perl/imap/IMAP.pm (authenticate): Honor -tlskey, -notls options.
+	Invoke _starttls if OpenSSL is available, server supports STARTTLS
+	and not disabled by client.
+	Don't try plaintext login iff LOGINDISABLED.
+	* perl/imap/IMAP.xs (HAVE_SSL, imclient__starttls): New functions.
+	* perl/imap/Makefile.PL (DEFINE): Define HAVE_SSL if available.
+	* perl/imap/IMAP/Shell.pm (shell): Handle tlskey, notls options.
+	(_sc_auth): Likewise.  Adapt usage if available.
+	* perl/imap/cyradm.sh (SYNOPSIS): Mention --tlskey, --notls
+	options.
+
+Index: perl/imap/IMAP.pm
+===================================================================
+RCS file: /cvs/src/cyrus/perl/imap/IMAP.pm,v
+retrieving revision 1.17
+diff -u -p -r1.17 IMAP.pm
+--- perl/imap/IMAP.pm	19 Sep 2002 17:21:04 -0000	1.17
++++ perl/imap/IMAP.pm	16 May 2003 09:58:06 -0000
+@@ -174,16 +174,37 @@ sub _stringize {
+ sub authenticate {
+   my ($self, $first) = @_;
+   my (%opts, $rc);
++  my ($starttls, $logindisabled) = (0, 0);
+ 
+   if (defined $first &&
+-      $first =~ /^-\w+|Mechanism|Service|Authz|User|Minssf|Maxssf|Password$/) {
++      $first =~ /^-\w+|Mechanism|Service|Authz|User|Minssf|Maxssf|Password|Tlskey|Notls$/) {
+     (undef, %opts) = @_;
+-    foreach (qw(mechanism service authz user minssf maxssf password)) {
++    foreach (qw(mechanism service authz user minssf maxssf password tlskey notls)) {
+       $opts{'-' . $_} = $opts{ucfirst($_)} if !defined($opts{'-' . $_});
+     }
+   } else {
+     (undef, $opts{-mechanism}, $opts{-service}, $opts{-authz}, $opts{-user},
+-     $opts{-minssf}, $opts{-maxssf}, $opts{-password}) = @_;
++     $opts{-minssf}, $opts{-maxssf}, $opts{-password},
++     $opts{-tlskey}, $opts{-notls}) = @_;
++  }
++  if (HAVE_SSL) {
++    if (!defined($opts{-tlskey})) {
++      $opts{-tlskey} = "";
++    }
++    if ($opts{-notls}) {
++      $opts{-tlskey} = undef;
++    }
++    $self->addcallback({-trigger => 'CAPABILITY',
++			-callback => sub {my %a = @_;
++					  map { $starttls = 1
++						    if /^STARTTLS$/i;
++					    }
++					  split(/ /, $a{-text})}});
++    $self->send(undef, undef, 'CAPABILITY');
++    $self->addcallback({-trigger => 'CAPABILITY'});
++    if ($starttls && defined($opts{-tlskey})) {
++      $self->_starttls(10, $opts{-tlskey}, $opts{-tlskey});
++    }
+   }
+   if (!defined($opts{-mechanism})) {
+     $opts{-mechanism} = '';
+@@ -206,6 +227,20 @@ sub authenticate {
+     $rc = $self->_authenticate($opts{-mechanism}, $opts{-service},
+ 			       $opts{-authz}, $opts{-user}, $opts{-password},
+ 			       $opts{-minssf}, $opts{-maxssf});
++  }
++  if (!$rc) {
++    $self->addcallback({-trigger => 'CAPABILITY',
++			-callback => sub {my %a = @_;
++					  map { $logindisabled = 1
++						    if /^LOGINDISABLED$/i;
++					    }
++					  split(/ /, $a{-text})}});
++    $self->send(undef, undef, 'CAPABILITY');
++    $self->addcallback({-trigger => 'CAPABILITY'});
++    if ($logindisabled) {
++      warn "Login disabled.\n";
++      return undef;
++    }
+   }
+   $opts{-mechanism} ||= 'plain';
+   if (!$rc && $opts{-mechanism} =~ /(\b|^)(plain|login)($|\b)/i) {
+Index: perl/imap/IMAP.xs
+===================================================================
+RCS file: /cvs/src/cyrus/perl/imap/IMAP.xs,v
+retrieving revision 1.18
+diff -u -p -r1.18 IMAP.xs
+--- perl/imap/IMAP.xs	2 Dec 2002 21:05:13 -0000	1.18
++++ perl/imap/IMAP.xs	16 May 2003 09:58:06 -0000
+@@ -405,6 +405,42 @@ CODE:
+ 	  client->authenticated = 1;
+ 	  ST(0) = &sv_yes;
+ 	}
++
++int
++HAVE_SSL()
++PPCODE:
++#ifdef HAVE_SSL
++	RETVAL = 1;
++#else
++	RETVAL = 0;
++#endif /* HAVE_SSL */
++
++SV *
++imclient__starttls(client, verifydepth, tls_cert_file, tls_key_file)
++	Cyrus_IMAP client
++	int verifydepth
++	char* tls_cert_file
++	char* tls_key_file
++PREINIT:
++	int rc;
++	int tls_layer;
++CODE:
++	ST(0) = sv_newmortal();
++
++	/* If the tls_{cert, key}_file parameters are undef, set to be NULL */
++	if(!SvOK(ST(2))) tls_cert_file = NULL;
++	if(!SvOK(ST(3))) tls_key_file = NULL;
++#ifdef HAVE_SSL
++	rc = imclient_starttls(client->imclient, verifydepth,
++			       tls_cert_file, tls_key_file, &tls_layer);
++	if (rc)
++	  ST(0) = &sv_no;
++	else {
++	  ST(0) = &sv_yes;
++	}
++#else
++	ST(0) = &sv_no;
++#endif /* HAVE_SSL */
+ 
+ void
+ imclient_addcallback(client, ...)
+Index: perl/imap/Makefile.PL
+===================================================================
+RCS file: /cvs/src/cyrus/perl/imap/Makefile.PL,v
+retrieving revision 1.15
+diff -u -p -r1.15 Makefile.PL
+--- perl/imap/Makefile.PL	22 Jul 2002 16:16:07 -0000	1.15
++++ perl/imap/Makefile.PL	16 May 2003 09:58:06 -0000
+@@ -47,6 +47,7 @@ my $SASL_LIB = $ENV{SASL_LIB} || "-lsasl
+ 
+ my $OPENSSL_INC = $ENV{OPENSSL_INC};
+ my $OPENSSL_LIB = $ENV{OPENSSL_LIB};
++my $HAVE_SSL = $OPENSSL_LIB ? "-DHAVE_SSL" : '';
+ 
+ # See lib/ExtUtils/MakeMaker.pm for details of how to influence
+ # the contents of the Makefile that is written.
+@@ -61,7 +62,7 @@ WriteMakefile( 
+     'OBJECT'    => 'IMAP.o',
+     'MYEXTLIB'  => '../../lib/libcyrus.a',
+     'LIBS'	=> ["$SASL_LIB $OPENSSL_LIB -lssl -lcrypto"],
+-    'DEFINE'	=> '-DPERL_POLLUTE',     # e.g., '-DHAVE_SOMETHING' 
++    'DEFINE'	=> "-DPERL_POLLUTE $HAVE_SSL",     # e.g., '-DHAVE_SOMETHING'
+     'INC'	=> "-I../../lib $SASL_INC $OPENSSL_INC", 
+     'EXE_FILES' => [cyradm],
+ );
+Index: perl/imap/cyradm.sh
+===================================================================
+RCS file: /cvs/src/cyrus/perl/imap/cyradm.sh,v
+retrieving revision 1.11
+diff -u -p -r1.11 cyradm.sh
+--- perl/imap/cyradm.sh	12 Sep 2002 15:36:21 -0000	1.11
++++ perl/imap/cyradm.sh	16 May 2003 09:58:06 -0000
+@@ -54,7 +54,8 @@ cyradm - Cyrus administration shell, alt
+ =head1 SYNOPSIS
+ 
+   $ cyradm [--user user] [--[no]rc] [--systemrc file] [--userrc file] \
+-  > [--port n] [--auth mechanism] [--server] server
++  > [--port n] [--auth mechanism] [--tlskey keyfile] [--notls] \
++  > [--server] server
+ 
+ but possibly
+ 
+Index: perl/imap/IMAP/Shell.pm
+===================================================================
+RCS file: /cvs/src/cyrus/perl/imap/IMAP/Shell.pm,v
+retrieving revision 1.23
+diff -u -p -r1.23 Shell.pm
+--- perl/imap/IMAP/Shell.pm	2 Dec 2002 19:45:09 -0000	1.23
++++ perl/imap/IMAP/Shell.pm	16 May 2003 09:58:06 -0000
+@@ -419,9 +419,10 @@ sub run {
+ # (It's not as trivial as run() because it does things expected of standalone
+ # programs, as opposed to things expected from within a program.)
+ sub shell {
+-  my ($server, $port, $authz, $auth, $systemrc, $userrc, $dorc, $mech, $pw) =
++  my ($server, $port, $authz, $auth, $systemrc, $userrc, $dorc, $mech, $pw,
++      $tlskey, $notls) =
+     ('', 143, undef, $ENV{USER} || $ENV{LOGNAME}, '/usr/local/etc/cyradmrc.pl',
+-     "$ENV{HOME}/.cyradmrc.pl", 1, undef, undef);
++     "$ENV{HOME}/.cyradmrc.pl", 1, undef, undef, "", undef);
+   GetOptions('user|u=s' => \$auth,
+ 	     'authz|u=s' => \$authz,
+ 	     'rc|r!' => \$dorc,
+@@ -431,6 +432,8 @@ sub shell {
+ 	     'port|p=i' => \$port,
+ 	     'auth|a=s' => \$mech,
+ 	     'password|u=s' => \$pw,
++	     'tlskey|t=s' => \$tlskey,
++	     'notls' => \$notls
+ 	    );
+   if ($server ne '' && @ARGV) {
+     die "cyradm: may not specify server both with --server and bare arg\n";
+@@ -448,7 +451,8 @@ sub shell {
+ 			  -callback => \&_cb_eof,
+ 			  -rock => \$cyradm});
+     $cyradm->authenticate(-authz => $authz, -user => $auth,
+-			  -mechanism => $mech, -password => $pw)
++			  -mechanism => $mech, -password => $pw,
++			  -tlskey => $tlskey, -notls => $notls)
+       or die "cyradm: cannot authenticate to server with $mech as $auth\n";
+   }
+   my $fstk = [*STDIN, *STDOUT, *STDERR];
+@@ -712,6 +716,20 @@ sub _sc_auth {
+       $want = '-service';
+       next;
+     }
++    if (Cyrus::IMAP::HAVE_SSL) {
++      if ($opt ne '' && '-tlskey' =~ /^\Q$opt/ || $opt eq '--tlskey') {
++	$want = '-tlskey';
++	next;
++      }
++      if ($opt ne '' && '-notls' =~ /^\Q$opt/ || $opt eq '--notls') {
++	$want = '-notls';
++	next;
++      }
++      if ($opt =~ /^-/) {
++	die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
++	    "                    [-service name] [-tlskey keyfile] [-notls] [user]\n";
++      }
++    }
+     if ($opt =~ /^-/) {
+       die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
+ 	  "                    [-service name] [user]\n";
+@@ -723,8 +741,13 @@ sub _sc_auth {
+   }
+   push(@nargv, @argv);
+   if (@nargv > 1) {
+-    die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
+-        "                    [-service name] [user]\n";
++    if (Cyrus::IMAP::HAVE_SSL) {
++      die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
++          "                    [-service name] [-tlskey keyfile] [-notls] [user]\n";
++    } else {
++      die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
++          "                    [-service name] [user]\n";
++    }
+   }
+   if (@nargv) {
+     $opts{-user} = shift(@nargv);

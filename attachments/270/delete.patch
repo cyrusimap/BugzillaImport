@@ -1,0 +1,362 @@
+? cache.patch
+? delete.patch
+? lmtpd.patch.gz
+Index: append.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/append.c,v
+retrieving revision 1.105
+diff -u -r1.105 append.c
+--- append.c	27 Feb 2004 17:44:49 -0000	1.105
++++ append.c	12 Mar 2004 16:47:31 -0000
+@@ -837,10 +837,15 @@
+ 				  sizeof(fname) - strlen(fname));
+ 
+ 	if (copymsg[msg].cache_len) {
+-	    char fnamebuf[MAILBOX_FNAME_LEN];
++	    char fnamebuf[MAX_MAILBOX_PATH + MAILBOX_FNAME_LEN + 1];
++
++	    strlcpy(fnamebuf, mailbox->path, sizeof(fnamebuf));
++	    strlcat(fnamebuf, "/", sizeof(fnamebuf));
++	    
++	    mailbox_message_get_fname(mailbox, copymsg[msg].uid,
++				      fnamebuf + strlen(fnamebuf),
++				      sizeof(fnamebuf) - strlen(fnamebuf));
+ 
+-	    mailbox_message_get_fname(mailbox, copymsg[msg].uid, fnamebuf,
+-				      sizeof(fnamebuf));
+ 	    /* Link/copy message file */
+ 	    r = mailbox_copyfile(fnamebuf, fname, 0);
+ 	    if (r) goto fail;
+@@ -876,7 +881,7 @@
+ 		r = IMAP_IOERROR;
+ 		goto fail;
+ 	    }
+-	    if (mailbox_map_message(mailbox, 0, copymsg[msg].uid,
++	    if (mailbox_map_message(mailbox, copymsg[msg].uid,
+ 				    &src_base, &src_size) != 0) {
+ 		fclose(destfile);
+ 		syslog(LOG_ERR, "IOERROR: opening message file %lu of %s: %m",
+Index: cyr_expire.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/cyr_expire.c,v
+retrieving revision 1.6
+diff -u -r1.6 cyr_expire.c
+--- cyr_expire.c	27 Feb 2004 17:44:49 -0000	1.6
++++ cyr_expire.c	12 Mar 2004 16:47:31 -0000
+@@ -181,8 +181,6 @@
+ 	mailbox.header_lock_count = 1;
+     }
+ 
+-    if (!r) r = chdir(mailbox.path);
+-
+     /* Attempt to open/lock index */
+     if (!r) r = mailbox_open_index(&mailbox);
+     if (!r) {
+@@ -190,7 +188,7 @@
+ 	mailbox.index_lock_count = 1;
+     }
+ 
+-    if (!r) mailbox_expunge(&mailbox, 1, expunge_cb, erock);
++    if (!r) mailbox_expunge(&mailbox, expunge_cb, erock);
+     mailbox_close(&mailbox);
+ }
+ 
+Index: cyrdump.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/cyrdump.c,v
+retrieving revision 1.15
+diff -u -r1.15 cyrdump.c
+--- cyrdump.c	26 Jan 2004 17:46:56 -0000	1.15
++++ cyrdump.c	12 Mar 2004 16:47:31 -0000
+@@ -262,7 +262,7 @@
+ 	printf("Content-Type: message/rfc822\n");
+ 	printf("Content-ID: %d\n", uids[i]);
+ 	printf("\n");
+-	r = mailbox_map_message(&m, 0, uids[i], &base, &len);
++	r = mailbox_map_message(&m, uids[i], &base, &len);
+ 	if (r) {
+ 	    if (verbose) {
+ 		printf("error mapping message %d: %s\n", uids[i], 
+Index: imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.460
+diff -u -r1.460 imapd.c
+--- imapd.c	10 Mar 2004 04:18:53 -0000	1.460
++++ imapd.c	12 Mar 2004 16:47:32 -0000
+@@ -2431,10 +2431,6 @@
+ 	r = (imapd_userisadmin || (mailbox.myrights & ACL_LOOKUP)) ?
+ 	  IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
+     }
+-    if (!r && chdir(mailbox.path)) {
+-	syslog(LOG_ERR, "IOERROR: changing directory to %s: %m", mailbox.path);
+-	r = IMAP_IOERROR;
+-    }
+ 
+     if (r) {
+ 	prot_printf(imapd_out, "%s NO %s\r\n", tag, error_message(r));
+@@ -2501,7 +2497,7 @@
+ 
+     if (!(imapd_mailbox->myrights & ACL_DELETE)) r = 0;
+     else {
+-	r = mailbox_expunge(imapd_mailbox, 1, (int (*)())0, (char *)0);
++	r = mailbox_expunge(imapd_mailbox, (int (*)())0, (char *)0);
+     }
+ 
+     index_closemailbox(imapd_mailbox);
+@@ -3475,10 +3471,10 @@
+ 
+     if (!(imapd_mailbox->myrights & ACL_DELETE)) r = IMAP_PERMISSION_DENIED;
+     else if (sequence) {
+-	r = mailbox_expunge(imapd_mailbox, 1, index_expungeuidlist, sequence);
++	r = mailbox_expunge(imapd_mailbox, index_expungeuidlist, sequence);
+     }
+     else {
+-	r = mailbox_expunge(imapd_mailbox, 1, (mailbox_decideproc_t *)0,
++	r = mailbox_expunge(imapd_mailbox, (mailbox_decideproc_t *)0,
+ 			    (void *)0);
+     }
+ 
+Index: index.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/index.c,v
+retrieving revision 1.203
+diff -u -r1.203 index.c
+--- index.c	27 Feb 2004 17:44:52 -0000	1.203
++++ index.c	12 Mar 2004 16:47:32 -0000
+@@ -262,7 +262,12 @@
+ 
+     /* Check for expunge */
+     if (index_len) {
+-	if (stat(FNAME_INDEX+1, &sbuf) != 0) {
++	char fnamebuf[MAX_MAILBOX_PATH+1];
++
++	strlcpy(fnamebuf, mailbox->path, sizeof(fnamebuf));
++	strlcat(fnamebuf, FNAME_INDEX, sizeof(fnamebuf));
++	
++	if (stat(fnamebuf, &sbuf) != 0) {
+ 	    if (errno == ENOENT) {
+ 		/* Mailbox has been deleted */
+ 		for(;imapd_exists > 0; imapd_exists--) {
+@@ -2236,7 +2241,7 @@
+ 	fetchargs->cache_atleast > CACHE_VERSION(msgno) ||
+ 	fetchargs->binsections || fetchargs->sizesections ||
+ 	fetchargs->bodysections) {
+-	if (mailbox_map_message(mailbox, 1, UID(msgno), &msg_base, &msg_size)) {
++	if (mailbox_map_message(mailbox, UID(msgno), &msg_base, &msg_size)) {
+ 	    prot_printf(imapd_out, "* OK ");
+ 	    prot_printf(imapd_out, error_message(IMAP_NO_MSGGONE), msgno);
+ 	    prot_printf(imapd_out, "\r\n");
+@@ -2794,7 +2799,7 @@
+     if (searchargs->body || searchargs->text ||
+ 	searchargs->cache_atleast > CACHE_VERSION(msgno)) {
+ 	if (! msgfile->size) { /* Map the message in if we haven't before */
+-	    if (mailbox_map_message(mailbox, 1, UID(msgno),
++	    if (mailbox_map_message(mailbox, UID(msgno),
+ 				    &msgfile->base, &msgfile->size)) {
+ 		return 0;
+ 	    }
+@@ -2985,7 +2990,7 @@
+   char *p, *q;
+   int format = mailbox->format;
+   
+-  if (mailbox_map_message(mailbox, 0, uid, &msgfile.base, &msgfile.size)) {
++  if (mailbox_map_message(mailbox, uid, &msgfile.base, &msgfile.size)) {
+     return;
+   }
+ 
+@@ -4829,7 +4834,7 @@
+     }
+     else {
+ 	/* uncached header */
+-	if (mailbox_map_message(mailbox, 0, UID(msgno), &msg_base, &msg_size))
++	if (mailbox_map_message(mailbox, UID(msgno), &msg_base, &msg_size))
+ 	    return NULL;
+ 
+ 	buf = index_readheader(msg_base, msg_size, mailbox->format, 0,
+Index: ipurge.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/ipurge.c,v
+retrieving revision 1.23
+diff -u -r1.23 ipurge.c
+--- ipurge.c	26 Jan 2004 17:46:57 -0000	1.23
++++ ipurge.c	12 Mar 2004 16:47:32 -0000
+@@ -257,11 +257,6 @@
+   }
+   the_box.header_lock_count = 1;
+ 
+-  error = chdir(the_box.path);
+-  if (error < 0) {
+-    syslog(LOG_ERR, "Couldn't change directory to %s : %m", the_box.path);
+-    return error;
+-  }
+   error = mailbox_open_index(&the_box);
+   if (error != 0) {
+     mailbox_close(&the_box);
+@@ -271,7 +266,7 @@
+   (void) mailbox_lock_index(&the_box);
+   the_box.index_lock_count = 1;
+ 
+-  mailbox_expunge(&the_box, 1, purge_check, &stats);
++  mailbox_expunge(&the_box, purge_check, &stats);
+   mailbox_close(&the_box);
+ 
+   print_stats(&stats);
+Index: mailbox.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.153
+diff -u -r1.153 mailbox.c
+--- mailbox.c	22 Jan 2004 21:17:09 -0000	1.153
++++ mailbox.c	12 Mar 2004 16:47:32 -0000
+@@ -281,32 +281,15 @@
+  * Returns map in 'basep' and 'lenp'
+  */
+ int mailbox_map_message(struct mailbox *mailbox,
+-			int iscurrentdir,
+ 			unsigned long uid,
+ 			const char **basep,
+ 			unsigned long *lenp)
+ {
+     int msgfd;
+     char buf[4096];
+-    char *p = buf;
+     struct stat sbuf;
+ 
+-    buf[0]='\0';
+-
+-    if (!iscurrentdir) {
+-	/* 26 is max # of digits in a long + strlen("/") + strlen(".") */
+-	if(strlen(mailbox->path) + 25 >= sizeof(buf)) {
+-	    syslog(LOG_ERR, "IOERROR: Path too long while mapping message: %s",
+-		   mailbox->path);
+-	    fatal("path too long for message file", EC_OSFILE);
+-	}
+-
+-	strlcpy(buf, mailbox->path, sizeof(buf));
+-	p = buf + strlen(buf);
+-	*p++ = '/';
+-    }
+-
+-    snprintf(p, sizeof(buf) - strlen(buf), "%lu.", uid);
++    snprintf(buf, sizeof(buf), "%s/%lu.", mailbox->path,uid);
+ 
+     msgfd = open(buf, O_RDONLY, 0666);
+     if (msgfd == -1) return errno;
+@@ -1587,16 +1570,14 @@
+ }
+ 
+ /*
+- * Perform an expunge operation on 'mailbox'.  If 'iscurrentdir' is nonzero,
+- * the current directory is set to the mailbox directory.  If nonzero, the
++ * Perform an expunge operation on 'mailbox'.  If nonnull, the
+  * function pointed to by 'decideproc' is called (with 'deciderock') to
+  * determine which messages to expunge.  If 'decideproc' is a null pointer,
+  * then messages with the \Deleted flag are expunged.
+  */
+ int
+ mailbox_expunge(struct mailbox *mailbox,
+-		int iscurrentdir, mailbox_decideproc_t *decideproc,
+-		void *deciderock)
++		mailbox_decideproc_t *decideproc, void *deciderock)
+ {
+     int r, n;
+     char fnamebuf[MAX_MAILBOX_PATH+1], fnamebufnew[MAX_MAILBOX_PATH+1];
+@@ -1906,18 +1887,10 @@
+     /* Delete message files */
+     *fnametail++ = '/';
+     for (msgno = 0; msgno < numdeleted; msgno++) {
+-	if (iscurrentdir) {
+-	    char shortfnamebuf[MAILBOX_FNAME_LEN];
+-	    mailbox_message_get_fname(mailbox, deleted[msgno],
+-				      shortfnamebuf, sizeof(shortfnamebuf));
+-	    unlink(shortfnamebuf);
+-	}
+-	else {
+-	    mailbox_message_get_fname(mailbox, deleted[msgno],
+-				      fnametail,
+-				      sizeof(fnamebuf) - strlen(fnamebuf));
+-	    unlink(fnamebuf);
+-	}
++	mailbox_message_get_fname(mailbox, deleted[msgno],
++				  fnametail,
++				  sizeof(fnamebuf) - strlen(fnamebuf));
++	unlink(fnamebuf);
+     }
+ 
+     free(buf);
+@@ -2364,7 +2337,7 @@
+     
+     if (isinbox) {
+ 	/* Expunge old mailbox */
+-	r = mailbox_expunge(oldmailbox, 0, expungeall, (char *)0);
++	r = mailbox_expunge(oldmailbox, expungeall, (char *)0);
+     } else {
+ 	r = mailbox_delete(oldmailbox, 0);
+     }
+Index: mailbox.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.h,v
+retrieving revision 1.81
+diff -u -r1.81 mailbox.h
+--- mailbox.h	22 Jan 2004 21:17:09 -0000	1.81
++++ mailbox.h	12 Mar 2004 16:47:32 -0000
+@@ -235,7 +235,6 @@
+ 				      char *out, size_t size);
+ 
+ extern int mailbox_map_message(struct mailbox *mailbox,
+-				  int iscurrentdir,
+ 				  unsigned long uid,
+ 				  const char **basep, unsigned long *lenp);
+ extern void mailbox_unmap_message(struct mailbox *mailbox,
+@@ -292,7 +291,6 @@
+ 				unsigned start, unsigned num, int sync);
+ 
+ extern int mailbox_expunge(struct mailbox *mailbox,
+-			   int iscurrentdir,
+ 			   mailbox_decideproc_t *decideproc,
+ 			   void *deciderock);
+ extern int mailbox_expungenews(struct mailbox *mailbox);
+Index: pop3d.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/pop3d.c,v
+retrieving revision 1.154
+diff -u -r1.154 pop3d.c
+--- pop3d.c	9 Mar 2004 18:08:41 -0000	1.154
++++ pop3d.c	12 Mar 2004 16:47:32 -0000
+@@ -690,7 +690,8 @@
+ 		    }
+ 
+ 		    if (msg <= popd_exists) {
+-			(void) mailbox_expunge(popd_mailbox, 1, expungedeleted, 0);
++			(void) mailbox_expunge(popd_mailbox,
++					       expungedeleted, 0);
+ 		    }
+ 		}
+ 		prot_printf(popd_out, "+OK\r\n");
+@@ -1403,11 +1404,6 @@
+ 	    goto fail;
+ 	}
+ 
+-	if (chdir(mboxstruct.path)) {
+-	    syslog(LOG_ERR, "IOERROR: changing directory to %s: %m",
+-		   mboxstruct.path);
+-	    r = IMAP_IOERROR;
+-	}
+ 	if (!r) {
+ 	    popd_exists = mboxstruct.exists;
+ 	    popd_msg = (struct msg *) xmalloc((popd_exists+1) *
+@@ -1456,8 +1452,11 @@
+     char fnamebuf[MAILBOX_FNAME_LEN];
+     int thisline = -2;
+ 
+-    mailbox_message_get_fname(popd_mailbox, popd_msg[msg].uid, fnamebuf,
+-			      sizeof(fnamebuf));
++    strlcpy(fnamebuf, popd_mailbox->path, sizeof(fnamebuf));
++    strlcat(fnamebuf, "/", sizeof(fnamebuf));
++    mailbox_message_get_fname(popd_mailbox, popd_msg[msg].uid,
++			      fnamebuf + strlen(fnamebuf),
++			      sizeof(fnamebuf) - strlen(fnamebuf));
+     msgfile = fopen(fnamebuf, "r");
+     if (!msgfile) {
+ 	prot_printf(popd_out, "-ERR [SYS/PERM] Could not read message file\r\n");

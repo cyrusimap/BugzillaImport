@@ -1,0 +1,405 @@
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/imap/lmtpd.c cyrus-imapd-2.3.11/imap/lmtpd.c
+--- cyrus-imapd-2.3.11.org/imap/lmtpd.c	2008-03-27 13:41:40.000000000 +0100
++++ cyrus-imapd-2.3.11/imap/lmtpd.c	2008-04-18 10:16:50.000000000 +0200
+@@ -1021,10 +1021,9 @@
+ 		    IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
+ 	    }
+ 	} else if (!r) {
++	  // quota will be checked later 
+ 	    r = append_check(namebuf, MAILBOX_FORMAT_NORMAL, authstate,
+-			     aclcheck, (quotacheck < 0)
+-			     || config_getswitch(IMAPOPT_LMTP_STRICT_QUOTA) ?
+-			     quotacheck : 0);
++			     aclcheck, -1);
+ 	}
+     }
+ 
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/imap/lmtpengine.c cyrus-imapd-2.3.11/imap/lmtpengine.c
+--- cyrus-imapd-2.3.11.org/imap/lmtpengine.c	2008-03-27 13:41:40.000000000 +0100
++++ cyrus-imapd-2.3.11/imap/lmtpengine.c	2008-04-18 11:15:12.000000000 +0200
+@@ -373,6 +373,12 @@
+     return m->rcpt[rcpt_num]->ignorequota;
+ }
+ 
++void  msg_setrcpt_ignorequota(message_data_t *m, int rcpt_num)
++{
++    assert(0 <= rcpt_num && rcpt_num < m->rcpt_num);
++    m->rcpt[rcpt_num]->ignorequota=1;
++}
++
+ /* set a recipient status; 'r' should be an IMAP error code that will be
+    translated into an LMTP status code */
+ void msg_setrcpt_status(message_data_t *m, int rcpt_num, int r)
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/imap/lmtpengine.h cyrus-imapd-2.3.11/imap/lmtpengine.h
+--- cyrus-imapd-2.3.11.org/imap/lmtpengine.h	2008-03-27 13:41:41.000000000 +0100
++++ cyrus-imapd-2.3.11/imap/lmtpengine.h	2008-04-18 11:17:49.000000000 +0200
+@@ -91,6 +91,9 @@
+ /* return ignorequota flag of 'rcpt_num' */
+ int msg_getrcpt_ignorequota(message_data_t *m, int rcpt_num);
+ 
++/* set ignorequota flag of 'rcpt_num' to 1 */
++void msg_setrcpt_ignorequota(message_data_t *m, int rcpt_num);
++
+ /* set a recipient status; 'r' should be an IMAP error code that will be
+    translated into an LMTP status code */
+ void msg_setrcpt_status(message_data_t *m, int rcpt_num, int r);
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/imap/lmtp_sieve.c cyrus-imapd-2.3.11/imap/lmtp_sieve.c
+--- cyrus-imapd-2.3.11.org/imap/lmtp_sieve.c	2008-03-27 13:41:41.000000000 +0100
++++ cyrus-imapd-2.3.11/imap/lmtp_sieve.c	2008-04-18 11:21:39.000000000 +0200
+@@ -77,6 +77,7 @@
+ #include "xmalloc.h"
+ #include "xstrlcpy.h"
+ #include "xstrlcat.h"
++#include "../sieve/message.h"
+ 
+ static int sieve_usehomedir = 0;
+ static const char *sieve_dir = NULL;
+@@ -360,6 +361,119 @@
+ }
+ 
+ 
++static int sieve_quota_check(void *script_context,
++                             void *message_context,
++                             action_list_t *actions,
++                             const char *errmsg)
++{
++  action_list_t *a;
++  action_t lastaction = -1;
++  int ret = 0;
++  int hasquotaroot;
++  int quotacheck = 0;
++  int implicit_keep = 1;
++  a = actions;
++  script_data_t *sd = (script_data_t *) script_context;
++  deliver_data_t *mdata = (deliver_data_t *)  message_context;
++  message_data_t *md = mdata->m;
++  sieve_fileinto_context_t *fc = NULL;
++  char namebuf[MAX_MAILBOX_NAME+1];
++  char quota_root[MAX_MAILBOX_PATH+1];
++  struct txn *tid=NULL;
++  struct quota quota;
++  
++  if (msg_getrcpt_ignorequota(md, mdata->cur_rcpt)) {
++    return 0;
++  }
++  quotacheck=(config_getswitch(IMAPOPT_LMTP_STRICT_QUOTA) ? md->size :0);
++  while (a != NULL) {
++    lastaction = a->a;
++    errmsg = NULL;
++    implicit_keep = implicit_keep && !a->cancel_keep;
++    switch (a->a) {
++    case ACTION_FILEINTO:
++      fc=(sieve_fileinto_context_t *) &a->u.fil;
++      ret = (*mdata->namespace->mboxname_tointernal)(mdata->namespace,
++						     fc->mailbox,
++						     sd->username, namebuf);
++      hasquotaroot = quota_findroot(quota_root, sizeof(quota_root), namebuf);
++      quota.root=quota_root;
++      ret = quota_read(&quota, &tid, 1);
++      if (hasquotaroot) {
++        if (!ret) {
++          if (quota.limit >= 0 && quotacheck >= 0 &&
++              quota.used + quotacheck > ((uquota_t) quota.limit * QUOTA_UNITS)) {
++            quota_abort(&tid);
++            ret = IMAP_QUOTA_EXCEEDED;
++            return ret;
++          } else {
++            if (quotacheck >= 0) {
++              quota.used += quotacheck;
++              quota_write(&quota, &tid);
++            }
++          }
++        }
++      }
++      break;
++    case ACTION_KEEP:
++      ret = (*mdata->namespace->mboxname_tointernal)(mdata->namespace,
++						     "INBOX",
++						     sd->username, namebuf);
++      hasquotaroot = quota_findroot(quota_root, sizeof(quota_root), namebuf);
++      quota.root=quota_root;
++      ret = quota_read(&quota, &tid, 1);
++      if (hasquotaroot) {
++        if (!ret) {
++          if (quota.limit >= 0 && quotacheck >= 0 &&
++              quota.used + quotacheck > ((uquota_t) quota.limit * QUOTA_UNITS)) {
++            quota_abort(&tid);
++            ret = IMAP_QUOTA_EXCEEDED;
++            return ret;
++          } else {
++            if (quotacheck >= 0) {
++              quota.used += quotacheck;
++              quota_write(&quota, &tid);
++            }
++          }
++        }
++      }
++      break;
++    default:
++      break;
++    }
++    a = a->next;
++  }
++  if (implicit_keep) {
++    ret = (*mdata->namespace->mboxname_tointernal)(mdata->namespace,
++                                                   "INBOX",
++                                                   sd->username, namebuf);
++    hasquotaroot = quota_findroot(quota_root, sizeof(quota_root), namebuf);
++    quota.root=quota_root;
++    ret = quota_read(&quota, &tid, 1);
++    if (hasquotaroot) {
++      if (!ret) {
++        if (quota.limit >= 0 && quotacheck >= 0 &&
++            quota.used + quotacheck > ((uquota_t) quota.limit * QUOTA_UNITS)) {
++          quota_abort(&tid);
++          ret = IMAP_QUOTA_EXCEEDED;
++          return ret;
++        } else {
++          if (quotacheck >= 0) {
++            quota.used += quotacheck;
++            quota_write(&quota, &tid);
++          }
++	}
++      }
++    }
++  }
++  quota_abort(&tid);
++  if (quotacheck==0){
++    msg_setrcpt_ignorequota(md, mdata->cur_rcpt);
++  }
++  return 0;
++  
++}
++
+ static int sieve_redirect(void *ac, 
+ 			  void *ic __attribute__((unused)), 
+ 			  void *sc, void *mc, const char **errmsg)
+@@ -805,6 +919,14 @@
+ 	fatal("sieve_register_execute_error()", EC_SOFTWARE);
+     }
+ 
++    res = sieve_register_quota_check(interp, &sieve_quota_check);
++    if (res != SIEVE_OK) {
++	syslog(LOG_ERR, "sieve_register_quota_check() returns %d\n", res);
++	fatal("sieve_register_quota_check()", EC_SOFTWARE);
++    }
++
++
++
+     return interp;
+ }
+ 
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/sieve/interp.c cyrus-imapd-2.3.11/sieve/interp.c
+--- cyrus-imapd-2.3.11.org/sieve/interp.c	2008-03-27 13:41:32.000000000 +0100
++++ cyrus-imapd-2.3.11/sieve/interp.c	2008-04-16 13:39:16.000000000 +0200
+@@ -254,6 +254,14 @@
+     return SIEVE_OK;
+ }
+ 
++int sieve_register_quota_check(sieve_interp_t *interp, sieve_callback_quota_check *f)
++{
++    interp->quota_check = f;
++    return SIEVE_OK;
++}
++
++
++
+ int interp_verify(sieve_interp_t *i)
+ {
+     if (i->redirect && i->keep && i->getsize && i->getheader) {
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/sieve/interp.h cyrus-imapd-2.3.11/sieve/interp.h
+--- cyrus-imapd-2.3.11.org/sieve/interp.h	2008-03-27 13:41:31.000000000 +0100
++++ cyrus-imapd-2.3.11/sieve/interp.h	2008-04-16 13:36:15.000000000 +0200
+@@ -35,7 +35,7 @@
+     sieve_callback *redirect, *discard, *reject, *fileinto, *keep;
+     sieve_callback *notify;
+     sieve_vacation_t *vacation;
+-
++    sieve_callback_quota_check *quota_check;
+     sieve_get_size *getsize;
+     sieve_get_header *getheader;
+     sieve_get_envelope *getenvelope;
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/sieve/message.h cyrus-imapd-2.3.11/sieve/message.h
+--- cyrus-imapd-2.3.11.org/sieve/message.h	2008-03-27 13:41:31.000000000 +0100
++++ cyrus-imapd-2.3.11/sieve/message.h	2008-04-18 15:43:23.000000000 +0200
+@@ -31,58 +31,11 @@
+ #include "sieve_interface.h"	/* for action contexts */
+ #include "tree.h"		/* for stringlist_t */
+ 
+-typedef struct Action action_list_t;
+-
+-typedef enum {
+-    ACTION_NULL = -1,
+-    ACTION_NONE = 0,
+-    ACTION_REJECT,
+-    ACTION_FILEINTO,
+-    ACTION_KEEP,
+-    ACTION_REDIRECT,
+-    ACTION_DISCARD,
+-    ACTION_VACATION,
+-    ACTION_SETFLAG,
+-    ACTION_ADDFLAG,
+-    ACTION_REMOVEFLAG,
+-    ACTION_MARK,
+-    ACTION_UNMARK,
+-    ACTION_NOTIFY,
+-    ACTION_DENOTIFY
+-} action_t;
+ 
+ /* information */
+ action_list_t *new_action_list(void);
+ void free_action_list(action_list_t *actions);
+ 
+-/* invariant: always have a dummy element when free_action_list, param
+-   and vac_subj are freed.  none of the others are automatically freed.
+-
+-   the do_action() functions should copy param */
+-struct Action {
+-    action_t a;
+-    int cancel_keep;
+-    union {
+-	sieve_reject_context_t rej;
+-	sieve_fileinto_context_t fil;
+-	sieve_keep_context_t keep;
+-	sieve_redirect_context_t red;
+-	struct {
+-	    /* addr, fromaddr, subj - freed! */
+-	    sieve_send_response_context_t send;
+-	    sieve_autorespond_context_t autoresp;
+-	} vac;
+-	struct {
+-	    const char *flag;
+-	} fla;
+-    } u;
+-    char *param;		/* freed! */
+-    struct Action *next;
+-    char *vac_subj;		/* freed! */
+-    char *vac_msg;
+-    int vac_days;
+-};
+-
+ typedef struct notify_list_s {
+     int isactive;
+     const char *id;
+@@ -109,6 +62,12 @@
+ notify_list_t *new_notify_list(void);
+ void free_notify_list(notify_list_t *n);
+ 
++/* invariant: always have a dummy element when free_action_list, param
++   and vac_subj are freed.  none of the others are automatically freed.
++
++   the do_action() functions should copy param */
++
++
+ /* actions; return negative on failure.
+  * these don't actually perform the actions, they just add it to the
+  * action list */
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/sieve/script.c cyrus-imapd-2.3.11/sieve/script.c
+--- cyrus-imapd-2.3.11.org/sieve/script.c	2008-03-27 13:41:32.000000000 +0100
++++ cyrus-imapd-2.3.11/sieve/script.c	2008-04-16 13:40:00.000000000 +0200
+@@ -928,10 +928,18 @@
+ 				 actions_string, errmsg);
+ 	}
+ 	else {
+-	    ret = do_action_list(interp, &body_cache,
+-				 script_context, message_context, 
+-				 &imapflags, actions, notify_list,
+-				 actions_string, errmsg);
++	  if (interp->quota_check) {
++            ret = interp->quota_check(script_context, message_context,
++					    actions,  errmsg);
++	    if (ret==SIEVE_OK) {
++	      ret = do_action_list(interp, &body_cache,
++				   script_context, message_context, 
++				   &imapflags, actions, notify_list,
++				   actions_string, errmsg);
++	    }
++	  } else {
++	    ret = SIEVE_INTERNAL_ERROR;
++	  } 
+ 	}
+     }
+ 
+diff -x 'Makefile*' -x '*~*~*' -u -r cyrus-imapd-2.3.11.org/sieve/sieve_interface.h cyrus-imapd-2.3.11/sieve/sieve_interface.h
+--- cyrus-imapd-2.3.11.org/sieve/sieve_interface.h	2008-03-27 13:41:32.000000000 +0100
++++ cyrus-imapd-2.3.11/sieve/sieve_interface.h	2008-04-16 13:20:44.000000000 +0200
+@@ -45,6 +45,7 @@
+ typedef int sieve_callback(void *action_context, void *interp_context, 
+ 			   void *script_context,
+ 			   void *message_context, const char **errmsg);
++
+ typedef int sieve_get_size(void *message_context, int *size);
+ typedef int sieve_get_header(void *message_context, 
+ 			     const char *header,
+@@ -123,6 +124,55 @@
+     int mime;
+ } sieve_send_response_context_t;
+ 
++typedef struct Action action_list_t;
++
++typedef enum {
++    ACTION_NULL = -1,
++    ACTION_NONE = 0,
++    ACTION_REJECT,
++    ACTION_FILEINTO,
++    ACTION_KEEP,
++    ACTION_REDIRECT,
++    ACTION_DISCARD,
++    ACTION_VACATION,
++    ACTION_SETFLAG,
++    ACTION_ADDFLAG,
++    ACTION_REMOVEFLAG,
++    ACTION_MARK,
++    ACTION_UNMARK,
++    ACTION_NOTIFY,
++    ACTION_DENOTIFY
++} action_t;
++
++struct Action {
++    action_t a;
++    int cancel_keep;
++    union {
++	sieve_reject_context_t rej;
++	sieve_fileinto_context_t fil;
++	sieve_keep_context_t keep;
++	sieve_redirect_context_t red;
++	struct {
++	    /* addr, fromaddr, subj - freed! */
++	    sieve_send_response_context_t send;
++	    sieve_autorespond_context_t autoresp;
++	} vac;
++	struct {
++	    const char *flag;
++	} fla;
++    } u;
++    char *param;		/* freed! */
++    struct Action *next;
++    char *vac_subj;		/* freed! */
++    char *vac_msg;
++    int vac_days;
++};
++
++typedef int sieve_callback_quota_check( void *script_context,
++					void *message_context,
++					action_list_t *actions,
++					const char **errmsg);
++
+ /* build a sieve interpretor */
+ int sieve_interp_alloc(sieve_interp_t **interp, void *interp_context);
+ int sieve_interp_free(sieve_interp_t **interp);
+@@ -138,6 +188,7 @@
+ int sieve_register_imapflags(sieve_interp_t *interp, sieve_imapflags_t *mark);
+ int sieve_register_notify(sieve_interp_t *interp, sieve_callback *f);
+ int sieve_register_include(sieve_interp_t *interp, sieve_get_include *f);
++int sieve_register_quota_check(sieve_interp_t *interp, sieve_callback_quota_check *f);
+ 
+ /* add the callbacks for messages. again, undefined if used after
+    sieve_script_parse */
+@@ -172,7 +223,6 @@
+ /* execute bytecode on a message */
+ int sieve_execute_bytecode(sieve_execute_t *script, sieve_interp_t *interp,
+ 			   void *script_context, void *message_context);
+-
+ /* Get space separated list of extensions supported by the implementation */
+ const char *sieve_listextensions(sieve_interp_t *i);
+ 

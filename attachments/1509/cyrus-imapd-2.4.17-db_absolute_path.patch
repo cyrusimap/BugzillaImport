@@ -1,0 +1,81 @@
+diff -Naur cyrus-imapd-2.4.17.orig/imap/ctl_cyrusdb.c cyrus-imapd-2.4.17/imap/ctl_cyrusdb.c
+--- cyrus-imapd-2.4.17.orig/imap/ctl_cyrusdb.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17/imap/ctl_cyrusdb.c	2013-01-02 22:17:39.000000000 +0100
+@@ -186,7 +186,30 @@
+ static const char *dbfname(struct cyrusdb *db)
+ {
+     static char buf[MAX_MAILBOX_PATH];
+-    snprintf(buf, MAX_MAILBOX_PATH, "%s%s", config_dir, db->name);
++    const char *fname = NULL;
++
++    /* find absolute path to db files in configuration */
++    if (!strcmp(db->name, FNAME_MBOXLIST))
++	fname = config_getstring(IMAPOPT_MBOXLIST_DB_PATH);
++    else if (!strcmp(db->name, FNAME_QUOTADB))
++	fname = config_getstring(IMAPOPT_QUOTA_DB_PATH);
++    else if (!strcmp(db->name, FNAME_ANNOTATIONS))
++	fname = config_getstring(IMAPOPT_ANNOTATION_DB_PATH);
++    else if (!strcmp(db->name, FNAME_DELIVERDB))
++	fname = config_getstring(IMAPOPT_DUPLICATE_DB_PATH);
++    else if (!strcmp(db->name, FNAME_TLSSESSIONS))
++	fname = config_getstring(IMAPOPT_TLSCACHE_DB_PATH);
++    else if (!strcmp(db->name, FNAME_PTSDB))
++	fname = config_getstring(IMAPOPT_PTSCACHE_DB_PATH);
++    else if (!strcmp(db->name, FNAME_STATUSCACHEDB))
++	fname = config_getstring(IMAPOPT_STATUSCACHE_DB_PATH);
++
++    /* use default if no special path was found */
++    if (!fname)
++	snprintf(buf, MAX_MAILBOX_PATH, "%s%s", config_dir, db->name);
++    else
++	snprintf(buf, MAX_MAILBOX_PATH, "%s", fname);
++
+     return buf;
+ }
+ 
+diff -Naur cyrus-imapd-2.4.17.orig/lib/util.c cyrus-imapd-2.4.17/lib/util.c
+--- cyrus-imapd-2.4.17.orig/lib/util.c	2012-12-01 20:57:54.000000000 +0100
++++ cyrus-imapd-2.4.17/lib/util.c	2013-01-03 17:04:55.000000000 +0100
+@@ -360,23 +360,36 @@
+  */
+ int cyrus_mkdir(const char *path, mode_t mode __attribute__((unused)))
+ {
+-    char *p = (char *) path;
++    char *p, *npath;
+     int save_errno;
+     struct stat sbuf;
+ 
+-    while ((p = strchr(p+1, '/'))) {
++    /* work with a copy */
++    npath = xstrdup(path);
++
++    /* skip leading slashes */
++    p = npath;
++    while (*p == '/')
++	p++;
++
++    while (p = strchr(p, '/')) {
+ 	*p = '\0';
+-	if (mkdir(path, 0755) == -1 && errno != EEXIST) {
++	if (mkdir(npath, 0755) == -1 && errno != EEXIST) {
+ 	    save_errno = errno;
+-	    if (stat(path, &sbuf) == -1) {
++	    if (stat(npath, &sbuf) == -1) {
+ 		errno = save_errno;
+-		syslog(LOG_ERR, "IOERROR: creating directory %s: %m", path);
++		syslog(LOG_ERR, "IOERROR: creating directory %s: %m", npath);
++		free (npath);
+ 		return -1;
+ 	    }
+ 	}
+-	*p = '/';
++	/* restore slash and skip multiple following slashes */
++	*p++ = '/';
++	while (*p == '/')
++	    p++;
+     }
+ 
++    free (npath);
+     return 0;
+ }
+ 

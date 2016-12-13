@@ -1,0 +1,123 @@
+From c8d350b6ca44a038a84688006a3394a5a10c5f0f Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?G=C3=A1bor=20Gomb=C3=A1s?= <gombasg@sztaki.hu>
+Date: Sat, 29 Dec 2007 16:28:36 +0100
+Subject: [PATCH] Make the user used by master run-time switchable
+
+Having to keep separate binaries around or to play other dirty tricks just
+to be able to run separate Cyrus instances under separate accounts is not
+nice.
+---
+ lib/util.c      |   12 +++++++-----
+ lib/util.h      |    1 +
+ man/master.8    |    7 +++++++
+ master/master.c |    8 ++++++--
+ 4 files changed, 21 insertions(+), 7 deletions(-)
+
+diff --git a/lib/util.c b/lib/util.c
+index 6894faa..e5505c0 100644
+--- a/lib/util.c
++++ b/lib/util.c
+@@ -68,6 +68,8 @@
+ 
+ #define BEAUTYBUFSIZE 4096
+ 
++char *cyrus_username = CYRUS_USER;
++
+ const unsigned char convert_to_lowercase[256] = {
+     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+     0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+@@ -372,9 +374,9 @@ int become_cyrus(void)
+ 
+     if (uid) return setuid(uid);
+ 
+-    p = getpwnam(CYRUS_USER);
++    p = getpwnam(cyrus_username);
+     if (p == NULL) {
+-	syslog(LOG_ERR, "no entry in /etc/passwd for user %s", CYRUS_USER);
++	syslog(LOG_ERR, "no entry in /etc/passwd for user %s", cyrus_username);
+ 	return -1;
+     }
+ 
+@@ -382,15 +384,15 @@ int become_cyrus(void)
+     newuid = p->pw_uid;
+     newgid = p->pw_gid;
+ 
+-    if (initgroups(CYRUS_USER, newgid)) {
++    if (initgroups(cyrus_username, newgid)) {
+         syslog(LOG_ERR, "unable to initialize groups for user %s: %s",
+-	       CYRUS_USER, strerror(errno));
++	       cyrus_username, strerror(errno));
+         return -1;
+     }
+ 
+     if (setgid(newgid)) {
+         syslog(LOG_ERR, "unable to set group id to %d for user %s: %s",
+-              newgid, CYRUS_USER, strerror(errno));
++              newgid, cyrus_username, strerror(errno));
+         return -1;
+     }
+ 
+diff --git a/lib/util.h b/lib/util.h
+index 11c8fd7..91b4174 100644
+--- a/lib/util.h
++++ b/lib/util.h
+@@ -108,6 +108,7 @@ extern void cyrus_reset_stdio();
+ extern int cyrus_mkdir(const char *path, mode_t mode);
+ 
+ extern int become_cyrus(void);
++extern char *cyrus_username;
+ 
+ /* Some systems have very inefficient implementations of isdigit,
+  * and we use it in a lot of inner loops
+diff --git a/man/master.8 b/man/master.8
+index 332c09c..88c7674 100644
+--- a/man/master.8
++++ b/man/master.8
+@@ -75,6 +75,10 @@ master \- master Cyrus process
+ .B \-D
+ ]
+ [
++.B \-u
++.I user name
++]
++[
+ .B \-x
+ .I snmp agentx socket
+ ]
+@@ -127,6 +131,9 @@ terminal).
+ .BI \-D
+ Don't close stdin/stdout/stderr. Primiarly useful for debugging.
+ .TP
++.BI \-u " user name"
++Switch to the given user account. Defaults to cyrus.
++.TP
+ .BI \-x " snmp agentx socket"
+ Address the master agent (most likely snmpd) listens on.
+ Requires net-snmp 5.0 or higher.
+diff --git a/master/master.c b/master/master.c
+index 93c0393..df903b6 100644
+--- a/master/master.c
++++ b/master/master.c
+@@ -1626,9 +1626,9 @@ int main(int argc, char **argv)
+     p = getenv("CYRUS_VERBOSE");
+     if (p) verbose = atoi(p) + 1;
+ #ifdef HAVE_NETSNMP
+-    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:P:x:")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:P:u:x:")) != EOF) {
+ #else
+-    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:u:")) != EOF) {
+ #endif
+ 	switch (opt) {
+ 	case 'C': /* alt imapd.conf file */
+@@ -1663,6 +1663,10 @@ int main(int argc, char **argv)
+ 	    if(janitor_frequency < 1)
+ 		fatal("The janitor period must be at least 1 second", EX_CONFIG);
+ 	    break;   
++	case 'u':
++	    /* User account to use */
++	    cyrus_username = optarg;
++	    break;
+ #ifdef HAVE_NETSNMP
+ 	case 'P': /* snmp AgentXPingInterval */
+ 	    agentxpinginterval = atoi(optarg);

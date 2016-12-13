@@ -1,0 +1,54 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## 0015_sql_plugin_disable_pw.dpatch by  <fabbe@debian.org>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Automatically surround string values with single quotes (') so that
+## DP: the user can use the %v placeholder without quotes. Thus, we avoid
+## DP: quoting the SQL NULL value, which is used when disabling an account.
+
+@DPATCH@
+diff -urNad trunk~/plugins/sql.c trunk/plugins/sql.c
+--- trunk~/plugins/sql.c	2006-05-29 22:52:40.000000000 +0300
++++ trunk/plugins/sql.c	2006-11-14 20:09:31.000000000 +0200
+@@ -904,6 +904,7 @@
+     char *statement = NULL;
+     char *escap_userid = NULL;
+     char *escap_realm = NULL;
++    char *escap_value = NULL;
+     const char *cmd;
+     
+     sql_settings_t *settings;
+@@ -991,11 +992,24 @@
+ 	}
+ 	sparams->utils->free(statement);
+ 
++	/* if we are not going to insert NULL, surround the value with '' */
++	if (cur->values[0]) {
++	    escap_value = (char *) sparams->utils->malloc(strlen(cur->values[0]*2+1));
++		if (!escap_value) {
++			MEMERROR(sparams->utils);
++			goto done;
++		}
++
++		strcpy(escap_value, "'");
++		strcat(escap_value, cur->values[0]);
++		strcat(escap_value, "'");
++	}
++
+ 	/* create a statement that we will use */
+ 	statement = sql_create_statement(cmd, cur->name, escap_userid,
+ 					 escap_realm,
+ 					 cur->values && cur->values[0] ?
+-					 cur->values[0] : SQL_NULL_VALUE,
++					 escap_value : SQL_NULL_VALUE,
+ 					 sparams->utils);
+ 	
+ 	{
+@@ -1036,6 +1050,7 @@
+   done:
+     if (escap_userid) sparams->utils->free(escap_userid);
+     if (escap_realm) sparams->utils->free(escap_realm);
++    if (escap_value) sparams->utils->free(escap_value);
+     if (conn) settings->sql_engine->sql_close(conn);
+     if (userid) sparams->utils->free(userid);
+     if (realm) sparams->utils->free(realm);

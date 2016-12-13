@@ -1,0 +1,353 @@
+From pfleming@siumed.edu Mon Jul 28 12:38:10 2003
+Date: Tue, 09 Apr 2002 09:39:34 -0500
+From: Paul M Fleming <pfleming@siumed.edu>
+To: "info-cyrus@lists.andrew.cmu.edu" <info-cyrus@lists.andrew.cmu.edu>
+Subject: KRB5 Authorization Code
+
+I finally broke down and did it. The code isn't pretty and should be
+considered ALPHA at this stage, but here is a patch for Cyrus-IMAP-2.1.3
+to do authorization via Kerberos V. Drop this file in the imap lib/
+directory and configure --with-auth=krb5 On my test environment I also
+needed the following (since I haven't hacked away at configure.in yet)
+you'll need to adjust according to your environment.
+
+export LDFLAGS="-L/usr/kerberos/lib -lkrb5"
+export CPPFLAGS="-I /usr/kerberos/include/"
+export CFLAGS="-I /usr/kerberos/include/"
+
+From my limited tests this appears to work correctly I'd be interested
+in any feedback/comments. I also have a patch for SASL 2.1.2 to do
+password checking against Kerb5 without saslauthd if anyone is
+interested..
+
+Paul Fleming
+pfleming@siumed.edu
+SIU School of Medicine
+Springfield IL
+    [ Part 2: "Attached Text" ]
+
+/* auth_krb5.c -- Kerberos V authorization for Cyrus IMAP 2.1.3
+ * Paul M Fleming
+ * Southern Illinois University
+ * School of Medicine
+ * pfleming@siumed.edu
+ * 
+ *
+ */
+
+
+#include <config.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <sys/types.h>
+
+#ifdef HAVE_LIBDB
+#ifdef HAVE_DB_185_H
+#include <db_185.h>
+#else
+#include <db.h>
+#endif
+#else
+#include <ndbm.h>
+#endif
+#include <krb5.h>
+
+#include "xmalloc.h"
+#include "auth.h"
+
+
+const char *auth_method_desc = "krb5";
+
+
+struct auth_state {
+    char *userid;
+    char *aname;
+    char *inst;
+    char *realm;
+};
+
+static struct auth_state auth_anonymous = {
+    "anonymous", "anonymous", "", ""
+};
+
+int k5_comp_split(const char *identifier,char **user,char **inst,char **realm);
+
+/*
+	split identifier into AAA/BBBB@REALM
+
+*/
+int
+k5_comp_split(identifier,user,inst,realm)
+const char *identifier;
+char **user;
+char **inst; 
+char **realm;
+{
+	char *buffer;
+	char *p;
+	int len;
+	int i;
+	int num_comps;
+	krb5_context context;
+	krb5_principal princ;
+
+	len = strlen(identifier);
+	buffer = (char *)malloc(len+1);
+	if (!buffer) return 0;
+	memcpy(buffer,identifier,len);
+	buffer[len]='\0';
+	if (krb5_init_context(&context))
+	{
+		free (buffer);
+		return 1;
+	}
+	if (krb5_parse_name(context,buffer,&princ))
+	{
+		krb5_free_context(context);
+		free (buffer);
+		return 1;
+	}
+	/* successfully built a principal -- userid in compenent 0 */
+	i = krb5_princ_component(context, princ, 0)->length;
+	p = (char*)malloc(i);
+	strncpy(p,krb5_princ_component(context, princ, 0)->data,i);
+	p[i]='\0';
+	*user=p;
+
+	/* grab out the realm */
+	i = krb5_princ_realm(context,princ)->length;
+	p = (char*)malloc(i);
+	strncpy(p,krb5_princ_realm(context,princ)->data,i);
+	p[i]='\0';
+	*realm = p;	
+	
+	/* iterate over remaining compents put them into inst */
+	num_comps = krb5_princ_size(context,princ)-1;
+
+	if (num_comps == 0)
+	{
+		/* no instance -- bail out */
+		*inst = 0;
+	
+	}
+	else
+	{
+		/* first determine how much space required */
+		len=num_comps; /* number of / plus the training null */
+		for (i=1;i <= num_comps;i++)	
+		{
+			len = len+krb5_princ_component(context, princ, i)->length;	
+		}
+		p = (char*)malloc(len);
+		bzero(p,len);
+		for (i=1;i <= num_comps;i++)	
+		{
+			strncat(p,krb5_princ_component(context, princ, i)->data,krb5_princ_component(context, princ, i)->length);
+			if (i != num_comps) strcat(p,"/");
+		}
+		*inst = p;	
+	}
+
+	krb5_free_principal(context,princ);
+	krb5_free_context(context);
+	free(buffer);
+	return 0;
+
+}
+
+
+/*
+ * Determine if the user is a member of 'identifier'
+ * Returns one of:
+ * 	0	User does not match identifier
+ * 	1	identifier matches everybody
+ *	2	User is in the group that is identifier
+ *	3	User is identifer
+ */
+int
+auth_memberof(auth_state, identifier)
+struct auth_state *auth_state;
+const char *identifier;
+{
+	char *a,*i,*r,*ident;
+	int ret=2;
+	if (!auth_state) auth_state = &auth_anonymous;
+
+	if (strcmp(identifier,"anyone") == 0) return 1;
+	if (strcmp(identifier,auth_state->userid) == 0) return 3;
+	
+	if (strcmp(auth_state->userid,"anonymous") == 0) return 0;
+	ident = auth_canonifyid(identifier,0);
+	if (k5_comp_split(ident,&a,&i,&r) != 0)
+	{
+		free(ident);
+		return 0;
+	}
+	if (strcmp(ident,"*") == 0) goto fini;
+	if (!(a == 0 && auth_state->aname ==0))
+	{
+		if ( (a == 0 || auth_state->aname == 0) || (strcmp(a,auth_state->aname) != 0 && strcmp(a,"*") != 0))
+		{
+			ret=0;
+			goto fini;
+		}
+	}
+	if (!(i == 0 && auth_state->inst ==0))
+	{
+		if ( (i == 0 || auth_state->inst == 0) || (strcmp(i,auth_state->inst) != 0 && strcmp(i,"*") != 0))
+		{
+			ret=0;
+			goto fini;
+		}
+	}
+	if (!(r == 0 && auth_state->realm ==0))
+	{
+		if ( (r == 0 || auth_state->realm == 0) || (strcmp(r,auth_state->realm) != 0 && strcmp(r,"*") != 0))
+		{
+			ret=0;
+			goto fini;
+		}
+	}
+
+   fini:
+	free(ident);
+	free(a);
+	free(i);
+	free(r);
+	return ret;
+	
+}
+
+/*
+ * Convert 'identifier' into canonical form.
+ * Returns a pointer to a static buffer containing the canonical form
+ * or NULL if 'identifier' is invalid.
+ */
+char *auth_canonifyid(identifier, len)
+const char *identifier;
+size_t len;
+{
+	krb5_context context;
+	krb5_principal princ,princ2;
+	char *canon_buf;
+	char *realm;
+	char *p;
+	int striprealm = 0;
+	int i;
+
+	if (!len) len = strlen(identifier);
+	canon_buf = (char *)malloc(len+1);
+	if (!canon_buf) return 0;
+	memcpy(canon_buf,identifier,len);
+	canon_buf[len]='\0';
+
+	if (strcasecmp(canon_buf, "anonymous") == 0)
+	{
+		free (canon_buf);
+		return "anonymous";
+	}
+
+	if (strcasecmp(canon_buf, "anybody") == 0 || strcasecmp(canon_buf, "anyone") == 0) 
+	{
+		free (canon_buf);
+		return "anyone";
+	}
+	if (krb5_init_context(&context))
+	{
+		free (canon_buf);
+		return 0;
+	}
+	if (krb5_parse_name(context,canon_buf,&princ))
+	{
+		krb5_free_context(context);
+		free (canon_buf);
+		return 0;
+	}
+	free (canon_buf);
+	/* get local realm */
+	if (krb5_get_default_realm(context,&realm))
+	{
+		krb5_free_principal(context,princ);
+		krb5_free_context(context);
+		return 0;
+	}
+	/* build dummy princ to compare realms */
+	if (krb5_build_principal(context,&princ2,strlen(realm),realm,"dummy",0))
+	{
+		krb5_free_principal(context,princ);
+		krb5_free_context(context);
+		free(realm);
+		return 0;
+	}
+	/* is this principal local ? */
+	if (krb5_realm_compare(context,princ,princ2))
+	{
+		striprealm = 1;
+	}
+	/* done w/ dummy princ free it & realm */
+	krb5_free_principal(context,princ2);
+	free(realm);
+	/* get the text version of princ */
+	if (krb5_unparse_name(context,princ,&p))
+	{
+		krb5_free_principal(context,princ);
+		krb5_free_context(context);
+		return 0;
+	}
+	/* we have the canonical name pointed to by p -- strip realm if local */
+	if (striprealm)
+	{
+		i = strlen(p)-1;
+		while ( (*(p+i) != '@') && (i != 0)) i--;
+		canon_buf = (char *)malloc(i);
+		strncpy(canon_buf,p,i);
+		canon_buf[i]= '\0';
+		free (p);
+		p = canon_buf;
+	}
+	krb5_free_principal(context,princ);
+	krb5_free_context(context);	
+	return p;
+}
+
+/*
+ * Set the current user to 'identifier'.  'cacheid', if non-null,
+ * points to a 16-byte binary key to cache identifier's information
+ * with.
+ */
+struct auth_state *
+auth_newstate(identifier, cacheid)
+const char *identifier;
+const char *cacheid;
+{
+	struct auth_state *newstate;
+	char *ident;
+	ident = auth_canonifyid(identifier, 0);
+	if (!ident) return 0;
+	newstate = (struct auth_state *)malloc(sizeof(struct auth_state));
+	newstate->userid = (char*)malloc(strlen(ident));   
+	strcpy(newstate->userid, ident);
+	if (k5_comp_split(ident,&(newstate->aname),&(newstate->inst),&(newstate->realm)))
+	{
+		free(ident);
+		return 0;
+	}
+	free(ident);
+	return newstate;
+}
+
+void
+auth_freestate(auth_state)
+struct auth_state *auth_state;
+{
+	free(auth_state->userid);
+	free(auth_state->aname);
+	free(auth_state->inst);
+	free(auth_state->realm);
+	free(auth_state);
+}
+
+

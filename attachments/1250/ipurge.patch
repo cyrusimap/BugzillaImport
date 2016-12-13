@@ -1,0 +1,175 @@
+diff -ur cyrus-imapd-2.3.16/imap/ipurge.c cyrus-imapd-2.3.16.ipurge/imap/ipurge.c
+--- cyrus-imapd-2.3.16/imap/ipurge.c	2009-12-16 03:51:41.000000000 +0100
++++ cyrus-imapd-2.3.16.ipurge/imap/ipurge.c	2009-12-29 10:03:21.000000000 +0100
+@@ -100,6 +100,7 @@
+ 
+ int verbose = 1;
+ int forceall = 0;
++int donothing = 0;
+ 
+ int purge_me(char *, int, int);
+ unsigned purge_check(struct mailbox *, void *, unsigned char *, int);
+@@ -116,7 +117,7 @@
+       fatal("must run as the Cyrus user", EC_USAGE);
+   }
+ 
+-  while ((option = getopt(argc, argv, "C:hxd:b:k:m:fsXi")) != EOF) {
++  while ((option = getopt(argc, argv, "C:hxd:b:k:m:fsXuin")) != EOF) {
+     switch (option) {
+     case 'C': /* alt config file */
+       alt_config = optarg;
+@@ -151,12 +152,18 @@
+     case 'f' : {
+       forceall = 1;
+     } break;
++    case 'n' : {
++      donothing = 1;
++    } break;
+     case 's' : {
+       skipflagged = 1;
+     } break;
+     case 'X' : {
+       datemode = OFFSET_INTERNALDATE;
+     } break;
++    case 'u' : {
++      datemode = OFFSET_LAST_UPDATED;
++    } break;
+     case 'i' : {
+       invertmatch = 1;
+     } break;
+@@ -165,12 +172,15 @@
+     }
+   }
+   if ((days == -1 ) && (size == -1)) {
+-    printf("One of these must be specified -d, -b -k, -m\n");
++    printf("One of these must be specified -d, -b, -k, -m\n");
+     usage(argv[0]);
+   }
+ 
+   cyrus_init(alt_config, "ipurge", 0);
+ 
++  if (donothing)
++    printf("warning : do nothing mode !\n");
++
+   /* Set namespace -- force standard (internal) */
+   if ((r = mboxname_init_namespace(&purge_namespace, 1)) != 0) {
+       syslog(LOG_ERR, error_message(r));
+@@ -217,13 +227,15 @@
+ 
+ int
+ usage(char *name) {
+-  printf("usage: %s [-f] [-s] [-C <alt_config>] [-x] [-X] [-i] {-d days | -b bytes|-k Kbytes|-m Mbytes}\n\t[mboxpattern1 ... [mboxpatternN]]\n", name);
++  printf("usage: %s [-n] [-f] [-s] [-C <alt_config>] [-x] [-X | -u] [-i] {-d days | -b bytes|-k Kbytes|-m Mbytes}\n\t[mboxpattern1 ... [mboxpatternN]]\n", name);
+   printf("\tthere are no defaults and at least one of -d, -b, -k, -m\n\tmust be specified\n");
+   printf("\tif no mboxpattern is given %s works on all mailboxes\n", name);
+   printf("\t -x specifies an exact match for days or size\n");
+   printf("\t -f force also to delete mail below user.* and INBOX.*\n");
++  printf("\t -n do not really delete mails\n");
+   printf("\t -s skip over messages that are flagged.\n");
+   printf("\t -X use delivery time instead of date header for date matches.\n");
++  printf("\t -u use modification time instead of date header for date matches.\n");
+   printf("\t -i invert match logic: -x means not equal, date is for newer, size is for smaller.\n");
+   exit(0);
+ }
+@@ -317,10 +329,14 @@
+       if (((my_time - (time_t) senttime)/86400) == (days/86400)) {
+ 	  if (invertmatch) return 0;
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       } else {
+ 	  if (!invertmatch) return 0;
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       }
+     }
+@@ -329,10 +345,14 @@
+ 	if ((int) msgsize == size) {
+ 	  if (invertmatch) return 0;
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       } else {
+ 	  if (!invertmatch) return 0;
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       }
+     }
+@@ -343,10 +363,14 @@
+       /*    printf("comparing %ld :: %ld\n", my_time, the_record->sentdate); */
+       if (!invertmatch && ((my_time - (time_t) senttime) > days)) {
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       }
+       if (invertmatch && ((my_time - (time_t) senttime) < days)) {
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       }
+     }
+@@ -354,10 +378,14 @@
+       /* check size */
+ 	if (!invertmatch && ((int) msgsize > size)) {
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       }
+ 	if (invertmatch && ((int) msgsize < size)) {
+ 	  deleteit(msgsize, stats);
++	  if (donothing)
++	      return 0;
+ 	  return 1;
+       }
+     }
+diff -ur cyrus-imapd-2.3.16/man/ipurge.8 cyrus-imapd-2.3.16.ipurge/man/ipurge.8
+--- cyrus-imapd-2.3.16/man/ipurge.8	2008-04-04 14:46:55.000000000 +0200
++++ cyrus-imapd-2.3.16.ipurge/man/ipurge.8	2009-12-29 10:28:35.000000000 +0100
+@@ -46,6 +46,9 @@
+ .SH SYNOPSIS
+ .B ipurge
+ [
++.B \-n
++]
++[
+ .B \-f
+ ]
+ [
+@@ -57,6 +60,8 @@
+ ]
+ [
+ .B \-X
++|
++.B \-u
+ ]
+ [
+ .B \-i
+@@ -100,6 +105,9 @@
+ file unless specified otherwise by \fB-C\fR.
+ .SH OPTIONS
+ .TP
++.BI \-n
++Do not really delete mails.
++.TP
+ .BI \-f
+ Force deletion of mail in \fIall\fR mailboxes.
+ .TP
+@@ -124,6 +132,9 @@
+ .B \-X
+ Use delivery time instead of Date: header for date matches
+ .TP
++.B \-u
++Use modification time instead of Date: header for date matches
++.TP
+ .B \-i
+ Invert match logic: -x means not equal, date is for newer, size is for smaller
+ .TP

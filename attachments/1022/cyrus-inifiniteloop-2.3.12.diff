@@ -1,0 +1,44 @@
+Check for infinite loop on corrupted index files
+
+Mark Cave-Ayland reported a corrupted index file
+causing 100% CPU usage by imapd.
+
+This patch checks for the cause (last_uid being
+less than the current uid) and syslogs a warning
+while dropping out of the loop.
+Index: cyrus-imapd-2.3.12p2/imap/index.c
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/imap/index.c	2008-09-29 22:39:03.000000000 +1000
++++ cyrus-imapd-2.3.12p2/imap/index.c	2008-09-30 21:50:12.000000000 +1000
+@@ -584,7 +584,16 @@
+ 	    else {
+ 		oldseen = (*old == ':');
+ 		oldnext = 0;
+-		if (!*old) oldnext = mailbox->last_uid+1;
++		if (!*old) {
++		    oldnext = mailbox->last_uid+1;
++		    /* just in case the index is corrupted, don't
++		     * loop forever */
++		    if (oldnext < uid) {
++			syslog(LOG_ERR, "index corrupted, needs reconstruct %s",
++			       mailbox->name);
++			oldnext = uid;
++		    }
++		}
+ 		else old++;
+ 		while (cyrus_isdigit((int) *old)) {
+ 		    oldnext = oldnext * 10 + *old++ - '0';
+@@ -602,6 +611,13 @@
+ 		newnext = 0;
+ 		if (!*new) {
+ 		    newnext = mailbox->last_uid+1;
++		    /* just in case the index is corrupted, don't
++		     * loop forever */
++		    if (newnext < uid) {
++			syslog(LOG_ERR, "index corrupted, needs reconstruct %s",
++			       mailbox->name);
++			newnext = uid;
++		    }
+ 		    neweof++;
+ 		}
+ 		else new++;

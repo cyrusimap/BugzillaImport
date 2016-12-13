@@ -1,0 +1,154 @@
+Index: mailbox.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.147.2.38
+diff -u -r1.147.2.38 mailbox.c
+--- mailbox.c	4 Aug 2006 14:40:39 -0000	1.147.2.38
++++ mailbox.c	14 Aug 2006 17:53:47 -0000
+@@ -1281,7 +1281,13 @@
+  */
+ int mailbox_write_index_header(struct mailbox *mailbox)
+ {
+-    char buf[INDEX_HEADER_SIZE];
++    struct {
++	char buf[INDEX_HEADER_SIZE];
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    } align8buf;
++    char *buf = align8buf.buf;
+     unsigned long header_size = sizeof(buf);
+     int n;
+     
+@@ -1386,7 +1392,13 @@
+ 			   int sync)
+ {
+     int n;
+-    char buf[INDEX_RECORD_SIZE];
++    struct {
++	char buf[INDEX_RECORD_SIZE];
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    } align8buf;
++    char *buf = align8buf.buf;
+ 
+     mailbox_index_record_to_buf(record, buf);
+ 
+@@ -1421,7 +1433,14 @@
+ {
+     unsigned i;
+     int len, n;
+-    char *buf, *p;
++    struct {
++	char *buf;
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    } align8buf;
++    char *buf = align8buf.buf;
++    char *p;
+     long last_offset;
+     time_t now = time(NULL);
+ 
+@@ -1520,8 +1539,14 @@
+     unsigned long exists;
+     unsigned msgno;
+     bit32 oldstart_offset, oldrecord_size, recsize_diff;
+-    char buf[INDEX_HEADER_SIZE > INDEX_RECORD_SIZE ?
+-	     INDEX_HEADER_SIZE : INDEX_RECORD_SIZE];
++    struct {
++	char buf[INDEX_HEADER_SIZE > INDEX_RECORD_SIZE ?
++		 INDEX_HEADER_SIZE : INDEX_RECORD_SIZE];
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    } align8buf;
++    char *buf = align8buf.buf;
+     char *bufp;
+     int quota_offset = 0;
+     int calculate_flagcounts = 0;
+@@ -1849,8 +1874,14 @@
+ 			   mailbox_decideproc_t *decideproc, void *deciderock,
+ 			   int expunge_flags)
+ {
+-    char buf[INDEX_HEADER_SIZE > INDEX_RECORD_SIZE ?
+-	     INDEX_HEADER_SIZE : INDEX_RECORD_SIZE];
++    struct {
++	char buf[INDEX_HEADER_SIZE > INDEX_RECORD_SIZE ?
++		 INDEX_HEADER_SIZE : INDEX_RECORD_SIZE];
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    } align8buf;
++    char *buf = align8buf.buf;
+     unsigned msgno;
+     unsigned newexpunged;
+     unsigned newexists;
+Index: mailbox.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.h,v
+retrieving revision 1.77.2.14
+diff -u -r1.77.2.14 mailbox.h
+--- mailbox.h	2 Jun 2006 16:41:57 -0000	1.77.2.14
++++ mailbox.h	14 Aug 2006 17:53:47 -0000
+@@ -104,7 +104,12 @@
+ 
+     const char *header_base;
+     unsigned long header_len;
+-    const char *index_base;
++    union {
++	const char *index_base;
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    };
+     unsigned long index_len;	/* mapped size */
+     const char *cache_base;
+     unsigned long cache_len;	/* mapped size */
+Index: reconstruct.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/reconstruct.c,v
+retrieving revision 1.81.2.21
+diff -u -r1.81.2.21 reconstruct.c
+--- reconstruct.c	2 Jun 2006 16:41:57 -0000	1.81.2.21
++++ reconstruct.c	14 Aug 2006 17:53:48 -0000
+@@ -409,8 +409,14 @@
+  */
+ int reconstruct(char *name, struct discovered *found)
+ {
+-    char buf[((INDEX_HEADER_SIZE > INDEX_RECORD_SIZE) ?
+-	     INDEX_HEADER_SIZE : INDEX_RECORD_SIZE)];
++    struct {
++	char buf[INDEX_HEADER_SIZE > INDEX_RECORD_SIZE ?
++		 INDEX_HEADER_SIZE : INDEX_RECORD_SIZE];
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    } align8buf;
++    char *buf = align8buf.buf;
+     char quota_root[MAX_MAILBOX_PATH+1];
+     bit32 valid_user_flags[MAX_USER_FLAGS/32];
+ 
+Index: sync_commit.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/Attic/sync_commit.c,v
+retrieving revision 1.1.2.12
+diff -u -r1.1.2.12 sync_commit.c
+--- sync_commit.c	11 Jul 2006 14:36:24 -0000	1.1.2.12
++++ sync_commit.c	14 Aug 2006 17:53:48 -0000
+@@ -92,7 +92,13 @@
+     char *path;
+     FILE *newindex = NULL;
+     FILE *newcache = NULL;
+-    unsigned char *buf  = NULL;
++    struct {
++	unsigned char *buf;
++#ifdef HAVE_LONG_LONG_INT
++	bit64 align8;
++#endif
++    } align8buf;
++    unsigned char *buf = align8buf.buf = NULL;
+     struct sync_upload_item *item;
+     struct sync_message     *message;
+     long quota_add       = 0;  /* Following may be negative on UUID conflict */

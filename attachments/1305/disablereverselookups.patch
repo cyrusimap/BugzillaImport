@@ -1,0 +1,53 @@
+Index: imap/imapd.c
+===================================================================
+RCS file: /cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.583
+diff -u -r1.583 imapd.c
+--- imap/imapd.c	28 Jun 2010 12:06:42 -0000	1.583
++++ imap/imapd.c	10 Sep 2010 12:01:51 -0000
+@@ -821,7 +821,8 @@
+     if (getpeername(0, (struct sockaddr *)&imapd_remoteaddr, &salen) == 0 &&
+ 	(imapd_remoteaddr.ss_family == AF_INET ||
+ 	 imapd_remoteaddr.ss_family == AF_INET6)) {
+-	if (getnameinfo((struct sockaddr *)&imapd_remoteaddr, salen,
++	if (!config_getswitch(IMAPOPT_DISABLEREVERSELOOKUPS) && 
++	    getnameinfo((struct sockaddr *)&imapd_remoteaddr, salen,
+ 			hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD) == 0) {
+ 	    strncpy(imapd_clienthost, hbuf, sizeof(hbuf));
+ 	    strlcat(imapd_clienthost, " ", sizeof(imapd_clienthost));
+Index: imap/pop3d.c
+===================================================================
+RCS file: /cvs/src/cyrus/imap/pop3d.c,v
+retrieving revision 1.202
+diff -u -r1.202 pop3d.c
+--- imap/pop3d.c	25 May 2010 20:59:19 -0000	1.202
++++ imap/pop3d.c	10 Sep 2010 12:01:51 -0000
+@@ -497,7 +497,8 @@
+     if (getpeername(0, (struct sockaddr *)&popd_remoteaddr, &salen) == 0 &&
+ 	(popd_remoteaddr.ss_family == AF_INET ||
+ 	 popd_remoteaddr.ss_family == AF_INET6)) {
+-	if (getnameinfo((struct sockaddr *)&popd_remoteaddr, salen,
++        if (!config_getswitch(IMAPOPT_DISABLEREVERSELOOKUPS) &&
++            getnameinfo((struct sockaddr *)&popd_remoteaddr, salen,
+ 			hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD) == 0) {
+     	    strncpy(popd_clienthost, hbuf, sizeof(hbuf));
+ 	    strlcat(popd_clienthost, " ", sizeof(popd_clienthost));
+Index: lib/imapoptions
+===================================================================
+RCS file: /cvs/src/cyrus/lib/imapoptions,v
+retrieving revision 1.78
+diff -u -r1.78 imapoptions
+--- lib/imapoptions	28 Jun 2010 12:06:43 -0000	1.78
++++ lib/imapoptions	10 Sep 2010 12:01:52 -0000
+@@ -285,6 +285,11 @@
+    grant the user the ability to delete a mailbox.  If a user has this
+    right, they will automatically be given the new 'x' right. */
+ 
++{ "disablereverselookups", 0, SWITCH }
++/* If enabled, will disable reverse DNS lookups in imapd and pop3d. Clients
++   will be logged by IP address only. This option does not interact well
++   with SASL authentication methods that require hostnames. */
++
+ { "disconnect_on_vanished_mailbox", 0, SWITCH }
+ /* If enabled, IMAP/POP3/NNTP clients will be disconnected by the
+    server if the currently selected mailbox is (re)moved by another

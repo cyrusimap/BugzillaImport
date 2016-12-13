@@ -1,0 +1,235 @@
+diff -uwr cyrus-sasl-2.1.22-old/configure.in cyrus-sasl-2.1.22-new/configure.in
+--- cyrus-sasl-2.1.22-old/configure.in	2006-05-18 23:06:13.000000000 +0400
++++ cyrus-sasl-2.1.22-new/configure.in	2008-10-28 16:49:00.000000000 +0300
+@@ -846,8 +846,60 @@
+ esac
+ AC_SUBST(LIB_SQLITE)
+ 
+-if test "$sql" = yes -a "$with_pgsql" = no -a "$with_mysql" = no -a "$with_sqlite" = no; then
+-    AC_ERROR([--enable-sql chosen but neither Postgres nor MySQL nor SQLite found])
++dnl SQLite3
++AC_ARG_WITH(sqlite3,  [  --with-sqlite3=PATH       use SQLite3 from PATH ],
++  with_sqlite3=$withval,
++  with_sqlite3=$sql)
++
++# find location of library 
++# presuing if one given then correct
++if test "${with_sqlite3}" = "yes"; then
++  with_sqlite3=notfound
++  for sqlite3loc in lib
++  do
++    if test -f ${prefix}/${sqlite3loc}/libsqlite3.a; then
++      with_sqlite3="${prefix}"
++      break
++    elif test -f /usr/local/${sqlite3loc}/libsqlite3.a; then
++      with_sqlite3="/usr/local"
++      break
++    elif test -f /usr/${sqlite3loc}/libsqlite3.a; then
++      with_sqlite3="/usr"
++      break
++    fi
++  done
++fi
++
++LIB_SQLITE3=""
++
++case "$with_sqlite3" in
++    no) true;;
++    notfound) AC_WARN([SQLite3 Library not found]); true;;
++    *)
++     if test -d ${with_sqlite3}/lib; then
++         LIB_SQLITE3="-L${with_sqlite3}/lib -R${with_sqlite3}/lib"
++     else
++         LIB_SQLITE3="-L${with_sqlite3} -R${with_sqlite3}"
++     fi
++
++     LIB_SQLITE3_DIR=$LIB_SQLITE3
++     LIB_SQLITE3="$LIB_SQLITE3 -lsqlite3"
++
++     if test -d ${with_sqlite3}/include; then
++         CPPFLAGS="${CPPFLAGS} -I${with_sqlite3}/include"
++     else
++         CPPFLAGS="${CPPFLAGS} -I${with_sqlite3}"
++     fi
++       AC_CHECK_LIB(sqlite3, sqlite3_open, AC_DEFINE(HAVE_SQLITE3,[],
++	   [Do we have SQLite3 support?]),
++           [AC_WARN([SQLite3 Library sqlite3 does not work])
++	    with_sqlite3=no], $LIB_SQLITE3_DIR);;
++         
++esac
++AC_SUBST(LIB_SQLITE3)
++
++if test "$sql" = yes -a "$with_pgsql" = no -a "$with_mysql" = no -a "$with_sqlite" = no -a "$with_sqlite3" = no; then
++    AC_ERROR([--enable-sql chosen but neither Postgres nor MySQL nor SQLite nor SQLite3 found])
+ fi
+ 
+ if test "$enable_shared" = yes; then
+diff -uwr cyrus-sasl-2.1.22-old/doc/options.html cyrus-sasl-2.1.22-new/doc/options.html
+--- cyrus-sasl-2.1.22-old/doc/options.html	2005-02-16 23:52:05.000000000 +0300
++++ cyrus-sasl-2.1.22-new/doc/options.html	2008-10-28 16:49:57.000000000 +0300
+@@ -142,7 +142,7 @@
+ <TD>Path to sasldb file</TD><TD><tt>/etc/sasldb2</tt> (system dependant)</TD>
+ <TR>
+ <TD>sql_engine</TD><TD>SQL plugin</TD>
+-<TD>Name of SQL engine to use (possible values: 'mysql', 'pgsql', 'sqlite').</TD>
++<TD>Name of SQL engine to use (possible values: 'mysql', 'pgsql', 'sqlite', 'sqlite3').</TD>
+ <TD><tt>mysql</tt></TD>
+ </TR>
+ <TR>
+diff -uwr cyrus-sasl-2.1.22-old/plugins/sql.c cyrus-sasl-2.1.22-new/plugins/sql.c
+--- cyrus-sasl-2.1.22-old/plugins/sql.c	2006-04-07 17:42:16.000000000 +0400
++++ cyrus-sasl-2.1.22-new/plugins/sql.c	2008-10-28 16:55:12.000000000 +0300
+@@ -468,6 +468,141 @@
+ }
+ #endif /* HAVE_SQLITE */
+ 
++#ifdef HAVE_SQLITE3
++#include <sqlite3.h>
++
++static void *_sqlite3_open(char *host __attribute__((unused)),
++			  char *port __attribute__((unused)),
++			  int usessl __attribute__((unused)),
++			  const char *user __attribute__((unused)),
++			  const char *password __attribute__((unused)),
++			  const char *database, const sasl_utils_t *utils)
++{
++    int rc;
++    sqlite3 *db;
++    char *zErrMsg = NULL;
++
++    rc = sqlite3_open(database, &db);
++    if (SQLITE_OK != rc) {
++    	if (db)
++		utils->log(NULL, SASL_LOG_ERR, "sql plugin: %s", sqlite3_errmsg(db));
++	else
++		utils->log(NULL, SASL_LOG_ERR, "sql plugin: %d", rc);
++	sqlite3_close(db);
++	return NULL;
++    }
++
++    rc = sqlite3_exec(db, "PRAGMA empty_result_callbacks = ON", NULL, NULL, &zErrMsg);
++    if (rc != SQLITE_OK) {
++    	if (zErrMsg) {
++		utils->log(NULL, SASL_LOG_ERR, "sql plugin: %s", zErrMsg);
++		sqlite3_free(zErrMsg);
++	} else
++		utils->log(NULL, SASL_LOG_DEBUG, "sql plugin: %d", rc);
++	sqlite3_close(db);
++	return NULL;
++    }
++
++    return (void*)db;
++}
++
++static int _sqlite3_escape_str(char *to, const char *from)
++{
++    char s;
++
++    while ( (s = *from++) != '\0' ) {
++	if (s == '\'' || s == '\\') {
++	    *to++ = '\\';
++	}
++	*to++ = s;
++    }
++    *to = '\0';
++
++    return 0;
++}
++
++static int sqlite3_my_callback(void *pArg, int argc __attribute__((unused)),
++			      char **argv,
++			      char **columnNames __attribute__((unused)))
++{
++    char **result = (char**)pArg;
++
++    if (argv == NULL) {
++	*result = NULL;				/* no record */
++    } else if (argv[0] == NULL) {
++	*result = strdup(SQL_NULL_VALUE);	/* NULL IS SQL_NULL_VALUE */
++    } else {
++	*result = strdup(argv[0]);
++    }
++
++    return /*ABORT*/1;
++}
++
++static int _sqlite3_exec(void *db, const char *cmd, char *value, size_t size,
++		        size_t *value_len, const sasl_utils_t *utils)
++{
++    int rc;
++    char *result = NULL;
++    char *zErrMsg = NULL;
++
++    rc = sqlite3_exec((sqlite3*)db, cmd, sqlite3_my_callback, (void*)&result, &zErrMsg);
++    if (rc != SQLITE_OK && rc != SQLITE_ABORT) {
++    	if (zErrMsg) {
++		utils->log(NULL, SASL_LOG_DEBUG, "sql plugin: %s", zErrMsg);
++		sqlite3_free(zErrMsg);
++	} else
++		utils->log(NULL, SASL_LOG_DEBUG, "sql plugin: %d", rc);
++	return -1;
++    }
++
++    if (rc == SQLITE_OK) {
++	/* no results (BEGIN, COMMIT, DELETE, INSERT, UPDATE) */
++	return 0;
++    }
++
++    if (result == NULL) {
++	/* umm nothing found */
++	utils->log(NULL, SASL_LOG_NOTE, "sql plugin: no result found");
++	return -1;
++    }
++
++    /* XXX: Duplication cannot be found by this method. */
++
++    /* now get the result set value and value_len */
++    /* we only fetch one because we don't care about the rest */
++    if (value) {
++	strncpy(value, result, size - 2);
++	value[size - 1] = '\0';
++	if (value_len) {
++	    *value_len = strlen(value);
++	}
++    }
++
++    free(result);
++    return 0;
++}
++
++static int _sqlite3_begin_txn(void *db, const sasl_utils_t *utils)
++{
++    return _sqlite3_exec(db, "BEGIN TRANSACTION", NULL, 0, NULL, utils);
++}
++
++static int _sqlite3_commit_txn(void *db, const sasl_utils_t *utils)
++{
++    return _sqlite3_exec(db, "COMMIT TRANSACTION", NULL, 0, NULL, utils);
++}
++
++static int _sqlite3_rollback_txn(void *db, const sasl_utils_t *utils)
++{
++    return _sqlite3_exec(db, "ROLLBACK TRANSACTION", NULL, 0, NULL, utils);
++}
++
++static void _sqlite3_close(void *db)
++{
++    sqlite3_close((sqlite3*)db);
++}
++#endif /* HAVE_SQLITE3 */
++
+ static const sql_engine_t sql_engines[] = {
+ #ifdef HAVE_MYSQL
+     { "mysql", &_mysql_open, &_mysql_escape_str,
+@@ -484,6 +619,11 @@
+       &_sqlite_begin_txn, &_sqlite_commit_txn, &_sqlite_rollback_txn,
+       &_sqlite_exec, &_sqlite_close },
+ #endif
++#ifdef HAVE_SQLITE3
++    { "sqlite3", &_sqlite3_open, &_sqlite3_escape_str,
++      &_sqlite3_begin_txn, &_sqlite3_commit_txn, &_sqlite3_rollback_txn,
++      &_sqlite3_exec, &_sqlite3_close },
++#endif
+     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }
+ };
+ 

@@ -1,0 +1,48 @@
+--- lib/imapoptions	27 Aug 2008 08:28:47 -0000	1.55
++++ lib/imapoptions	30 Sep 2008 21:26:56 -0000
+@@ -927,7 +947,15 @@
+ { "sieve_maxscripts", 5, INT }
+ /* Maximum number of sieve scripts any user may have, enforced at
+    submission by timsieved(8). */
+-   
++
++{ "sieve_sasl_send_unsolicited_capability", 0, SWITCH }
++/* If enabled, timsieved will emit a capability response after a successful
++   SASL authentication, per draft-martin-managesieve-12.txt . */
++
++{ "sieve_sasl_expect_unsolicited_capability", 0, SWITCH }
++/* If enabled, timsieved will expect a capability response after a successful
++   SASL authentication, per draft-martin-mangesieve-12.txt . */
++
+ { "sievedir", "/usr/sieve", STRING }
+ /* If sieveusehomedir is false, this directory is searched for Sieve
+    scripts. */
+--- timsieved/parser.c	22 Apr 2008 13:11:19 -0000	1.50
++++ timsieved/parser.c	30 Sep 2008 21:26:57 -0000
+@@ -770,6 +770,11 @@
+ 		  if(c) *c = '\0';
+ 	      }
+ 
++	      if (config_getswitch(IMAPOPT_SIEVE_SASL_EXPECT_UNSOLICITED_CAPABILITY)) {
++		  sieve_protocol.sasl_cmd.auto_capa = 1;
++	      } else {
++		  sieve_protocol.sasl_cmd.auto_capa = 0;
++	      }
+ 	      backend = backend_connect(NULL, server, &sieve_protocol,
+ 					username, NULL, &statusline);
+ 
+@@ -820,9 +825,11 @@
+   prot_setsasl(sieved_in, sieved_saslconn);
+   prot_setsasl(sieved_out, sieved_saslconn);
+ 
+-  sasl_getprop(sieved_saslconn, SASL_SSF, &sasl_ssf);
+-  if (*((sasl_ssf_t *) sasl_ssf)) {
+-      capabilities(sieved_out, sieved_saslconn, starttls_done, 2);
++  if (config_getswitch(IMAPOPT_SIEVE_SASL_SEND_UNSOLICITED_CAPABILITY)) {
++      sasl_getprop(sieved_saslconn, SASL_SSF, &sasl_ssf);
++      if (*((sasl_ssf_t *) sasl_ssf)) {
++	  capabilities(sieved_out, sieved_saslconn, starttls_done, 2);
++      }
+   }
+ 
+   /* Create telemetry log */

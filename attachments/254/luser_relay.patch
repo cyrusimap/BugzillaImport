@@ -1,0 +1,61 @@
+--- imap/lmtpengine.c
++++ imap/lmtpengine.c	2004/01/16 12:32:20
+@@ -753,6 +753,8 @@
+ {
+     char *dest;
+     char *user;
++    char *luser_relay = NULL;
++    int has_luser_relay = 0;
+     int r, sl;
+     address_data_t *ret = (address_data_t *) xmalloc(sizeof(address_data_t));
+     int forcedowncase = config_getswitch(IMAPOPT_LMTP_DOWNCASE_RCPT);
+@@ -813,14 +815,34 @@
+     }
+     *dest = '\0';
+ 	
++    luser_relay = config_getstring(IMAPOPT_LMTP_LUSER_RELAY);
++
++
++    if( luser_relay ) {
++	if( !verify_user(luser_relay, ignorequota ? -1 : msg->size, msg->authstate) ) {
++	    has_luser_relay = 1;
++	}
++    }
++
+     r = verify_user(user, ignorequota ? -1 : msg->size, msg->authstate);
+-    if (r) {
++
++    if( r == IMAP_MAILBOX_NONEXISTENT && has_luser_relay ) {
++	ret->user = xstrdup(luser_relay);
++    }else if( r == IMAP_MAILBOX_NONEXISTENT && !has_luser_relay ) {
+ 	/* we lost */
+ 	free(ret->all);
+ 	free(ret);
+ 	return r;
+     }
+-    ret->user = xstrdup(user);
++    if (r && r != IMAP_MAILBOX_NONEXISTENT ) {
++	/* we lost */
++	free(ret->all);
++	free(ret);
++	return r;
++    }
++    
++    if( r != IMAP_MAILBOX_NONEXISTENT )
++	ret->user = xstrdup(user);
+ 
+     ret->ignorequota = ignorequota;
+ 
+--- lib/imapoptions
++++ lib/imapoptions	2004/01/16 12:31:56
+@@ -687,6 +687,10 @@
+ { "allowplainwithouttls", 0, SWITCH }
+ /* Allow plain login mechanism without an encrypted connection. */
+ 
++{ "lmtp_luser_relay", NULL, STRING }
++/* Send mail to mailboxes, which do not exists, to this user. NOTE: This must
++   be an existing local mailbox name. NOT an email address! */
++
+ /*
+ .SH SEE ALSO
+ .PP

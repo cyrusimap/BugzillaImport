@@ -1,0 +1,601 @@
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/acconfig.h cyrus21-imapd/cyrus21-imapd-2.1.12/acconfig.h
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/acconfig.h	2003-02-23 11:50:14.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/acconfig.h	2003-02-23 13:25:19.000000000 -0600
+@@ -119,9 +119,6 @@
+ /* is Sieve enabled? */
+ #undef USE_SIEVE
+ 
+-/* use full directory hashing? */
+-#undef USE_DIR_FULL
+-
+ /* do we have the UCD SNMP libraries? */
+ #undef HAVE_UCDSNMP
+ 
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/config.h.in cyrus21-imapd/cyrus21-imapd-2.1.12/config.h.in
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/config.h.in	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/config.h.in	2003-02-23 13:25:02.000000000 -0600
+@@ -133,9 +133,6 @@
+ /* is Sieve enabled? */
+ #undef USE_SIEVE
+ 
+-/* use full directory hashing? */
+-#undef USE_DIR_FULL
+-
+ /* do we have the UCD SNMP libraries? */
+ #undef HAVE_UCDSNMP
+ 
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/configure.in cyrus21-imapd/cyrus21-imapd-2.1.12/configure.in
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/configure.in	2003-02-23 11:50:14.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/configure.in	2003-02-23 17:36:07.000000000 -0600
+@@ -841,13 +841,6 @@
+ 		EXTRA_OUTPUT="${EXTRA_OUTPUT} depot/Makefile"
+ 	fi)
+ 
+-AC_ARG_ENABLE(fulldirhash,
+-	[  --enable-fulldirhash    enable improved directory hashing -- hashes full
+-                          username instead of using just the first letter],
+-	if test "$enableval" = yes; then
+-		AC_DEFINE(USE_DIR_FULL)
+-	fi)
+-
+ AC_MSG_CHECKING(to use old sieve service name)
+ AC_ARG_ENABLE(oldsievename,
+ 	[  --enable-oldsievename   enable the use of 'imap' as the sieve service name],
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/debian/cyrus-makedirs cyrus21-imapd/cyrus21-imapd-2.1.12/debian/cyrus-makedirs
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/debian/cyrus-makedirs	2003-02-23 11:50:14.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/debian/cyrus-makedirs	2003-02-23 13:57:58.000000000 -0600
+@@ -8,12 +8,6 @@
+ #
+ # $Id: cyrus-makedirs,v 1.10 2002/12/18 16:44:10 hmh Exp $
+ 
+-# See lib/util.c, dir_hash_c for Cyrus' directory hashing
+-# for the new hash style
+-#HASHDIRS="A B C D E F G H I J K L M N O P Q R S T U V W"
+-# for the old hash style
+-HASHDIRS="a b c d e f g h i j k l m n o p q r s t u v w x y z"
+-
+ CYRUSOPTFILESYS=1
+ [ -r /etc/default/cyrus21 ] && . /etc/default/cyrus21
+ 
+@@ -64,6 +58,19 @@
+ 			;;
+ esac
+ 
++getconf fulldirhash 0
++case "$result" in
++	1|t|true|yes|on)
++		# See lib/util.c, dir_hash_c for Cyrus' directory
++		# hashing for the new hash style
++		HASHDIRS="A B C D E F G H I J K L M N O P Q R S T U V W";
++		;;
++	*)
++		# for the old hash style
++		HASHDIRS="a b c d e f g h i j k l m n o p q r s t u v w x y z";
++		;;
++esac
++
+ # Partitions list
+ partitions=`sed --silent -e "/^[[:blank:]]*partition-[[:alnum:]]\+:/ { \
+             s#^[[:blank:]]*partition-[[:alnum:]]\+:[[:blank:]]*## \
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/debian/imapd.conf cyrus21-imapd/cyrus21-imapd-2.1.12/debian/imapd.conf
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/debian/imapd.conf	2003-02-23 11:50:14.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/debian/imapd.conf	2003-02-23 13:53:31.000000000 -0600
+@@ -117,6 +117,12 @@
+ # very bushy mailbox tree.
+ hashimapspool: true
+ 
++# Enables the improved directory hashing scheme which hashes the entire
++# username instead of using just the first letter.  Changes hash algorithm
++# used for quota and user directories.  Also changes hash algorithm used
++# for mail directory if hashimapspool is enabled.
++fulldirhash: false
++
+ # Allow plaintext logins by default (SASL PLAIN)
+ allowplaintext: yes
+ 
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/debian/rules cyrus21-imapd/cyrus21-imapd-2.1.12/debian/rules
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/debian/rules	2003-02-23 14:20:16.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/debian/rules	2003-02-23 14:24:19.000000000 -0600
+@@ -64,7 +64,7 @@
+ 	-rm -f doc/pod2htmd.x~~ doc/pod2htmi.x~~ imap/imap_err.[ch] imap/pushstats.[ch] imap/lmtpstats.[ch] master/makedepend.log 
+ 	-rm -f sieve/addr.[ch] sieve/addr-lex.[ch] sieve/sieve.[ch] sieve/sieve-lex.c sieve/sieve_err.[ch]
+ 	-rm -f man/sieveshell.1 doc/murder.png
+-	-rm -f debian/cyrus-db-types.txt debian/cyrus-hash-type.txt
++	-rm -f debian/cyrus-db-types.txt
+ 	-rm -f config.sub config.guess
+ 	-xargs -t -r rm -f < debian/deletable.files
+ 	dh_clean
+@@ -124,11 +124,6 @@
+ 	  sed -e 's/&cyrusdb_//' -e 's/.*CONFIG_DB_//' -e 's/(//' -e 's/)//' \
+ 	  >>debian/cyrus-db-types.txt
+ 	# store hashing scheme for possible automated upgrade
+-	if grep -q -s -n -E '^[[:space:]]*#define[[:space:]]+USE_DIR_FULL[[:space:]]+1' config.h ; then \
+-		echo "USE_DIR_FULL 1" >debian/cyrus-hash-type.txt ;\
+-	else \
+-		echo "USE_DIR_FULL 0" >debian/cyrus-hash-type.txt ;\
+-	fi
+ 
+ 	touch build-arch-stamp
+ 
+@@ -218,7 +213,6 @@
+ 		install -m 755 tools/$$i $(PKGDIR)/usr/lib/cyrus/upgrade ;\
+ 	done
+ 	# And other upgrade helpers
+-	#install -m 644 debian/cyrus-db-types.txt debian/cyrus-hash-type.txt $(PKGDIR)/usr/lib/cyrus
+ 	install -m 644 debian/cyrus-db-types.txt $(PKGDIR)/usr/lib/cyrus
+ 
+ 	# Install imtest and its symlinks
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/doc/install-compile.html cyrus21-imapd/cyrus21-imapd-2.1.12/doc/install-compile.html
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/doc/install-compile.html	2002-12-17 16:46:45.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/doc/install-compile.html	2003-02-23 13:35:00.000000000 -0600
+@@ -192,10 +192,6 @@
+ <dd>Enables support for ANNOTATEMORE extension (mailbox/server
+ annotations).<p>
+ 
+-<dt><tt>--enable-fulldirhash</tt>
+-<dd>Enables the improved directory hashing scheme which hashes the
+-entire username instead of using just the first letter.<p>
+-
+ <dt><tt>--enable-listext</tt>
+ <dd>Enables support for LISTEXT extension.<p>
+ 
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/doc/install-configure.html cyrus21-imapd/cyrus21-imapd-2.1.12/doc/install-configure.html
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/doc/install-configure.html	2002-09-12 11:46:54.000000000 -0500
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/doc/install-configure.html	2003-02-23 17:20:27.000000000 -0600
+@@ -146,9 +146,10 @@
+ 
+ <li>Change to the Cyrus user and use the tool
+ &quot;<tt>tools/mkimap</tt>&quot; to create the rest of the directories
+-(subdirectories of the directories you just created).  Note that if
+-you compiled cyrus with <tt>--enable-fulldirhash</tt>, you need to use 
+-&quot;<tt>tools/rehash</tt>&quot; instead.
++(subdirectories of the directories you just created).  Note that you
++must enable the <tt>fulldirhash</tt> option in <tt>imapd.conf</tt>
++before running <tt>tools/mkimap</tt> if you want to use the full hash
++algorithm.
+ 
+ <pre>
+ <kbd>   su cyrus
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/doc/install-upgrade.html cyrus21-imapd/cyrus21-imapd-2.1.12/doc/install-upgrade.html
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/doc/install-upgrade.html	2002-06-04 21:27:35.000000000 -0500
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/doc/install-upgrade.html	2003-02-23 17:21:30.000000000 -0600
+@@ -198,6 +198,13 @@
+ must be run as the Cyrus user. Be sure to stop mail service while
+ converting. Doing this in single user mode is probably the safest.
+ 
++<p>To enable the improved directory hashing scheme which hashes the
++entire username instead of using just the first letter, set the
++"fulldirhash" option in <tt>imapd.conf</tt>.  This will change the
++hash algorithm used for the quota and user directories.  It will also
++change the hash algorithm for the mail spool directory if
++"hashimapspool" is set.
++
+ </ul>
+ 
+ <h3>Upgrading from 1.5</h3>
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/imap/config.c cyrus21-imapd/cyrus21-imapd-2.1.12/imap/config.c
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/imap/config.c	2003-02-23 11:50:14.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/imap/config.c	2003-02-23 17:22:32.000000000 -0600
+@@ -85,6 +85,7 @@
+ const char *config_servername;	           /* gethostname() */
+ const char *config_mupdate_server;         /* NULL */
+ int config_hashimapspool;	           /* f */
++int config_fulldirhash;		           /* f */
+ 
+ static void config_read(const char *alt_config);
+ 
+@@ -144,6 +145,9 @@
+     /* look up mailbox hashing */
+     config_hashimapspool = config_getswitch("hashimapspool", 0);
+ 
++    /* look up full hashing algorithm */
++    config_fulldirhash = config_getswitch("fulldirhash", 0);
++
+     /* look up the hostname we should present to the user */
+     config_servername = config_getstring("servername", 0);
+     if (!config_servername) {
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/imap/imapconf.h cyrus21-imapd/cyrus21-imapd-2.1.12/imap/imapconf.h
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/imap/imapconf.h	2003-02-23 11:50:14.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/imap/imapconf.h	2003-02-23 13:24:02.000000000 -0600
+@@ -109,6 +109,7 @@
+ extern const char *config_mupdate_server;
+ 
+ extern int config_hashimapspool;
++extern int config_fulldirhash;
+ 
+ /* signal handling (signals.c) */
+ typedef void shutdownfn(int);
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/imap/version.c cyrus21-imapd/cyrus21-imapd-2.1.12/imap/version.c
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/imap/version.c	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/imap/version.c	2003-02-23 13:23:56.000000000 -0600
+@@ -53,6 +53,7 @@
+ #endif
+ 
+ #include <string.h>
++#include "imapconf.h"
+ #include "version.h"
+ #include "xversion.h"
+ #include "prot.h"
+@@ -159,10 +160,9 @@
+     if (idle_method_desc)
+ 	snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+ 		 "; idle = %s", idle_method_desc);
+-#ifdef USE_DIR_FULL
+-    snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+-	     "; dirhash = full");
+-#endif
++    if (config_fulldirhash)
++        snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
++	         "; dirhash = full");
+     snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+ 	     "; mboxlist.db = %s", CONFIG_DB_MBOX->name);
+     snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/lib/util.c cyrus21-imapd/cyrus21-imapd-2.1.12/lib/util.c
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/lib/util.c	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/lib/util.c	2003-02-23 17:41:20.000000000 -0600
+@@ -52,6 +52,7 @@
+ #include <syslog.h>
+ #include <unistd.h>
+ 
++#include "imap/imapconf.h"
+ #include "util.h"
+ #include "xmalloc.h"
+ 
+@@ -242,21 +243,21 @@
+ int dir_hash_c(const char *name)
+ {
+     int c;
+-#ifdef USE_DIR_FULL
+-    unsigned char *pt;
+-    unsigned int n;
+-
+-    n = 0;
+-    pt = (unsigned char *)name;
+-    while (*pt && *pt != '.') {
+-	n = ((n << DIR_X) ^ (n >> DIR_Y)) ^ *pt;
+-	++pt;
+-    }
+-    c = DIR_A + (n % DIR_P);
+-#else
+-    c = tolower(*name);
+-    if (!isascii(c) || !islower(c)) c = 'q';
+-#endif
++    if (config_fulldirhash) {
++	unsigned char *pt;
++	unsigned int n;
++
++	n = 0;
++	pt = (unsigned char *)name;
++	while (*pt && *pt != '.') {
++	    n = ((n << DIR_X) ^ (n >> DIR_Y)) ^ *pt;
++	    ++pt;
++	}
++	c = DIR_A + (n % DIR_P);
++    } else {
++	c = tolower(*name);
++	if (!isascii(c) || !islower(c)) c = 'q';
++    }
+     return c;
+ }
+ 
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/lib/util.h cyrus21-imapd/cyrus21-imapd-2.1.12/lib/util.h
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/lib/util.h	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/lib/util.h	2003-02-23 13:23:50.000000000 -0600
+@@ -84,14 +84,14 @@
+ extern keyvalue *kv_bsearch (const char *key, keyvalue *kv, int nelem,
+ 			       int (*cmpf)(const char *s1, const char *s2));
+ 
+-#ifdef USE_DIR_FULL
++/* constants used in fulldirhash hashing algorithm
++ */
+ enum {
+     DIR_X = 3,
+     DIR_Y = 5,
+     DIR_P = 23,
+     DIR_A = 'A'
+ };
+-#endif
+ 
+ /* Examine the name of a file, and return a single character
+  *  (as an int) that can be used as the name of a hash
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/man/imapd.conf.5 cyrus21-imapd/cyrus21-imapd-2.1.12/man/imapd.conf.5
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/man/imapd.conf.5	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/man/imapd.conf.5	2003-02-23 14:03:33.000000000 -0600
+@@ -272,6 +272,11 @@
+ If enabled, the partitions will also be hashed, in addition to the
+ hashing done on configuration directories.  This is recommended if one
+ partition has a very bushy mailbox tree.
++.IP "\fBfulldirhash:\fR false" 5
++If enabled, the improved directory hashing scheme will be used on quota
++and user directories (and the mail directory if "hashimapspool" is
++enabled).  This algorithm hashes the entire username instead of using
++just the first letter.
+ .IP "\fBsieve_maxscriptsize:\fR 32" 5
+ Maximum size (in kilobytes) any sieve script can be, enforced at
+ submission by timsieved(8).
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/tools/dohash cyrus21-imapd/cyrus21-imapd-2.1.12/tools/dohash
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/tools/dohash	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/tools/dohash	2003-02-23 15:14:23.000000000 -0600
+@@ -1,5 +1,5 @@
+ #!/usr/bin/perl -w
+-# script to upgrade from versions of imapd previous to 1.6.2
++# script to upgrade from versions of imapd previous to 1.6.2+
+ # make sure you run it as the cyrus user
+ # 
+ # Copyright (c) 2000 Carnegie Mellon University.  All rights reserved.
+@@ -72,10 +72,31 @@
+     }
+ }
+ 
++sub dir_hash_c {
++    my $name = shift;
++    my ($h, $n);
++
++    if ($fulldirhash) {
++	$n = 0;
++	foreach my $b (split(/ */, $name)) {
++	    $n = (($n << 3) ^ ($n >> 5)) ^ ord($b);
++	}
++	$h = chr(ord('A') + ($n % 23));
++	return $h;
++    }
++    else {
++	$h = lc(substr($name, 0, 1));
++	if (!($h =~ /[a-z]/)) { $h = 'q'; }
++	return $h;
++    }
++}
++
+ $imapdconf = shift || "/etc/imapd.conf";
+ 
+ $yn = "y";
+ $hashispool = 0;
++$fulldirhash = 0;
++@dirs = ("a".."z");
+ 
+ open CONF, $imapdconf or die "can't open $imapdconf";
+ while (<CONF>) {
+@@ -92,6 +113,11 @@
+ 	$hashispool = 1;
+ 	print "i will also hash partitions.\n";
+     }
++    if (/^fulldirhash:\s*(1|t|yes|on)/) {
++	$fulldirhash = 1;
++	@dirs = ("A".."W");
++	print "you are using the full hashing algorithm.\n";
++    }
+ }
+ close CONF;
+ 
+@@ -108,17 +134,16 @@
+     # *** user subdirectory; holds subscription files
+     print "user ";
+     chdir "user" or die "couldn't change to user subdir";
+-    foreach $i ("a".."z") { 
++    foreach $i (@dirs) { 
+ 	mkdir ("$i", 0755) or ouch "couldn't create $i";
+     }
+-    # any remaining sub's go into 'q'
++
+     opendir (USER, ".");
+     while ($f = readdir USER) {
+ 	print;
+-	if ($f =~ /(.).*\.sub/s) {
++	if ($f =~ /(.+)\.sub/s) {
+ 	    print;
+-	    $h = lc($1);
+-	    if (!($h =~ /[a-z]/)) { $h = 'q'; }
++	    $h = dir_hash_c($1);
+ 	    rename ($f, "$h/$f") or ouch "couldn't move $f into $h";
+ 	}
+     }
+@@ -130,7 +155,7 @@
+     chdir "quota" or die "couldn't change to quota subdir";
+     
+     # first, create directories we know can't conflict with existing files
+-    foreach $i ("a".."z") {
++    foreach $i (@dirs) {
+ 	mkdir (".$i", 0755) or ouch "couldn't create .$i";
+     }
+ 
+@@ -139,29 +164,17 @@
+     while ($mbox = readdir QUOTA) {
+ 	if ($mbox =~ /^\./s) { next; }
+ 	
+-	if ($mbox =~ /^.*\.(.).*$/s) {
+-	    # hash is $1
+-	    $h = lc($1);
+-	    if ($h =~ /[a-z]/) {
+-		rename($mbox, ".$h/$mbox") 
+-		    or ouch "couldn't move $mbox into $h";
+-	    } else {
+-		rename($mbox, ".q/$mbox") 
+-		    or ouch "couldn't move $mbox into q";
+-	    }
++	if ($mbox =~ /^.*\.(.+)$/s) {
++	    $h = dir_hash_c($1);
++	    rename($mbox, ".$h/$mbox") 
++		or ouch "couldn't move $mbox into $h";
+ 	    next;
+ 	}
+ 	
+-	# we should try to hash on the first letter
+-	if ($mbox =~ /(.).*/) {
+-	    $h = lc($1);
+-	    if ($h =~ /[a-z]/) {
+-		rename($mbox, ".$h/$mbox") 
+-		    or ouch "couldn't move $mbox into $h";
+-	    } else {
+-		rename($mbox, ".q/$mbox") 
+-		    or ouch "couldn't move $mbox into q";
+-	    }
++	if ($mbox =~ /(.+)/) {
++	    $h = dir_hash_c($1);
++	    rename($mbox, ".$h/$mbox") 
++		or ouch "couldn't move $mbox into $h";
+ 	    next;
+ 	}
+ 	
+@@ -170,7 +183,7 @@
+     closedir QUOTA;
+     
+     # now move each temporary directory to the right place
+-    foreach $i ("a".."z") {
++    foreach $i (@dirs) {
+ 	rename (".$i", $i) or ouch "couldn't rename $i into place";
+     }
+ 
+@@ -188,7 +201,7 @@
+ 	chdir $part or die "couldn't chdir to $part";
+ 
+         if ($hashispool) {
+-	    foreach $i ("a".."z") {
++	    foreach $i (@dirs) {
+ 		mkdir (".$i", 0755) or ouch "couldn't create .$i";
+ 	    }
+ 	    
+@@ -207,11 +220,8 @@
+ 		    # this isn't a child
+ 		    if ($sub =~ /(.*)\.(.*)/) { $ismbox = 1; next; }
+ 		    
+-		    if ($sub =~ /^(.).*$/s) {
+-			$h = lc($1);
+-			if (!($h =~ /[a-z]/)) {
+-			    $h = 'q';
+-			}
++		    if ($sub =~ /^(.+)$/s) {
++			$h = dir_hash_c($1);
+ 			mkdir (".$h/$dir", 0755); # might already be there
+ 			rename("$dir/$sub", ".$h/$dir/$sub") or
+ 			    ouch "couldn't move $dir/$sub into $h";
+@@ -221,11 +231,8 @@
+ 		}
+ 		closedir DIR;
+ 		# if $ismbox is set, then $dir is a mailbox of it's own right
+-		if ($ismbox && $dir =~ /^(.).*/s) {
+-		    $h = lc($1);
+-		    if (!($h =~ /[a-z]/)) {
+-			$h = 'q';
+-		    }
++		if ($ismbox && $dir =~ /^(.+)/s) {
++		    $h = dir_hash_c($1);
+ 		    mkdir (".$h/$dir", 0755); # might already be there
+ 		    opendir DIR, $dir;
+ 		    while ($sub = readdir DIR) {
+@@ -240,7 +247,7 @@
+ 	    }
+ 	    closedir PART;
+ 	    
+-	    foreach $i ("a".."z") {
++	    foreach $i (@dirs) {
+ 		rename (".$i", $i) or ouch "couldn't rename .$i to $i";
+ 	    }
+ 	}
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/tools/mkimap cyrus21-imapd/cyrus21-imapd-2.1.12/tools/mkimap
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/tools/mkimap	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/tools/mkimap	2003-02-23 15:17:56.000000000 -0600
+@@ -46,6 +46,7 @@
+ $sievedir = "/usr/sieve";
+ $nosievedir = 0;
+ $hashispool = 0;
++@dirs = ("a".."z");
+ 
+ open CONF, $imapdconf or die "can't open $imapdconf";
+ print "reading configure file...\n";
+@@ -76,6 +77,10 @@
+ 	$hashispool = 1;
+ 	print "i will also hash partitions.\n";
+     }
++    if (/^fulldirhash:\s+(1|t|yes|on)/) {
++	@dirs = ("A".."W");
++	print "you are using the full hashing algorithm.\n";
++    }
+ }
+ print "done\n";
+ close CONF;
+@@ -89,10 +94,10 @@
+ #open FOO, ">mailboxes"; close FOO;
+ 
+ mkdir "user", 0755;
+-foreach $i ("a".."z") { mkdir "user/$i", 0755; }
++foreach $i (@dirs) { mkdir "user/$i", 0755; }
+ 
+ mkdir "quota", 0755;
+-foreach $i ("a".."z") { mkdir "quota/$i", 0755; }
++foreach $i (@dirs) { mkdir "quota/$i", 0755; }
+ 
+ mkdir "proc", 0755;
+ mkdir "db", 0755;
+@@ -106,7 +111,7 @@
+ 
+     mkdir $sievedir, 0755;
+     if (chdir $sievedir) {
+-	foreach $i ("a".."z") { mkdir "$i", 0755; }
++	foreach $i (@dirs) { mkdir "$i", 0755; }
+     }
+ }
+ 
+@@ -118,7 +123,7 @@
+     mkdir $part, 0755;
+     chdir $part or die "couldn't change to partition $part";
+     mkdir "stage.", 0755;
+-    if ($hashispool) { foreach $i ("a".."z") { mkdir $i, 0755; } }
++    if ($hashispool) { foreach $i (@dirs) { mkdir $i, 0755; } }
+ }
+ 
+ print "done\n";
+diff -urN cyrus21-imapd.orig/cyrus21-imapd-2.1.12/tools/undohash cyrus21-imapd/cyrus21-imapd-2.1.12/tools/undohash
+--- cyrus21-imapd.orig/cyrus21-imapd-2.1.12/tools/undohash	2003-02-23 11:50:15.000000000 -0600
++++ cyrus21-imapd/cyrus21-imapd-2.1.12/tools/undohash	2003-02-23 14:49:46.000000000 -0600
+@@ -47,6 +47,7 @@
+ 
+ $imapdconf = shift || "/etc/imapd.conf";
+ $hashispool = 0;
++@dirs = ("a".."z");
+ 
+ open CONF, $imapdconf or die "can't open $imapdconf";
+ while (<CONF>) {
+@@ -64,6 +65,10 @@
+ 	$hashispool = 1;
+ 	print "i will also unhash partitions.\n";
+     }
++    if (/^fulldirhash:\s(1|t|yes|on)/) {
++	@dirs = ("A".."W");
++	print "you are using the full hashing algorithm.\n";
++    }
+ }
+ close CONF;
+ 
+@@ -73,7 +78,7 @@
+ # *** user subdirectory; holds subscription files
+ print "user ";
+ chdir "user" or die "couldn't change to user subdir";
+-foreach $i ("a".."z") { 
++foreach $i (@dirs) { 
+     opendir SUB, $i;
+     while ($s = readdir SUB) {
+ 	if ($s =~ /^\./s) { next; }
+@@ -89,7 +94,7 @@
+ chdir "quota" or die "couldn't change to quota subdir";
+ 
+ # first, create directories we know can't conflict with existing files
+-foreach $i ("a".."z") {
++foreach $i (@dirs) {
+     rename ($i, ".$i") or die "couldn't rename $i to .$i";
+     opendir SUB, ".$i";
+     while ($s = readdir SUB) {
+@@ -108,12 +113,12 @@
+     print "downgrading data partition $part...";
+     chdir $part or die "couldn't chdir to $part";
+     
+-    foreach $i ("a".."z") {
++    foreach $i (@dirs) {
+ 	rename ("$i", ".$i") or die "couldn't rename $i to .$i";
+     }
+ 
+     # process each subdir
+-    foreach $i ("a".."z") {
++    foreach $i (@dirs) {
+ 	print "$i ";
+ 
+ 	opendir SUB, ".$i";

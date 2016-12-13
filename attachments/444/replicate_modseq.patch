@@ -1,0 +1,206 @@
+diff -r -c cyrus-imapd-2.3.6-orig/imap/sync_client.c cyrus-imapd-2.3.6/imap/sync_client.c
+*** cyrus-imapd-2.3.6-orig/imap/sync_client.c	Tue Apr  4 18:10:54 2006
+--- cyrus-imapd-2.3.6/imap/sync_client.c	Tue Jul  4 20:32:43 2006
+***************
+*** 1118,1125 ****
+      unsigned long msg_size = 0;
+  
+      /* Protocol for PARSED items:
+!      * C:  PARSED  <msgid> <uid> 
+!      *             <internaldate> <sent-date> <last-updated> <flags>
+       *             <hdr size> <content_lines>
+       *             <cache literal (includes cache size!)>
+       * <msg literal (includes msg size!)>
+--- 1128,1135 ----
+      unsigned long msg_size = 0;
+  
+      /* Protocol for PARSED items:
+!      * C:  PARSED  <msgid> <uid>
+!      *             <internaldate> <sent-date> <last-updated> <modseq> <flags>
+       *             <hdr size> <content_lines>
+       *             <cache literal (includes cache size!)>
+       * <msg literal (includes msg size!)>
+***************
+*** 1127,1133 ****
+  
+      /* Protocol for COPY items:
+       * C:  COPY <msgid> <uid>
+!      *           <internaldate> <sent-date> <last-updated> <flags>
+       */
+  
+      if (sync_msgid_lookup(msgid_onserver, &record->uuid)) {
+--- 1137,1143 ----
+  
+      /* Protocol for COPY items:
+       * C:  COPY <msgid> <uid>
+!      *           <internaldate> <sent-date> <last-updated> <modseq> <flags>
+       */
+  
+      if (sync_msgid_lookup(msgid_onserver, &record->uuid)) {
+***************
+*** 1139,1148 ****
+          need_body = 1;
+      }
+  
+!     prot_printf(toserver, " %s %lu %lu %lu %lu (",
+               message_uuid_text(&record->uuid),
+               record->uid, record->internaldate,
+!              record->sentdate, record->last_updated);
+  
+      flags_printed = 0;
+  
+--- 1149,1158 ----
+          need_body = 1;
+      }
+  
+!     prot_printf(toserver, " %s %lu %lu %lu %lu " MODSEQ_FMT " (",
+               message_uuid_text(&record->uuid),
+               record->uid, record->internaldate,
+!              record->sentdate, record->last_updated, record->modseq);
+  
+      flags_printed = 0;
+  
+diff -r -c cyrus-imapd-2.3.6-orig/imap/sync_commit.c cyrus-imapd-2.3.6/imap/sync_commit.c
+*** cyrus-imapd-2.3.6-orig/imap/sync_commit.c	Tue Dec 13 15:31:10 2005
+--- cyrus-imapd-2.3.6/imap/sync_commit.c	Tue Jul  4 20:50:47 2006
+***************
+*** 108,113 ****
+--- 108,114 ----
+      struct index_record record;
+      int   n, r = 0, rc;
+      struct txn *tid = NULL;
++     modseq_t highestmodseq = 0;
+  
+      if (upload_list->count == 0) return(0);   /* NOOP */
+  
+***************
+*** 233,238 ****
+--- 234,248 ----
+  		= htonl(message->cache_version);
+  
+              message_uuid_pack(&item->uuid, buf+OFFSET_MESSAGE_UUID);
++ 
++ #ifdef HAVE_LONG_LONG_INT
++             *((bit64 *)(buf+OFFSET_MODSEQ_64)) = htonll(item->modseq);
++ #else
++             *((bit32 *)(buf+OFFSET_MODSEQ)) = htonl(item->modseq);
++ #endif
++ 
++ 	    if (item->modseq > highestmodseq) highestmodseq = item->modseq;
++ 
+              quota_add  += message->msg_size;
+  
+              if (item->flags.system_flags & FLAG_ANSWERED) numansweredflag++;
+***************
+*** 297,302 ****
+--- 307,323 ----
+      /* Fix up last_append time */
+      *((bit32 *)(buf+OFFSET_LAST_APPENDDATE)) = htonl(last_appenddate);
+  
++     /* Fix up highest modseq */
++ #ifdef HAVE_LONG_LONG_INT
++     if (highestmodseq > ntohll(*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)))) {
++ 	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
++     }
++ #else
++     if (highestmodseq > ntohl(*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)))) {
++ 	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(highestmodseq);
++     }
++ #endif
++ 
+      rewind(newindex);
+      fwrite(buf, 1, mailbox->start_offset, newindex);
+  
+***************
+*** 451,456 ****
+--- 472,478 ----
+      char  target[MAX_MAILBOX_PATH];
+      int   n, r = 0;
+      struct txn *tid = NULL;
++     modseq_t highestmodseq = 0;
+  
+      if (upload_list->count == 0) return(0);   /* NOOP */
+  
+***************
+*** 493,498 ****
+--- 515,528 ----
+  	    = htonl(message->cache_version);
+          message_uuid_pack(&item->uuid, record+OFFSET_MESSAGE_UUID);
+  
++ #ifdef HAVE_LONG_LONG_INT
++         *((bit64 *)(record+OFFSET_MODSEQ_64)) = htonll(item->modseq);
++ #else
++         *((bit32 *)(record+OFFSET_MODSEQ)) = htonl(item->modseq);
++ #endif
++ 
++ 	if (item->modseq > highestmodseq) highestmodseq = item->modseq;
++ 
+          cache_size += message->cache_size;
+          quota_add  += message->msg_size;
+  
+***************
+*** 579,584 ****
+--- 609,625 ----
+      /* Fix up last_append time */
+      *((bit32 *)(hbuf+OFFSET_LAST_APPENDDATE)) = htonl(last_appenddate);
+  	
++     /* Fix up highest modseq */
++ #ifdef HAVE_LONG_LONG_INT
++     if (highestmodseq > ntohll(*((bit64 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)))) {
++ 	*((bit64 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
++     }
++ #else
++     if (highestmodseq > ntohl(*((bit32 *)(hbuf+OFFSET_HIGHESTMODSEQ)))) {
++ 	*((bit32 *)(hbuf+OFFSET_HIGHESTMODSEQ)) = htonl(highestmodseq);
++     }
++ #endif
++ 
+      /* And write it back out */
+      lseek(mailbox->index_fd, 0L, SEEK_SET);
+  
+diff -r -c cyrus-imapd-2.3.6-orig/imap/sync_server.c cyrus-imapd-2.3.6/imap/sync_server.c
+*** cyrus-imapd-2.3.6-orig/imap/sync_server.c	Tue Dec 20 15:54:43 2005
+--- cyrus-imapd-2.3.6/imap/sync_server.c	Tue Jul  4 20:55:57 2006
+***************
+*** 1831,1836 ****
+--- 1831,1847 ----
+              goto parse_err;
+          }
+  
++         /* Parse modseq */
++         if ((c = getastring(sync_in, sync_out, &arg)) != ' ') {
++             err = "Invalid modseq";
++             goto parse_err;
++         }
++ #ifdef HAVE_LONG_LONG_INT
++         item->modseq = sync_atoull(arg.s);
++ #else
++         item->modseq = sync_atoul(arg.s);
++ #endif
++         
+          /* Parse Flags */
+          c = sync_getflags(sync_in, &item->flags, &upload_list->meta);
+  
+diff -r -c cyrus-imapd-2.3.6-orig/imap/sync_support.h cyrus-imapd-2.3.6/imap/sync_support.h
+*** cyrus-imapd-2.3.6-orig/imap/sync_support.h	Thu Jun 16 00:02:10 2005
+--- cyrus-imapd-2.3.6/imap/sync_support.h	Tue Jul  4 20:52:24 2006
+***************
+*** 54,59 ****
+--- 54,60 ----
+  #define SYNC_MESSAGE_LIST_MAX_OPEN_FILES (64)
+  
+  #define sync_atoul(s) strtoul(s, NULL, 10)
++ #define sync_atoull(s) strtoull(s, NULL, 10)
+  
+  int sync_eatlines_unsolicited(struct protstream *pin, int c);
+  
+***************
+*** 323,328 ****
+--- 324,330 ----
+      time_t last_updated;
+      struct sync_flags    flags;
+      struct message_uuid  uuid;
++     modseq_t modseq;
+      struct sync_message *message;
+  };
+  

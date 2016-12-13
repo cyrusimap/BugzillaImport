@@ -1,0 +1,536 @@
+Index: imap/backend.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/backend.c,v
+retrieving revision 1.57
+diff -u -r1.57 backend.c
+--- imap/backend.c	8 Oct 2008 13:12:41 -0000	1.57
++++ imap/backend.c	11 Dec 2008 22:32:50 -0000
+@@ -270,16 +270,8 @@
+     if (local_cb) free_callbacks(cb);
+ 
+     if (r == SASL_OK) {
+-	const void *ssf;
+-
+ 	prot_setsasl(s->in, s->saslconn);
+ 	prot_setsasl(s->out, s->saslconn);
+-
+-	sasl_getprop(s->saslconn, SASL_SSF, &ssf);
+-	if (*((sasl_ssf_t *) ssf) && prot->sasl_cmd.auto_capa) {
+-	    free(*mechlist);
+-	    *mechlist = ask_capability(s->out, s->in, prot, &s->capability, 1);
+-	}
+     }
+ 
+     /* r == SASL_OK on success */
+@@ -431,7 +423,9 @@
+     if ((server[0] != '/') ||
+ 	(strcmp(prot->sasl_service, "lmtp") &&
+ 	 strcmp(prot->sasl_service, "csync"))) {
+-	if ((r = backend_authenticate(ret, prot, &mechlist, userid,
++	char *mlist = xstrdup(mechlist); /* backend_auth is destructive */
++
++	if ((r = backend_authenticate(ret, prot, &mlist, userid,
+ 				      cb, auth_status))) {
+ 	    syslog(LOG_ERR, "couldn't authenticate to backend server: %s",
+ 		   sasl_errstring(r, NULL, NULL));
+@@ -439,6 +433,50 @@
+ 	    close(sock);
+ 	    ret = NULL;
+ 	}
++	else {
++	    const void *ssf;
++
++	    sasl_getprop(ret->saslconn, SASL_SSF, &ssf);
++	    if (*((sasl_ssf_t *) ssf)) {
++		/* if we have a SASL security layer, compare SASL mech lists
++		   to check for a MITM attack */
++		char *new_mechlist;
++		int auto_capa = prot->sasl_cmd.auto_capa;
++
++		if (!strcmp(prot->service, "sieve")) {
++		    /* XXX  Hack to handle ManageSieve servers.
++		     * No way to tell from protocol if server will
++		     * automatically send capabilities, so we treat it
++		     * as optional.
++		     */
++		    char ch;
++
++		    /* wait and probe for possible auto-capability response */
++		    usleep(250000);
++		    prot_NONBLOCK(ret->in);
++		    if ((ch = prot_getc(ret->in)) != EOF) {
++			prot_ungetc(ch, ret->in);
++		    } else {
++			auto_capa = AUTO_NO;
++		    }
++		    prot_BLOCK(ret->in);
++		}
++
++		new_mechlist = ask_capability(ret->out, ret->in, prot,
++					      &ret->capability, auto_capa);
++		if (new_mechlist && strcmp(new_mechlist, mechlist)) {
++		    syslog(LOG_WARNING, "possible MITM attach:"
++			   "list of available SASL mechanisms changed");
++		    if (!ret_backend) free(ret);
++		    close(sock);
++		    ret = NULL;
++		}
++
++		free(new_mechlist);
++	    }
++	}
++
++	if (mlist) free(mlist);
+     }
+ 
+     if (mechlist) free(mechlist);
+Index: imtest/imtest.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imtest/imtest.c,v
+retrieving revision 1.123
+diff -u -r1.123 imtest.c
+--- imtest/imtest.c	25 Nov 2008 15:17:14 -0000	1.123
++++ imtest/imtest.c	11 Dec 2008 22:32:50 -0000
+@@ -2630,7 +2630,6 @@
+ 	}
+ 	
+ 	if (rock) free(rock);
+-	if (mechlist) free(mechlist);
+ 	
+ 	if (result == IMTEST_OK) {
+ 	    printf("Authenticated.\n");
+@@ -2651,15 +2650,41 @@
+ 	} else {
+ 	    printf("Security strength factor: %d\n", ext_ssf + ssf);
+ 
+-	    if (ssf && protocol->sasl_cmd.auto_capa) {
++	    if (ssf) {
+ 		/* ask for the capabilities again */
++		char *new_mechlist;
++
+ 		if (verbose==1)
+ 		    printf("Asking for capabilities again "
+ 			   "since they might have changed\n");
+-		mechlist = ask_capability(protocol, &server_supports_tls, 1);
+-		if (mechlist) free(mechlist);
++		if (!strcmp(protocol->protocol, "sieve")) {
++		    /* XXX  Hack to handle ManageSieve servers.
++		     * No way to tell from protocol if server will
++		     * automatically send capabilities, so we treat it
++		     * as optional.
++		     */
++		    char ch;
++
++		    /* wait and probe for possible auto-capability response*/
++		    usleep(250000);
++		    prot_NONBLOCK(pin);
++		    if ((ch = prot_getc(pin)) != EOF) {
++			prot_ungetc(ch, pin);
++		    } else {
++			protocol->sasl_cmd.auto_capa = 0;
++		    }
++		    prot_BLOCK(pin);
++		}
++		new_mechlist = ask_capability(protocol, &server_supports_tls,
++					      protocol->sasl_cmd.auto_capa);
++		if (new_mechlist && strcmp(new_mechlist, mechlist)) {
++		    printf("WARNING: possible MITM attack: "
++			   "list of available SASL mechanisms changed\n");
++		    free(new_mechlist);
++		}
+ 	    }
+ 	}
++	if (mechlist) free(mechlist);
+ 
+     } while (--reauth);
+ 
+Index: lib/imapoptions
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/imapoptions,v
+retrieving revision 1.59
+diff -u -r1.59 imapoptions
+--- lib/imapoptions	8 Oct 2008 17:18:12 -0000	1.59
++++ lib/imapoptions	11 Dec 2008 22:32:50 -0000
+@@ -944,10 +944,6 @@
+ /* If enabled, timsieved will emit a capability response after a successful
+    SASL authentication, per draft-martin-managesieve-12.txt . */
+ 
+-{ "sieve_sasl_expect_unsolicited_capability", 0, SWITCH }
+-/* If enabled, timsieved will expect a capability response after a successful
+-   SASL authentication, per draft-martin-mangesieve-12.txt . */
+-
+ { "sievedir", "/usr/sieve", STRING }
+ /* If sieveusehomedir is false, this directory is searched for Sieve
+    scripts. */
+Index: lib/prot.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/prot.c,v
+retrieving revision 1.94
+diff -u -r1.94 prot.c
+--- lib/prot.c	24 Mar 2008 17:43:09 -0000	1.94
++++ lib/prot.c	11 Dec 2008 22:32:50 -0000
+@@ -154,6 +154,50 @@
+ #endif /* HAVE_SSL */
+ 
+ /*
++ * Decode data sent via a SASL security layer. Returns EOF on error.
++ */
++int prot_sasldecode(struct protstream *s, int n)
++{
++    int result;
++    const char *out;
++    unsigned outlen;
++    
++    assert(!s->write);
++
++    /* decode the input */
++    result = sasl_decode(s->conn, (const char *) s->buf, n, 
++			 &out, &outlen);
++
++    if (result != SASL_OK) {
++	char errbuf[256];
++	const char *ed = sasl_errdetail(s->conn);
++
++	snprintf(errbuf, 256, "decoding error: %s; %s",
++		 sasl_errstring(result, NULL, NULL),
++		 ed ? ed : "no detail");
++	s->error = xstrdup(errbuf);
++	return EOF;
++    }
++   
++    if (outlen > 0) {
++	/* XXX can we just serve data from 'out' without copying
++	   it to s->buf ? */
++	if (outlen > s->buf_size) {
++	    s->buf = (unsigned char *) 
++		xrealloc(s->buf, sizeof(char) * (outlen + 4));
++	    s->buf_size = outlen;
++	}
++	memcpy(s->buf, out, outlen);
++	s->ptr = s->buf;
++	s->cnt = outlen;
++    } else {		/* didn't decode anything */
++	s->cnt = 0;
++    }
++
++    return 0;
++}
++
++/*
+  * Turn on SASL for this connection
+  */
+ 
+@@ -179,7 +223,6 @@
+     s->saslssf = *((const int *) ssfp);
+ 
+     if (s->write) {
+-	int result;
+ 	const void *maxp;
+ 	unsigned int max;
+ 
+@@ -199,8 +242,8 @@
+ 	s->cnt = max;
+     }
+     else if (s->cnt) {  
+-	/* flush any pending input */
+-	s->cnt = 0;
++	/* decode any pending input */
++	if (prot_sasldecode(s, s->cnt) == EOF) return EOF;
+     }
+ 
+     return 0;
+@@ -481,43 +524,10 @@
+ 	}
+ 	
+ 	if (s->saslssf) { /* decode it */
+-	    int result;
+-	    const char *out;
+-	    unsigned outlen;
+-	    
+-	    /* Decode the input token */
+-	    result = sasl_decode(s->conn, (const char *) s->buf, n, 
+-				 &out, &outlen);
+-	    
+-	    if (result != SASL_OK) {
+-		char errbuf[256];
+-		const char *ed = sasl_errdetail(s->conn);
+-
+-		snprintf(errbuf, 256, "decoding error: %s; %s",
+-			 sasl_errstring(result, NULL, NULL),
+-			 ed ? ed : "no detail");
+-		s->error = xstrdup(errbuf);
+-		return EOF;
+-	    }
+-	    
+-	    if (outlen > 0) {
+-		/* XXX can we just serve data from 'out' without copying
+-		   it to s->buf ? */
+-		if (outlen > s->buf_size) {
+-		    s->buf = (unsigned char *) 
+-			xrealloc(s->buf, sizeof(char) * (outlen + 4));
+-		    s->buf_size = outlen;
+-		}
+-		memcpy(s->buf, out, outlen);
+-		s->ptr = s->buf + 1;
+-		s->cnt = outlen;
+-	    } else {		/* didn't decode anything */
+-		s->cnt = 0;
+-	    }
+-	    
++	    if (prot_sasldecode(s, n) == EOF) return EOF;
+ 	} else {
+ 	    /* No protection function, just use the raw data */
+-	    s->ptr = s->buf+1;
++	    s->ptr = s->buf;
+ 	    s->cnt = n;
+ 	}
+ 	
+@@ -545,7 +555,7 @@
+ 	    }
+ 
+ 	    s->cnt--;		/* we return the first char */
+-	    return *s->buf;
++	    return *s->ptr++;
+ 	}
+     } while (1);
+ }
+Index: perl/sieve/lib/isieve.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/perl/sieve/lib/isieve.c,v
+retrieving revision 1.34
+diff -u -r1.34 isieve.c
+--- perl/sieve/lib/isieve.c	22 Apr 2008 13:11:18 -0000	1.34
++++ perl/sieve/lib/isieve.c	11 Dec 2008 22:32:50 -0000
+@@ -55,6 +55,7 @@
+ #include <netinet/in.h>
+ #include <netdb.h>
+ #include <string.h>
++#include <unistd.h>
+ 
+ #include <sasl/sasl.h>
+ #include <sasl/saslutil.h>
+@@ -299,6 +300,33 @@
+   return cap;
+ }
+ 
++int detect_mitm(isieve_t *obj, char *mechlist)
++{
++    char *new_mechlist;
++    int ch, r = 0;
++
++    /* wait and probe for possible automatic capability response */
++    usleep(250000);
++    prot_NONBLOCK(obj->pin);
++    if ((ch = prot_getc(obj->pin)) != EOF) {
++	/* automatic capability response */
++	prot_ungetc(ch, obj->pin);
++    } else {
++	/* manually ask for capabilities */
++	prot_printf(obj->pout, "CAPABILITY\r\n");
++	prot_flush(obj->pout);
++    }
++    prot_BLOCK(obj->pin);
++
++    if ((new_mechlist = read_capability(obj))) {
++	/* if the server still advertises SASL mechs, compare lists */
++	r = strcmp(new_mechlist, mechlist);
++	free(new_mechlist);
++    }
++
++    return r;
++}
++
+ static int getauthline(isieve_t *obj, char **line, unsigned int *linelen,
+ 		       char **errstrp)
+ {
+@@ -631,10 +659,12 @@
+     if(ret) return STAT_NO;
+ 
+     if (ssf) {
+-	/* SASL security layer negotiated --
+-	   server will automatically send capabilites */
+-	free(mechlist);
+-	mechlist = read_capability(obj_new);
++        /* SASL security layer negotiated --
++	   check if SASL mech list changed */
++        if (detect_mitm(obj_new, mechlist)) {
++	    free(mechlist);
++	    return STAT_NO;
++	}
+     }
+     free(mechlist);
+ 
+Index: perl/sieve/lib/isieve.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/perl/sieve/lib/isieve.h,v
+retrieving revision 1.12
+diff -u -r1.12 isieve.h
+--- perl/sieve/lib/isieve.h	22 Apr 2008 13:11:19 -0000	1.12
++++ perl/sieve/lib/isieve.h	11 Dec 2008 22:32:50 -0000
+@@ -60,6 +60,7 @@
+ 	      sasl_callback_t *callbacks);
+ 
+ char * read_capability(isieve_t *obj);
++int detect_mitm(isieve_t *obj, char *mechlist);
+ 
+ typedef enum {
+     STAT_CONT = 0,
+Index: perl/sieve/managesieve/managesieve.xs
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/perl/sieve/managesieve/managesieve.xs,v
+retrieving revision 1.28
+diff -u -r1.28 managesieve.xs
+--- perl/sieve/managesieve/managesieve.xs	22 Apr 2008 13:11:19 -0000	1.28
++++ perl/sieve/managesieve/managesieve.xs	11 Dec 2008 22:32:50 -0000
+@@ -312,10 +312,14 @@
+   }
+ 
+   if (ssf) {
+-	/* SASL security layer negotiated --
+-	   server will automatically send capabilites */
+-	free(mechlist);
+-	mechlist=read_capability(obj);
++        /* SASL security layer negotiated --
++	   check if SASL mech list changed */
++        if (detect_mitm(obj, mechlist)) {
++	    globalerr = "possible MITM attack: "
++		"list of available SASL mechamisms changed";
++	    free(mechlist);
++	    XSRETURN_UNDEF;
++	}
+   }
+   free(mechlist);
+ 
+Index: timsieved/actions.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/timsieved/actions.c,v
+retrieving revision 1.45
+diff -u -r1.45 actions.c
+--- timsieved/actions.c	8 Oct 2008 15:47:08 -0000	1.45
++++ timsieved/actions.c	11 Dec 2008 22:32:50 -0000
+@@ -179,7 +179,7 @@
+ }
+ 
+ int capabilities(struct protstream *conn, sasl_conn_t *saslconn,
+-		 int starttls_done, int authenticated)
++		 int starttls_done, int authenticated, sasl_ssf_t sasl_ssf)
+ {
+     const char *sasllist;
+     int mechcount;
+@@ -190,7 +190,7 @@
+ 		config_mupdate_server ? " (Murder)" : "", CYRUS_VERSION);
+     
+     /* SASL */
+-    if (authenticated != 1 &&
++    if ((!authenticated || sasl_ssf) &&
+ 	sasl_listmech(saslconn, NULL, 
+ 		    "\"SASL\" \"", " ", "\"\r\n",
+ 		    &sasllist,
+Index: timsieved/actions.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/timsieved/actions.h,v
+retrieving revision 1.12
+diff -u -r1.12 actions.h
+--- timsieved/actions.h	24 Mar 2008 20:20:57 -0000	1.12
++++ timsieved/actions.h	11 Dec 2008 22:32:51 -0000
+@@ -57,7 +57,7 @@
+  */
+ 
+ int capabilities(struct protstream *conn, sasl_conn_t *saslconn,
+-		 int starttls_done, int authenticated);
++		 int starttls_done, int authenticated, sasl_ssf_t sasl_ssf);
+ 
+ /*
+  * Get a sieve scripe with name "name" and output it's contents
+Index: timsieved/parser.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/timsieved/parser.c,v
+retrieving revision 1.51
+diff -u -r1.51 parser.c
+--- timsieved/parser.c	8 Oct 2008 17:18:13 -0000	1.51
++++ timsieved/parser.c	11 Dec 2008 22:32:51 -0000
+@@ -84,6 +84,7 @@
+ int authenticated = 0;
+ int verify_only = 0;
+ int starttls_done = 0;
++sasl_ssf_t sasl_ssf = 0;
+ #ifdef HAVE_SSL
+ /* our tls connection, if any */
+ static SSL *tls_conn = NULL;
+@@ -241,7 +242,8 @@
+       if(referral_host)
+ 	  goto do_referral;
+ 
+-      capabilities(sieved_out, sieved_saslconn, starttls_done, authenticated);
++      capabilities(sieved_out, sieved_saslconn, starttls_done, authenticated,
++		   sasl_ssf);
+       break;
+ 
+   case HAVESPACE:
+@@ -527,7 +529,7 @@
+   const char *serverout=NULL;
+   unsigned int serveroutlen;
+   const char *errstr=NULL;
+-  const void *canon_user, *sasl_ssf;
++  const void *canon_user, *val;
+   char *username;
+   int ret = TRUE;
+ 
+@@ -770,11 +772,6 @@
+ 		  if(c) *c = '\0';
+ 	      }
+ 
+-	      if (config_getswitch(IMAPOPT_SIEVE_SASL_EXPECT_UNSOLICITED_CAPABILITY)) {
+-		  sieve_protocol.sasl_cmd.auto_capa = 1;
+-	      } else {
+-		  sieve_protocol.sasl_cmd.auto_capa = 0;
+-	      }
+ 	      backend = backend_connect(NULL, server, &sieve_protocol,
+ 					username, NULL, &statusline);
+ 
+@@ -825,11 +822,14 @@
+   prot_setsasl(sieved_in, sieved_saslconn);
+   prot_setsasl(sieved_out, sieved_saslconn);
+ 
+-  if (config_getswitch(IMAPOPT_SIEVE_SASL_SEND_UNSOLICITED_CAPABILITY)) {
+-      sasl_getprop(sieved_saslconn, SASL_SSF, &sasl_ssf);
+-      if (*((sasl_ssf_t *) sasl_ssf)) {
+-	  capabilities(sieved_out, sieved_saslconn, starttls_done, 2);
+-      }
++  sasl_getprop(sieved_saslconn, SASL_SSF, &val);
++  sasl_ssf = *((sasl_ssf_t *) val);
++
++  if (sasl_ssf &&
++      config_getswitch(IMAPOPT_SIEVE_SASL_SEND_UNSOLICITED_CAPABILITY)) {
++      capabilities(sieved_out, sieved_saslconn, starttls_done, authenticated,
++		   sasl_ssf);
++      prot_flush(sieved_out);
+   }
+ 
+   /* Create telemetry log */
+@@ -908,7 +908,8 @@
+ 
+     starttls_done = 1;
+ 
+-    return capabilities(sieved_out, sieved_saslconn, starttls_done, authenticated);
++    return capabilities(sieved_out, sieved_saslconn, starttls_done,
++			authenticated, sasl_ssf);
+ }
+ #else
+ static int cmd_starttls(struct protstream *sieved_out, struct protstream *sieved_in)
+Index: timsieved/timsieved.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/timsieved/timsieved.c,v
+retrieving revision 1.62
+diff -u -r1.62 timsieved.c
+--- timsieved/timsieved.c	24 Mar 2008 20:20:57 -0000	1.62
++++ timsieved/timsieved.c	11 Dec 2008 22:32:51 -0000
+@@ -182,7 +182,7 @@
+     
+     chdir("/tmp/");
+ 
+-    capabilities(sieved_out, sieved_saslconn, 0, 0);
++    capabilities(sieved_out, sieved_saslconn, 0, 0, 0);
+ 
+     /* initialize lexer */
+     lex_init();

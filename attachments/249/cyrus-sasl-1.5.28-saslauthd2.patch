@@ -1,0 +1,183 @@
+"Speak" the saslauthd version 2 protocol if "saslauthd_version" is "2".  We
+can need this because the protocols are different, and running both is
+a) not possible if both are installed into the same prefix
+b) confusing (to the point where it's possible that the binary package should
+              just use version 2 by default)
+c) silly
+
+--- cyrus-sasl-1.5.28/lib/checkpw.c	2001-12-20 21:31:07.000000000 -0500
++++ cyrus-sasl-1.5.28/lib/checkpw.c	2004-01-12 15:13:27.000000000 -0500
+@@ -1090,9 +1090,8 @@
+ static int saslauthd_verify_password(sasl_conn_t *conn,
+ 				   const char *userid, 
+ 				   const char *passwd,
+-				   const char *service __attribute__((unused)),
+-				   const char *user_realm 
+-				               __attribute__((unused)), 
++				   const char *service,
++				   const char *user_realm,
+ 				   const char **reply)
+ {
+     static char response[1024];
+@@ -1103,7 +1102,7 @@
+     sasl_getopt_t *getopt;
+     void *context;
+     char pwpath[sizeof(srvaddr.sun_path)];
+-    const char *p = NULL;
++    const char *p = NULL, *q = NULL;
+ 
+     if (reply)
+ 	*reply = NULL;
+@@ -1111,6 +1110,7 @@
+     /* check to see if the user configured a rundir */
+     if (_sasl_getcallback(conn, SASL_CB_GETOPT, &getopt, &context) == SASL_OK) {
+ 	getopt(context, NULL, "saslauthd_path", &p, NULL);
++	getopt(context, NULL, "saslauthd_version", &q, NULL);
+     }
+     if (p) {
+ 	strncpy(pwpath, p, sizeof(pwpath));
+@@ -1137,6 +1137,144 @@
+ 	return SASL_FAIL;
+     }
+ 
++    if (q && (*q == '2')) {
++	unsigned short count, ucount, pcount, scount, rcount;
++	char query[8192];
++	char *query_end;
++	int sent, total;
++
++	ucount = strlen(userid ? userid : "");
++	pcount = strlen(passwd ? passwd : "");
++	scount = strlen(service ? service : "");
++	rcount = strlen(user_realm ? user_realm : "");
++	if (ucount + pcount + scount + rcount + 4 * sizeof(ucount) >= sizeof(query)) {
++	    close(s);
++	    if (reply)
++		*reply = "not enough memory";
++	    return SASL_FAIL;
++	}
++
++	query_end = query;
++
++	count = htons(ucount);
++	memcpy(query_end, &count, sizeof(count));
++	query_end += sizeof(count);
++	if (ucount > 0)
++	    memcpy(query_end, userid, ucount);
++	query_end += ucount;
++
++	count = htons(pcount);
++	memcpy(query_end, &count, sizeof(count));
++	query_end += sizeof(count);
++	if (pcount > 0)
++	    memcpy(query_end, passwd, pcount);
++	query_end += pcount;
++
++	count = htons(scount);
++	memcpy(query_end, &count, sizeof(count));
++	query_end += sizeof(count);
++	if (scount > 0)
++	    memcpy(query_end, service, scount);
++	query_end += scount;
++
++	count = htons(rcount);
++	memcpy(query_end, &count, sizeof(count));
++	query_end += sizeof(count);
++	if (rcount > 0)
++	    memcpy(query_end, user_realm, rcount);
++	query_end += rcount;
++
++	total = 0;
++	do {
++	    sent = write(s, query + total,
++			 query_end - (query + total));
++	    switch (sent) {
++	    case -1:
++	        switch (errno) {
++	        case EINTR:
++		    continue;
++	        default:
++		    close(s);
++		    if (reply)
++		        *reply = "write failed";
++		    return SASL_FAIL;
++	        }
++	    case 0:
++		close(s);
++		if (reply)
++		    *reply = "write failed";
++		return SASL_FAIL;
++	    default:
++	        total += sent;
++	        break;
++	    }
++	} while (total < (query_end - query));
++	total = 2;
++	do {
++	    sent = read(s, response + 2 - total, total);
++	    switch (sent) {
++	    case -1:
++	        switch (errno) {
++	        case EINTR:
++		    continue;
++	        default:
++		    close(s);
++		    if (reply)
++		        *reply = "read failed";
++		    return SASL_FAIL;
++	        }
++		break;
++	    case 0:
++		close(s);
++		if (reply)
++		    *reply = "read failed";
++		return SASL_FAIL;
++	    default:
++	        total -= sent;
++	        break;
++	    }
++	} while (total > 0);
++	memcpy(&count, response, 2);
++	total = htons(count);
++	if (total + 1 >= sizeof(response)) {
++	    if (reply)
++		*reply = "not enough memory";
++	    return SASL_FAIL;
++	}
++	do {
++	    sent = read(s, response + htons(count) - total, total);
++	    switch (sent) {
++	    case -1:
++	        switch (errno) {
++	        case EINTR:
++		    continue;
++	        default:
++		    close(s);
++		    if (reply)
++		        *reply = "read failed";
++		    return SASL_FAIL;
++	        }
++		break;
++	    case 0:
++		close(s);
++		if (reply)
++		    *reply = "read failed";
++		return SASL_FAIL;
++	    default:
++	        total -= sent;
++	        break;
++	    }
++	} while (total > 0);
++	response[htons(count)] = '\0';
++	if (!strncmp(response, "OK", 2)) {
++	    return SASL_OK;
++	}
++	if (reply)
++	    *reply = "authentication failed";
++	close(s);
++	return SASL_BADAUTH;
++    }
++
+     {
+ 	int u_len;
+ 	int p_len;

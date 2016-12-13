@@ -1,0 +1,72 @@
+This is uniffied diff output for knowing the changes I'm proposing for replication to work properly... as well as the Outlook and uidl staff described in the bug....
+
+For the file imap/pop3d.c : 
+============================
+
+
+--- /pop3d.c	2012-03-31 23:01:50.000000000 +0200
++++ imap/pop3d.c	2012-04-01 01:34:58.000000000 +0200
+@@ -1069,13 +1069,13 @@
+ 		    prot_printf(popd_out, "-ERR No such message\r\n");
+ 		}
+ 		else if (mboxstruct.options & OPT_POP3_NEW_UIDL) {
+-			    prot_printf(popd_out, "+OK %u %lu.%u\r\n", msg, 
++			    prot2_printf(popd_out, "+OK %u %lu.%.10u\r\n", msg, 
+ 					mboxstruct.uidvalidity,
+ 					popd_msg[msg].uid);
+ 		}
+ 		else {
+ 		    /* old uidl format */
+-		    prot_printf(popd_out, "+OK %u %u\r\n", 
++		    prot2_printf(popd_out, "+OK %u %.10u\r\n", 
+ 				msg, popd_msg[msg].uid);
+ 		}
+ 	    }
+@@ -1084,11 +1084,11 @@
+ 		for (msg = 1; msg <= popd_exists; msg++) {
+ 		    if (!popd_msg[msg].deleted) {
+ 			if (mboxstruct.options & OPT_POP3_NEW_UIDL) {
+-			    prot_printf(popd_out, "%u %lu.%u\r\n", msg, 
++			    prot2_printf(popd_out, "%u %lu.%.10u\r\n", msg, 
+ 					mboxstruct.uidvalidity,
+ 					popd_msg[msg].uid);
+ 			} else {
+-			    prot_printf(popd_out, "%u %u\r\n", msg, 
++			    prot2_printf(popd_out, "%u %.10u\r\n", msg, 
+ 					popd_msg[msg].uid);
+ 			}
+ 		    }
+
+
+
+
+For the file lib/prot.c : 
+============================
+
+
+--- /prot.c	2012-03-31 23:04:30.000000000 +0200
++++ lib/prot.c	2012-04-01 01:40:40.000000000 +0200
+@@ -1247,6 +1247,23 @@
+     return 0;
+ }
+ 
++int prot2_printf(struct protstream *s, const char *fmt, ...)
++{
++    va_list pvar;
++    char buf[2048];
++
++    assert(s->write);
++
++    va_start(pvar, fmt);
++    vsnprintf(buf, sizeof(buf), fmt, pvar);
++    va_end(pvar);
++   
++    prot_write(s, buf, strlen(buf));
++
++    if (s->error || s->eof) return EOF;
++    return 0;
++}
++
+ /*
+  * Read from the protections stream 's' up to 'size' bytes into the buffer
+  * 'buf'.  Returns the number of bytes read, or 0 for some error.

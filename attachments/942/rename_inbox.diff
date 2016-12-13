@@ -1,0 +1,147 @@
+Index: mailbox.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.166
+diff -u -r1.166 mailbox.c
+--- mailbox.c	3 Apr 2007 13:01:12 -0000	1.166
++++ mailbox.c	9 Apr 2007 22:22:42 -0000
+@@ -2827,7 +2827,7 @@
+     return 0;
+ }
+ 
+-/* if 'isinbox' is set, we perform the funky RENAME INBOX INBOX.old
++/* if 'userid' is set, we perform the funky RENAME INBOX INBOX.old
+    semantics, regardless of whether or not the name of the mailbox is
+    'user.foo'.*/
+ /* requires a LOCKED oldmailbox pointer */
+@@ -2835,7 +2835,7 @@
+ 			const char *newname,
+ 			char *newpartition,
+ 			bit32 *olduidvalidityp, bit32 *newuidvalidityp,
+-			struct mailbox *newmailbox)
++			struct mailbox *newmailbox, char *userid)
+ {
+     int r;
+     unsigned int flag, msgno;
+@@ -2849,7 +2849,7 @@
+ 
+     /* Create new mailbox */
+     r = mailbox_create(newname, newpartition,
+-		       oldmailbox->acl, oldmailbox->uniqueid,
++		       oldmailbox->acl, (userid ? NULL : oldmailbox->uniqueid),
+ 		       oldmailbox->format, newmailbox);
+ 
+     if (r) return r;
+@@ -2976,7 +2976,7 @@
+ 	r = mailbox_copyfile(oldfname->buf, newfname->buf, 0);
+ 	if (r) break;
+     }
+-    if (!r) r = seen_copy(oldmailbox, newmailbox);
++    if (!r) r = seen_copy(oldmailbox, newmailbox, userid);
+ 
+     /* XXX For two-phase expunge, we also need to copy message files
+        referenced by cyrus.expunge */
+@@ -3174,7 +3174,7 @@
+ 	    if (r) break;
+ 	}
+     }
+-    if (!r) r = seen_copy(&oldmailbox, &newmailbox);
++    if (!r) r = seen_copy(&oldmailbox, &newmailbox, NULL);
+ 
+     if (!r) {
+ 	/* Copy over index/cache files */
+Index: mailbox.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.h,v
+retrieving revision 1.82
+diff -u -r1.82 mailbox.h
+--- mailbox.h	30 Nov 2006 17:11:19 -0000	1.82
++++ mailbox.h	9 Apr 2007 22:22:42 -0000
+@@ -367,7 +367,7 @@
+ extern int mailbox_rename_copy(struct mailbox *oldmailbox, 
+ 			       const char *newname, char *newpartition,
+ 			       bit32 *olduidvalidityp, bit32 *newuidvalidityp,
+-			       struct mailbox *mailboxp);
++			       struct mailbox *mailboxp, char *userid);
+ extern int mailbox_rename_cleanup(struct mailbox *oldmailbox, int isinbox);
+ 
+ extern int mailbox_sync(const char *oldname, const char *oldpath, 
+Index: mboxlist.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mboxlist.c,v
+retrieving revision 1.247
+diff -u -r1.247 mboxlist.c
+--- mboxlist.c	27 Mar 2007 19:53:09 -0000	1.247
++++ mboxlist.c	9 Apr 2007 22:22:42 -0000
+@@ -1248,7 +1248,8 @@
+     if (!r && !(mbtype & MBTYPE_REMOTE)) {
+ 	/* Rename the actual mailbox */
+ 	r = mailbox_rename_copy(&oldmailbox, newname, newpartition,
+-				NULL, NULL, &newmailbox);
++				NULL, NULL, &newmailbox,
++				isusermbox ? userid : NULL);
+ 	if (r) {
+ 	    goto done;
+ 	} else {
+Index: seen.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/seen.h,v
+retrieving revision 1.14
+diff -u -r1.14 seen.h
+--- seen.h	22 Oct 2003 18:50:08 -0000	1.14
++++ seen.h	9 Apr 2007 22:22:42 -0000
+@@ -79,7 +79,8 @@
+ /* called on mailbox operations */
+ int seen_create_mailbox(struct mailbox *mailbox);
+ int seen_delete_mailbox(struct mailbox *mailbox);
+-int seen_copy(struct mailbox *oldmailbox,struct mailbox *newmailbox);
++int seen_copy(struct mailbox *oldmailbox, struct mailbox *newmailbox,
++	      char *userid);
+ 
+ /* called on user operations */
+ int seen_create_user(const char *user);
+Index: seen_db.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/seen_db.c,v
+retrieving revision 1.52
+diff -u -r1.52 seen_db.c
+--- seen_db.c	27 Mar 2007 19:53:09 -0000	1.52
++++ seen_db.c	9 Apr 2007 22:22:42 -0000
+@@ -511,11 +511,34 @@
+     return r;
+ }
+ 
+-int seen_copy(struct mailbox *oldmailbox, struct mailbox *newmailbox)
++int seen_copy(struct mailbox *oldmailbox, struct mailbox *newmailbox,
++	      char *userid)
+ {
+     if (SEEN_DEBUG) {
+-	syslog(LOG_DEBUG, "seen_db: seen_copy(%s, %s)",
+-	       oldmailbox->uniqueid, newmailbox->uniqueid);
++	syslog(LOG_DEBUG, "seen_db: seen_copy(%s, %s, %s)",
++	       oldmailbox->uniqueid, newmailbox->uniqueid,
++	       userid ? userid : "");
++    }
++
++    if ((oldmailbox->uniqueid != newmailbox->uniqueid) && userid) {
++	int r;
++	struct seen *seendb;
++	time_t last_read, last_change;
++	unsigned last_uid;
++	char *seenuids;
++
++	r = seen_open(oldmailbox, userid, 0, &seendb);
++	if (r) return r;
++    
++	r = seen_lockread(seendb, &last_read, &last_uid, &last_change, &seenuids);
++	if (r) return r;
++
++	seendb->uniqueid = newmailbox->uniqueid;
++	r = seen_write(seendb, last_read, last_uid, last_change, seenuids);
++
++	seen_close(seendb);
++	free(seenuids);
++	return r;
+     }
+ 
+     /* noop */

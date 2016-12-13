@@ -1,0 +1,162 @@
+From eebe24ecacf56ef18f5af0828fd4f0edac36dc69 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=D8yvind=20Kolbu?= <oyvind.kolbu@usit.uio.no>
+Date: Mon, 28 Mar 2011 12:56:41 +0200
+Subject: [PATCH 2/7] Support floating point values and suffixes for "expire-days".
+
+---
+ imap/cyr_expire.c |   58 +++++++++++++++++++++++++++++++++++++++++++++++++++-
+ imap/duplicate.c  |    4 +-
+ imap/duplicate.h  |    2 +-
+ man/cyr_expire.8  |   11 ++++++---
+ 4 files changed, 66 insertions(+), 9 deletions(-)
+
+diff --git a/imap/cyr_expire.c b/imap/cyr_expire.c
+index 7973c8a..b0bbd31 100644
+--- a/imap/cyr_expire.c
++++ b/imap/cyr_expire.c
+@@ -129,6 +129,60 @@ static int parse_uint(const char *s, int *valp)
+ }
+ 
+ /*
++ * Parse a duration string into a double.
++ *
++ * Convert "23.5m" to fractional days.  Accepts the suffixes "d" (day),
++ * (day), "h" (hour), "m" (minute) and "s" (second).  If no suffix, assume
++ * days.
++ * Returns 1 if successful and *@valp is filled in, or 0 if the suffix
++ * is unknown or on error.
++ */
++static int parse_duration(const char *s, double *valp)
++{
++    char *end = NULL;
++    double val;
++    int seconds = 1;
++
++    if (*s == '\0' || *s == '-')
++        return 0;
++    switch (s[strlen(s)-1]) {
++    case '0':
++    case '1':
++    case '2':
++    case '3':
++    case '4':
++    case '5':
++    case '6':
++    case '7':
++    case '8':
++    case '9':
++    case 'd':
++        seconds *= 24;
++    case 'h':
++        seconds *= 60;
++    case 'm':
++        seconds *= 60;
++    case 's':
++        break;
++    default:
++        /* unknown syntax */
++        return 0;
++    }
++
++    val = strtod(s, &end);
++    /* Allow 'd', 'h', 'm' and 's' as end, else return error. */
++    if (*end) {
++        if (strlen(end) == 1 && (end[0] == 'd' || end[0] == 'h' ||
++            end[0] == 'm' || end[0] == 's'))
++            ;
++        else
++            return 0;
++    }
++    *valp = (seconds * val / 86400.0);
++    return 1;
++}
++
++/*
+  * mailbox_expunge() callback to expunge expired articles.
+  */
+ static unsigned expire_cb(struct mailbox *mailbox __attribute__((unused)), 
+@@ -311,7 +365,7 @@ int main(int argc, char *argv[])
+ {
+     extern char *optarg;
+     int opt, r = 0;
+-    int expire_days = 0;
++    double expire_days = 0;
+     int expunge_days = -1;
+     int delete_days = -1;
+     int do_expunge = 1;	/* gnb:TODO bool */
+@@ -343,7 +397,7 @@ int main(int argc, char *argv[])
+ 
+ 	case 'E':
+ 	    if (expire_days) usage();
+-	    if (!parse_uint(optarg, &expire_days)) usage();
++	    if (!parse_duration(optarg, &expire_days)) usage();
+ 	    break;
+ 
+ 	case 'X':
+diff --git a/imap/duplicate.c b/imap/duplicate.c
+index 56bcd2d..16522f3 100644
+--- a/imap/duplicate.c
++++ b/imap/duplicate.c
+@@ -306,7 +306,7 @@ static int prune_cb(void *rock, const char *id, int idlen,
+     return 0;
+ }
+ 
+-int duplicate_prune(int days, struct hash_table *expire_table)
++int duplicate_prune(double days, struct hash_table *expire_table)
+ {
+     struct prunerock prock;
+ 
+@@ -315,7 +315,7 @@ int duplicate_prune(int days, struct hash_table *expire_table)
+     prock.count = prock.deletions = 0;
+     prock.expmark = time(NULL) - (days * 60 * 60 * 24);
+     prock.expire_table = expire_table;
+-    syslog(LOG_NOTICE, "duplicate_prune: pruning back %d days", days);
++    syslog(LOG_NOTICE, "duplicate_prune: pruning back %.3f days", days);
+ 
+     /* check each entry in our database */
+     prock.db = dupdb;
+diff --git a/imap/duplicate.h b/imap/duplicate.h
+index c6e01a7..7453876 100644
+--- a/imap/duplicate.h
++++ b/imap/duplicate.h
+@@ -61,7 +61,7 @@ typedef int (*duplicate_find_proc_t)(const char *, const char *, time_t,
+ 				     unsigned long, void *);
+ int duplicate_find(const char *msgid, duplicate_find_proc_t, void *rock);
+ 
+-int duplicate_prune(int days, struct hash_table *expire_table);
++int duplicate_prune(double days, struct hash_table *expire_table);
+ int duplicate_dump(FILE *f);
+ 
+ int duplicate_done(void);
+diff --git a/man/cyr_expire.8 b/man/cyr_expire.8
+index d524c70..c30a624 100644
+--- a/man/cyr_expire.8
++++ b/man/cyr_expire.8
+@@ -52,7 +52,7 @@ cyr_expire \- expire messages and duplicate delivery database entries
+ [
+ .BI \-D " delete-days"
+ ]
+-.BI \-E " expire-days"
++.BI \-E " expire-duration"
+ [
+ .BI \-X " expunge-days"
+ ]
+@@ -110,9 +110,12 @@ Read configuration options from \fIconfig-file\fR.
+ Remove previously deleted mailboxes older than \fIdelete-days\fR
+ (when using the "delayed" delete mode).
+ .TP
+-\fB\-E \fIexpire-days\fR
+-Prune the duplicate database of entries older than \fIexpire-days\fR.  This
+-value is only used for entries which do not have a corresponding
++\fB\-E \fIexpire-duration\fR
++Prune the duplicate database of entries older than \fIexpire-duration\fR.
++The value can be a floating point number, and may have a suffix to use a
++unit other than days. Valid suffixes are \fBd\fR (days), \fBh\fR (hours),
++\fBm\fR (minutes) and \fBs\fR (seconds). This value is only used for
++entries which do not have a corresponding
+ \fB/vendor/cmu/cyrus-imapd/expire\fR mailbox annotation.
+ .TP
+ \fB\-X \fIexpunge-days\fR
+-- 
+1.7.1
+

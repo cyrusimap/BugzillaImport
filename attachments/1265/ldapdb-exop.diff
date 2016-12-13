@@ -1,0 +1,155 @@
+diff -ruN cyrus-sasl-2.1.24.prepatched/doc/options.html cyrus-sasl-2.1.24/doc/options.html
+--- cyrus-sasl-2.1.24.prepatched/doc/options.html	2009-05-07 15:21:14.000000000 +0000
++++ cyrus-sasl-2.1.24/doc/options.html	2010-05-02 03:54:14.000000000 +0000
+@@ -91,6 +91,14 @@
+ <TD>none</TD>
+ </TR>
+ <TR>
++<TD>ldapdb_password_method</TD><TD>LDAPDB plugin</TD>
++<TD>Specifies the method used when ldapdb is tasked with storing the
++userPassword attribute.  If 'exop' is specified, the value will be stored using
++an LDAP Password Modify Extended Operation. if 'clear' is specified, which is
++the default, the value will be written as passed to ldapdb.</TD>
++<TD>clear</TD>
++</TR>
++<TR>
+ <TD>log_level</TD><TD>SASL Library</TD>
+ <TD><b>Numeric</b> Logging Level (see <TT>SASL_LOG_*</TT> in <tt>sasl.h</tt>
+ for values and descriptions</TD>
+diff -ruN cyrus-sasl-2.1.24.prepatched/plugins/ldapdb.c cyrus-sasl-2.1.24/plugins/ldapdb.c
+--- cyrus-sasl-2.1.24.prepatched/plugins/ldapdb.c	2010-05-02 03:45:01.000000000 +0000
++++ cyrus-sasl-2.1.24/plugins/ldapdb.c	2010-05-02 04:05:53.000000000 +0000
+@@ -1,6 +1,7 @@
+ /* $OpenLDAP: pkg/ldap/contrib/ldapsasl/ldapdb.c,v 1.1.2.7 2003/11/29 22:10:03 hyc Exp $ */
+ /* SASL LDAP auxprop+canonuser implementation
+  * Copyright (C) 2002-2007 Howard Chu, All rights reserved. <hyc@symas.com>
++ * Password Modify ExOp (RFC3062) support added by Dan White <dwhite@olp.net>
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted only as authorized by the OpenLDAP
+@@ -24,6 +25,9 @@
+ 
+ #include <ldap.h>
+ 
++#define PASSWORD_CLEAR		0
++#define PASSWORD_EXOP		1
++
+ static char ldapdb[] = "ldapdb";
+ 
+ typedef struct ldapctx {
+@@ -34,6 +38,7 @@
+ 	struct berval mech;	/* SASL mech */
+ 	int use_tls;		/* Issue StartTLS request? */
+ 	struct berval canon;	/* Use attr in user entry for canonical name */
++	int password_method;	/* Method to use when storing userPassword */
+ } ldapctx;
+ 
+ static ldapctx ldapdb_ctx;
+@@ -276,7 +281,10 @@
+     ldapctx *ctx = glob_context;
+     connparm cp;
+     const struct propval *pr;
+-    int i, n;
++    int i, j, n;
++    int ret;
++    int password_index;
++    struct berval lnewpw, lnewpassword;
+     LDAPMod **mods;
+ 
+     /* just checking if we are enabled */
+@@ -287,36 +295,63 @@
+     pr = sparams->utils->prop_get(prctx);
+     if (!pr) return SASL_BADPARAM;
+ 
+-    for (n=0; pr[n].name; n++);
++    password_index = -1;
++    for (n=0; pr[n].name; n++) {
++	if (ctx->password_method
++	    && !strcasecmp((char *)pr[n].name, "userpassword\0"))
++	    password_index = n;
++    }
+     if (!n) return SASL_BADPARAM;
+ 
+-    mods = sparams->utils->malloc((n+1) * sizeof(LDAPMod*) + n * sizeof(LDAPMod));
+-    if (!mods) return SASL_NOMEM;
++    ret = ldapdb_connect(ctx, sparams, user, ulen, &cp);
++    if ( ret ) goto done;
+ 
+-    if((i=ldapdb_connect(ctx, sparams, user, ulen, &cp)) == 0) {
++    if (password_index == -1 || n > 1) {
++	mods = sparams->utils->malloc((n+1) * sizeof(LDAPMod*) + n * sizeof(LDAPMod));
++	if (!mods) {
++	    ret = SASL_NOMEM;
++	    goto done;
++	}
+ 
+-	for (i=0; i<n; i++) {
+-	    mods[i] = (LDAPMod *)((char *)(mods+n+1) + i * sizeof(LDAPMod));
+-	    mods[i]->mod_op = LDAP_MOD_REPLACE;
+-	    mods[i]->mod_type = (char *)pr[i].name;
+-	    mods[i]->mod_values = (char **)pr[i].values;
++	for (i=0, j=0; i<n; i++) {
++	    if (i == password_index) continue;
++	    mods[j] = (LDAPMod *)((char *)(mods+n+1) + j * sizeof(LDAPMod));
++	    mods[j]->mod_op = LDAP_MOD_REPLACE;
++	    mods[j]->mod_type = (char *)pr[i].name;
++	    mods[j]->mod_values = (char **)pr[i].values;
++	    j++;
+ 	}
+-	mods[i] = NULL;
++	mods[j] = NULL;
+ 
+-	i = ldap_modify_ext_s(cp.ld, cp.dn->bv_val+3, mods, cp.ctrl, NULL);
++	ret = ldap_modify_ext_s(cp.ld, cp.dn->bv_val+3, mods, cp.ctrl, NULL);
+ 	ber_bvfree(cp.dn);
++
++	sparams->utils->free(mods);
+     }
+ 
+-    sparams->utils->free(mods);
++    if (!ret && password_index != -1 && ctx->password_method == PASSWORD_EXOP) {
++	lnewpw.bv_len = strlen( (char *)pr[password_index].values[0]);
++	lnewpw.bv_val = sparams->utils->malloc(lnewpw.bv_len);
++	if (!lnewpw.bv_val) {
++	    ret = SASL_NOMEM;
++	    goto done;
++	}
++	lnewpw.bv_val = strdup( (char *)pr[password_index].values[0]);
++	ret = ldap_passwd_s(cp.ld, NULL, NULL, &lnewpw,
++			   &lnewpassword, cp.ctrl, NULL);
++	sparams->utils->free(lnewpw.bv_val);
++	sparams->utils->free(lnewpassword.bv_val);
++    }
+ 
+-    if (i) {
++ done:
++    if(cp.ld) ldap_unbind_ext(cp.ld, NULL, NULL);
++    if (ret) {
+     	sparams->utils->seterror(sparams->utils->conn, 0,
+-	    ldap_err2string(i));
+-	if (i == LDAP_NO_MEMORY) i = SASL_NOMEM;
+-	else i = SASL_FAIL;
++	    ldap_err2string(ret));
++	if (ret == LDAP_NO_MEMORY) ret = SASL_NOMEM;
++	else ret = SASL_FAIL;
+     }
+-    if(cp.ld) ldap_unbind_ext(cp.ld, NULL, NULL);
+-    return i;
++    return ret;
+ }
+ 
+ static int
+@@ -492,6 +527,13 @@
+     utils->getopt(utils->getopt_context, ldapdb, "ldapdb_canon_attr",
+ 	(const char **)&p->canon.bv_val, &len);
+     p->canon.bv_len = len;
++    p->password_method = PASSWORD_CLEAR;
++    utils->getopt(utils->getopt_context, ldapdb, "ldapdb_password_method",
++	&s, NULL);
++    if(s)
++    {
++	if (!strcasecmp(s, "exop")) p->password_method = PASSWORD_EXOP;
++    }
+     p->inited = 1;
+ 
+     return SASL_OK;

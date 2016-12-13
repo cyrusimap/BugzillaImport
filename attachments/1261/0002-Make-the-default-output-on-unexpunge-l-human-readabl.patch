@@ -1,0 +1,220 @@
+From 09cac5951e2e2a0bd8f8ebe3b12427e28fd3bf97 Mon Sep 17 00:00:00 2001
+From: Brian Awood <bawood@umich.edu>
+Date: Wed, 21 Oct 2009 16:37:01 -0400
+Subject: [PATCH 2/3] Make the default output on unexpunge -l human readable
+
+Unexpunge -l previously printed out the cache data
+in the format where it is striped of caps and white
+space.  This is a modification to the original patch
+from Wes Craig for human readable output so it
+applies to 2.3.15 and is the default output.
+
+diff --git a/imap/Makefile.in b/imap/Makefile.in
+index 0123719..ac3b11f 100644
+--- a/imap/Makefile.in
++++ b/imap/Makefile.in
+@@ -338,8 +338,8 @@ tls_prune: tls_prune.o tls.o $(CLIOBJS) libimap.a $(DEPLIBS)
+ 	$(CC) $(LDFLAGS) -o \
+ 	 $@ tls_prune.o tls.o $(CLIOBJS) libimap.a $(DEPLIBS) $(LIBS)
+ 
+-unexpunge: unexpunge.o $(CLIOBJS) libimap.a $(DEPLIBS)
+-	$(CC) $(LDFLAGS) -o $@ unexpunge.o $(CLIOBJS) \
++unexpunge: unexpunge.o index.o $(CLIOBJS) libimap.a $(DEPLIBS)
++	$(CC) $(LDFLAGS) -o $@ unexpunge.o index.o $(CLIOBJS) \
+ 	libimap.a $(DEPLIBS) $(LIBS)
+ 
+ make_md5: make_md5.o libimap.a mutex_fake.o $(DEPLIBS)
+diff --git a/imap/index.c b/imap/index.c
+index 284eaf7..dec8425 100644
+--- a/imap/index.c
++++ b/imap/index.c
+@@ -167,7 +167,6 @@ static int _index_search(unsigned **msgno_list, struct mailbox *mailbox,
+ 			 struct searchargs *searchargs,
+ 			 modseq_t *highestmodseq);
+ 
+-static void parse_cached_envelope(char *env, char *tokens[], int tokens_size);
+ static char *find_msgid(char *str, char **rem);
+ static char *get_localpart_addr(const char *header);
+ static char *index_extract_subject(const char *subj, size_t len, int *is_refwd);
+@@ -3737,7 +3736,7 @@ static MsgData *index_msgdata_load(unsigned *msgno_list, int n,
+  * When inside a list (ncom > 0), we parse the individual tokens but don't
+  * isolate them -- we return the entire list as a single token.
+  */
+-static void parse_cached_envelope(char *env, char *tokens[], int tokens_size)
++void parse_cached_envelope(char *env, char *tokens[], int tokens_size)
+ {
+     char *c;
+     int i = 0, ncom = 0, len;
+@@ -5166,7 +5165,7 @@ static char *parse_nstring(char **str)
+     return val;
+ }
+ 
+-static void parse_env_address(char *str, struct address *addr)
++void parse_env_address(char *str, struct address *addr)
+ {
+     str++; /* skip ( */
+     addr->name = parse_nstring(&str);
+diff --git a/imap/index.h b/imap/index.h
+index 0410b0f..0de66d9 100644
+--- a/imap/index.h
++++ b/imap/index.h
+@@ -180,6 +180,7 @@ extern unsigned long index_getsize(struct mailbox *mailbox, unsigned msgno);
+ extern unsigned long index_getlines(struct mailbox *mailbox, unsigned msgno);
+ extern int index_copy_remote(struct mailbox *mailbox, char *sequence, 
+ 			     int usinguid, struct protstream *pout);
++void parse_cached_envelope(char *env, char *tokens[], int tokens_size);
+ 
+ void appendsequencelist(struct seq_set **l, char *sequence, int usinguid);
+ void freesequencelist(struct seq_set *l);
+diff --git a/imap/unexpunge.c b/imap/unexpunge.c
+index e9dd19e..95824b5 100644
+--- a/imap/unexpunge.c
++++ b/imap/unexpunge.c
+@@ -64,6 +64,7 @@
+ #include "global.h"
+ #include "hash.h"
+ #include "imap_err.h"
++#include "parseaddr.h"
+ #include "index.h"
+ #include "libcyr_cfg.h"
+ #include "lock.h"
+@@ -76,12 +77,31 @@
+ #include "xstrlcat.h"
+ #include "sync_log.h"
+ 
++/*
++ * Junk, to help index.c link.
++ */
++int imapd_exists;
++struct protstream *imapd_out = NULL;
++struct auth_state *imapd_authstate = NULL;
++char *imapd_userid = NULL;
++int imapd_condstore_client = 0;
++
++extern void parse_env_address(char *str, struct address *addr);
++
+ /* global state */
+ const int config_need_data = 0;
+-
+ int  unsetdeleted = 0;
+ time_t time_since;
+ 
++enum {
++    MODE_UNKNOWN = -1,
++    MODE_LIST,
++    MODE_ALL,
++    MODE_TIME,
++    MODE_UID,
++    MODE_COUNT
++} mode = MODE_UNKNOWN;
++
+ /* current namespace */
+ static struct namespace unex_namespace;
+ 
+@@ -101,15 +121,6 @@ void usage(void)
+     exit(-1);
+ }
+ 
+-enum {
+-    MODE_UNKNOWN = -1,
+-    MODE_LIST,
+-    MODE_ALL,
+-    MODE_TIME,
+-    MODE_UID,
+-    MODE_COUNT
+-} mode = MODE_UNKNOWN;
+-
+ struct msg {
+     unsigned recno;
+     unsigned long uid;
+@@ -135,6 +146,10 @@ void list_expunged(struct mailbox *mailbox,
+     unsigned long uid, size, cache_offset;
+     time_t internaldate, sentdate, last_updated;
+     cacherecord crec;
++    int cachelen;
++    char *env;
++    char *envtokens[NUMENVTOKENS];
++    struct address addr;
+ 
+     for (msgno = 0; msgno < exists; msgno++) {
+ 	/* Jump to index record for this message */
+@@ -154,16 +169,49 @@ void list_expunged(struct mailbox *mailbox,
+ 	printf("\tRecv: %s", ctime(&internaldate));
+ 	printf("\tExpg: %s", ctime(&last_updated));
+ 
+-	if (!mailbox_cacherecord_offset(mailbox, cache_offset, &crec)) {
++	if ((cachelen = mailbox_cacherecord_offset(mailbox,
++			cache_offset, &crec)) == 0) {
+ 	    printf("\tERROR: cache record missing or corrupt, not printing cache details\n\n");
+ 	    continue;
+ 	}
++	env = xstrndup(crec[CACHE_ENVELOPE].s + 1, crec[CACHE_ENVELOPE].l - 2);
++	parse_cached_envelope(env, envtokens, VECTOR_SIZE(envtokens));
++
++	if ( envtokens[ ENV_FROM ] ) {
++	    parse_env_address( envtokens[ ENV_FROM ], &addr );
++	    printf("\tFrom: " );
++	    if ( addr.name ) printf("\"%s\" ", addr.name );
++	    printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	} else {
++	    printf("\tFrom: \n" );
++	}
++	if ( envtokens[ ENV_TO ] ) {
++	    parse_env_address( envtokens[ ENV_TO ], &addr );
++	    printf("\tTo  : " );
++	    if ( addr.name ) printf("\"%s\" ", addr.name );
++	    printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	} else {
++	    printf("\tTo  : \n" );
++	}
++	if ( envtokens[ ENV_CC ] ) {
++	    parse_env_address( envtokens[ ENV_CC ], &addr );
++	    printf("\tCc  : " );
++	    if ( addr.name ) printf("\"%s\" ", addr.name );
++	    printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	} else {
++	    printf("\tCc  : \n" );
++	}
++	if ( envtokens[ ENV_BCC ] ) {
++	    parse_env_address( envtokens[ ENV_BCC ], &addr );
++	    printf("\tBcc : " );
++	    if ( addr.name ) printf("\"%s\" ", addr.name );
++		printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	} else {
++	    printf("\tBcc : \n" );
++	}
++	printf("\tSubj: %s\n\n", envtokens[ENV_SUBJECT]);
++	free (env);
+ 
+-	printf("\tFrom: %.*s\n", crec[CACHE_FROM].l, crec[CACHE_FROM].s);
+-	printf("\tTo  : %.*s\n", crec[CACHE_TO].l, crec[CACHE_TO].s);
+-	printf("\tCc  : %.*s\n", crec[CACHE_CC].l, crec[CACHE_CC].s);
+-	printf("\tBcc : %.*s\n", crec[CACHE_BCC].l, crec[CACHE_BCC].s);
+-	printf("\tSubj: %.*s\n\n", crec[CACHE_SUBJECT].l, crec[CACHE_SUBJECT].s);
+     }
+ }
+ 
+@@ -688,7 +736,7 @@ int main(int argc, char *argv[])
+ 	    if (mode == MODE_UID) usage();
+ 	    recursive = 1;
+ 	    break;
+-	
++
+ 	default:
+ 	    usage();
+ 	    break;
+@@ -752,3 +800,11 @@ int main(int argc, char *argv[])
+ 
+     exit(r);
+ }
++
++/*
++ * Junk, to help index.c link.
++ */
++void printastring(const char *s __attribute__((unused)))
++{
++    fatal("printastring not implemented in unexpunge", EC_SOFTWARE);
++}
+-- 
+1.7.0.3
+

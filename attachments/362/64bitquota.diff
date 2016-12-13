@@ -1,0 +1,772 @@
+---------------------
+PatchSet 6046
+Date: 2004/08/09 19:51:15
+Author: ken3
+Log:
+support for 64-bit quota usage.
+quota limit is still 32-bit (1KB units) yielding 2TB quota
+
+Members: 
+	configure.in:1.268.2.13->1.268.2.14 [cyrus-imapd-2_3]
+	imap/append.c:1.102.2.7->1.102.2.8 [cyrus-imapd-2_3]
+	imap/imapd.c:1.443.2.36->1.443.2.37 [cyrus-imapd-2_3]
+	imap/mailbox.c:1.147.2.16->1.147.2.17 [cyrus-imapd-2_3]
+	imap/mailbox.h:1.77.2.7->1.77.2.8 [cyrus-imapd-2_3]
+	imap/mbdump.c:1.26.2.6->1.26.2.7 [cyrus-imapd-2_3]
+	imap/mbexamine.c:1.5.2.3->1.5.2.4 [cyrus-imapd-2_3]
+	imap/mboxlist.c:1.221.2.17->1.221.2.18 [cyrus-imapd-2_3]
+	imap/quota.c:1.48.2.6->1.48.2.7 [cyrus-imapd-2_3]
+	imap/quota.h:1.1.2.2->1.1.2.3 [cyrus-imapd-2_3]
+	imap/quota_db.c:1.1.2.2->1.1.2.3 [cyrus-imapd-2_3]
+	imap/reconstruct.c:1.81.2.9->1.81.2.10 [cyrus-imapd-2_3]
+	lib/Makefile.in:1.55.2.5->1.55.2.6 [cyrus-imapd-2_3]
+	lib/byteorder64.c:1.1->1.1.2.1 [cyrus-imapd-2_3]
+	lib/byteorder64.h:1.1->1.1.2.1 [cyrus-imapd-2_3]
+	lib/prot.c:1.82.2.4->1.82.2.5 [cyrus-imapd-2_3]
+
+Index: configure.in
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/configure.in,v
+retrieving revision 1.268.2.13
+retrieving revision 1.268.2.14
+diff -u -u -r1.268.2.13 -r1.268.2.14
+--- configure.in	12 Jul 2004 20:25:25 -0000	1.268.2.13
++++ configure.in	9 Aug 2004 18:51:15 -0000	1.268.2.14
+@@ -42,7 +42,7 @@
+ 
+ dnl
+ dnl configure.in for the Cyrus imapd
+-dnl $Id: configure.in,v 1.268.2.13 2004/07/12 20:25:25 ken3 Exp $
++dnl $Id: configure.in,v 1.268.2.14 2004/08/09 18:51:15 ken3 Exp $
+ dnl
+ 
+ 
+@@ -99,6 +99,15 @@
+ fi
+ AC_C_INLINE
+ 
++dnl Check if `long long int' is available
++AC_CHECK_SIZEOF(long long int)
++AC_CHECK_SIZEOF(unsigned long long int)
++if test "$ac_cv_sizeof_long_long_int" -eq 8 -a \
++        "$ac_cv_sizeof_unsigned_long_long_int" -eq 8; then
++  AC_DEFINE(HAVE_LONG_LONG_INT,[],[Does the compiler support long long int?])
++  AC_C_BIGENDIAN
++fi
++
+ CMU_C___ATTRIBUTE__
+ CMU_C_FPIC
+ 
+@@ -1025,7 +1034,7 @@
+ AC_SUBST(PERL)
+ 
+ AH_TOP([
+-/* $Id: configure.in,v 1.268.2.13 2004/07/12 20:25:25 ken3 Exp $ */
++/* $Id: configure.in,v 1.268.2.14 2004/08/09 18:51:15 ken3 Exp $ */
+ /* 
+  * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
+  *
+Index: imap/append.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/append.c,v
+retrieving revision 1.102.2.7
+retrieving revision 1.102.2.8
+diff -u -u -r1.102.2.7 -r1.102.2.8
+--- imap/append.c	18 Jun 2004 16:13:38 -0000	1.102.2.7
++++ imap/append.c	9 Aug 2004 18:51:16 -0000	1.102.2.8
+@@ -1,5 +1,5 @@
+ /* append.c -- Routines for appending messages to a mailbox
+- * $Id: append.c,v 1.102.2.7 2004/06/18 16:13:38 ken3 Exp $
++ * $Id: append.c,v 1.102.2.8 2004/08/09 18:51:16 ken3 Exp $
+  *
+  * Copyright (c)1998, 2000 Carnegie Mellon University.  All rights reserved.
+  *
+@@ -140,7 +140,7 @@
+     if (!r) {
+ 	if (m.quota.limit >= 0 && quotacheck >= 0 &&
+ 	    m.quota.used + quotacheck > 
+-	    ((unsigned) m.quota.limit * QUOTA_UNITS)) {
++	    ((uquota_t) m.quota.limit * QUOTA_UNITS)) {
+ 	    r = IMAP_QUOTA_EXCEEDED;
+ 	}
+     }
+@@ -208,7 +208,7 @@
+     if (!r) {
+ 	if (as->m.quota.limit >= 0 && quotacheck >= 0 &&
+ 	    as->m.quota.used + quotacheck > 
+-	    ((unsigned) as->m.quota.limit * QUOTA_UNITS)) {
++	    ((uquota_t) as->m.quota.limit * QUOTA_UNITS)) {
+ 	    quota_abort(&as->tid);
+ 	    mailbox_close(&as->m);
+ 	    r = IMAP_QUOTA_EXCEEDED;
+Index: imap/imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.443.2.36
+retrieving revision 1.443.2.37
+diff -u -u -r1.443.2.36 -r1.443.2.37
+--- imap/imapd.c	5 Aug 2004 16:23:31 -0000	1.443.2.36
++++ imap/imapd.c	9 Aug 2004 18:51:16 -0000	1.443.2.37
+@@ -38,7 +38,7 @@
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+-/* $Id: imapd.c,v 1.443.2.36 2004/08/05 16:23:31 ken3 Exp $ */
++/* $Id: imapd.c,v 1.443.2.37 2004/08/09 18:51:16 ken3 Exp $ */
+ 
+ #include <config.h>
+ 
+@@ -2941,10 +2941,10 @@
+  	     */
+  	    int warnsize = config_getint(IMAPOPT_QUOTAWARNKB);
+  	    if (warnsize <= 0 || warnsize >= imapd_mailbox->quota.limit ||
+- 	        (int)((imapd_mailbox->quota.limit * QUOTA_UNITS) -
+-		      imapd_mailbox->quota.used) < (warnsize * QUOTA_UNITS)) {
++ 	        ((uquota_t) (imapd_mailbox->quota.limit - warnsize)) * QUOTA_UNITS < 
++		imapd_mailbox->quota.used) {
+ 		usage = ((double) imapd_mailbox->quota.used * 100.0) / (double)
+-		    (imapd_mailbox->quota.limit * QUOTA_UNITS);
++		    ((uquota_t) imapd_mailbox->quota.limit * QUOTA_UNITS);
+ 		if (usage >= 100.0) {
+ 		    prot_printf(imapd_out, "* NO [ALERT] %s\r\n",
+ 				error_message(IMAP_NO_OVERQUOTA));
+@@ -5592,7 +5592,7 @@
+ 	printastring(name);
+ 	prot_printf(imapd_out, " (");
+ 	if (quota.limit >= 0) {
+-	    prot_printf(imapd_out, "STORAGE %lu %d",
++	    prot_printf(imapd_out, "STORAGE " UQUOTA_T_FMT " %d",
+ 			quota.used/QUOTA_UNITS, quota.limit);
+ 	}
+ 	prot_printf(imapd_out, ")\r\n");
+@@ -5695,7 +5695,7 @@
+ 		printastring(mailboxname);
+ 		prot_printf(imapd_out, " (");
+ 		if (mailbox.quota.limit >= 0) {
+-		    prot_printf(imapd_out, "STORAGE %lu %d",
++		    prot_printf(imapd_out, "STORAGE " UQUOTA_T_FMT " %d",
+ 				mailbox.quota.used/QUOTA_UNITS,
+ 				mailbox.quota.limit);
+ 		}
+Index: imap/mailbox.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.147.2.16
+retrieving revision 1.147.2.17
+diff -u -u -r1.147.2.16 -r1.147.2.17
+--- imap/mailbox.c	5 Aug 2004 16:23:44 -0000	1.147.2.16
++++ imap/mailbox.c	9 Aug 2004 18:51:19 -0000	1.147.2.17
+@@ -38,7 +38,7 @@
+  * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  *
+- * $Id: mailbox.c,v 1.147.2.16 2004/08/05 16:23:44 ken3 Exp $
++ * $Id: mailbox.c,v 1.147.2.17 2004/08/09 18:51:19 ken3 Exp $
+  *
+  */
+ 
+@@ -84,6 +84,7 @@
+ #include "seen.h"
+ #include "util.h"
+ #include "xmalloc.h"
++#include "byteorder64.h"
+ 
+ static int mailbox_doing_reconstruct = 0;
+ #define zeromailbox(m) { memset(&m, 0, sizeof(struct mailbox)); \
+@@ -877,8 +878,16 @@
+     mailbox->last_uid =
+ 	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_LAST_UID)));
+ 
++#ifdef HAVE_LONG_LONG_INT
++    if (mailbox->minor_version > 5) {
++	/* newer versions may use 64bit quotas now */
++        mailbox->quota_mailbox_used =
++            ntohll(*((bit64 *)(mailbox->index_base+OFFSET_QUOTA_MAILBOX_USED64)));
++    } else
++#else
+     mailbox->quota_mailbox_used =
+ 	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_QUOTA_MAILBOX_USED-quota_upgrade_offset)));
++#endif
+ 
+     if (mailbox->start_offset < OFFSET_POP3_LAST_LOGIN-quota_upgrade_offset+sizeof(bit32)) {
+ 	mailbox->pop3_last_login = 0;
+@@ -1280,9 +1289,18 @@
+     *((bit32 *)(buf+OFFSET_EXISTS)) = htonl(mailbox->exists);
+     *((bit32 *)(buf+OFFSET_LAST_APPENDDATE)) = htonl(mailbox->last_appenddate);
+     *((bit32 *)(buf+OFFSET_LAST_UID)) = htonl(mailbox->last_uid);
+-    *((bit32 *)(buf+OFFSET_QUOTA_RESERVED_FIELD)) = htonl(0); /* RESERVED */
++
++    /* quotas may be 64bit now */
++#ifdef HAVE_LONG_LONG_INT
++    *((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) =
++	htonll(mailbox->quota_mailbox_used);
++#else	
++    /* zero the unused 32bits */
++    *((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) = htonl(0)
+     *((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED)) =
+ 	htonl(mailbox->quota_mailbox_used);
++#endif
++
+     *((bit32 *)(buf+OFFSET_POP3_LAST_LOGIN)) = htonl(mailbox->pop3_last_login);
+     *((bit32 *)(buf+OFFSET_UIDVALIDITY)) = htonl(mailbox->uidvalidity);
+     *((bit32 *)(buf+OFFSET_DELETED)) = htonl(mailbox->deleted);
+@@ -1535,9 +1553,18 @@
+     *((bit32 *)(buf+OFFSET_EXISTS)) = htonl(mailbox->exists);
+     *((bit32 *)(buf+OFFSET_LAST_APPENDDATE)) = htonl(mailbox->last_appenddate);
+     *((bit32 *)(buf+OFFSET_LAST_UID)) = htonl(mailbox->last_uid);
+-    /* OFFSET_QUOTA_RESERVED_FIELD left as zero */
++
++    /* newer versions may use 64bit quotas */
++#ifdef HAVE_LONG_LONG_INT
++    *((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) =
++	htonll(mailbox->quota_mailbox_used);
++#else	
++    /* zero the unused 32bits */
++    *((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) = htonl(0);
+     *((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED)) =
+ 	htonl(mailbox->quota_mailbox_used);
++#endif
++
+     *((bit32 *)(buf+OFFSET_POP3_LAST_LOGIN)) = htonl(mailbox->pop3_last_login);
+     *((bit32 *)(buf+OFFSET_UIDVALIDITY)) = htonl(mailbox->uidvalidity);
+     *((bit32 *)(buf+OFFSET_DELETED)) = htonl(mailbox->deleted);
+@@ -1714,7 +1741,7 @@
+ static int process_records(struct mailbox *mailbox, FILE *newindex,
+ 			   const char *index_base, unsigned long exists,
+ 			   unsigned long *deleted, unsigned *numdeleted,
+-			   unsigned *quotadeleted, unsigned *numansweredflag,
++			   uquota_t *quotadeleted, unsigned *numansweredflag,
+ 			   unsigned *numdeletedflag, unsigned *numflaggedflag,
+ 			   FILE *newcache, size_t *new_cache_total_size,
+ 			   int expunge_fd, long last_offset,
+@@ -1840,8 +1867,13 @@
+     *((bit32 *)(buf+OFFSET_FLAGGED)) = htonl(newflagged);
+ 
+     /* Fix up quota_mailbox_used */
++#ifdef HAVE_LONG_LONG_INT
++    *((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) =
++	htonll(ntohll(*((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64))) - *quotadeleted);
++#else
+     *((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED)) =
+ 	htonl(ntohl(*((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED))) - *quotadeleted);
++#endif
+ 
+     /* Fix up start offset if necessary */
+     if (mailbox->start_offset < INDEX_HEADER_SIZE) {
+@@ -1881,7 +1913,8 @@
+     char fnamebufnew[MAX_MAILBOX_PATH+1];
+     FILE *newindex = NULL, *newcache = NULL, *newexpungeindex = NULL;
+     unsigned long *deleted = 0;
+-    unsigned numdeleted = 0, quotadeleted = 0;
++    unsigned numdeleted = 0;
++    uquota_t quotadeleted = 0;
+     unsigned numansweredflag = 0;
+     unsigned numdeletedflag = 0;
+     unsigned numflaggedflag = 0;
+@@ -2041,7 +2074,16 @@
+ 		*((bit32 *)(buf+OFFSET_ANSWERED)) = htonl(0);
+ 		*((bit32 *)(buf+OFFSET_DELETED)) = htonl(0);
+ 		*((bit32 *)(buf+OFFSET_FLAGGED)) = htonl(0);
++
++		/* quotas may be 64bit now */
++#ifdef HAVE_LONG_LONG_INT
++		*((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) = htonll(0);
++#else
++		/* zero the unused 32bits */
++		*((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) = htonl(0);
+ 		*((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED)) = htonl(0);
++#endif
++
+ 		*((bit32 *)(buf+OFFSET_LEAKED_CACHE)) = htonl(0);
+ 
+ 		n = retry_write(expunge_fd, buf, mailbox->start_offset);
+@@ -2127,7 +2169,7 @@
+ 	if (!r) quota_commit(&tid);
+ 	else {
+ 	    syslog(LOG_ERR,
+-		   "LOSTQUOTA: unable to record free of %u bytes in quota %s",
++		   "LOSTQUOTA: unable to record free of " UQUOTA_T_FMT " bytes in quota %s",
+ 		   quotadeleted, mailbox->quota.root);
+ 	}
+     }
+@@ -2188,8 +2230,14 @@
+ 	*((bit32 *)(buf+OFFSET_FLAGGED)) = htonl(newflagged);
+ 
+ 	/* Fix up quota_mailbox_used */
++#ifdef HAVE_LONG_LONG_INT
++	*((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) =
++	    htonll(ntohll(*((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)))+quotadeleted);
++#else
+ 	*((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED)) =
+ 	    htonl(ntohl(*((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED)))+quotadeleted);
++#endif
++
+ 	/* Fix up start offset if necessary */
+ 	if (mailbox->start_offset < INDEX_HEADER_SIZE) {
+ 	    *((bit32 *)(buf+OFFSET_START_OFFSET)) = htonl(INDEX_HEADER_SIZE);
+@@ -2538,7 +2586,7 @@
+ 	r = quota_write(&mailbox->quota, &tid);
+ 	if (r) {
+ 	    syslog(LOG_ERR,
+-		   "LOSTQUOTA: unable to record free of %lu bytes in quota %s",
++		   "LOSTQUOTA: unable to record free of " UQUOTA_T_FMT " bytes in quota %s",
+ 		   mailbox->quota_mailbox_used, mailbox->quota.root);
+ 	}
+ 	else
+@@ -2653,7 +2701,7 @@
+ 	    strcmp(oldmailbox->quota.root, newmailbox->quota.root) != 0) {
+ 	    if (!r && newmailbox->quota.limit >= 0 &&
+ 		newmailbox->quota.used + oldmailbox->quota_mailbox_used >
+-		((unsigned) newmailbox->quota.limit * QUOTA_UNITS)) {
++		((uquota_t) newmailbox->quota.limit * QUOTA_UNITS)) {
+ 		r = IMAP_QUOTA_EXCEEDED;
+ 	    }
+ 	}
+@@ -2877,7 +2925,7 @@
+ 	    strcmp(oldmailbox.quota.root, newmailbox.quota.root) != 0) {
+ 	    if (!r && newmailbox.quota.limit >= 0 &&
+ 		newmailbox.quota.used + oldmailbox.quota_mailbox_used >
+-		((unsigned) newmailbox.quota.limit * QUOTA_UNITS)) {
++		((uquota_t) newmailbox.quota.limit * QUOTA_UNITS)) {
+ 		r = IMAP_QUOTA_EXCEEDED;
+ 	    }
+ 	}
+@@ -3030,7 +3078,7 @@
+ 	else if (r2 == IMAP_QUOTAROOT_NONEXISTENT) r2 = 0;
+ 	if (r2) {
+ 	    syslog(LOG_ERR,
+-	      "LOSTQUOTA: unable to record use of %lu bytes in quota %s",
++	      "LOSTQUOTA: unable to record use of " UQUOTA_T_FMT " bytes in quota %s",
+ 		   newmailbox.quota_mailbox_used, newmailbox.quota.root);
+ 	}
+     }
+Index: imap/mailbox.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.h,v
+retrieving revision 1.77.2.7
+retrieving revision 1.77.2.8
+diff -u -u -r1.77.2.7 -r1.77.2.8
+--- imap/mailbox.h	8 Apr 2004 21:13:05 -0000	1.77.2.7
++++ imap/mailbox.h	9 Aug 2004 18:51:19 -0000	1.77.2.8
+@@ -1,5 +1,5 @@
+ /* mailbox.h -- Mailbox format definitions
+- * $Id: mailbox.h,v 1.77.2.7 2004/04/08 21:13:05 ken3 Exp $
++ * $Id: mailbox.h,v 1.77.2.8 2004/08/09 18:51:19 ken3 Exp $
+  *
+  * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
+  *
+@@ -45,6 +45,7 @@
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <limits.h>
++#include <config.h>
+ 
+ #include "auth.h"
+ #include "quota.h"
+@@ -61,6 +62,10 @@
+ #error dont know what to use for bit32
+ #endif
+ 
++#ifdef HAVE_LONG_LONG_INT
++typedef unsigned long long int bit64;
++#endif
++
+ #define MAX_MAILBOX_NAME 490
+ #define MAX_MAILBOX_PATH 4096
+ 
+@@ -128,7 +133,7 @@
+     unsigned long exists;
+     time_t last_appenddate;
+     unsigned long last_uid;
+-    unsigned long quota_mailbox_used;
++    uquota_t quota_mailbox_used;
+     unsigned long pop3_last_login;
+     unsigned long uidvalidity;
+ 
+@@ -170,8 +175,8 @@
+ #define OFFSET_EXISTS 20
+ #define OFFSET_LAST_APPENDDATE 24
+ #define OFFSET_LAST_UID 28
+-#define OFFSET_QUOTA_RESERVED_FIELD 32  /* Reserved for 64bit quotas */
+-#define OFFSET_QUOTA_MAILBOX_USED 36
++#define OFFSET_QUOTA_MAILBOX_USED64 32  /* offset for 64bit quotas */
++#define OFFSET_QUOTA_MAILBOX_USED 36    /* offset for 32bit quotas */
+ #define OFFSET_POP3_LAST_LOGIN 40
+ #define OFFSET_UIDVALIDITY 44
+ #define OFFSET_DELETED 48      /* added for ACAP */
+Index: imap/mbdump.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mbdump.c,v
+retrieving revision 1.26.2.6
+retrieving revision 1.26.2.7
+diff -u -u -r1.26.2.6 -r1.26.2.7
+--- imap/mbdump.c	25 May 2004 01:28:09 -0000	1.26.2.6
++++ imap/mbdump.c	9 Aug 2004 18:51:19 -0000	1.26.2.7
+@@ -1,5 +1,5 @@
+ /* mbdump.c -- Mailbox dump routines
+- * $Id: mbdump.c,v 1.26.2.6 2004/05/25 01:28:09 ken3 Exp $
++ * $Id: mbdump.c,v 1.26.2.7 2004/08/09 18:51:19 ken3 Exp $
+  * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+@@ -536,7 +536,7 @@
+ {
+     struct buf file, data;
+     char c;
+-    int quotaused = 0;
++    uquota_t quotaused = 0;
+     int r = 0;
+     int curfile = -1;
+     const char *userid = NULL;
+Index: imap/mbexamine.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mbexamine.c,v
+retrieving revision 1.5.2.3
+retrieving revision 1.5.2.4
+diff -u -u -r1.5.2.3 -r1.5.2.4
+--- imap/mbexamine.c	24 Jun 2004 15:16:27 -0000	1.5.2.3
++++ imap/mbexamine.c	9 Aug 2004 18:51:20 -0000	1.5.2.4
+@@ -39,7 +39,7 @@
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+-/* $Id: mbexamine.c,v 1.5.2.3 2004/06/24 15:16:27 ken3 Exp $ */
++/* $Id: mbexamine.c,v 1.5.2.4 2004/08/09 18:51:20 ken3 Exp $ */
+ 
+ #include <config.h>
+ 
+@@ -266,7 +266,8 @@
+     printf("  Minor Version: %d\n", mailbox.minor_version);
+     printf("  Header Size: %ld bytes  Record Size: %ld bytes\n",
+ 	   mailbox.start_offset, mailbox.record_size);
+-    printf("  Number of Messages: %ld\n", mailbox.exists);
++    printf("  Number of Messages: %lu  Mailbox Size: " UQUOTA_T_FMT " bytes\n",
++	   mailbox.exists, mailbox.quota_mailbox_used);
+     printf("  Last Append Date: (%ld) %s", mailbox.last_appenddate,
+ 	   ctime(&mailbox.last_appenddate));
+     printf("  UIDValidity: %ld  Last UID: %ld\n", mailbox.uidvalidity,
+Index: imap/mboxlist.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mboxlist.c,v
+retrieving revision 1.221.2.17
+retrieving revision 1.221.2.18
+diff -u -u -r1.221.2.17 -r1.221.2.18
+--- imap/mboxlist.c	5 Aug 2004 16:23:44 -0000	1.221.2.17
++++ imap/mboxlist.c	9 Aug 2004 18:51:20 -0000	1.221.2.18
+@@ -40,7 +40,7 @@
+  *
+  */
+ /*
+- * $Id: mboxlist.c,v 1.221.2.17 2004/08/05 16:23:44 ken3 Exp $
++ * $Id: mboxlist.c,v 1.221.2.18 2004/08/09 18:51:20 ken3 Exp $
+  */
+ 
+ #include <config.h>
+@@ -2535,7 +2535,7 @@
+ 	r = quota_write(&mailbox.quota, tid);
+ 	if (r) {
+ 	    syslog(LOG_ERR,
+-		   "LOSTQUOTA: unable to record free of %lu bytes in quota %s",
++		   "LOSTQUOTA: unable to record free of " UQUOTA_T_FMT " bytes in quota %s",
+ 		   mailbox.quota_mailbox_used, mailbox.quota.root);
+ 	}
+ 	free(mailbox.quota.root);
+Index: imap/quota.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/quota.c,v
+retrieving revision 1.48.2.6
+retrieving revision 1.48.2.7
+diff -u -u -r1.48.2.6 -r1.48.2.7
+--- imap/quota.c	30 Jun 2004 19:41:21 -0000	1.48.2.6
++++ imap/quota.c	9 Aug 2004 18:51:20 -0000	1.48.2.7
+@@ -40,7 +40,7 @@
+  *
+  */
+ 
+-/* $Id: quota.c,v 1.48.2.6 2004/06/30 19:41:21 ken3 Exp $ */
++/* $Id: quota.c,v 1.48.2.7 2004/08/09 18:51:20 ken3 Exp $ */
+ 
+ 
+ #include <config.h>
+@@ -120,7 +120,7 @@
+     struct quota quota;
+     int refcount;
+     int deleted;
+-    unsigned long newused;
++    uquota_t newused;
+ };
+ 
+ #define QUOTAGROW 300
+@@ -251,7 +251,7 @@
+     }
+     memset(&quota[quota_num], 0, sizeof(struct quotaentry));
+     quota[quota_num].quota.root = xstrndup(key, keylen);
+-    sscanf(data, "%lu %d",
++    sscanf(data, UQUOTA_T_FMT " %d",
+ 	   &quota[quota_num].quota.used, &quota[quota_num].quota.limit);
+   
+     quota_num++;
+@@ -422,7 +422,7 @@
+ 	(*count)++;
+     }
+     if (quota[thisquota].quota.used != quota[thisquota].newused) {
+-	printf("%s: usage was %lu, now %lu\n", quota[thisquota].quota.root,
++	printf("%s: usage was " UQUOTA_T_FMT ", now " UQUOTA_T_FMT "\n", quota[thisquota].quota.root,
+ 	       quota[thisquota].quota.used, quota[thisquota].newused);
+ 	quota[thisquota].quota.used = quota[thisquota].newused;
+ 	r = quota_write(&quota[thisquota].quota, tid);
+@@ -489,12 +489,12 @@
+     int i;
+     char buf[MAX_MAILBOX_PATH+1];
+ 
+-    printf("   Quota  %% Used    Used Root\n");
++    printf("   Quota   %% Used     Used Root\n");
+ 
+     for (i = 0; i < quota_num; i++) {
+ 	if (quota[i].deleted) continue;
+ 	if (quota[i].quota.limit > 0) {
+-	    printf(" %7d %7ld", quota[i].quota.limit,
++	    printf(" %7d " QUOTA_REPORT_FMT , quota[i].quota.limit,
+ 		   ((quota[i].quota.used / QUOTA_UNITS) * 100) / quota[i].quota.limit);
+ 	}
+ 	else if (quota[i].quota.limit == 0) {
+@@ -507,6 +507,6 @@
+ 	(*quota_namespace.mboxname_toexternal)(&quota_namespace,
+ 					       quota[i].quota.root,
+ 					       "cyrus", buf);
+-	printf(" %7ld %s\n", quota[i].quota.used / QUOTA_UNITS, buf);
++	printf(" " QUOTA_REPORT_FMT " %s\n", quota[i].quota.used / QUOTA_UNITS, buf);
+     }
+ }
+Index: imap/quota.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/quota.h,v
+retrieving revision 1.1.2.2
+retrieving revision 1.1.2.3
+diff -u -u -r1.1.2.2 -r1.1.2.3
+--- imap/quota.h	27 Feb 2004 21:17:35 -0000	1.1.2.2
++++ imap/quota.h	9 Aug 2004 18:51:21 -0000	1.1.2.3
+@@ -38,25 +38,44 @@
+  * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  *
+- * $Id: quota.h,v 1.1.2.2 2004/02/27 21:17:35 ken3 Exp $
++ * $Id: quota.h,v 1.1.2.3 2004/08/09 18:51:21 ken3 Exp $
+  */
+ 
+ #ifndef INCLUDED_QUOTA_H
+ #define INCLUDED_QUOTA_H
+ 
+ #include "cyrusdb.h"
++#include <config.h>
+ 
+ #define FNAME_QUOTADB "/quotas.db"
+ 
+ #define QUOTA_UNITS (1024)
+ 
++/* Define the proper quota type, it should either be a
++ * long or a long long int depending upon what the
++ * the compiler supports.
++ */
++#ifdef HAVE_LONG_LONG_INT
++typedef unsigned long long int uquota_t;
++typedef long long int quota_t;
++#define UQUOTA_T_FMT     "%llu"
++#define QUOTA_T_FMT      "%lld"
++#define QUOTA_REPORT_FMT "%8llu"
++#else
++typedef unsigned long uquota_t;
++typedef long quota_t;
++#define UQUOTA_T_FMT     "%lu"
++#define QUOTA_T_FMT      "%ld"
++#define QUOTA_REPORT_FMT "%8lu"
++#endif
++
+ extern struct db *qdb;
+ 
+ struct quota {
+     char *root;
+ 
+     /* Information in quota entry */
+-    unsigned long used;
++    uquota_t used;
+     int limit;			/* in QUOTA_UNITS */
+ };
+ 
+Index: imap/quota_db.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/quota_db.c,v
+retrieving revision 1.1.2.2
+retrieving revision 1.1.2.3
+diff -u -u -r1.1.2.2 -r1.1.2.3
+--- imap/quota_db.c	25 May 2004 01:28:13 -0000	1.1.2.2
++++ imap/quota_db.c	9 Aug 2004 18:51:21 -0000	1.1.2.3
+@@ -38,7 +38,7 @@
+  * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  *
+- * $Id: quota_db.c,v 1.1.2.2 2004/05/25 01:28:13 ken3 Exp $
++ * $Id: quota_db.c,v 1.1.2.3 2004/08/09 18:51:21 ken3 Exp $
+  *
+  */
+ 
+@@ -89,7 +89,7 @@
+ 
+     switch (r) {
+     case CYRUSDB_OK:
+-	sscanf(data, "%lu %d", &quota->used, &quota->limit);
++	sscanf(data, UQUOTA_T_FMT " %d", &quota->used, &quota->limit);
+ 	break;
+ 
+     case CYRUSDB_AGAIN:
+@@ -151,7 +151,7 @@
+     if (!qrlen) return IMAP_QUOTAROOT_NONEXISTENT;
+ 
+     len = snprintf(buf, sizeof(buf) - 1,
+-		   "%lu %d", quota->used, quota->limit);
++		   UQUOTA_T_FMT " %d", quota->used, quota->limit);
+     r = QDB->store(qdb, quota->root, qrlen, buf, len, tid);
+     
+     switch (r) {
+Index: imap/reconstruct.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/reconstruct.c,v
+retrieving revision 1.81.2.9
+retrieving revision 1.81.2.10
+diff -u -u -r1.81.2.9 -r1.81.2.10
+--- imap/reconstruct.c	5 Aug 2004 16:23:47 -0000	1.81.2.9
++++ imap/reconstruct.c	9 Aug 2004 18:51:21 -0000	1.81.2.10
+@@ -39,7 +39,7 @@
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+-/* $Id: reconstruct.c,v 1.81.2.9 2004/08/05 16:23:47 ken3 Exp $ */
++/* $Id: reconstruct.c,v 1.81.2.10 2004/08/09 18:51:21 ken3 Exp $ */
+ 
+ #include <config.h>
+ 
+@@ -94,6 +94,7 @@
+ #include "retry.h"
+ #include "convert_code.h"
+ #include "util.h"
++#include "byteorder64.h"
+ 
+ extern int optind;
+ extern char *optarg;
+@@ -441,7 +442,7 @@
+     char *list_acl, *list_part;
+     int list_type;
+ 
+-    unsigned long new_quota = 0;
++    uquota_t new_quota = 0;
+ 
+     struct index_record message_index, old_index;
+     static struct index_record zero_index;
+@@ -774,7 +775,14 @@
+     *((bit32 *)(buf+OFFSET_EXISTS)) = htonl(new_exists);
+     *((bit32 *)(buf+OFFSET_LAST_APPENDDATE)) = htonl(mailbox.last_appenddate);
+     *((bit32 *)(buf+OFFSET_LAST_UID)) = htonl(mailbox.last_uid);
+-    *((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED)) = htonl(new_quota);
++
++    /* quotas may be 64bit now */
++#ifdef HAVE_LONG_LONG_INT
++    *((bit64 *)(buf+OFFSET_QUOTA_MAILBOX_USED64)) = htonll(new_quota);
++#else
++    *((bit32 *)(buf+OFFSET_QUOTA_MAILBOX_USED32)) = htonl(new_quota);
++#endif
++
+     *((bit32 *)(buf+OFFSET_POP3_LAST_LOGIN)) = htonl(mailbox.pop3_last_login);
+     *((bit32 *)(buf+OFFSET_UIDVALIDITY)) = htonl(mailbox.uidvalidity);
+     *((bit32 *)(buf+OFFSET_DELETED)) = htonl(new_deleted);
+Index: lib/Makefile.in
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/Makefile.in,v
+retrieving revision 1.55.2.5
+retrieving revision 1.55.2.6
+diff -u -u -r1.55.2.5 -r1.55.2.6
+--- lib/Makefile.in	31 May 2004 18:22:58 -0000	1.55.2.5
++++ lib/Makefile.in	9 Aug 2004 18:51:21 -0000	1.55.2.6
+@@ -40,7 +40,7 @@
+ # AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+ # OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ 
+-# $Id: Makefile.in,v 1.55.2.5 2004/05/31 18:22:58 ken3 Exp $
++# $Id: Makefile.in,v 1.55.2.6 2004/08/09 18:51:21 ken3 Exp $
+ 
+ # Authorization namespace.
+ AUTH=auth_@WITH_AUTH@.o
+@@ -85,7 +85,7 @@
+ 	$(srcdir)/lsort.h $(srcdir)/stristr.h \
+ 	$(srcdir)/util.h $(srcdir)/xmalloc.h $(srcdir)/imapurl.h \
+ 	$(srcdir)/cyrusdb.h $(srcdir)/iptostring.h $(srcdir)/rfc822date.h \
+-	$(srcdir)/libcyr_cfg.h
++	$(srcdir)/libcyr_cfg.h $(srcdir)/byteorder64.h
+ 
+ LIBCYR_OBJS = acl.o bsearch.o charset.o glob.o retry.o util.o \
+ 	libcyr_cfg.o mkgmtime.o prot.o parseaddr.o imclient.o imparse.o \
+@@ -93,7 +93,7 @@
+ 	chartable.o imapurl.o nonblock_@WITH_NONBLOCK@.o lock_@WITH_LOCK@.o \
+ 	gmtoff_@WITH_GMTOFF@.o map_@WITH_MAP@.o $(ACL) $(AUTH) \
+ 	@LIBOBJS@ @CYRUSDB_OBJS@ \
+-	iptostring.o xmalloc.o wildmat.o
++	iptostring.o xmalloc.o wildmat.o byteorder64.o
+ 
+ LIBCYRM_HDRS = $(srcdir)/hash.h $(srcdir)/mpool.h $(srcdir)/xmalloc.h \
+ 	$(srcdir)/strhash.o $(srcdir)/libconfig.h $(srcdir)/assert.h \
+Index: lib/prot.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/prot.c,v
+retrieving revision 1.82.2.4
+retrieving revision 1.82.2.5
+diff -u -u -r1.82.2.4 -r1.82.2.5
+--- lib/prot.c	1 Mar 2004 14:30:21 -0000	1.82.2.4
++++ lib/prot.c	9 Aug 2004 18:51:22 -0000	1.82.2.5
+@@ -41,7 +41,7 @@
+  *
+  */
+ /*
+- * $Id: prot.c,v 1.82.2.4 2004/03/01 14:30:21 ken3 Exp $
++ * $Id: prot.c,v 1.82.2.5 2004/08/09 18:51:22 ken3 Exp $
+  */
+ 
+ #include <config.h>
+@@ -871,6 +871,11 @@
+     char buf[30];
+     va_start(pvar, fmt);
+ 
++#ifdef HAVE_LONG_LONG_INT
++    long long int ll;
++    unsigned long long int ull;
++#endif
++
+     assert(s->write);
+ 
+     while ((percent = strchr(fmt, '%')) != 0) {
+@@ -893,6 +898,27 @@
+ 		snprintf(buf, sizeof(buf), "%lu", ul);
+ 		prot_write(s, buf, strlen(buf));
+ 		break;
++
++#ifdef HAVE_LONG_LONG_INT
++            case 'l':
++	        switch (*++percent) {
++		case 'd':
++		    ll = va_arg(pvar, long long int);
++		    snprintf(buf, sizeof(buf), "%lld", ll);
++		    prot_write(s, buf, strlen(buf));
++		    break;
++
++		case 'u':
++		    ull = va_arg(pvar, unsigned long long int);
++		    snprintf(buf, sizeof(buf), "%llu", ull);
++		    prot_write(s, buf, strlen(buf));
++		    break;
++
++	        default:
++		    abort();
++		}
++		break;
++#endif
+ 
+ 	    default:
+ 		abort();

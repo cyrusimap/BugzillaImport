@@ -1,0 +1,492 @@
+From bf080b28e2b4389558d3bc6f25f605f6924773f9 Mon Sep 17 00:00:00 2001
+From: Brian Awood <bawood@umich.edu>
+Date: Thu, 24 Sep 2009 15:43:03 -0400
+Subject: [PATCH 1/3] Add recursive (-r) and count expunged (-c) to unexpunge command
+
+The -c flag prints a count of the messages in the expunged state
+for a mailbox.  The output is in the form "mailbox: count".
+The -r flag causes unexpunge to recurse from the specified
+mailbox, it can be combined with the new -c flag, or the existing
+-l and -a but not -u.
+
+diff --git a/imap/unexpunge.c b/imap/unexpunge.c
+index afbc6df..e9dd19e 100644
+--- a/imap/unexpunge.c
++++ b/imap/unexpunge.c
+@@ -79,17 +79,24 @@
+ /* global state */
+ const int config_need_data = 0;
+ 
++int  unsetdeleted = 0;
++time_t time_since;
++
+ /* current namespace */
+ static struct namespace unex_namespace;
+ 
++int do_unexpunge(char *name, int matchlen, int maycreate, void *rock);
++int unexpunge(char *mboxname, unsigned long *uids, unsigned nuids);
++
+ int verbose = 0;
+ 
+ void usage(void)
+ {
+     fprintf(stderr,
+-	    "unexpunge [-C <altconfig>] -l <mailbox>\n"
++	    "unexpunge [-C <altconfig>] -l [-r] <mailbox>\n"
++	    "unexpunge [-C <altconfig>] -c [-r] <mailbox>\n"
+             "unexpunge [-C <altconfig>] -t time-interval [ -d ] [ -v ] mailbox\n"
+-	    "unexpunge [-C <altconfig>] -a [-d] [-v] <mailbox>\n"
++	    "unexpunge [-C <altconfig>] -a [-d] [-v] [-r] <mailbox>\n"
+ 	    "unexpunge [-C <altconfig>] -u [-d] [-v] <mailbox> <uid>...\n");
+     exit(-1);
+ }
+@@ -99,8 +106,9 @@ enum {
+     MODE_LIST,
+     MODE_ALL,
+     MODE_TIME,
+-    MODE_UID
+-};
++    MODE_UID,
++    MODE_COUNT
++} mode = MODE_UNKNOWN;
+ 
+ struct msg {
+     unsigned recno;
+@@ -162,7 +170,7 @@ void list_expunged(struct mailbox *mailbox,
+ int restore_expunged(struct mailbox *mailbox,
+ 		     struct msg *msgs, unsigned long eexists,
+ 		     const char *expunge_index_base,
+-		     unsigned *numrestored, int unsetdeleted)
++		     unsigned *numrestored)
+ {
+     int r = 0;
+     const char *irec;
+@@ -415,114 +423,33 @@ int restore_expunged(struct mailbox *mailbox,
+     return r;
+ }
+ 
+-int main(int argc, char *argv[])
++/*
++ * mboxlist_findall() callback function for unexpunge recursive features
++ */
++int
++do_unexpunge(char *name,
++	  int matchlen __attribute__((unused)),
++	  int maycreate __attribute__((unused)),
++	  void *rock __attribute__((unused)))
+ {
+-    extern char *optarg;
+-    int opt, r = 0;
+-    char *alt_config = NULL;
+-    char buf[MAX_MAILBOX_PATH+1];
+-    struct mailbox mailbox;
+-    int doclose = 0, mode = MODE_UNKNOWN, unsetdeleted = 0;
+-    char expunge_fname[MAX_MAILBOX_PATH+1];
++    return unexpunge(name, NULL, 0);
++}
++
++int
++unexpunge(char *mboxname, unsigned long *uids, unsigned nuids)
++{
++    int doclose = 0, r;
+     int expunge_fd = -1;
+-    struct stat sbuf;
++    char expunge_fname[MAX_MAILBOX_PATH+1];
+     const char *lockfailaction;
+-    struct msg *msgs;
+     unsigned numrestored = 0;
+-    time_t last_update, time_since = time(NULL);
+-    int len, secs = 0;
+-
+-    if ((geteuid()) == 0 && (become_cyrus() != 0)) {
+-	fatal("must run as the Cyrus user", EC_USAGE);
+-    }
+-
+-    while ((opt = getopt(argc, argv, "C:laudt:v")) != EOF) {
+-	switch (opt) {
+-	case 'C': /* alt config file */
+-	    alt_config = optarg;
+-	    break;
+-
+-	case 'l':
+-	    if (mode != MODE_UNKNOWN) usage();
+-	    mode = MODE_LIST;
+-	    break;
+-	
+-	case 'a':
+-	    if (mode != MODE_UNKNOWN) usage();
+-	    mode = MODE_ALL;
+-	    break;
+-	
+-	case 't':
+-	    if (mode != MODE_UNKNOWN) usage();
+-
+-	    mode = MODE_TIME;
+-            secs = atoi(optarg);
+-            len  = strlen(optarg);
+-            
+-            if ((secs > 0) && (len > 1)) {
+-                switch (optarg[len-1]) {
+-                case 'm':
+-                    secs *= 60;
+-                    break;
+-                case 'h':
+-                    secs *= (60*60);
+-                    break;
+-                case 'd':
+-                    secs *= (24*60*60);
+-                    break;
+-                case 'w':
+-                    secs *= (7*24*60*60);
+-                    break;
+-                }
+-            }
+-            time_since = time(NULL) - secs;
+-	    break;
+-
+-	case 'u':
+-	    if (mode != MODE_UNKNOWN) usage();
+-	    mode = MODE_UID;
+-	    break;
+-
+-	case 'd':
+-	    unsetdeleted = 1;
+-	    break;
+-	
+-	case 'v':
+-	    verbose = 1;
+-	    break;
+-	
+-	default:
+-	    usage();
+-	    break;
+-	}
+-    }
+-
+-    /* sanity check */
+-    if (mode == MODE_UNKNOWN ||
+-	(optind + (mode == MODE_UID ? 1 : 0)) >= argc) usage();
+-
+-    cyrus_init(alt_config, "unexpunge", 0);
+-
+-    mboxlist_init(0);
+-    mboxlist_open(NULL);
+-
+-    quotadb_init(0);
+-    quotadb_open(NULL);
+-
+-    sync_log_init();
+-
+-    /* Set namespace -- force standard (internal) */
+-    if ((r = mboxname_init_namespace(&unex_namespace, 1)) != 0) {
+-	syslog(LOG_ERR, error_message(r));
+-	fatal(error_message(r), EC_CONFIG);
+-    }
+-
+-    /* Translate mailboxname */
+-    (*unex_namespace.mboxname_tointernal)(&unex_namespace, argv[optind],
+-					  NULL, buf);
++    struct mailbox mailbox;
++    struct msg *msgs;
++    struct stat sbuf;
++    time_t last_update;
+ 
+     /* Open/lock header */
+-    r = mailbox_open_header(buf, 0, &mailbox);
++    r = mailbox_open_header(mboxname, 0, &mailbox);
+     if (!r && mailbox.header_fd != -1) {
+ 	doclose = 1;
+ 	(void) mailbox_lock_header(&mailbox);
+@@ -537,6 +464,13 @@ int main(int argc, char *argv[])
+     }
+     if (!r) r = mailbox_lock_pop(&mailbox);
+ 
++    if (r) {
++	/* mailbox corrupt/nonexistent -- skip it */
++	syslog(LOG_WARNING, "unable to open/lock mailbox %s", mboxname);
++	if (doclose) mailbox_close(&mailbox);
++	return 0;
++    }
++
+     /* Open expunge index */
+     if (!r) {
+ 	char *path =
+@@ -550,9 +484,16 @@ int main(int argc, char *argv[])
+ 	expunge_fd = open(expunge_fname, O_RDWR, 0666);
+     }
+ 
+-    if (r || expunge_fd == -1) {
++    if (expunge_fd == -1) {
++	if (mode == MODE_COUNT) {
++	    /* Translate mailboxname */
++	    char buf[MAX_MAILBOX_PATH+1];
++	    (*unex_namespace.mboxname_toexternal)(&unex_namespace,
++			     mailbox.name, NULL, buf);
++	    printf("%s: 0\n", buf);
++	}
+ 	/* mailbox corrupt/nonexistent -- skip it */
+-	syslog(LOG_WARNING, "unable to open/lock mailbox %s", argv[optind]);
++	syslog(LOG_WARNING, "unable to open %s: %m", expunge_fname);
+ 	if (doclose) mailbox_close(&mailbox);
+ 	return 0;
+     }
+@@ -567,31 +508,33 @@ int main(int argc, char *argv[])
+ 	unsigned long exists, uid;
+ 	const char *rec;
+ 	unsigned msgno;
+-	unsigned long *uids = NULL;
+-	unsigned nuids = 0;
+ 
+ 	map_refresh(expunge_fd, 1, &expunge_index_base,
+ 		    &expunge_index_len, sbuf.st_size, "expunge",
+ 		    mailbox.name);
+ 
++	if (sbuf.st_size < INDEX_HEADER_SIZE) {
++	    syslog(LOG_ERR, "ERROR: %s cyrus.expunge invalid",
++		    mailbox.name);
++	    goto done;
++	}
++
+ 	exists = ntohl(*((bit32 *)(expunge_index_base+OFFSET_EXISTS)));
++	if (sbuf.st_size < ( INDEX_HEADER_SIZE + (exists * INDEX_RECORD_SIZE))) {
++	    syslog(LOG_ERR,
++		    "ERROR: %s cyrus.expunge too short for %lu messages",
++		    mailbox.name, exists);
++	    goto done;
++	}
+ 
++    if (mode == MODE_COUNT) {
++	/* Translate mailboxname */
++	char buf[MAX_MAILBOX_PATH+1];
++	(*unex_namespace.mboxname_toexternal)(&unex_namespace, mailbox.name, NULL, buf);
++	printf("%s: %lu\n", buf, exists);
++    } else {
+ 	msgs = (struct msg *) xmalloc(exists * sizeof(struct msg));
+ 
+-	/* Get UIDs of messages to restore */
+-	if (mode == MODE_UID) {
+-	    unsigned i;
+-
+-	    nuids = argc - ++optind;
+-	    uids = (unsigned long *) xmalloc(nuids * sizeof(unsigned long));
+-
+-	    for (i = 0; i < nuids; i++)
+-		uids[i] = strtoul(argv[optind+i], NULL, 10);
+-
+-	    /* Sort the UIDs so we can binary search */
+-	    qsort(uids, nuids, sizeof(unsigned long), compare_uid);
+-	}
+-
+ 	/* Get UIDs of expunged messages */
+ 	for (msgno = 0; msgno < exists; msgno++) {
+ 	    /* Jump to index record for this message */
+@@ -615,9 +558,11 @@ int main(int argc, char *argv[])
+ 					      sizeof(unsigned long),
+ 					      compare_uid) != NULL;
+ 		break;
++	    default:
++		/* mainly prevent compiler warning */
++		fprintf(stderr, "Unknown mode!\n");
+ 	    }
+ 	}
+-	if (uids) free(uids);
+ 
+ 	/* Sort msgs by UID */
+ 	qsort(msgs, exists, sizeof(struct msg), compare_msg);
+@@ -629,7 +574,7 @@ int main(int argc, char *argv[])
+ 		    mode == MODE_ALL ? "all " : "", mailbox.name);
+ 
+ 	    r = restore_expunged(&mailbox, msgs, exists, expunge_index_base,
+-				 &numrestored, unsetdeleted);
++				 &numrestored);
+ 	    if (!r) {
+ 		printf("restored %u out of %lu expunged messages\n",
+ 			numrestored, exists);
+@@ -638,16 +583,17 @@ int main(int argc, char *argv[])
+ 		       numrestored, exists, mailbox.name);
+ 	    }
+ 	}
+-
+-	map_free(&expunge_index_base, &expunge_index_len);
+ 	free(msgs);
++    }
++done:
++	map_free(&expunge_index_base, &expunge_index_len);
+ 
+ 	if (lock_unlock(expunge_fd))
+ 	    syslog(LOG_ERR,
+ 		   "IOERROR: unlocking expunge index of %s: %m", 
+ 		   mailbox.name);
+     }
+-    close(expunge_fd);
++    if (expunge_fd >= 0) close(expunge_fd);
+ 
+     mailbox_unlock_pop(&mailbox);
+     mailbox_unlock_index(&mailbox);
+@@ -661,6 +607,144 @@ int main(int argc, char *argv[])
+     quotadb_close();
+     quotadb_done();
+ 
++    return r;
++}
++
++int main(int argc, char *argv[])
++{
++    extern char *optarg;
++    int opt, r = 0, recursive = 0;
++    char *alt_config = NULL;
++    char buf[MAX_MAILBOX_PATH+1];
++    int len, secs = 0;
++    unsigned long *uids = NULL;
++    unsigned nuids = 0;
++
++    if ((geteuid()) == 0 && (become_cyrus() != 0)) {
++	fatal("must run as the Cyrus user", EC_USAGE);
++    }
++
++    while ((opt = getopt(argc, argv, "C:laudt:vcr")) != EOF) {
++	switch (opt) {
++	case 'C': /* alt config file */
++	    alt_config = optarg;
++	    break;
++
++	case 'l':
++	    if (mode != MODE_UNKNOWN) usage();
++	    mode = MODE_LIST;
++	    break;
++	
++	case 'a':
++	    if (mode != MODE_UNKNOWN) usage();
++	    mode = MODE_ALL;
++	    break;
++	
++	case 't':
++	    if (mode != MODE_UNKNOWN) usage();
++
++	    mode = MODE_TIME;
++            secs = atoi(optarg);
++            len  = strlen(optarg);
++            
++            if ((secs > 0) && (len > 1)) {
++                switch (optarg[len-1]) {
++                case 'm':
++                    secs *= 60;
++                    break;
++                case 'h':
++                    secs *= (60*60);
++                    break;
++                case 'd':
++                    secs *= (24*60*60);
++                    break;
++                case 'w':
++                    secs *= (7*24*60*60);
++                    break;
++                }
++            }
++            time_since = time(NULL) - secs;
++	    break;
++
++	case 'u':
++	    if (mode != MODE_UNKNOWN) usage();
++	    mode = MODE_UID;
++	    break;
++
++	case 'd':
++	    unsetdeleted = 1;
++	    break;
++	
++	case 'v':
++	    verbose = 1;
++	    break;
++
++	case 'c':
++	    if (mode != MODE_UNKNOWN) usage();
++	    mode = MODE_COUNT;
++	    break;
++
++	case 'r':
++	    if (mode == MODE_UID) usage();
++	    recursive = 1;
++	    break;
++	
++	default:
++	    usage();
++	    break;
++	}
++    }
++
++    /* sanity check */
++    if (mode == MODE_UNKNOWN ||
++	(optind + (mode == MODE_UID ? 1 : 0)) >= argc) usage();
++
++    cyrus_init(alt_config, "unexpunge", 0);
++
++    mboxlist_init(0);
++    mboxlist_open(NULL);
++
++    quotadb_init(0);
++    quotadb_open(NULL);
++
++    sync_log_init();
++
++    /* Set namespace -- force standard (internal) */
++    if ((r = mboxname_init_namespace(&unex_namespace, 1)) != 0) {
++	syslog(LOG_ERR, error_message(r));
++	fatal(error_message(r), EC_CONFIG);
++    }
++
++    /* Translate mailboxname */
++    (*unex_namespace.mboxname_tointernal)(&unex_namespace, argv[optind],
++					  NULL, buf);
++
++    /* Get UIDs of messages to restore */
++    if (mode == MODE_UID) {
++        unsigned i;
++
++	nuids = argc - ++optind;
++	uids = (unsigned long *) xmalloc(nuids * sizeof(unsigned long));
++
++	for (i = 0; i < nuids; i++) {
++	    uids[i] = strtoul(argv[optind+i], NULL, 10);
++	}
++
++	/* Sort the UIDs so we can binary search */
++	qsort(uids, nuids, sizeof(unsigned long), compare_uid);
++    }
++
++    if ( !recursive ) {
++	r = unexpunge( buf, uids, nuids );
++    } else {
++	strlcat(buf, "*", sizeof(buf));
++	r = (*unex_namespace.mboxlist_findall)(&unex_namespace, buf, 1, 0, 0,
++					   do_unexpunge, NULL);
++/* XXX call unexpunge appropriately XXX */
++    }
++
++    if (uids) free(uids);
++
+     mboxlist_close();
+     mboxlist_done();
+ 
+diff --git a/man/unexpunge.8 b/man/unexpunge.8
+index e9b6043..3152af0 100644
+--- a/man/unexpunge.8
++++ b/man/unexpunge.8
+@@ -108,6 +108,14 @@ file unless specified otherwise by \fB-C\fR.
+ .BI \-C " config-file"
+ Read configuration options from \fIconfig-file\fR.
+ .TP
++.B \-r
++Recursively process mailboxes. Mutually exclusive to -u.
++.TP
++.B \-c
++Print a count of the messages that are available to be unexpunged for
++a mailbox.  Nothing is printed for a mailbox that has no cyrus.expunge
++file.
++.TP
+ .B \-l
+ List the expunged messages in the specified mailbox which are available
+ for restoration.
+-- 
+1.7.0.3
+

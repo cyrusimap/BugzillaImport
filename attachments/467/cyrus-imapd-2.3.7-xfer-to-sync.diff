@@ -1,0 +1,130 @@
+--- cyrus-imapd-2.3.7/imap/imapd.c	2006-07-03 09:22:41.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/imapd.c	2006-10-04 14:16:41.000000000 -0400
+@@ -3027,7 +3029,8 @@
+ 		     mboxlist_createmailboxcheck(mailboxname, 0, 0,
+ 						 imapd_userisadmin,
+ 						 imapd_userid, imapd_authstate,
+-						 (char **)0, (char **)0) == 0)
++						 (char **)0, (char **)0,
++						 0, 0, 0, NULL ) == 0)
+ 		    ? "[TRYCREATE] " : "", error_message(r));
+ 	return;
+     }
+@@ -3211,7 +3214,8 @@
+ 		     mboxlist_createmailboxcheck(mailboxname, 0, 0,
+ 						 imapd_userisadmin,
+ 						 imapd_userid, imapd_authstate,
+-						 (char **)0, (char **)0) == 0)
++						 (char **)0, (char **)0,
++						 0, 0, 0, NULL ) == 0)
+ 		    ? "[TRYCREATE] " : r == IMAP_MESSAGE_TOO_LARGE
+ 		    ? "[TOOBIG]" : "", error_message(r));
+     } else if (doappenduid) {
+@@ -4738,7 +4742,8 @@
+ 		     mboxlist_createmailboxcheck(mailboxname, 0, 0,
+ 						 imapd_userisadmin,
+ 						 imapd_userid, imapd_authstate,
+-						 (char **)0, (char **)0) == 0)
++						 (char **)0, (char **)0,
++						 0, 0, 0, NULL ) == 0)
+ 		    ? "[TRYCREATE] " : "", error_message(r));
+     }
+     else if (copyuid) {
+@@ -4826,7 +4831,8 @@
+ 	    r = mboxlist_createmailboxcheck(mailboxname, 0, 0,
+ 					    imapd_userisadmin,
+ 					    imapd_userid, imapd_authstate,
+-					    NULL, &partition);
++					    NULL, &partition,
++					    0, 0, 0, NULL );
+ 	}
+ 
+ 	if (!r && !config_partitiondir(partition)) {
+@@ -7784,7 +7790,8 @@
+ 		     mboxlist_createmailboxcheck(mailboxname, 0, 0,
+ 						 imapd_userisadmin,
+ 						 imapd_userid, imapd_authstate,
+-						 NULL, NULL) == 0)
++						 NULL, NULL,
++						 0, 0, 0, NULL ) == 0)
+ 		    ? "[TRYCREATE] " : "", error_message(r));
+     } else {
+ 	prot_printf(imapd_out, "%s OK %s\r\n", tag,
+--- cyrus-imapd-2.3.7/imap/mboxlist.c	2006-05-22 16:37:25.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/mboxlist.c	2006-10-04 14:14:07.000000000 -0400
+@@ -345,8 +345,8 @@
+  * Check/set up for mailbox creation
+  */
+ /* xxx shouldn't we be using mbtype or getting rid of it entirely? */
+-static int
+-mboxlist_mycreatemailboxcheck(char *name,
++int
++mboxlist_createmailboxcheck(char *name,
+ 			      int new_mbtype __attribute__((unused)),
+ 			      char *partition, 
+ 			      int isadmin, char *userid, 
+@@ -547,6 +547,7 @@
+     return 0;
+ }
+ 
++#if 0
+ int
+ mboxlist_createmailboxcheck(char *name, int mbtype, char *partition, 
+ 			      int isadmin, char *userid, 
+@@ -557,6 +558,7 @@
+ 					 userid, auth_state, newacl, 
+ 					 newpartition, 0, 0, 0, NULL);
+ }
++#endif
+ 
+ /*
+  * Create a mailbox
+@@ -594,7 +596,7 @@
+     tid = NULL;
+ 
+     /* 2. verify ACL's to best of ability (CRASH: abort) */
+-    r = mboxlist_mycreatemailboxcheck(name, mbtype, partition, isadmin, 
++    r = mboxlist_createmailboxcheck(name, mbtype, partition, isadmin, 
+ 				      userid, auth_state, 
+ 				      &acl, &newpartition, 1, localonly,
+ 				      forceuser, &tid);
+@@ -1168,7 +1170,7 @@
+ 		goto done;
+ 	    }
+ 	}
+-	r = mboxlist_mycreatemailboxcheck(newname, 0, partition, isadmin, 
++	r = mboxlist_createmailboxcheck(newname, 0, partition, isadmin, 
+ 					  userid, auth_state, NULL, 
+ 					  &newpartition, 1, 0, 0, &tid);
+ 	switch (r) {
+--- cyrus-imapd-2.3.7/imap/mboxlist.h	2005-02-21 14:25:40.000000000 -0500
++++ cyrus-imapd-2.3.7+/imap/mboxlist.h	2006-10-04 14:13:30.000000000 -0400
+@@ -106,7 +106,9 @@
+ int mboxlist_createmailboxcheck(char *name, int mbtype, char *partition, 
+ 				int isadmin, char *userid, 
+ 				struct auth_state *auth_state, 
+-				char **newacl, char **newpartition);
++				char **newacl, char **newpartition,
++				int RMW, int local, int force,
++				struct txn **tid);
+ 
+ /* create mailbox */
+ /* localonly creates the local mailbox without touching mupdate */
+diff -r -u cyrus-imapd-2.3.7/imap/mboxname.c cyrus-imapd-2.3.7+/imap/mboxname.c
+--- cyrus-imapd-2.3.7/imap/sync_commit.c	2006-06-13 13:24:40.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/sync_commit.c	2006-10-04 14:18:55.000000000 -0400
+@@ -845,9 +845,13 @@
+         free_uniqueid = 1;
+     }
+ 
++    /*
++     * mboxlist_createmailboxcheck() disallows creating user.XXX.foo when
++     * user.XXX is not on the machine.  This breaks xfer.
++     */
+     r = mboxlist_createmailboxcheck(name, 0, partition, 1,
+                                     imapd_userid, imapd_authstate,
+-                                    NULL, &newpartition);
++                                    NULL, &newpartition, 0, 0, 1, NULL);
+     if (r) goto done;
+ 
+     mboxent = mboxlist_makeentry(mbtype | MBTYPE_RESERVE, newpartition, acl);

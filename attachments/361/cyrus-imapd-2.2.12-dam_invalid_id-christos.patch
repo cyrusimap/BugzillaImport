@@ -1,0 +1,62 @@
+--- acl_afs.c.orig	2005-07-14 17:12:53 +0300
++++ acl_afs.c	2005-07-14 17:17:44 +0300
+@@ -119,12 +119,17 @@
+     char *thisid, *nextid;
+     int oldaccess = 0;
+     char *rights;
++    int identifier_found = 0;
++    int identifier_overridden = 0;
+ 
+     /* Convert 'identifier' into canonical form */
+     if (*identifier == '-') {
+ 	char *canonid = auth_canonifyid(identifier+1, 0);
+-	if (!canonid) {
++	if (!canonid && access != 0L) {
+ 	    return -1;
++	} else if (!canonid && access == 0L) {
++	    canonid = identifier+1;
++	    identifier_overridden = 1;
+ 	}
+ 	newidentifier = xmalloc(strlen(canonid)+2);
+ 	newidentifier[0] = '-';
+@@ -135,9 +140,15 @@
+ 	}
+     }
+     else {
++	newidentifier = xmalloc(strlen(identifier)+1);
++	strlcpy(newidentifier, identifier, strlen(identifier)+1);
++	
+ 	identifier = auth_canonifyid(identifier, 0);
+-	if (!identifier) {
++	if (!identifier && access != 0L) {
+ 	    return -1;
++	} else if(!identifier && access == 0L) {
++            identifier = newidentifier;
++            identifier_overridden = 1;
+ 	}
+ 	if (canonproc) {
+ 	    access = canonproc(canonrock, identifier, access);
+@@ -165,6 +176,7 @@
+ 	*nextid++ = '\0';
+ 
+ 	if (strcmp(identifier, thisid) == 0) {
++            identifier_found = 1;
+ 	    oldaccess = cyrus_acl_strtomask(rights);
+ 	    break;
+ 	}
+@@ -172,6 +184,15 @@
+ 	nextid[-1] = '\t';
+     }
+ 
++    /* 
++     * In case we have overridden the canonification of the
++     * identifier, but still the identifier does not exist in
++     * the mailboxdb, then return error as normally expected.
++     */
++    if(identifier_overridden && !identifier_found) {
++        return -1;
++    }
++
+     switch (mode) {
+     case ACL_MODE_SET:
+ 	break;

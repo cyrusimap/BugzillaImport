@@ -1,0 +1,171 @@
+diff -Naur cyrus-imapd-2.3.7/imap/backend.c cyrus-imapd-2.3.7.plaintext/imap/backend.c
+--- cyrus-imapd-2.3.7/imap/backend.c	2006-06-27 17:58:42.000000000 +0200
++++ cyrus-imapd-2.3.7.plaintext/imap/backend.c	2007-03-12 16:45:20.000000000 +0100
+@@ -204,7 +204,7 @@
+ 	return r;
+     }
+ 
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(0);
+     r = sasl_setprop(s->saslconn, SASL_SEC_PROPS, secprops);
+     if (r != SASL_OK) {
+ 	return r;
+diff -Naur cyrus-imapd-2.3.7/imap/global.c cyrus-imapd-2.3.7.plaintext/imap/global.c
+--- cyrus-imapd-2.3.7/imap/global.c	2005-12-13 20:35:50.000000000 +0100
++++ cyrus-imapd-2.3.7.plaintext/imap/global.c	2007-03-12 16:44:25.000000000 +0100
+@@ -308,7 +308,9 @@
+ 				/* maximum allowable security strength */
+ 
+     ret.security_flags = flags;
+-    /* ret.security_flags |= SASL_SEC_NOPLAINTEXT; */
++    if (!config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
++	ret.security_flags |= SASL_SEC_NOPLAINTEXT;
++    }
+     if (!config_getswitch(IMAPOPT_ALLOWANONYMOUSLOGIN)) {
+ 	ret.security_flags |= SASL_SEC_NOANONYMOUS;
+     }
+diff -Naur cyrus-imapd-2.3.7/imap/imapd.c cyrus-imapd-2.3.7.plaintext/imap/imapd.c
+--- cyrus-imapd-2.3.7/imap/imapd.c	2006-07-03 15:22:41.000000000 +0200
++++ cyrus-imapd-2.3.7.plaintext/imap/imapd.c	2007-03-12 16:45:37.000000000 +0100
+@@ -759,8 +759,7 @@
+ 	fatal("SASL failed initializing: sasl_server_new()", EC_TEMPFAIL);
+     }
+ 
+-    /* never allow plaintext, since IMAP has the LOGIN command */
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(0);
+     sasl_setprop(imapd_saslconn, SASL_SEC_PROPS, secprops);
+     sasl_setprop(imapd_saslconn, SASL_SSF_EXTERNAL, &extprops_ssf);
+ 
+@@ -9302,7 +9301,7 @@
+ 			   saslprops.iplocalport);
+     if(ret != SASL_OK) return ret;
+     
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(0);
+     ret = sasl_setprop(*conn, SASL_SEC_PROPS, secprops);
+     if(ret != SASL_OK) return ret;
+     /* end of service_main initialization excepting SSF */
+diff -Naur cyrus-imapd-2.3.7/imap/lmtpengine.c cyrus-imapd-2.3.7.plaintext/imap/lmtpengine.c
+--- cyrus-imapd-2.3.7/imap/lmtpengine.c	2005-11-01 21:14:20.000000000 +0100
++++ cyrus-imapd-2.3.7.plaintext/imap/lmtpengine.c	2007-03-12 16:47:01.000000000 +0100
+@@ -954,12 +954,7 @@
+                           saslprops.iplocalport);
+     if(ret != SASL_OK) return ret;
+     
+-    secflags = SASL_SEC_NOANONYMOUS;
+-    if (!config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
+-	secflags |= SASL_SEC_NOPLAINTEXT;
+-    }
+-
+-    secprops = mysasl_secprops(secflags);
++    secprops = mysasl_secprops(SASL_SEC_NOANONYMOUS);
+     ret = sasl_setprop(*conn, SASL_SEC_PROPS, secprops);
+     if(ret != SASL_OK) return ret;
+     /* end of service_main initialization excepting SSF */
+@@ -1096,12 +1091,7 @@
+ 
+     /* set my allowable security properties */
+     /* ANONYMOUS is silly because we allow that anyway */
+-    secflags = SASL_SEC_NOANONYMOUS;
+-    if (!config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
+-	secflags |= SASL_SEC_NOPLAINTEXT;
+-    }
+-
+-    secprops = mysasl_secprops(secflags);
++    secprops = mysasl_secprops(SASL_SEC_NOANONYMOUS);
+     sasl_setprop(cd.conn, SASL_SEC_PROPS, secprops);
+ 
+     if (func->preauth) {
+diff -Naur cyrus-imapd-2.3.7/imap/mupdate.c cyrus-imapd-2.3.7.plaintext/imap/mupdate.c
+--- cyrus-imapd-2.3.7/imap/mupdate.c	2006-03-15 19:56:31.000000000 +0100
++++ cyrus-imapd-2.3.7.plaintext/imap/mupdate.c	2007-03-12 16:47:46.000000000 +0100
+@@ -337,11 +337,7 @@
+     }
+ 
+     /* set my allowable security properties */
+-    secflags = SASL_SEC_NOANONYMOUS;
+-    if (!config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
+-	secflags |= SASL_SEC_NOPLAINTEXT;
+-    }
+-    sasl_setprop(C->saslconn, SASL_SEC_PROPS, mysasl_secprops(secflags));
++    sasl_setprop(C->saslconn, SASL_SEC_PROPS, mysasl_secprops(SASL_SEC_NOANONYMOUS));
+ 
+     /* Clear Buffers */
+     memset(&(C->tag), 0, sizeof(struct buf));
+@@ -2003,11 +1999,7 @@
+                           c->saslprops.iplocalport);
+     if(ret != SASL_OK) return ret;
+     
+-    secflags = SASL_SEC_NOANONYMOUS;
+-    if (!config_getswitch(IMAPOPT_ALLOWPLAINTEXT)) {
+-	secflags |= SASL_SEC_NOPLAINTEXT;
+-    }
+-    secprops = mysasl_secprops(secflags);
++    secprops = mysasl_secprops(SASL_SEC_NOANONYMOUS);
+     ret = sasl_setprop(c->saslconn, SASL_SEC_PROPS, secprops);
+     if(ret != SASL_OK) return ret;
+     /* end of service_main initialization excepting SSF */
+diff -Naur cyrus-imapd-2.3.7/imap/nntpd.c cyrus-imapd-2.3.7.plaintext/imap/nntpd.c
+--- cyrus-imapd-2.3.7/imap/nntpd.c	2006-05-26 17:50:07.000000000 +0200
++++ cyrus-imapd-2.3.7.plaintext/imap/nntpd.c	2007-03-12 16:48:43.000000000 +0100
+@@ -569,7 +569,7 @@
+ 	fatal("SASL failed initializing: sasl_server_new()",EC_TEMPFAIL); 
+ 
+     /* will always return something valid */
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(0);
+     sasl_setprop(nntp_saslconn, SASL_SEC_PROPS, secprops);
+     sasl_setprop(nntp_saslconn, SASL_SSF_EXTERNAL, &extprops_ssf);
+     
+@@ -734,7 +734,7 @@
+        ret = sasl_setprop(*conn, SASL_IPLOCALPORT,
+                           saslprops.iplocalport);
+     if(ret != SASL_OK) return ret;
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(0);
+     ret = sasl_setprop(*conn, SASL_SEC_PROPS, secprops);
+     if(ret != SASL_OK) return ret;
+     /* end of service_main initialization excepting SSF */
+diff -Naur cyrus-imapd-2.3.7/imap/pop3d.c cyrus-imapd-2.3.7.plaintext/imap/pop3d.c
+--- cyrus-imapd-2.3.7/imap/pop3d.c	2006-05-26 17:50:09.000000000 +0200
++++ cyrus-imapd-2.3.7.plaintext/imap/pop3d.c	2007-03-12 16:49:47.000000000 +0100
+@@ -496,7 +496,7 @@
+ 	fatal("SASL failed initializing: sasl_server_new()",EC_TEMPFAIL); 
+ 
+     /* will always return something valid */
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(0);
+     sasl_setprop(popd_saslconn, SASL_SEC_PROPS, secprops);
+     sasl_setprop(popd_saslconn, SASL_SSF_EXTERNAL, &extprops_ssf);
+     
+@@ -1782,7 +1782,7 @@
+        ret = sasl_setprop(*conn, SASL_IPLOCALPORT,
+                           saslprops.iplocalport);
+     if(ret != SASL_OK) return ret;
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(0);
+     ret = sasl_setprop(*conn, SASL_SEC_PROPS, secprops);
+     if(ret != SASL_OK) return ret;
+     /* end of service_main initialization excepting SSF */
+diff -Naur cyrus-imapd-2.3.7/imap/sync_server.c cyrus-imapd-2.3.7.plaintext/imap/sync_server.c
+--- cyrus-imapd-2.3.7/imap/sync_server.c	2006-06-12 20:56:42.000000000 +0200
++++ cyrus-imapd-2.3.7.plaintext/imap/sync_server.c	2007-03-12 16:50:52.000000000 +0100
+@@ -410,7 +410,7 @@
+ 	fatal("SASL failed initializing: sasl_server_new()",EC_TEMPFAIL); 
+ 
+     /* will always return something valid */
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(SASL_SEC_NOANONYMOUS);
+     sasl_setprop(sync_saslconn, SASL_SEC_PROPS, secprops);
+     sasl_setprop(sync_saslconn, SASL_SSF_EXTERNAL, &extprops_ssf);
+     
+@@ -539,7 +539,7 @@
+        ret = sasl_setprop(*conn, SASL_IPLOCALPORT,
+                           saslprops.iplocalport);
+     if(ret != SASL_OK) return ret;
+-    secprops = mysasl_secprops(SASL_SEC_NOPLAINTEXT);
++    secprops = mysasl_secprops(SASL_SEC_NOANONYMOUS);
+     ret = sasl_setprop(*conn, SASL_SEC_PROPS, secprops);
+     if(ret != SASL_OK) return ret;
+     /* end of service_main initialization excepting SSF */

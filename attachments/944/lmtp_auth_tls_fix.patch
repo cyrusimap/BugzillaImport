@@ -1,0 +1,32 @@
+--- lmtpengine.c.orig	2007-07-26 23:43:54.000000000 -0400
++++ lmtpengine.c	2007-07-26 23:56:35.000000000 -0400
+@@ -112,6 +112,7 @@
+     sasl_conn_t *conn;
+ 
+     enum {
++	CERTIFICATE_AUTHED = -2, /* -2: cert. auth'd, but no AUTH issued */
+ 	EXTERNAL_AUTHED = -1, /* -1: external auth'd, but no AUTH issued */
+ 	NOAUTH = 0,
+ 	DIDAUTH = 1
+@@ -1325,7 +1326,7 @@
+ 		  prot_printf(pout, "250-SIZE %d\r\n", max_msgsize);
+ 	      else
+ 		  prot_printf(pout, "250-SIZE\r\n");
+-	      if (tls_enabled() && !cd.starttls_done && !cd.authenticated) {
++	      if (tls_enabled() && !cd.starttls_done) {
+ 		  prot_printf(pout, "250-STARTTLS\r\n");
+ 	      }
+ 	      if (cd.authenticated <= NOAUTH &&
+@@ -1611,8 +1612,10 @@
+ 		    free(saslprops.authid);
+ 		    saslprops.authid = NULL;
+ 		}
+-		if(auth_id)
+-		    saslprops.authid = xstrdup(auth_id);		
++		if(auth_id) {
++		    saslprops.authid = xstrdup(auth_id);
++		    cd.authenticated = CERTIFICATE_AUTHED;
++		}
+ 
+ 		/* tell the prot layer about our new layers */
+ 		prot_settls(pin, cd.tls_conn);

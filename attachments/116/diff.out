@@ -1,0 +1,188 @@
+*******************************************************************************
+*** imap/lmtpd.c.original	Mon Jan 20 16:58:14 2003
+--- imap/lmtpd.c.vacationfix	Thu Feb 13 15:55:05 2003
+***************
+*** 164,169 ****
+--- 164,172 ----
+  static sieve_interp_t *sieve_interp;
+  static int sieve_usehomedir = 0;
+  static const char *sieve_dir = NULL;
++ 
++ static int contains_8bit(const char *msg);
++ static void utf8_subject(FILE *sm, const char *subj);
+  #endif
+  
+  /* per-user/session state */
+***************
+*** 899,904 ****
+--- 902,910 ----
+  	    src->subj[i] = '\0';
+  	    break;
+  	}
++     if(contains_8bit(src->subj))
++ 	utf8_subject(sm, src->subj) ;
++     else
+  	fprintf(sm, "Subject: %s\r\n", src->subj);
+      if (md->id) fprintf(sm, "In-Reply-To: %s\r\n", md->id);
+      fprintf(sm, "Auto-Submitted: auto-replied (vacation)\r\n");
+***************
+*** 909,914 ****
+--- 915,926 ----
+  	fprintf(sm, "\r\nThis is a MIME-encapsulated message\r\n\r\n");
+  	fprintf(sm, "--%d/%s\r\n", (int) p, config_servername);
+      } else {
++ 	if(contains_8bit(src->msg))
++ 	{
++ 	    fprintf(sm, "MIME-Version: 1.0\r\n");
++ 	    fprintf(sm, "Content-Type: text/plain; charset=UTF-8\r\n");
++ 	    fprintf(sm, "Content-Transfer-Encoding: 8BIT\r\n");
++ 	}
+  	fprintf(sm, "\r\n");
+      }
+  
+***************
+*** 1087,1092 ****
+--- 1099,1187 ----
+  	
+      return (fopen(buf, "r"));
+  }
++ 
++ static int contains_8bit(const char * msg)
++ {
++     int result = 0;
++ 
++     if (msg)
++     {
++ 	const unsigned char *s = (const unsigned char *)msg;
++ 	
++ 	while (*s)
++ 	{
++ 	    if (0 != (*s & 0x80))
++ 	    {
++ 		result = 1;
++ 		break ;
++ 	    }
++ 	    s++;
++ 	}
++     }
++     return result ;
++ }
++ 
++ /* utf8_subject
++  * Writes mime format utf-8 subject header.
++  */
++ static const char *hex = "0123456789ABCDEF";
++ static void utf8_subject(FILE *sm, const char *subj)
++ {
++     const unsigned char *s;
++     char buf[80];
++     int i = 0;
++     int length = 56 ;					    /* starts out at */
++ 
++     if (!subj || !*subj) return;
++     s = (const unsigned char *) subj;
++     memset((void *)buf, 0, sizeof(buf));
++     fprintf(sm, "Subject: =?UTF-8?Q?");
++     while (*s)
++     {
++ 	if ((length < i)				    /* no more room,  */
++ 	    || (((length - 12) < i ) && (0xF0 <= *s))	    /* try not to     */
++ 	    || (((length - 9) < i ) && (0xE0 <= *s))	    /* split utf-8    */
++ 	    || (((length - 6) < i ) && (0xC0 <= *s))	    /* multibyte char,*/
++ 	    || (((length - 3) < i )			    /* for encoded    */
++ 		&& !((0x20 <= *s) && (0x7f > *s)	    /* not ( ascii    */
++ 		     && ('"' != *s) && ('(' != *s)	    /* and not char   */
++ 		     && (')' != *s) && (',' != *s)	    /* forbidden in an*/
++ 		     && ('.' != *s) && (':' != *s)	    /* rfc2822 atom ) */
++ 		     && (';' != *s) && ('<' != *s)	    /* include = and ?*/
++ 		     && ('=' != *s) && ('>' != *s)	    /* parts of QP and*/
++ 		     && ('?' != *s) && ('@' != *s)	    /* encoded word   */
++ 		     && ('[' != *s) && ('\\' != *s)	    /* encodings.     */
++ 		     && (']' != *s) && ('_' != *s))))
++ 	{
++ 	    buf[i] = '\0';
++ 	    fprintf(sm, "%s?=\r\n =?UTF-8?Q?", buf);
++ 	    memset((void *)buf, 0, sizeof(buf));
++ 	    length = 66 ;				    /* extension size */
++ 	    i = 0 ;
++ 	}
++ 	if (0x20 == *s)					    /* space char */
++ 	    buf[ i++ ] = '_';
++ 	else if ((0x20 < *s) && (0x7f > *s)		    /* ascii char     */
++ 		 && ('"' != *s) && ('(' != *s)		    /* but not chars  */
++ 		 && (')' != *s) && (',' != *s)		    /* forbidden from */
++ 		 && ('.' != *s) && (':' != *s)		    /* an rfc822 atom */
++ 		 && (';' != *s) && ('<' != *s)		    /* include = and ?*/
++ 		 && ('=' != *s) && ('>' != *s)		    /* parts of QP and*/
++ 		 && ('?' != *s) && ('@' != *s)		    /* encoded word */
++ 		 && ('[' != *s) && ('\\' != *s)		    /* encodings */
++ 		 && (']' != *s) && ('_' != *s))
++ 	    buf[i++] = *s++;
++ 	else						    /* other bytes */
++ 	{
++ 	    buf[ i++ ] = '=';
++ 	    buf[ i++ ] = hex[ (((*s)>>4) & 0x0f) ];
++ 	    buf[ i++ ] = hex[ ((*s) & 0x0f) ];
++ 	    s++;
++ 	}
++     }
++     buf[i] = '\0';
++     fprintf(sm, "%s?=\r\n", buf);
++ }
+  #else /* USE_SIEVE */
+  static FILE *sieve_find_script(const char *user)
+  {
+
+*******************************************************************************
+*** notifyd/notify_mailto.c.original	Thu Feb 13 15:58:09 2003
+--- notifyd/notify_mailto.c.notifyfix	Thu Feb 13 16:03:09 2003
+***************
+*** 64,69 ****
+--- 64,71 ----
+  #define SENDMAIL (config_getstring("sendmail", DEFAULT_SENDMAIL))
+  #define POSTMASTER (config_getstring("postmaster", DEFAULT_POSTMASTER))
+  
++ static int contains_8bit(const char *msg);
++ 
+  static int global_outgoing_count = 0;
+  
+  char* notify_mailto(const char *class __attribute__((unused)),
+***************
+*** 125,130 ****
+--- 127,137 ----
+      fprintf(sm, "From: Mail Sieve Subsystem <%s>\r\n", POSTMASTER);
+      fprintf(sm, "To: <%s>\r\n", options[0]);
+      fprintf(sm, "Subject: [SIEVE] New mail notification\r\n");
++     if (contains_8bit(message)) {
++ 	fprintf(sm, "MIME-Version: 1.0\r\n");
++ 	fprintf(sm, "Content-Type: text/plain; charset=UTF-8\r\n");
++ 	fprintf(sm, "Content-Transfer-Encoding: 8BIT\r\n");
++     }
+      fprintf(sm, "\r\n");
+  
+      fprintf(sm, "%s\r\n", message);
+***************
+*** 137,140 ****
+--- 144,165 ----
+      /* XXX add outmsgid to duplicate delivery database to prevent loop */
+  
+      return strdup("OK mailto notification successful");
+  }
++ 
++ static int contains_8bit(const char * msg)
++ {
++     int result = 0;
++ 
++     if (msg) {
++ 	const unsigned char *s = (const unsigned char *)msg;
++ 	
++ 	while (*s) {
++ 	    if (0 != (*s & 0x80)) {
++ 		result = 1;
++ 		break ;
++ 	    }
++ 	    s++;
++ 	}
++     }
++     return result;
++ }

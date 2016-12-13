@@ -1,0 +1,52 @@
+Option to enable utf8 folder names for "fileinto"
+
+Just to shut up the whingers on the mailing list who
+spent more time talking about this than it took to
+code the damn thing.
+
+utf8fileinto: 1
+
+Gets the current behaviour (utf8 folder names in the
+sieve script)
+
+utf8fileinfo: 0
+
+(or just don't include it) gets the old behaviour for
+the happiness of the rest of the world.
+Index: cyrus-imapd-2.3.12p2/lib/imapoptions
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/lib/imapoptions	2008-09-30 22:28:31.000000000 +1000
++++ cyrus-imapd-2.3.12p2/lib/imapoptions	2008-09-30 22:32:07.000000000 +1000
+@@ -1073,6 +1073,10 @@
+    mailbox hierarchy.  The default is to use the netnews separator
+    character '.'. */
+ 
++{ "utf8fileinto", 0, SWITCH }
++/* Use UTF8 folder names for the "fileinto" command in sieve
++   scripts if turned on.  Use modified UTF7 if turned off. */
++
+ { "virtdomains", "off", ENUM("off", "userid", "on") }
+ /* Enable virtual domain support.  If enabled, the user's domain will
+    be determined by splitting a fully qualified userid at the last '@'
+Index: cyrus-imapd-2.3.12p2/sieve/sieve.y
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/sieve/sieve.y	2008-09-30 22:28:23.000000000 +1000
++++ cyrus-imapd-2.3.12p2/sieve/sieve.y	2008-09-30 22:31:32.000000000 +1000
+@@ -851,9 +851,14 @@
+ 
+     if (ret) {
+ 	ret->u.f.copy = copy;
+-	ret->u.f.folder = xmalloc(2 * strlen(folder) + 1);
+-	UTF8_to_mUTF7(ret->u.f.folder, folder);
+-	free(folder);
++	if (config_getswitch(IMAPOPT_UTF8FILEINTO)) {
++	    ret->u.f.folder = xmalloc(5 * strlen(folder) + 1);
++	    UTF8_to_mUTF7(ret->u.f.folder, folder);
++	    free(folder);
++	}
++	else {
++	    ret->u.f.folder = folder;
++	}
+     }
+     return ret;
+ }

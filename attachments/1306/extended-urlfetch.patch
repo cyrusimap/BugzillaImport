@@ -1,0 +1,235 @@
+diff --git a/SMakefile b/SMakefile
+old mode 100644
+new mode 100755
+diff --git a/imap/index.c b/imap/index.c
+index db16383..bedb131 100644
+--- a/imap/index.c
++++ b/imap/index.c
+@@ -2685,14 +2685,17 @@ int index_urlfetch(struct index_state *state, uint32_t msgno,
+     if (mailbox_map_message(mailbox, im->record.uid, &msg_base, &msg_size))
+ 	return IMAP_NO_MSGGONE;
+ 
++	/* Data is not retrieved if we have BODYPARTSTRUCTURE and neither BODY nor BINARY*/
++    if (!(params & URLFETCH_BODYPARTSTRUCTURE) || (params & (URLFETCH_BODY | URLFETCH_BINARY))) {
++		
+     data = msg_base;
+     size = im->record.size;
+ 
+     if (size > msg_size) size = msg_size;
+ 
+     cacheitem = cacheitem_base(&im->record, CACHE_SECTION);
+-    cacheitem += CACHE_ITEM_SIZE_SKIP;
+-
++//    cacheitem += CACHE_ITEM_SIZE_SKIP; /*This makes us to go too far*/
++    
+     /* Special-case BODY[] */
+     if (!section || !*section) {
+ 	/* whole message, no further parsing */
+@@ -2766,31 +2769,74 @@ int index_urlfetch(struct index_state *state, uint32_t msgno,
+ 	data += CACHE_ITEM_BIT32(cacheitem);
+ 	size = CACHE_ITEM_BIT32(cacheitem + CACHE_ITEM_SIZE_SKIP);
+     }
+-
++    }
+     /* Handle extended URLFETCH parameters */
++    int encoding, decoded = 1;
++    char *bodyAnswer;
++    if (params & URLFETCH_BINARY){
++	encoding = CACHE_ITEM_BIT32(cacheitem + 2 * 4) & 0xff;
++	bodyAnswer = xstrdup(" (BINARY");
++	data = charset_decode_mimebody(data, size, encoding,
++				       &decbuf, 0, (int *) &size);
++	if (!data) {
++		/* failed to decode */
++		strcat(bodyAnswer, " NIL)");
++		decoded = 0;
++	}
++    }
++    else if (params & URLFETCH_BODY){
++	bodyAnswer = xstrdup(" (BODY");
++    }
++    
+     if (params & URLFETCH_BODYPARTSTRUCTURE) {
+-	prot_printf(pout, " (BODYPARTSTRUCTURE");
++	prot_printf(pout, " (BODYPARTSTRUCTURE ");
+ 	/* XXX Calculate body part structure */
+-	prot_printf(pout, " NIL");
+-	prot_printf(pout, ")");
+-    }
+-
+-    if (params & URLFETCH_BODY) {
+-	prot_printf(pout, " (BODY");
++	cacheitem = cacheitem_base(&im->record, CACHE_BODYSTRUCTURE);
++	char * bodypartStr;
++	int bodypartLen = index_bodypartstructure(cacheitem, section, &bodypartStr);
++	if ((params & URLFETCH_BINARY) && decoded){
++	/* Replace encoding and size fields with new values */
++	char *encodingPlace, *encodingName, *endSize, *parenthesis, *space, *tmp, sizeStr[10];
++	int encoded = 0;
++	tmp = xstrdup(bodypartStr);
++	switch (encoding){
++	    case ENCODING_QP :
++			encodingName = xstrdup("\"quoted-printable\"");
++			encoded = 1;
++			break;
++	    case ENCODING_BASE64 :
++			encodingName = xstrdup("\"base64\"");
++			encoded = 1;
++			break;
++	    default :
++			break;
++	}
++	if (encoded){
++	    encodingPlace = stristr(tmp, encodingName);
++	    endSize = strchr(encodingPlace, ' ');
++	    parenthesis = strchr(endSize + 1, ')');
++	    space = strchr(endSize + 1, ' ');
++	    if (space && ((parenthesis-endSize) > (space-endSize))){
++			endSize = space;
++	    }
++	    else endSize = parenthesis;
++	    strlcpy(bodypartStr, tmp, encodingPlace-tmp+1);
++	    strcat(bodypartStr, "\"BINARY\" ");
++	    sprintf(sizeStr, "%ld", (long)size);
++	    strcat(bodypartStr, sizeStr);
++	    strcat(bodypartStr, endSize);
++	    bodypartLen = strlen(bodypartStr);
++	}
++	}
++	prot_write(pout, bodypartStr, bodypartLen);
+     }
+-    else if (params & URLFETCH_BINARY) {
+-	int encoding = CACHE_ITEM_BIT32(cacheitem + 2 * 4) & 0xff;
++    prot_printf(pout, ")");
++    if (params & (URLFETCH_BODY | URLFETCH_BINARY)) prot_printf(pout, bodyAnswer);
++    if (!decoded) goto done;
+ 
+-	prot_printf(pout, " (BINARY");
++	/* Data is not sent if we have BODYPARTSTRUCTURE and neither BODY nor BINARY */
++    if (!(params & URLFETCH_BODYPARTSTRUCTURE) || (params & (URLFETCH_BODY | URLFETCH_BINARY))) {
+ 
+-	data = charset_decode_mimebody(data, size, encoding,
+-				       &decbuf, 0, (size_t *) &size);
+-	if (!data) {
+-	    /* failed to decode */
+-	    prot_printf(pout, " NIL)");
+-	    goto done;
+-	}
+-    }
+ 
+     /* Handle PARTIAL request */
+     n = octet_count ? octet_count : size;
+@@ -2820,6 +2866,7 @@ int index_urlfetch(struct index_state *state, uint32_t msgno,
+ 
+     /* End of non-text literal -- tell the protstream about it */
+     if (domain != DOMAIN_7BIT) prot_data_boundary(pout);
++    }
+ 
+     /* Complete extended URLFETCH response */
+     if (params & (URLFETCH_BODY | URLFETCH_BINARY)) prot_printf(pout, ")");
+@@ -2832,6 +2879,92 @@ int index_urlfetch(struct index_state *state, uint32_t msgno,
+     return r;
+ }
+ 
++
++/*
++ * Extract the bodypartstructure from the "body" in cyrus.cache for the selected section
++ * Returns the length of the bodypartstructure
++ */
++int index_bodypartstructure(const char * body, const char * section, char ** bodypartstruct)
++{
++    int i, sctnNo = 0, len, parLevel;
++    int subsection = 0;
++    char *dot, *closePar, *openPar, *end;
++    char * tmpSect = xstrdup(section);
++    char * tmpStruct = xstrdup(body);
++    
++    do{
++    	dot = strchr(tmpSect, '.');
++	sctnNo = atoi(tmpSect);
++	if (dot != NULL) tmpSect = dot+1;
++	tmpStruct++;
++	if (subsection){
++	    /*skip the first 8 elements of the attachment header ( "",  (), NIL or int)
++		which are before the "sub-attachment" part */
++	    for (i = 0; i < 8; i++){
++	    	if (*tmpStruct == '"') tmpStruct = strchr((tmpStruct + 1), '"') + 2;
++		else if (*tmpStruct == 'N') tmpStruct += 4;
++		else if (*tmpStruct <= '9' && *tmpStruct >= '0') tmpStruct = strchr(tmpStruct, ' ') + 1;
++		else if (*tmpStruct == '('){
++		    parLevel = 1;
++		    while (parLevel){
++			openPar = strchr((tmpStruct + 1), '(');
++			closePar = strchr((tmpStruct + 1), ')');
++			if(openPar){
++			    if (openPar < closePar){
++				tmpStruct = openPar;
++				parLevel++;
++			    }else{
++				tmpStruct = closePar;
++				parLevel--;
++			    }
++			}else{
++			    tmpStruct = closePar;
++			    parLevel--;
++			}
++		    }
++		    tmpStruct += 2;
++		}
++	    }
++	    tmpStruct++;
++	} 
++	if (dot != NULL) subsection = 1;
++	/* Skip the sctnNo-1 next parts of the message */
++	for (i = 0; i< (sctnNo - 1); i++){
++	    while ((closePar = strchr(tmpStruct + 1, ')')) > (openPar = strchr(tmpStruct + 1, '('))){
++		while ( strchr(openPar + 1, '(') < closePar){
++		    openPar = strchr(openPar + 1, '(');
++		    closePar = strchr(closePar + 1, ')');
++		}
++		tmpStruct = closePar;
++	    }
++	    tmpStruct = strchr(closePar, '(');
++	}
++	/* Search the end of this part */
++	end = tmpStruct + 1;
++	parLevel = 1;
++	while (parLevel){
++	    openPar = strchr(end, '(');
++	    closePar = strchr(end, ')');
++	    if(openPar){
++		if (openPar < closePar){
++		    end = openPar + 1;
++		    parLevel++;
++		}else{
++		    end = closePar + 1;
++		    parLevel--;
++		}
++	    }else{
++		end = closePar + 1;
++		parLevel--;
++	    }
++	}
++	tmpStruct[end-tmpStruct] = '\0';
++    }while (dot != NULL);
++    len = strlen(tmpStruct);
++    *bodypartstruct = xstrdup(tmpStruct);
++    return len;
++}
++
+ /*
+  * Helper function to perform a generalized STORE command
+  */
+diff --git a/imap/index.h b/imap/index.h
+index 60dcf8b..efbe95c 100644
+--- a/imap/index.h
++++ b/imap/index.h
+@@ -223,6 +223,8 @@ extern int index_urlfetch(struct index_state *state, uint32_t msgno,
+ 			  unsigned params, const char *section,
+ 			  unsigned long start_octet, unsigned long octet_count,
+ 			  struct protstream *pout, unsigned long *size);
++extern int index_bodypartstructure(const char * bodystruct,
++			 const char * section, char ** bodypartstruct);
+ extern char *index_get_msgid(struct index_state *state, uint32_t msgno);
+ extern struct nntp_overview *index_overview(struct index_state *state,
+ 					    uint32_t msgno);

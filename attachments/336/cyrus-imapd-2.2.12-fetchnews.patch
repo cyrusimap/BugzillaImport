@@ -1,0 +1,68 @@
+diff -Pur cyrus-imapd-2.2.12/imap/fetchnews.c cyrus-imapd-2.2.12.mod/imap/fetchnews.c
+--- cyrus-imapd-2.2.12/imap/fetchnews.c	2005-03-19 14:34:43.000000000 +0100
++++ cyrus-imapd-2.2.12.mod/imap/fetchnews.c	2005-03-19 14:35:32.000000000 +0100
+@@ -125,7 +125,7 @@
+ void usage(void)
+ {
+     fprintf(stderr,
+-	    "fetchnews [-C <altconfig>] [-s <server>] [-n] [-w <wildmat>] [-f <tstamp file>]\n"
++	    "fetchnews [-C <altconfig>] [-s <server>] [-n] [-y] [-w <wildmat>] [-f <tstamp file>]\n"
+ 	    "          [-a <authname> [-p <password>]] <peer>\n");
+     exit(-1);
+ }
+@@ -265,10 +265,11 @@
+     struct tm *tm;
+     char **resp = NULL;
+     int newnews = 1;
++    char *datefmt = "%y%m%d %H%M%S";
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+-    while ((opt = getopt(argc, argv, "C:s:w:f:a:p:n")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:s:w:f:a:p:n:y")) != EOF) {
+ 	switch (opt) {
+ 	case 'C': /* alt config file */
+ 	    alt_config = optarg;
+@@ -301,6 +302,10 @@
+ 	case 'n': /* no newnews */
+ 	    newnews = 0;
+ 	    break;
++	
++	case 'y': /* newsserver is y2k compliant */
++	    datefmt = "%Y%m%d %H%M%S";
++	    break;
+ 
+ 	default:
+ 	    usage();
+@@ -394,7 +399,7 @@
+ 
+ 	/* ask for new articles */
+ 	tm = gmtime(&stamp);
+-	strftime(buf, sizeof(buf), "%Y%m%d %H%M%S", tm);
++  	strftime(buf, sizeof(buf), datefmt, tm);
+ 	prot_printf(pout, "NEWNEWS %s %s GMT\r\n", wildmat, buf);
+ 	
+ 	if (!prot_fgets(buf, sizeof(buf), pin) || strncmp("230", buf, 3)) {
+diff -Pur cyrus-imapd-2.2.12/man/fetchnews.8 cyrus-imapd-2.2.12.mod/man/fetchnews.8
+--- cyrus-imapd-2.2.12/man/fetchnews.8	2004-01-04 03:42:29.000000000 +0100
++++ cyrus-imapd-2.2.12.mod/man/fetchnews.8	2005-03-19 14:20:22.000000000 +0100
+@@ -57,6 +57,9 @@
+ .B \-n
+ ]
+ [
++.B \-y
++]
++[
+ .B \-w
+ .I wildmat
+ ]
+@@ -105,6 +108,9 @@
+ will keep track of the high and low water marks for each group and use
+ them to fetch new articles.
+ .TP
++.B \-y
++Use 4 instead of 2 digits for year. 2-digits are rfc977- but not y2k-compliant.
++.TP
+ .BI \-w " wildmat"
+ Wildmat pattern specifying which newsgroups to search for new
+ articles.  Defaults to "*".

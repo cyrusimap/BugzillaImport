@@ -1,0 +1,190 @@
+Index: Makefile.in
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/master/Makefile.in,v
+retrieving revision 1.1.1.2
+retrieving revision 1.3
+diff -u -r1.1.1.2 -r1.3
+--- Makefile.in	27 Nov 2001 02:25:04 -0000	1.1.1.2
++++ Makefile.in	13 Feb 2002 10:53:00 -0000	1.3
+@@ -53,8 +53,10 @@
+ CYRUS_GROUP=@cyrus_group@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
++#CPPFLAGS = -I. -I.. -I$(srcdir) -I$(srcdir)/../lib @CPPFLAGS@ @COM_ERR_CPPFLAGS@
++DEPLIBS = ../lib/libcyrus.a @DEPLIBS@
+ CPPFLAGS = -I. -I.. -I../lib -I$(srcdir) @CPPFLAGS@ @COM_ERR_CPPFLAGS@
+-DEPLIBS = @DEPLIBS@
++#DEPLIBS = @DEPLIBS@
+ 
+ CFLAGS = @CFLAGS@
+ LDFLAGS = @LDFLAGS@ @CFLAGS@ @COM_ERR_LDFLAGS@
+Index: master.c
+===================================================================
+RCS file: /home/cvs/debian/cyrus21-imapd/master/master.c,v
+retrieving revision 1.1.1.4
+diff -u -r1.1.1.4 master.c
+--- master.c	19 Feb 2002 18:50:15 -0000	1.1.1.4
++++ master.c	27 Feb 2002 19:57:01 -0000
+@@ -93,6 +93,7 @@
+ 
+ #include "master.h"
+ #include "service.h"
++#include "lock.h"
+ 
+ enum {
+     become_cyrus_early = 1,
+@@ -183,6 +184,70 @@
+     return result;
+ }
+ 
++#ifdef ENABLE_DAEMON_MODE
++void acquire_daemon_lock(int closeflag)
++/* Copyright 1988,1990,1993,1994 by Paul Vixie
++ * All rights reserved
++ *
++ * Distribute freely, except: don't remove my name from the source or
++ * documentation (don't take credit for my work), mark your changes (don't
++ * get me blamed for your possible bugs), don't alter or remove this
++ * notice.  May be sold if buildable source is provided to buyer.  No
++ * warrantee of any kind, express or implied, is included with this
++ * software; use at your own risk, responsibility for damages (if any) to
++ * anyone resulting from the use of this software rests entirely with the
++ * user.
++ *
++ * Changelog: 
++ *   2001-11-18 (hmh@debian.org): 
++ *       Got acquire_daemonlock (and above copyright notice) from Paul Vixie's
++ *       cron, as packaged by the Debian project.  Modified acquire_daemon_lock 
++ *       to adequate it for Cyrus IMAPd needs. Applied it to cyrus master the
++ *       same proven way it is used in Vixie cron.  Basically, call it with
++ *       a zero to update the pidfile, and with a 1 at every fork() of a 
++ *       worker process.
++ */
++{
++	static	FILE	*fp = NULL;
++	int fdflags;
++
++	if (closeflag && fp) {
++		fclose(fp);
++		fp = NULL;
++		return;
++	}
++
++	if (!fp) {
++		int	fd;
++
++		if ((-1 == (fd = open(MASTER_PIDFILE, O_RDWR|O_CREAT, 0644)))
++		    || (NULL == (fp = fdopen(fd, "r+")))
++		    ) {
++			fatal("couldn't open or create pidfile " MASTER_PIDFILE ": %m",1);
++		}
++
++		if (lock_nonblocking(fd)) {
++			fatal("failed to acquire pidfile lock", 1);
++		}
++		fdflags =  fcntl(fd, F_GETFD, 0);
++		if (fdflags != -1) fdflags = fcntl(fd, F_SETFD, 
++						fdflags | FD_CLOEXEC);
++		if (fdflags == -1) {
++			fatal("unable to set close-on-exec for pidfile: %m", 1);
++		}
++	}
++
++	rewind(fp);
++	fprintf(fp, "%d\n", getpid());
++	fflush(fp);
++	(void) ftruncate(fileno(fp), ftell(fp));
++
++	/* abandon fd and fp even though the file is open. we need to
++	 * keep it open and locked, but we don't need the handles elsewhere.
++	 */
++}
++#endif /* ENABLE_DAEMON_MODE */
++
+ void get_prog(char *path, char *const *cmd)
+ {
+     if (cmd[0][0] == '/') strcpy(path, cmd[0]);
+@@ -429,6 +494,10 @@
+ 	break;
+ 	
+     case 0:
++#ifdef ENABLE_DAEMON_MODE
++    	acquire_daemon_lock(1);
++#endif
++    
+ 	if (become_cyrus() != 0) {
+ 	    syslog(LOG_ERR, "can't change to the cyrus user");
+ 	    exit(1);
+@@ -485,6 +554,9 @@
+ 
+     case 0:
+ 	/* child */
++#ifdef ENABLE_DAEMON_MODE
++	acquire_daemon_lock(1);
++#endif
+ 	if (become_cyrus() != 0) {
+ 	    syslog(LOG_ERR, "can't change to the cyrus user");
+ 	    exit(1);
+@@ -585,6 +657,9 @@
+ 	    break;
+ 
+ 	case 0:
++#ifdef ENABLE_DAEMON_MODE
++	    acquire_daemon_lock(1);
++#endif
+ 	    if (become_cyrus() != 0) {
+ 		syslog(LOG_ERR, "can't change to the cyrus user");
+ 		exit(1);
+@@ -956,16 +1031,14 @@
+ void limit_fds(rlim_t x)
+ {
+     struct rlimit rl;
+-    int r;
+ 
+     rl.rlim_cur = x;
+     rl.rlim_max = x;
+-    if (setrlimit(RLIMIT_NUMFDS, &rl) < 0) {
++    if (setrlimit(RLIMIT_NUMFDS, &rl) < 0 && x != RLIM_INFINITY) {
+ 	syslog(LOG_ERR, "setrlimit: Unable to set file descriptors limit to %ld: %m", x);
+     }
+ 
+-    if (verbose > 1) {
+-	r = getrlimit(RLIMIT_NUMFDS, &rl);
++    if (verbose > 1 && getrlimit(RLIMIT_NUMFDS, &rl) >= 0) {
+ 	syslog(LOG_DEBUG, "set maximum file descriptors to %ld/%ld", rl.rlim_cur,
+ 	       rl.rlim_max);
+     }
+@@ -1083,7 +1156,33 @@
+ 
+     limit_fds(RLIM_INFINITY);
+ 
++#ifdef ENABLE_DAEMON_MODE
++    /* lock pidfile (and create it while we're root) */
++    acquire_daemon_lock(0);
++#endif
++
+     masterconf_init("master");
++
++#ifdef ENABLE_DAEMON_MODE
++    /* go daemon, if not in debug mode */
++    if (close_std) {
++#ifdef HAVE_UNISTD_H
++        if (daemon(0, 0)) fatal("could not enter daemon mode: %m", 2);
++#else
++	switch (fork()) {
++		case -1:
++			fatal("could not fork to background: %m", 2);
++		case 0: /* child */
++			break;
++		default: /* parent */
++			exit(0);
++	}
++	setsid();
++#endif /* HAVE_UNISTD_H */
++        acquire_daemon_lock(0);
++    }
++#endif
++
+     syslog(LOG_NOTICE, "process started");
+ 
+ #ifdef HAVE_UCDSNMP

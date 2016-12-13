@@ -1,0 +1,238 @@
+diff -urNad complete.dpatch/master/master.c /tmp/dpep.NKIIR9/complete.dpatch/master/master.c
+--- complete.dpatch/master/master.c	2005-11-11 17:03:04.000000000 +0100
++++ /tmp/dpep.NKIIR9/complete.dpatch/master/master.c	2005-11-11 17:04:39.273704930 +0100
+@@ -162,6 +162,8 @@
+ static struct centry *ctable[child_table_size];
+ static struct centry *cfreelist;
+ 
++static int child_mourning_time = 2;    /* Time in seconds to remember child
++					  after processing SIGCHLD */
+ static int janitor_frequency = 1;	/* Janitor sweeps per second */
+ static int janitor_position;		/* Entry to begin at in next sweep */
+ static struct timeval janitor_mark;	/* Last time janitor did a sweep */
+@@ -186,9 +188,9 @@
+ int become_cyrus(void)
+ {
+     struct passwd *p;
+-    int newuid, newgid;
++    uid_t newuid, newgid;
+     int result;
+-    static int uid = 0;
++    static uid_t uid = 0;
+ 
+     if (uid) return setuid(uid);
+ 
+@@ -915,7 +917,7 @@
+ 		}
+ 	    }
+ 	    c->service_state = SERVICE_STATE_DEAD;
+-	    c->janitor_deadline = time(NULL) + 2;
++	    c->janitor_deadline = time(NULL) + child_mourning_time;
+ 	} else {
+ 	    /* weird. Are we multithreaded now? we don't know this child */
+ 	    syslog(LOG_WARNING,
+@@ -924,7 +926,7 @@
+ 	    c = get_centry();
+ 	    c->pid = pid;
+ 	    c->service_state = SERVICE_STATE_DEAD;
+-	    c->janitor_deadline = time(NULL) + 2;
++	    c->janitor_deadline = time(NULL) + child_mourning_time;
+ 	    c->si = SERVICE_NONE;
+ 	    c->next = ctable[pid % child_table_size];
+ 	    ctable[pid % child_table_size] = c;
+@@ -1079,6 +1081,36 @@
+     }
+ }
+ 
++/*
++ * Receives a message from a service.
++ *
++ * Returns zero if all goes well
++ * 1 if no msg available
++ * 2 if bad message received (incorrectly sized)
++ * -1 on error (errno set)
++ */
++int read_msg(int fd, struct notify_message *msg)
++{
++    ssize_t r;
++    size_t off = 0;
++    int s = sizeof(struct notify_message);
++    
++    while (s > 0) {
++        do
++            r = read(fd, msg + off, s);
++        while ((r == -1) && (errno == EINTR));
++        if (r <= 0) break;
++        s -= r;
++        off += r;
++    }
++    if ( ((r == 0) && (off == 0)) ||
++         ((r == -1) && (errno == EAGAIN)) )
++        return 1;
++    if (r == -1) return -1;
++    if (s != 0) return 2;
++    return 0;
++}
++
+ void process_msg(const int si, struct notify_message *msg) 
+ {
+     struct centry *c;
+@@ -1392,8 +1424,9 @@
+ 	snprintf(buf, sizeof(buf),
+ 		 "cannot find executable for service '%s'", name);
+ 	
+-	/* if it is not, we're misconfigured, die. */
+-	fatal(buf, EX_CONFIG);
++	/* if it is not, we just skip it */
++	syslog(LOG_WARNING, "WARNING: %s -- ignored", buf);
++	return;
+     }
+ 
+     Services[i].maxforkrate = maxforkrate;
+@@ -1405,7 +1438,7 @@
+ 	Services[i].desired_workers = prefork;
+ 	Services[i].babysit = babysit;
+ 	Services[i].max_workers = atoi(max);
+-	if (Services[i].max_workers == -1) {
++	if (Services[i].max_workers < 0) {
+ 	    Services[i].max_workers = INT_MAX;
+ 	}
+     } else {
+@@ -1413,6 +1446,7 @@
+ 	if (prefork > 1) prefork = 1;
+ 	Services[i].desired_workers = prefork;
+ 	Services[i].max_workers = 1;
++	Services[i].babysit = 0;
+     }
+     free(max);
+  
+@@ -1452,7 +1486,7 @@
+     if (!cmd) {
+ 	char buf[256];
+ 	snprintf(buf, sizeof(buf),
+-		 "unable to find command or port for event '%s'", name);
++		 "unable to find command for event '%s'", name);
+ 
+ 	if (ignore_err) {
+ 	    syslog(LOG_WARNING, "WARNING: %s -- ignored", buf);
+@@ -1506,7 +1540,7 @@
+ 
+     rl.rlim_cur = x;
+     rl.rlim_max = x;
+-    if (setrlimit(RLIMIT_NUMFDS, &rl) < 0) {
++    if (setrlimit(RLIMIT_NUMFDS, &rl) < 0 && x != RLIM_INFINITY) {
+ 	syslog(LOG_ERR, "setrlimit: Unable to set file descriptors limit to %ld: %m", x);
+ 
+ #ifdef HAVE_GETRLIMIT
+@@ -1521,11 +1555,9 @@
+     }
+ 
+ 
+-    if (verbose > 1) {
+-	r = getrlimit(RLIMIT_NUMFDS, &rl);
+-	syslog(LOG_DEBUG, "set maximum file descriptors to %ld/%ld", rl.rlim_cur,
+-	       rl.rlim_max);
+-    }
++    if (verbose > 1 && getrlimit(RLIMIT_NUMFDS, &rl) >=0)
++	syslog(LOG_DEBUG, "set maximum file descriptors to %ld/%ld",
++		rl.rlim_cur, rl.rlim_max);
+ #else
+     }
+ #endif /* HAVE_GETRLIMIT */
+@@ -1544,7 +1576,10 @@
+ 
+     /* disable all services -
+        they will be re-enabled if they appear in config file */
+-    for (i = 0; i < nservices; i++) Services[i].exec = NULL;
++    for (i = 0; i < nservices; i++) {
++	if (Services[i].exec) free((void*)Services[i].exec);
++	Services[i].exec = NULL;
++    }
+ 
+     /* read services */
+     masterconf_getsection("SERVICES", &add_service, (void*) 1);
+@@ -1559,13 +1594,18 @@
+ 		       Services[i].stat[0], Services[i].stat[1]);
+ 
+ 	    /* Only free the service info on the primary */
+-	    if(Services[i].associate == 0) {
++	    if (Services[i].associate == 0) {
++		free(Services[i].name);
+ 		free(Services[i].listen);
+ 		free(Services[i].proto);
+ 	    }
++	    Services[i].name = NULL;
+ 	    Services[i].listen = NULL;
+ 	    Services[i].proto = NULL;
+ 	    Services[i].desired_workers = 0;
++	    Services[i].nforks = 0;
++	    Services[i].nactive = 0;
++	    Services[i].nconnections = 0;
+ 
+ 	    /* send SIGHUP to all children */
+ 	    for (j = 0 ; j < child_table_size ; j++ ) {
+@@ -1648,9 +1688,9 @@
+     p = getenv("CYRUS_VERBOSE");
+     if (p) verbose = atoi(p) + 1;
+ #ifdef HAVE_NETSNMP
+-    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:P:x:")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:M:p:l:DdjJ:P:x:")) != EOF) {
+ #else
+-    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:M:p:l:DdjJ:")) != EOF) {
+ #endif
+ 	switch (opt) {
+ 	case 'C': /* alt imapd.conf file */
+@@ -1683,8 +1723,15 @@
+ 	    /* Janitor frequency */
+ 	    janitor_frequency = atoi(optarg);
+ 	    if(janitor_frequency < 1)
+-		fatal("The janitor period must be at least 1 second", EX_CONFIG);
++		fatal("The janitor frequency must be at least once per second", EX_CONFIG);
+ 	    break;   
++       case 'J':
++           /* Janitor delay before cleanup of a child */
++           child_mourning_time = atoi(optarg);
++           if(child_mourning_time < 1)
++               fatal("The janitor's mourning time interval must be at least 1 second",
++                       EX_CONFIG);
++           break;
+ #ifdef HAVE_NETSNMP
+ 	case 'P': /* snmp AgentXPingInterval */
+ 	    agentxpinginterval = atoi(optarg);
+@@ -2060,13 +2107,19 @@
+ 	    int j;
+ 
+ 	    if (FD_ISSET(x, &rfds)) {
+-		r = read(x, &msg, sizeof(msg));
+-		if (r != sizeof(msg)) {
+-		    syslog(LOG_ERR, "got incorrectly sized response from child: %x", i);
++		while ((r = read_msg(x, &msg)) == 0)
++		    process_msg(i, &msg);
++	
++		if (r == 2) {
++		    syslog(LOG_ERR,
++			"got incorrectly sized response from child: %x", i);
++		    continue;
++		}
++		if (r < 0) {
++		    syslog(LOG_ERR,
++			"error while receiving message from child %x: %m", i);
+ 		    continue;
+ 		}
+-		
+-		process_msg(i, &msg);
+ 	    }
+ 
+ 	    if (Services[i].exec &&
+diff -urNad complete.dpatch/master/master.h /tmp/dpep.NKIIR9/complete.dpatch/master/master.h
+--- complete.dpatch/master/master.h	2005-11-11 17:03:03.000000000 +0100
++++ /tmp/dpep.NKIIR9/complete.dpatch/master/master.h	2005-11-11 17:03:04.650994659 +0100
+@@ -43,6 +43,7 @@
+ extern struct service *Services;
+ extern int allocservices;
+ extern int nservices;
++void sighandler_setup(void);
+ 
+ /*
+  * Description of multiple address family support from

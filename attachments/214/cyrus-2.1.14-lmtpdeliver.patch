@@ -1,0 +1,123 @@
+diff -u lmtpd.c.orig lmtpd.c
+--- lmtpd.c.orig	2003-06-19 21:38:38.000000000 +0100
++++ lmtpd.c	2003-08-13 13:24:33.000000000 +0100
+@@ -1167,12 +1167,36 @@
+     for (n = 0; n < nrcpts; n++) {
+ 	char *rcpt = xstrdup(msg_getrcpt(msgdata, n));
+ 	char *plus;
++	char *at_on;
+ 	int quotaoverride = msg_getrcpt_ignorequota(msgdata, n);
+ 	int r = 0;
+ 
+ 	mydata.cur_rcpt = n;
++	if ( (plus = strchr(rcpt, '+')) != NULL ) {
++		/* simon */
++		/* ok so we are going to put plus in its own space
++		** and make rcpt = user@domain.com 
++		*/
++		if ( (at_on = strchr(plus,'@')) != NULL ) {
++			char *temp;
++			/* need to alloc some memory for plus */
++			temp = (char *) xmalloc(at_on - plus + 1);
++			memcpy(temp,plus+1,at_on-plus);
++			temp[at_on-plus-1] = '\0';
++			memmove(plus,at_on,strlen(at_on)+1); /* must get the null */
++			plus = temp;
++		
++			syslog(LOG_ERR, "lmtpd patch : %s %s", plus,rcpt);
++		} else {
++			/* just do what would normally happen */
++			*plus = '\0';
++		}
++	}
++	/*
+ 	plus = strchr(rcpt, '+');
+ 	if (plus) *plus++ = '\0';
++	*/
++	
+ 	/* case 1: shared mailbox request */
+ 	if (plus && !strcmp(rcpt, BB)) {
+ 	    strlcpy(namebuf, lmtpd_namespace.prefix[NAMESPACE_SHARED],
+@@ -1267,6 +1291,7 @@
+ 	    }
+ 	}
+ 
++	if (plus) free(plus);
+ 	free(rcpt);
+ 	msg_setrcpt_status(msgdata, n, r);
+     }
+@@ -1348,6 +1373,7 @@
+ {
+     char buf[MAX_MAILBOX_NAME+1];
+     char *plus;
++    char *at_on;
+     int r;
+     int sl = strlen(BB);
+ 
+@@ -1368,8 +1394,17 @@
+ 	} else {
+ 	    strlcpy(buf, "user.", sizeof(buf));
+ 	    strlcat(buf, user, sizeof(buf));
+-	    plus = strchr(buf, '+');
+-	    if (plus) *plus = '\0';
++	    if ( (plus = strchr(buf, '+')) != NULL ) {
++		/*if (plus) *plus = '\0';*/
++		/* turn simon+what@surf.org.uk */
++		/* into simon@surf.org.uk */
++		/* find @ */
++		if ( (at_on = strchr(plus,'@')) != NULL ) {
++			memmove(plus,at_on,strlen(at_on)+1); /* must get the null */
++		} else {
++			if (plus) *plus = '\0';
++		}
++	    }
+ 	    /* Translate any separators in user */
+ 	    mboxname_hiersep_tointernal(&lmtpd_namespace, buf+5);
+ 	    /* - don't care about ACL on INBOX (always allow post)
+@@ -1428,15 +1463,22 @@
+      */
+     if ((msg_getnumrcpt(msgdata) == 1) || singleinstance) {
+ 	int r = 0;
+-	char *rcpt, *plus, *user = NULL;
++	char *rcpt, *plus, *user, *at_on = NULL;
+ 	char namebuf[MAX_MAILBOX_PATH+1], mailboxname[MAX_MAILBOX_PATH+1];
+ 	time_t now = time(NULL);
+ 
+ 	/* build the mailboxname from the recipient address */
+ 	rcpt = xstrdup(msg_getrcpt(msgdata, 0));
++	/* simon */
+ 	plus = strchr(rcpt, '+');
+-	if (plus) *plus++ = '\0';
+-
++	if (plus) {
++		if ( (at_on = strchr(plus,'@')) != NULL ) {
++			memmove(plus,at_on,strlen(at_on)+1); /* must get the null */
++		} else {
++		    	*plus = '\0';
++		}
++	}
++	
+ 	/* case 1: shared mailbox request */
+ 	if (plus && !strcmp(rcpt, BB)) {
+ 	    strlcpy(namebuf, lmtpd_namespace.prefix[NAMESPACE_SHARED],
+diff -u lmtpengine.c.orig lmtpengine.c
+--- lmtpengine.c.orig	2003-06-25 04:34:01.000000000 +0100
++++ lmtpengine.c	2003-08-13 13:30:07.000000000 +0100
+@@ -1153,14 +1153,15 @@
+     else {
+ 	if(forcedowncase) {
+ 	    /* We should downcase the localpart up to the first + */
+-	    while(*addr != '@' && *addr != '>' && *addr != '+') {
++	    while(*addr != '>' && *addr != '+') {
+ 		if(*addr == '\\') addr++;
++		if(*addr == '@') addr++;
+ 		*dest++ = TOLOWER(*addr++);
+ 	    }
+ 	}
+ 
+ 	/* Now finish the remainder of the localpart */
+-	while (*addr != '@' && *addr != '>') {
++	while (*addr != '>' && &addr != NULL) {
+ 	    if (*addr == '\\') addr++;
+ 	    *dest++ = *addr++;
+ 	}

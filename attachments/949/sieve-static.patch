@@ -1,0 +1,206 @@
+Index: bc_dump.c
+===================================================================
+RCS file: /cvs/src/sieve/bc_dump.c,v
+retrieving revision 1.3
+diff -u -r1.3 bc_dump.c
+--- bc_dump.c	30 Nov 2006 17:11:24 -0000	1.3
++++ bc_dump.c	9 Aug 2007 12:55:04 -0000
+@@ -40,9 +40,11 @@
+     size_t reallen; /* allocated length of 'data' */
+ };
+ 
++#if DUMPCODE
++
+ /*this would work a lot better if we actually could tell how many levels deep in if statements we were.  currently it doesn't know*/
+ 
+-void print_spaces(int n)
++static void print_spaces(int n)
+ {
+     int temp_n=0;
+     while(temp_n++ < (n))
+@@ -50,8 +52,6 @@
+ }
+ 
+ 
+-#if DUMPCODE
+-
+ /* Dump a stringlist.  Return the last address used by the list */
+ static int dump_sl(bytecode_info_t *d, int ip, int level) 
+ {
+Index: bc_eval.c
+===================================================================
+RCS file: /cvs/src/sieve/bc_eval.c,v
+retrieving revision 1.8
+diff -u -r1.8 bc_eval.c
+--- bc_eval.c	30 Nov 2006 17:11:24 -0000	1.8
++++ bc_eval.c	9 Aug 2007 12:55:04 -0000
+@@ -80,8 +80,8 @@
+ /* this is used by notify to pass the options list to do_notify
+  * do_notify needs null-terminated (char *)[],
+  *  we have a stringlist, the beginning of which is pointed at by pos */
+-const char ** bc_makeArray(bytecode_input_t *bc, int *pos) 
+-{ 
++static const char ** bc_makeArray(bytecode_input_t *bc, int *pos)
++{
+     int i;
+     const char** array;
+     int len = ntohl(bc[*pos].value);
+@@ -100,8 +100,8 @@
+ }
+ 
+ /* Compile a regular expression for use during parsing */
+-regex_t * bc_compile_regex(const char *s, int ctag,
+-			   char *errmsg, size_t errsiz)
++static regex_t * bc_compile_regex(const char *s, int ctag,
++				  char *errmsg, size_t errsiz)
+ {
+     int ret;
+     regex_t *reg = (regex_t *) xmalloc(sizeof(regex_t));
+@@ -202,9 +202,9 @@
+ };
+  
+ /* Determine if we should respond to a vacation message */
+-int shouldRespond(void * m, sieve_interp_t *interp,
+-		  int numaddresses, bytecode_input_t* bc,
+-		  int i, char **from, char **to)
++static int shouldRespond(void * m, sieve_interp_t *interp,
++			 int numaddresses, bytecode_input_t* bc,
++			 int i, char **from, char **to)
+ {
+     const char **body;
+     char buf[128];
+@@ -341,9 +341,9 @@
+ }
+ 
+ /* Evaluate a bytecode test */
+-int eval_bc_test(sieve_interp_t *interp,
+-		 struct hash_table *body_cache, void* m,
+-		 bytecode_input_t * bc, int * ip)
++static int eval_bc_test(sieve_interp_t *interp,
++			struct hash_table *body_cache, void* m,
++			bytecode_input_t * bc, int * ip)
+ {
+     int res=0; 
+     int i=*ip;
+Index: script.c
+===================================================================
+RCS file: /cvs/src/sieve/script.c,v
+retrieving revision 1.63
+diff -u -r1.63 script.c
+--- script.c	30 Nov 2006 17:11:24 -0000	1.63
++++ script.c	9 Aug 2007 12:55:05 -0000
+@@ -186,7 +186,7 @@
+     return res;
+ }
+ 
+-void free_imapflags(sieve_imapflags_t *imapflags)
++static void free_imapflags(sieve_imapflags_t *imapflags)
+ {
+     while (imapflags->nflags)
+ 	free(imapflags->flag[--imapflags->nflags]);
+Index: sievec.c
+===================================================================
+RCS file: /cvs/src/sieve/sievec.c,v
+retrieving revision 1.6
+diff -u -r1.6 sievec.c
+--- sievec.c	30 Nov 2006 17:11:25 -0000	1.6
++++ sievec.c	9 Aug 2007 12:55:05 -0000
+@@ -143,7 +143,7 @@
+ }
+ 
+ /* to make larry's stupid functions happy :) */ 
+-void foo(void)
++static void foo(void)
+ {
+     fatal("stub function called", 0);
+ }
+@@ -164,8 +164,8 @@
+     return SIEVE_FAIL;
+ }
+ 
+-int mysieve_error(int lineno, const char *msg,
+-		  void *i __attribute__((unused)), void *s)
++static int mysieve_error(int lineno, const char *msg,
++			 void *i __attribute__((unused)), void *s)
+ {
+     char buf[1024];
+     char **errstr = (char **) s;
+Index: sieved.c
+===================================================================
+RCS file: /cvs/src/sieve/sieved.c,v
+retrieving revision 1.6
+diff -u -r1.6 sieved.c
+--- sieved.c	30 Nov 2006 17:11:25 -0000	1.6
++++ sieved.c	9 Aug 2007 12:55:05 -0000
+@@ -48,8 +48,8 @@
+ /* config.c stuff */
+ const int config_need_data = 0;
+ 
+-void dump2(bytecode_input_t *d, int len);
+-int dump2_test(bytecode_input_t * d, int i);
++static void dump2(bytecode_input_t *d, int len);
++static int dump2_test(bytecode_input_t * d, int i);
+  
+ /* from bc_eval.c */
+ int unwrap_string(bytecode_input_t *bc, int pos, const char **str, int *len);
+@@ -62,7 +62,7 @@
+     exit(1);
+ }
+ 
+-int load(int fd, bytecode_input_t ** d)
++static int load(int fd, bytecode_input_t ** d)
+ {  
+     const char * data=NULL;
+     struct stat sbuf;
+@@ -115,7 +115,7 @@
+     }
+ }
+ 
+-int write_list(int list_len, int i, bytecode_input_t * d)
++static int write_list(int list_len, int i, bytecode_input_t * d)
+ {
+     int x;
+     i++;
+@@ -131,7 +131,7 @@
+     return i;
+ }
+ 
+-int printComparison(bytecode_input_t *d ,int i)
++static int printComparison(bytecode_input_t *d ,int i)
+ {
+     printf("Comparison: ");
+     switch(ntohl(d[i].value))
+@@ -185,7 +185,7 @@
+ }
+ 
+ 
+-int dump2_test(bytecode_input_t * d, int i)
++static int dump2_test(bytecode_input_t * d, int i)
+ {
+     int l,x;
+     switch(ntohl(d[i].value)) {
+@@ -317,7 +317,7 @@
+     return i;
+ }
+ 
+-void dump2(bytecode_input_t *d, int bc_len) 
++static void dump2(bytecode_input_t *d, int bc_len)
+ {
+     int i;
+     int version;
+Index: tree.c
+===================================================================
+RCS file: /cvs/src/sieve/tree.c,v
+retrieving revision 1.12
+diff -u -r1.12 tree.c
+--- tree.c	30 Nov 2006 17:11:25 -0000	1.12
++++ tree.c	9 Aug 2007 12:55:05 -0000
+@@ -111,7 +111,7 @@
+ 
+ void free_test(test_t *t);
+ 
+-void free_tl(testlist_t *tl)
++static void free_tl(testlist_t *tl)
+ {
+     testlist_t *tl2;
+ 

@@ -1,0 +1,338 @@
+Index: imap/imapd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.482
+retrieving revision 1.483
+diff -u -r1.482 -r1.483
+--- imap/imapd.c	3 Sep 2004 18:13:17 -0000	1.482
++++ imap/imapd.c	8 Sep 2004 19:45:21 -0000	1.483
+@@ -38,7 +38,7 @@
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+-/* $Id: imapd.c,v 1.482 2004/09/03 18:13:17 ken3 Exp $ */
++/* $Id: imapd.c,v 1.483 2004/09/08 19:45:21 shadow Exp $ */
+ 
+ #include <config.h>
+ 
+@@ -433,6 +433,8 @@
+ 
+ static void imapd_reset(void)
+ {
++    int nullfd = -1;
++
+     proc_cleanup();
+ 
+     if (imapd_mailbox) {
+@@ -467,9 +469,14 @@
+     }
+ #endif
+ 
+-    cyrus_close_sock(0);    
+-    cyrus_close_sock(1);
+-    cyrus_close_sock(2);
++    nullfd = open("/dev/null", O_RDONLY, 0);
++    if (nullfd < 0) {
++	fatal("open() failed", EC_TEMPFAIL);
++    }
++    cyrus_dup2_sock(nullfd, 0);
++    cyrus_dup2_sock(nullfd, 1);
++    cyrus_dup2_sock(nullfd, 2);
++    close(nullfd);
+ 
+     strcpy(imapd_clienthost, "[local]");
+     if (imapd_logfd != -1) {
+Index: imap/lmtpd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/lmtpd.c,v
+retrieving revision 1.137
+retrieving revision 1.138
+diff -u -r1.137 -r1.138
+--- imap/lmtpd.c	6 Jul 2004 20:02:20 -0000	1.137
++++ imap/lmtpd.c	8 Sep 2004 19:45:22 -0000	1.138
+@@ -1,6 +1,6 @@
+ /* lmtpd.c -- Program to deliver mail to a mailbox
+  *
+- * $Id: lmtpd.c,v 1.137 2004/07/06 20:02:20 ken3 Exp $
++ * $Id: lmtpd.c,v 1.138 2004/09/08 19:45:22 shadow Exp $
+  * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+@@ -207,6 +207,7 @@
+ 		 char **envp __attribute__((unused)))
+ {
+     int opt;
++    int nullfd = -1;
+ 
+     deliver_in = prot_new(0, 0);
+     deliver_out = prot_new(1, 1);
+@@ -239,9 +240,14 @@
+ 	deliver_logfd = -1;
+     }
+ 
+-    cyrus_close_sock(0);
+-    cyrus_close_sock(1);
+-    cyrus_close_sock(2);
++    nullfd = open("/dev/null", O_RDONLY, 0);
++    if (nullfd < 0) {
++       fatal("open() failed", EC_TEMPFAIL);
++    }
++    cyrus_dup2_sock(nullfd, 0);
++    cyrus_dup2_sock(nullfd, 1);
++    cyrus_dup2_sock(nullfd, 2);
++    close(nullfd);
+ 
+     return 0;
+ }
+Index: imap/nntpd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/nntpd.c,v
+retrieving revision 1.33
+retrieving revision 1.35
+diff -u -r1.33 -r1.35
+--- imap/nntpd.c	15 Jul 2004 22:42:45 -0000	1.33
++++ imap/nntpd.c	8 Sep 2004 19:45:22 -0000	1.35
+@@ -38,7 +38,7 @@
+  * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  *
+- * $Id: nntpd.c,v 1.33 2004/07/15 22:42:45 rjs3 Exp $
++ * $Id: nntpd.c,v 1.35 2004/09/08 19:45:22 shadow Exp $
+  */
+ 
+ /*
+@@ -415,6 +415,7 @@
+ static void nntp_reset(void)
+ {
+     int i;
++    int nullfd = -1;
+ 
+     proc_cleanup();
+ 
+@@ -457,9 +458,14 @@
+     }
+ #endif
+ 
+-    cyrus_close_sock(0);
+-    cyrus_close_sock(1);
+-    cyrus_close_sock(2);
++    nullfd = open("/dev/null", O_RDONLY, 0);
++    if (nullfd < 0) {
++       fatal("open() failed", EC_TEMPFAIL);
++    }
++    cyrus_dup2_sock(nullfd, 0);
++    cyrus_dup2_sock(nullfd, 1);
++    cyrus_dup2_sock(nullfd, 2);
++    close(nullfd);
+ 
+     strcpy(nntp_clienthost, "[local]");
+     if (nntp_logfd != -1) {
+@@ -496,6 +502,7 @@
+ 
+     nntp_exists = 0;
+     nntp_current = 0;
++    did_extensions = 0;
+ }
+ 
+ /*
+Index: imap/pop3d.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/pop3d.c,v
+retrieving revision 1.161
+retrieving revision 1.162
+diff -u -r1.161 -r1.162
+--- imap/pop3d.c	4 Aug 2004 13:03:16 -0000	1.161
++++ imap/pop3d.c	8 Sep 2004 19:45:22 -0000	1.162
+@@ -40,7 +40,7 @@
+  */
+ 
+ /*
+- * $Id: pop3d.c,v 1.161 2004/08/04 13:03:16 ken3 Exp $
++ * $Id: pop3d.c,v 1.162 2004/09/08 19:45:22 shadow Exp $
+  */
+ #include <config.h>
+ 
+@@ -197,6 +197,8 @@
+ 
+ static void popd_reset(void)
+ {
++    int nullfd = -1;
++
+     proc_cleanup();
+ 
+     /* close local mailbox */
+@@ -233,9 +235,14 @@
+     }
+ #endif
+ 
+-    cyrus_close_sock(0);
+-    cyrus_close_sock(1);
+-    cyrus_close_sock(2);
++    nullfd = open("/dev/null", O_RDONLY, 0);
++    if (nullfd < 0) {
++       fatal("open() failed", EC_TEMPFAIL);
++    }
++    cyrus_dup2_sock(nullfd, 0);
++    cyrus_dup2_sock(nullfd, 1);
++    cyrus_dup2_sock(nullfd, 2);
++    close(nullfd);
+ 
+     strcpy(popd_clienthost, "[local]");
+     if (popd_logfd != -1) {
+Index: imap/proxyd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/proxyd.c,v
+retrieving revision 1.188
+retrieving revision 1.189
+diff -u -r1.188 -r1.189
+--- imap/proxyd.c	27 Aug 2004 06:56:09 -0000	1.188
++++ imap/proxyd.c	8 Sep 2004 19:45:22 -0000	1.189
+@@ -39,7 +39,7 @@
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+-/* $Id: proxyd.c,v 1.188 2004/08/27 06:56:09 shadow Exp $ */
++/* $Id: proxyd.c,v 1.189 2004/09/08 19:45:22 shadow Exp $ */
+ 
+ #include <config.h>
+ 
+@@ -1177,6 +1177,7 @@
+ static void proxyd_reset(void) 
+ {
+     int i;
++    int nullfd = -1;
+     
+     proc_cleanup();
+ 
+@@ -1214,9 +1215,14 @@
+     }
+ #endif
+ 
+-    cyrus_close_sock(0);
+-    cyrus_close_sock(1);
+-    cyrus_close_sock(2);
++    nullfd = open("/dev/null", O_RDONLY, 0);
++    if (nullfd < 0) {
++       fatal("open() failed", EC_TEMPFAIL);
++    }
++    cyrus_dup2_sock(nullfd, 0);
++    cyrus_dup2_sock(nullfd, 1);
++    cyrus_dup2_sock(nullfd, 2);
++    close(nullfd);
+     
+     /* Cleanup Globals */
+     proxyd_cmdcnt = 0;
+Index: imap/smmapd.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/smmapd.c,v
+retrieving revision 1.8
+retrieving revision 1.9
+diff -u -r1.8 -r1.9
+--- imap/smmapd.c	22 May 2004 03:45:52 -0000	1.8
++++ imap/smmapd.c	8 Sep 2004 19:45:22 -0000	1.9
+@@ -72,7 +72,7 @@
+  * may contain an explanatory message.
+  *
+  *
+- * $Id: smmapd.c,v 1.8 2004/05/22 03:45:52 rjs3 Exp $
++ * $Id: smmapd.c,v 1.9 2004/09/08 19:45:22 shadow Exp $
+  */
+ 
+ #include <config.h>
+@@ -116,12 +116,19 @@
+ void shut_down(int code) __attribute__((noreturn));
+ void shut_down(int code)
+ {
++    int nullfd = -1;
++
+     if (map_in) prot_free(map_in);
+     if (map_out) prot_free(map_out);
+ 
+-    cyrus_close_sock(0);
+-    cyrus_close_sock(1);
+-    cyrus_close_sock(2);
++    nullfd = open("/dev/null", O_RDONLY, 0);
++    if (nullfd < 0) {
++       fatal("open() failed", EC_TEMPFAIL);
++    }
++    cyrus_dup2_sock(nullfd, 0);
++    cyrus_dup2_sock(nullfd, 1);
++    cyrus_dup2_sock(nullfd, 2);
++    close(nullfd);
+ 
+     mboxlist_close();
+     mboxlist_done();
+Index: lib/util.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/lib/util.c,v
+retrieving revision 1.28
+retrieving revision 1.29
+diff -u -r1.28 -r1.29
+--- lib/util.c	27 Feb 2004 18:17:33 -0000	1.28
++++ lib/util.c	8 Sep 2004 19:45:32 -0000	1.29
+@@ -40,7 +40,7 @@
+  *
+  */
+ /*
+- * $Id: util.c,v 1.28 2004/02/27 18:17:33 ken3 Exp $
++ * $Id: util.c,v 1.29 2004/09/08 19:45:32 shadow Exp $
+  */
+ 
+ #include <config.h>
+@@ -283,6 +283,12 @@
+ {
+     shutdown(fd, SHUT_RD);
+     return close(fd);
++}
++
++int cyrus_dup2_sock(int oldfd, int newfd) 
++{
++    shutdown(newfd, SHUT_RD);
++    return dup2(oldfd,newfd);
+ }
+ 
+ /* Given a mkstemp(3) pattern for a filename,
+Index: timsieved/timsieved.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/timsieved/timsieved.c,v
+retrieving revision 1.53
+retrieving revision 1.54
+diff -u -r1.53 -r1.54
+--- timsieved/timsieved.c	22 May 2004 03:45:59 -0000	1.53
++++ timsieved/timsieved.c	8 Sep 2004 19:45:36 -0000	1.54
+@@ -1,7 +1,7 @@
+ /* timsieved.c -- main file for timsieved (sieve script accepting program)
+  * Tim Martin
+  * 9/21/99
+- * $Id: timsieved.c,v 1.53 2004/05/22 03:45:59 rjs3 Exp $
++ * $Id: timsieved.c,v 1.54 2004/09/08 19:45:36 shadow Exp $
+  */
+ /*
+  * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
+@@ -123,6 +123,8 @@
+ void shut_down(int code) __attribute__ ((noreturn));
+ void shut_down(int code)
+ {
++    int nullfd = -1;
++
+     /* close mailboxes */
+     mboxlist_close();
+     mboxlist_done();
+@@ -138,9 +140,14 @@
+ 
+     cyrus_done();
+ 
+-    cyrus_close_sock(0);
+-    cyrus_close_sock(1);
+-    cyrus_close_sock(2);
++    nullfd = open("/dev/null", O_RDONLY, 0);
++    if (nullfd < 0) {
++       fatal("open() failed", EC_TEMPFAIL);
++    }
++    cyrus_dup2_sock(nullfd, 0);
++    cyrus_dup2_sock(nullfd, 1);
++    cyrus_dup2_sock(nullfd, 2);
++    close(nullfd);
+     
+     /* done */
+     exit(code);

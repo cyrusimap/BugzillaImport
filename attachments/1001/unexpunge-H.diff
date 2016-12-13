@@ -1,0 +1,205 @@
+--- cyrus-imapd-2.3.7/imap/Makefile.in	2006-03-15 13:56:29.000000000 -0500
++++ cyrus-imapd-2.3.7+/imap/Makefile.in	2006-08-17 16:32:17.000000000 -0400
+@@ -322,8 +322,8 @@
+ 	$(CC) $(LDFLAGS) -o \
+ 	 $@ tls_prune.o tls.o $(CLIOBJS) libimap.a $(DEPLIBS) $(LIBS)
+ 
+-unexpunge: unexpunge.o $(CLIOBJS) libimap.a $(DEPLIBS)
+-	$(CC) $(LDFLAGS) -o $@ unexpunge.o $(CLIOBJS) \
++unexpunge: unexpunge.o index.o $(CLIOBJS) libimap.a $(DEPLIBS)
++	$(CC) $(LDFLAGS) -o $@ unexpunge.o index.o $(CLIOBJS) \
+ 	libimap.a $(DEPLIBS) $(LIBS)
+ 
+ make_md5: make_md5.o libimap.a mutex_fake.o $(DEPLIBS)
+--- cyrus-imapd-2.3.7/imap/index.c	2006-07-05 15:51:30.000000000 -0400
++++ cyrus-imapd-2.3.7+/imap/index.c	2006-08-17 16:56:07.000000000 -0400
+@@ -164,7 +164,6 @@
+ 			 struct searchargs *searchargs,
+ 			 modseq_t *highestmodseq);
+ 
+-static void parse_cached_envelope(char *env, char *tokens[], int tokens_size);
+ static char *find_msgid(char *str, char **rem);
+ static char *get_localpart_addr(const char *header);
+ static char *index_extract_subject(const char *subj, size_t len, int *is_refwd);
+@@ -3702,7 +3701,7 @@
+  * When inside a list (ncom > 0), we parse the individual tokens but don't
+  * isolate them -- we return the entire list as a single token.
+  */
+-static void parse_cached_envelope(char *env, char *tokens[], int tokens_size)
++void parse_cached_envelope(char *env, char *tokens[], int tokens_size)
+ {
+     char *c;
+     int i = 0, ncom = 0, len;
+@@ -5115,7 +5114,7 @@
+     return val;
+ }
+ 
+-static void parse_env_address(char *str, struct address *addr)
++void parse_env_address(char *str, struct address *addr)
+ {
+     str++; /* skip ( */
+     addr->name = parse_nstring(&str);
+--- cyrus-imapd-2.3.7/imap/index.h	2006-03-31 14:22:24.000000000 -0500
++++ cyrus-imapd-2.3.7+/imap/index.h	2006-08-17 16:58:21.000000000 -0400
+@@ -194,5 +194,6 @@
+ extern unsigned long index_getlines(struct mailbox *mailbox, unsigned msgno);
+ extern int index_copy_remote(struct mailbox *mailbox, char *sequence, 
+ 			     int usinguid, struct protstream *pout);
++extern void parse_cached_envelope(char *env, char *tokens[], int tokens_size);
+ 
+ #endif /* INDEX_H */
+--- cyrus-imapd-2.3.7/imap/unexpunge.c	2006-03-31 14:22:28.000000000 -0500
++++ cyrus-imapd-2.3.7+/imap/unexpunge.c	2006-08-17 16:58:35.000000000 -0400
+@@ -63,6 +63,7 @@
+ #include "global.h"
+ #include "hash.h"
+ #include "imap_err.h"
++#include "parseaddr.h"
+ #include "index.h"
+ #include "libcyr_cfg.h"
+ #include "mailbox.h"
+@@ -70,10 +71,22 @@
+ #include "util.h"
+ #include "xmalloc.h"
+ 
++/*
++ * Junk, to help index.c link.
++ */
++int imapd_exists;
++struct protstream *imapd_out = NULL;
++struct auth_state *imapd_authstate = NULL;
++char *imapd_userid = NULL;
++int imapd_condstore_client = 0;
++
++extern void parse_env_address(char *str, struct address *addr);
++
+ /* global state */
+ const int config_need_data = 0;
+ 
+ int verbose = 0;
++int human = 0;
+ 
+ void usage(void)
+ {
+@@ -116,6 +129,10 @@
+     unsigned long uid, size, cache_offset;
+     time_t internaldate, sentdate, last_updated;
+     const char *cacheitem;
++    int cachelen;
++    char *env;
++    char *envtokens[ NUMENVTOKENS ];
++    struct address addr;
+ 
+     for (msgno = 0; msgno < exists; msgno++) {
+ 	/* Jump to index record for this message */
+@@ -135,22 +152,66 @@
+ 	printf("\tRecv: %s", ctime(&internaldate));
+ 	printf("\tExpg: %s", ctime(&last_updated));
+ 
+-	cacheitem = mailbox->cache_base + cache_offset;
++	if ( human ) {
++	    cacheitem = mailbox->cache_base + cache_offset;
++	    cachelen = CACHE_ITEM_LEN( cacheitem );
++	    env = xstrndup( cacheitem + CACHE_ITEM_SIZE_SKIP + 1,
++		    cachelen - 2 );
++	    parse_cached_envelope( env, envtokens, VECTOR_SIZE( envtokens ));
++	}
++
+ 	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip envelope */
+ 	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip body structure */
+ 	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip body */
+ 	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip binary body */
+ 	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip cached headers */
+ 
+-	printf("\tFrom: %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
+-	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip from */
+-	printf("\tTo  : %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
+-	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip to */
+-	printf("\tCc  : %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
+-	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip cc */
+-	printf("\tBcc : %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
+-	cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip bcc */
+-	printf("\tSubj: %s\n\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
++	if ( human ) {
++	    if ( envtokens[ ENV_FROM ] ) {
++		parse_env_address( envtokens[ ENV_FROM ], &addr );
++		printf("\tFrom: " );
++		if ( addr.name ) printf("\"%s\" ", addr.name );
++		printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	    } else {
++		printf("\tFrom: \n" );
++	    }
++	    if ( envtokens[ ENV_TO ] ) {
++		parse_env_address( envtokens[ ENV_TO ], &addr );
++		printf("\tTo  : " );
++		if ( addr.name ) printf("\"%s\" ", addr.name );
++		printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	    } else {
++		printf("\tTo  : \n" );
++	    }
++	    if ( envtokens[ ENV_CC ] ) {
++		parse_env_address( envtokens[ ENV_CC ], &addr );
++		printf("\tCc  : " );
++		if ( addr.name ) printf("\"%s\" ", addr.name );
++		printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	    } else {
++		printf("\tCc  : \n" );
++	    }
++	    if ( envtokens[ ENV_BCC ] ) {
++		parse_env_address( envtokens[ ENV_BCC ], &addr );
++		printf("\tBcc : " );
++		if ( addr.name ) printf("\"%s\" ", addr.name );
++		printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	    } else {
++		printf("\tBcc : \n" );
++	    }
++
++	    printf("\tSubj: %s\n\n", envtokens[ ENV_SUBJECT ] );
++	} else {
++	    printf("\tFrom: %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
++	    cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip from */
++	    printf("\tTo  : %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
++	    cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip to */
++	    printf("\tCc  : %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
++	    cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip cc */
++	    printf("\tBcc : %s\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
++	    cacheitem = CACHE_ITEM_NEXT(cacheitem); /* skip bcc */
++	    printf("\tSubj: %s\n\n", cacheitem + CACHE_ITEM_SIZE_SKIP);
++	}
+     }
+ }
+ 
+@@ -426,7 +487,7 @@
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+-    while ((opt = getopt(argc, argv, "C:laudv")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:laudvH")) != EOF) {
+ 	switch (opt) {
+ 	case 'C': /* alt config file */
+ 	    alt_config = optarg;
+@@ -454,7 +515,11 @@
+ 	case 'v':
+ 	    verbose = 1;
+ 	    break;
+-	
++
++	case 'H':
++	    human = 1;
++	    break;
++
+ 	default:
+ 	    usage();
+ 	    break;
+@@ -612,3 +677,11 @@
+ 
+     exit(r);
+ }
++
++/*
++ * Junk, to help index.c link.
++ */
++void printastring(const char *s __attribute__((unused)))
++{
++    fatal("printastring not implemented in cyrdump", EC_SOFTWARE);
++}

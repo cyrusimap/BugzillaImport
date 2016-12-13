@@ -1,0 +1,101 @@
+Index: ctl_mboxlist.c
+===================================================================
+RCS file: /cvs/src/cyrus/imap/ctl_mboxlist.c,v
+retrieving revision 1.43.2.7
+diff -u -r1.43.2.7 ctl_mboxlist.c
+--- ctl_mboxlist.c	6 Apr 2006 15:42:10 -0000	1.43.2.7
++++ ctl_mboxlist.c	14 Mar 2007 20:43:47 -0000
+@@ -106,6 +106,7 @@
+  * mupdate */
+ static int local_authoritative = 0;
+ static int warn_only = 0;
++static int interactive = 0;
+ 
+ /* For each mailbox that this guy gets called for, check that
+  * it is a mailbox that:
+@@ -262,6 +263,14 @@
+ 	       !mupdate_find(d->h, name, &unused_mbdata)) {
+ 		/* since it lives on another server, schedule it for a wipe */
+ 		struct mb_node *next;
++
++		/*
++		 * Verify that what we found points at another host,
++		 * not back to this host.  Good idea, since if our assumption
++		 * if wrong, we'll end up removing the authoritative
++		 * mailbox.
++		 */
++		assert( strcmp( realpart, unused_mbdata->server ));
+ 		
+ 		if(warn_only) {
+ 		    printf("Remove Local Mailbox: %s\n", name);
+@@ -336,6 +345,30 @@
+     return 0;
+ }
+ 
++/*
++ * True iff user types Y\n or y\n.  Anthing else is false.
++ */
++    static int
++yes( void )
++{
++    int c, answer = 0;
++
++    c = getchar();
++    if ( c == 'Y' || c == 'y' ) {
++	answer = 1;
++	
++	while (( c = getchar()) != EOF ) {
++	    if ( c == '\n' ) {
++		break;
++	    } else {
++		answer = 0;
++	    }
++	}
++    }
++
++    return( answer );
++}
++
+ /* Resyncing with mupdate:
+  *
+  * If it is local and not present on mupdate at all, push to mupdate.
+@@ -452,12 +485,25 @@
+ 	}
+ 
+ 	/* Delete local mailboxes where needed (wipe_head) */
++	if ( interactive ) {
++	    int count = 0;
++	    struct mb_node *me;
++	    
++	    for ( me = wipe_head; me != NULL; me = me->next ) count++;
++
++	    fprintf( stderr, "OK to delete %d local mailboxes? ", count );
++	    if ( !yes()) {
++		fprintf( stderr, "Cancelled!\n" );
++		exit( 1 );
++	    }
++	}
+ 	while(wipe_head) {
+ 	    struct mb_node *me = wipe_head;
+ 	    
+ 	    wipe_head = wipe_head->next;
+ 	    
+ 	    ret = mboxlist_deletemailbox(me->mailbox, 1, "", NULL, 0, 1, 1);
++	    if(!ret) sync_log_mailbox(me->mailbox);
+ 	    if(ret) {
+ 		fprintf(stderr, "couldn't delete defunct mailbox %s\n",
+ 			me->mailbox);
+@@ -606,8 +652,12 @@
+ 
+     if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
+ 
+-    while ((opt = getopt(argc, argv, "C:awmdurcxf:p:")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:awmdurcxf:p:i")) != EOF) {
+ 	switch (opt) {
++	case 'i':
++	    interactive = 1;
++	    break;
++
+ 	case 'C': /* alt config file */
+ 	    alt_config = optarg;
+ 	    break;

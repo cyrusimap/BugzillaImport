@@ -1,0 +1,2193 @@
+diff -ur cyrus-imapd-2.2.12.superold/imap/annotate.c cyrus-imapd-2.2.12/imap/annotate.c
+--- cyrus-imapd-2.2.12.superold/imap/annotate.c	2005-02-14 09:39:54.000000000 +0300
++++ cyrus-imapd-2.2.12/imap/annotate.c	2006-02-20 19:04:43.651616000 +0300
+@@ -373,9 +373,9 @@
+     int keylen, r;
+     struct find_rock frock;
+ 
+-    frock.mglob = glob_init(mailbox, GLOB_HIERARCHY);
+-    frock.eglob = glob_init(entry, GLOB_HIERARCHY);
+-    GLOB_SET_SEPARATOR(frock.eglob, '/');
++    /* can't understand it yet -- sorcerer */
++    frock.mglob = glob_init(mailbox, '.', GLOB_HIERARCHY);
++    frock.eglob = glob_init(entry, '/', GLOB_HIERARCHY);
+     frock.proc = proc;
+     frock.rock = rock;
+ 
+@@ -922,9 +922,9 @@
+     struct annotate_f_entry_list *entries_ptr;
+     static char lastname[MAX_MAILBOX_PATH+1];
+     static int sawuser = 0;
+-    int c;
+-    char int_mboxname[MAX_MAILBOX_PATH+1], ext_mboxname[MAX_MAILBOX_PATH+1];
++    char int_mboxname[MAX_MAILBOX_PATH+1], intname[MAX_MAILBOX_PATH+1];
+     struct mailbox_annotation_rock mbrock;
++    int userprefixlen;
+ 
+     /* We have to reset the sawuser flag before each fetch command.
+      * Handle it as a dirty hack.
+@@ -939,11 +939,12 @@
+ 	return 0;
+     }
+ 
++    userprefixlen = strlen(fdata->namespace->prefix[NAMESPACE_USER]) - 1;
+     /*
+      * We can get a partial match for "user" multiple times with
+      * other matches inbetween.  Handle it as a special case
+      */
+-    if (matchlen == 4 && strncasecmp(name, "user", 4) == 0) {
++    if (matchlen == userprefixlen && strncasecmp(name, fdata->namespace->prefix[NAMESPACE_USER], userprefixlen) == 0) {
+ 	if (sawuser) return 0;
+ 	sawuser = 1;
+     }
+@@ -951,19 +952,8 @@
+     strlcpy(lastname, name, sizeof(lastname));
+     lastname[matchlen] = '\0';
+ 
+-    if (!strncasecmp(lastname, "INBOX", 5)) {
+-	(*fdata->namespace->mboxname_tointernal)(fdata->namespace, "INBOX",
+-						 fdata->userid, int_mboxname);
+-	strlcat(int_mboxname, lastname+5, sizeof(int_mboxname));
+-    }
+-    else
+-	strlcpy(int_mboxname, lastname, sizeof(int_mboxname));
+-
+-    c = name[matchlen];
+-    if (c) name[matchlen] = '\0';
+-    (*fdata->namespace->mboxname_toexternal)(fdata->namespace, name,
+-					     fdata->userid, ext_mboxname);
+-    if (c) name[matchlen] = c;
++    (*fdata->namespace->mboxname_tointernal)(fdata->namespace, lastname,
++					     fdata->userid, int_mboxname);
+ 
+     memset(&mbrock, 0, sizeof(struct mailbox_annotation_rock));
+ 
+@@ -976,7 +966,7 @@
+ 	 entries_ptr;
+ 	 entries_ptr = entries_ptr->next) {
+ 	
+-	entries_ptr->entry->get(int_mboxname, ext_mboxname,
++	entries_ptr->entry->get(int_mboxname, name,
+ 				entries_ptr->entry->name, fdata,
+ 				&mbrock, (entries_ptr->entry->rock ?
+ 					  entries_ptr->entry->rock :
+@@ -1022,7 +1012,7 @@
+     while (a) {
+ 	int attribcount;
+ 
+-	g = glob_init(a->s, GLOB_HIERARCHY);
++	g = glob_init(a->s, '.', GLOB_HIERARCHY);
+ 	
+ 	for (attribcount = 0;
+ 	     annotation_attributes[attribcount].name;
+@@ -1055,8 +1045,7 @@
+ 	int entrycount;
+ 	int check_db = 0; /* should we check the db for this entry? */
+ 
+-	g = glob_init(e->s, GLOB_HIERARCHY);
+-	GLOB_SET_SEPARATOR(g, '/');
++	g = glob_init(e->s, '/', GLOB_HIERARCHY);
+ 
+ 	for (entrycount = 0;
+ 	     non_db_entries[entrycount].name;
+@@ -1382,6 +1371,7 @@
+     char int_mboxname[MAX_MAILBOX_PATH+1];
+     struct mailbox_annotation_rock mbrock;
+     int r = 0;
++    int userprefixlen;
+ 
+     /* We have to reset the sawuser flag before each fetch command.
+      * Handle it as a dirty hack.
+@@ -1396,11 +1386,12 @@
+ 	return 0;
+     }
+ 
++    userprefixlen = strlen(sdata->namespace->prefix[NAMESPACE_USER]) - 1;
+     /*
+      * We can get a partial match for "user" multiple times with
+      * other matches inbetween.  Handle it as a special case
+      */
+-    if (matchlen == 4 && strncasecmp(name, "user", 4) == 0) {
++    if (matchlen == userprefixlen && strncasecmp(name, sdata->namespace->prefix[NAMESPACE_USER], userprefixlen) == 0) {
+ 	if (sawuser) return 0;
+ 	sawuser = 1;
+     }
+@@ -1408,13 +1399,8 @@
+     strlcpy(lastname, name, sizeof(lastname));
+     lastname[matchlen] = '\0';
+ 
+-    if (!strncasecmp(lastname, "INBOX", 5)) {
+-	(*sdata->namespace->mboxname_tointernal)(sdata->namespace, "INBOX",
+-						 sdata->userid, int_mboxname);
+-	strlcat(int_mboxname, lastname+5, sizeof(int_mboxname));
+-    }
+-    else
+-	strlcpy(int_mboxname, lastname, sizeof(int_mboxname));
++    (*sdata->namespace->mboxname_tointernal)(sdata->namespace, lastname,
++					     sdata->userid, int_mboxname);
+ 
+     memset(&mbrock, 0, sizeof(struct mailbox_annotation_rock));
+     get_mb_data(int_mboxname, &mbrock);
+diff -ur cyrus-imapd-2.2.12.superold/imap/arbitron.c cyrus-imapd-2.2.12/imap/arbitron.c
+--- cyrus-imapd-2.2.12.superold/imap/arbitron.c	2004-05-22 07:45:48.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/arbitron.c	2006-02-20 19:04:43.769524000 +0300
+@@ -164,9 +164,6 @@
+     construct_hash_table(&mailbox_table, 2047, 1);
+     construct_hash_table(&mboxname_table, 2047, 1);
+ 
+-    /* Translate any separators in mailboxname */
+-    mboxname_hiersep_tointernal(&arb_namespace, pattern, 0);
+-    
+     /* Get the mailbox list */
+     fprintf(stderr, "Loading Mailboxes...");
+     (*arb_namespace.mboxlist_findall)(&arb_namespace, pattern, 1, 0, 0,
+@@ -208,8 +205,13 @@
+ {
+     int r;
+     struct mailbox mbox;
++    char intname[MAX_MAILBOX_PATH+1];
++
++    if((*arb_namespace.mboxname_tointernal)(&arb_namespace, name,
++					    NULL, intname))
++	return 0;
+ 
+-    r = mailbox_open_header(name, NULL, &mbox);
++    r = mailbox_open_header(intname, NULL, &mbox);
+     if(!r) {
+ 	struct arb_mailbox_data *d = mpool_malloc(arb_pool,
+ 						  sizeof(struct arb_mailbox_data));
+@@ -220,7 +222,7 @@
+ /*	printf("inserting %s (key %s)\n", name, mbox.uniqueid); */
+ 
+ 	hash_insert(mbox.uniqueid, d, &mailbox_table);
+-	hash_insert(name, d, &mboxname_table);
++	hash_insert(intname, d, &mboxname_table);
+ 
+ 	mailbox_close(&mbox);
+     }
+diff -ur cyrus-imapd-2.2.12.superold/imap/chk_cyrus.c cyrus-imapd-2.2.12/imap/chk_cyrus.c
+--- cyrus-imapd-2.2.12.superold/imap/chk_cyrus.c	2004-08-04 17:03:12.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/chk_cyrus.c	2006-02-20 19:04:43.866552000 +0300
+@@ -223,6 +223,10 @@
+ 
+     cyrus_init(alt_config, "chk_cyrus", 0);
+ 
++    if(mboxname_init_namespace_ext(&internal_namespace,
++				   1, '.', -1))
++	fprintf(stderr, "Cannot initialize the internal namespace\n");
++
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+ 
+@@ -234,7 +238,7 @@
+ 		(check_part ? check_part : "ALL PARTITIONS"));
+ 	
+ 	/* build a list of mailboxes - we're using internal names here */
+-	mboxlist_findall(NULL, pattern, 1, NULL,
++	mboxlist_findall(&internal_namespace, pattern, 1, NULL,
+ 			 NULL, chkmbox, NULL);
+     }
+     
+diff -ur cyrus-imapd-2.2.12.superold/imap/ctl_cyrusdb.c cyrus-imapd-2.2.12/imap/ctl_cyrusdb.c
+--- cyrus-imapd-2.2.12.superold/imap/ctl_cyrusdb.c	2006-02-20 18:36:13.660393000 +0300
++++ cyrus-imapd-2.2.12/imap/ctl_cyrusdb.c	2006-02-20 19:04:43.934725000 +0300
+@@ -164,7 +164,7 @@
+     annotatemore_open(NULL);
+ 
+     /* build a list of mailboxes - we're using internal names here */
+-    mboxlist_findall(NULL, pattern, 1, NULL,
++    mboxlist_findall(&internal_namespace, pattern, 1, NULL,
+ 		     NULL, fixmbox, NULL);
+ 
+     annotatemore_close();
+@@ -226,6 +226,10 @@
+ 
+     cyrus_init(alt_config, "ctl_cyrusdb", 0);
+ 
++    if(mboxname_init_namespace_ext(&internal_namespace,
++				   1, '.', -1))
++	fprintf(stderr, "Cannot initialize the internal namespace\n");
++
+     /* create the name of the db directory */
+     /* (used by backup directory names) */
+     strcpy(dirname, config_dir);
+diff -ur cyrus-imapd-2.2.12.superold/imap/cyrdump.c cyrus-imapd-2.2.12/imap/cyrdump.c
+--- cyrus-imapd-2.2.12.superold/imap/cyrdump.c	2004-05-22 07:45:48.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/cyrdump.c	2006-02-20 19:04:44.145147000 +0300
+@@ -93,7 +93,6 @@
+ int main(int argc, char *argv[])
+ {
+     int option;
+-    char buf[MAX_MAILBOX_PATH+1];
+     int i, r;
+     char *alt_config = NULL;
+     struct incremental_record irec;
+@@ -132,12 +131,7 @@
+ 
+     irec.incruid = 0;
+     for (i = optind; i < argc; i++) {
+-	strlcpy(buf, argv[i], sizeof(buf));
+-	/* Translate any separators in mailboxname */
+-	mboxname_hiersep_tointernal(&dump_namespace, buf,
+-				    config_virtdomains ?
+-				    strcspn(buf, "@") : 0);
+-	(*dump_namespace.mboxlist_findall)(&dump_namespace, buf, 1, 0, 0,
++	(*dump_namespace.mboxlist_findall)(&dump_namespace, argv[i], 1, 0, 0,
+ 					   dump_me, &irec);
+     }
+ 
+@@ -170,7 +164,8 @@
+     int r;
+     struct mailbox m;
+     char boundary[128];
+-    char imapurl[MAX_MAILBOX_PATH];
++    char imapurl[MAX_MAILBOX_PATH+1];
++    char intname[MAX_MAILBOX_PATH+1];
+     struct incremental_record *irec = (struct incremental_record *) rock;
+     struct searchargs searchargs;
+     unsigned *uids;
+@@ -178,10 +173,17 @@
+     int i, n, numuids;
+ 
+     memset(&m, 0, sizeof(struct mailbox));
+-    r = mailbox_open_header(name, 0, &m);
++    if((r=(*dump_namespace.mboxname_tointernal)(&dump_namespace, name,
++					     NULL, intname))) {
++	if (verbose) {
++	    printf("error converting %s: %s\n", name, error_message(r));
++	}
++	return 0;
++    }
++    r = mailbox_open_header(intname, 0, &m);
+     if (r) {
+ 	if (verbose) {
+-	    printf("error opening %s: %s\n", name, error_message(r));
++	    printf("error opening %s: %s\n", intname, error_message(r));
+ 	}
+ 	return 0;
+     }
+@@ -190,7 +192,7 @@
+     if (!r) r = mailbox_lock_pop(&m);
+     if (r) {
+ 	if (verbose) {
+-	    printf("error locking index %s: %s\n", name, error_message(r));
++	    printf("error locking index %s: %s\n", intname, error_message(r));
+ 	}
+ 	mailbox_close(&m);
+ 	return 0;
+diff -ur cyrus-imapd-2.2.12.superold/imap/cyr_expire.c cyrus-imapd-2.2.12/imap/cyr_expire.c
+--- cyrus-imapd-2.2.12.superold/imap/cyr_expire.c	2004-05-22 07:45:48.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/cyr_expire.c	2006-02-20 19:04:44.454751000 +0300
+@@ -232,6 +232,10 @@
+ 
+     cyrus_init(alt_config, "cyr_expire", 0);
+ 
++    if(mboxname_init_namespace_ext(&internal_namespace,
++				   1, '.', -1))
++	fprintf(stderr, "Cannot initialize the internal namespace\n");
++
+     annotatemore_init(0, NULL, NULL);
+     annotatemore_open(NULL);
+ 
+@@ -252,7 +256,7 @@
+     construct_hash_table(&expire_table, 10000, 1);
+ 
+     strlcpy(buf, "*", sizeof(buf));
+-    mboxlist_findall(NULL, buf, 1, 0, 0, &build_table, &expire_table);
++    mboxlist_findall(&internal_namespace, buf, 1, 0, 0, &build_table, &expire_table);
+ 
+     r = duplicate_prune(days, &expire_table);
+ 
+diff -ur cyrus-imapd-2.2.12.superold/imap/imapd.c cyrus-imapd-2.2.12/imap/imapd.c
+--- cyrus-imapd-2.2.12.superold/imap/imapd.c	2006-02-20 18:36:19.863552000 +0300
++++ cyrus-imapd-2.2.12/imap/imapd.c	2006-02-20 19:04:44.705625000 +0300
+@@ -548,6 +548,11 @@
+ 	     EC_CONFIG);
+     }
+ 
++    /* initialize the internal namespace structure */
++    if(mboxname_init_namespace_ext(&internal_namespace,
++				   1, '.', -1))
++	fatal("cannot initialize the internal namespace", EC_TEMPFAIL);
++
+     /* open the mboxlist, we'll need it for real work */
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+@@ -1694,6 +1699,17 @@
+     }
+ }
+ 
++static void userid_tointernal(struct namespace *namespace, char *userid)
++{
++    char hiersep_orig = namespace->hier_sep;
++
++    namespace->hier_sep='/';
++    mboxname_hiersep_tointernal(namespace, userid,
++				config_virtdomains ?
++				strcspn(userid, "@") : 0);
++    namespace->hier_sep=hiersep_orig;
++}
++
+ /*
+  * Autocreate Inbox and subfolders upon login
+  */
+@@ -1881,9 +1897,7 @@
+     }
+ 
+     /* Translate any separators in userid */
+-    mboxname_hiersep_tointernal(&imapd_namespace, imapd_userid,
+-				config_virtdomains ?
+-				strcspn(imapd_userid, "@") : 0);
++    userid_tointernal(&imapd_namespace, imapd_userid);
+ 
+     freebuf(&passwdbuf);
+ 
+@@ -2030,9 +2044,7 @@
+     }
+ 
+     /* Translate any separators in userid */
+-    mboxname_hiersep_tointernal(&imapd_namespace, imapd_userid,
+-				config_virtdomains ?
+-				strcspn(imapd_userid, "@") : 0);
++    userid_tointernal(&imapd_namespace, imapd_userid);
+ 
+     autocreate_inbox();
+ 
+@@ -3776,16 +3788,22 @@
+ }	
+ 
+ /* Callback for use by cmd_delete */
++/* name is an external name */
+ static int delmbox(char *name,
+ 		   int matchlen __attribute__((unused)),
+ 		   int maycreate __attribute__((unused)),
+ 		   void *rock __attribute__((unused)))
+ {
+     int r;
++    char intname[MAX_MAILBOX_NAME+1];
++
++    r = (*imapd_namespace.mboxname_tointernal)(&imapd_namespace, name,
++					       imapd_userid, intname);
+ 
+-    r = mboxlist_deletemailbox(name, imapd_userisadmin,
+-			       imapd_userid, imapd_authstate,
+-			       0, 0, 0, 1);
++    if(!r)
++	r = mboxlist_deletemailbox(intname, imapd_userisadmin,
++				   imapd_userid, imapd_authstate,
++				   0, 0, 0, 1);
+     
+     if(r) {
+ 	prot_printf(imapd_out, "* NO delete %s: %s\r\n",
+@@ -3828,16 +3846,23 @@
+     if (!r && !localonly &&
+ 	!strncmp(mailboxname+domainlen, "user.", 5) &&
+ 	!strchr(mailboxname+domainlen+5, '.')) {
++	char name_copy[MAX_MAILBOX_NAME+1];
++ 	int name_len = strlen(name);
+  	int mailboxname_len = strlen(mailboxname);
+ 
++	memcpy(name_copy, name, name_len);
+  	/* If we aren't too close to MAX_MAILBOX_NAME, append .* */
+- 	p = mailboxname + mailboxname_len; /* end of mailboxname */
+- 	if (mailboxname_len < sizeof(mailboxname) - 3) {
+- 	    strcpy(p, ".*");
+- 	}
++ 	p = name_copy + name_len; /* end of name */
++ 	if (name_len < sizeof(name_copy) - 3) {
++	    *p=imapd_namespace.hier_sep;
++	    p[1]='*';
++	    p[2]=0;
++	}
++	else
++	    *p=0;
+ 	
+-	/* build a list of mailboxes - we're using internal names here */
+-	mboxlist_findall(NULL, mailboxname, imapd_userisadmin, imapd_userid,
++	/* build a list of mailboxes - we're using external names here */
++	mboxlist_findall(&imapd_namespace, name_copy, imapd_userisadmin, imapd_userid,
+ 			 imapd_authstate, delmbox, NULL);
+ 
+ 	/* take care of deleting ACLs, subscriptions, seen state and quotas */
+@@ -3879,13 +3904,14 @@
+ };
+ 
+ /* Callback for use by cmd_rename */
++/* 'name' is an external mailbox name! */
+ static int renmbox(char *name,
+ 		   int matchlen __attribute__((unused)),
+ 		   int maycreate __attribute__((unused)),
+ 		   void *rock)
+ {
+-    char oldextname[MAX_MAILBOX_NAME+1];
+-    char newextname[MAX_MAILBOX_NAME+1];
++    char oldintname[MAX_MAILBOX_NAME+1];
++    char newintname[MAX_MAILBOX_NAME+1];
+     struct renrock *text = (struct renrock *)rock;
+     int r;
+ 
+@@ -3894,36 +3920,39 @@
+ 
+     strcpy(text->newmailboxname + text->nl, name + text->ol);
+ 
+-    r = mboxlist_renamemailbox(name, text->newmailboxname,
++    if((*imapd_namespace.mboxname_tointernal)(&imapd_namespace,
++					      text->newmailboxname,
++					      imapd_userid, newintname))
++	return 0;
++
++    if((*imapd_namespace.mboxname_tointernal)(&imapd_namespace,
++					      name,
++					      imapd_userid, oldintname))
++	return 0;
++
++    r = mboxlist_renamemailbox(oldintname, newintname,
+ 			       text->partition,
+ 			       1, imapd_userid, imapd_authstate);
+     
+-    (*imapd_namespace.mboxname_toexternal)(&imapd_namespace,
+-					   name,
+-					   imapd_userid, oldextname);
+-    (*imapd_namespace.mboxname_toexternal)(&imapd_namespace,
+-					   text->newmailboxname,
+-					   imapd_userid, newextname);
+-
+     if(r) {
+ 	prot_printf(imapd_out, "* NO rename %s %s: %s\r\n",
+-		    oldextname, newextname, error_message(r));
++		    name, text->newmailboxname, error_message(r));
+ 	if (RENAME_STOP_ON_ERROR) return r;
+     } else {
+ 	/* If we're renaming a user, change quotaroot and ACL */
+ 	if (text->rename_user) {
+-	    user_copyquotaroot(name, text->newmailboxname);
+-	    user_renameacl(text->newmailboxname,
++	    user_copyquotaroot(oldintname, newintname);
++	    user_renameacl(newintname,
+ 			   text->acl_olduser, text->acl_newuser);
+ 	}
+ 
+ 	/* Rename mailbox annotations */
+-	annotatemore_rename(name, text->newmailboxname,
++	annotatemore_rename(oldintname, newintname,
+ 			    text->rename_user ? text->olduser : NULL,
+ 			    text->newuser);
+ 	
+ 	prot_printf(imapd_out, "* OK rename %s %s\r\n",
+-		    oldextname, newextname);
++		    name, text->newmailboxname);
+     }
+ 
+     prot_flush(imapd_out);
+@@ -3938,10 +3967,8 @@
+ 		char *oldname, char *newname, char *partition)
+ {
+     int r = 0;
+-    char oldmailboxname[MAX_MAILBOX_NAME+3];
+-    char newmailboxname[MAX_MAILBOX_NAME+2];
+-    char oldextname[MAX_MAILBOX_NAME+1];
+-    char newextname[MAX_MAILBOX_NAME+1];
++    char oldmailboxname[MAX_MAILBOX_NAME+1];
++    char newmailboxname[MAX_MAILBOX_NAME+1];
+     int omlen, nmlen;
+     char *p;
+     int recursive_rename = 1;
+@@ -4049,26 +4076,24 @@
+ 
+     /* rename all mailboxes matching this */
+     if (!r && recursive_rename) {
++	char oldextname[MAX_MAILBOX_NAME+3];
++	char newextname[MAX_MAILBOX_NAME+2];
++	int tmplen;
+ 	struct renrock rock;
+-	int ol = omlen + 1;
+-	int nl = nmlen + 1;
+-
+-	(*imapd_namespace.mboxname_toexternal)(&imapd_namespace,
+-					       oldmailboxname,
+-					       imapd_userid, oldextname);
+-	(*imapd_namespace.mboxname_toexternal)(&imapd_namespace,
+-					       newmailboxname,
+-					       imapd_userid, newextname);
++	int ol;
++	int nl;
+ 
++	ol = strlen(oldname)+1;
++	nl = strlen(newname)+1;
+ 	prot_printf(imapd_out, "* OK rename %s %s\r\n",
+-		    oldextname, newextname);
++		    oldname, newname);
+ 	prot_flush(imapd_out);
+ 
+-	strcat(oldmailboxname, ".*");
+-	strcat(newmailboxname, ".");
++	snprintf(oldextname, MAX_MAILBOX_NAME+3, "%s%c*", oldname, imapd_namespace.hier_sep);
++	snprintf(newextname, MAX_MAILBOX_NAME+2, "%s%c", newname, imapd_namespace.hier_sep);
+ 
+ 	/* setup the rock */
+-	rock.newmailboxname = newmailboxname;
++	rock.newmailboxname = newextname;
+ 	rock.ol = ol;
+ 	rock.nl = nl;
+ 	rock.olduser = olduser;
+@@ -4078,9 +4103,8 @@
+ 	rock.partition = partition;
+ 	rock.rename_user = rename_user;
+ 	
+-	/* add submailboxes; we pretend we're an admin since we successfully
+-	   renamed the parent - we're using internal names here */
+-	r = mboxlist_findall(NULL, oldmailboxname, 1, imapd_userid,
++	/* add submailboxes; using external namespace here */
++	r = imapd_namespace.mboxlist_findall(&imapd_namespace, oldextname, 1, imapd_userid,
+ 			     imapd_authstate, renmbox, &rock);
+     }
+ 
+@@ -4346,11 +4370,6 @@
+ 	    pattern = buf;
+ 	}
+ 
+-	/* Translate any separators in pattern */
+-	mboxname_hiersep_tointernal(&imapd_namespace, pattern,
+-				    config_virtdomains ?
+-				    strcspn(pattern, "@") : 0);
+-
+ 	/* Check to see if we should only list the personal namespace */
+ 	if (!strcmp(pattern, "*")
+ 	    && config_getswitch(IMAPOPT_FOOLSTUPIDCLIENTS)) {
+@@ -5112,15 +5131,20 @@
+ 			 void *rock)
+ {
+     int* sawone = (int*) rock;
++    char intname[MAX_MAILBOX_NAME+1];
+ 
+     if (!name) {
+ 	return 0;
+     }
+     
+-    if (!(strncmp(name, "INBOX.", 6))) {
++    if((*imapd_namespace.mboxname_tointernal)(&imapd_namespace, name,
++					      imapd_userid, intname))
++	return 0;
++
++    if (!(strncmp(intname, "INBOX.", 6))) {
+ 	/* The user has a "personal" namespace. */
+ 	sawone[NAMESPACE_INBOX] = 1;
+-    } else if (mboxname_isusermailbox(name, 0)) {
++    } else if (mboxname_isusermailbox(intname, 0)) {
+ 	/* The user can see the "other users" namespace. */
+ 	sawone[NAMESPACE_USER] = 1;
+     } else {
+@@ -5157,9 +5181,10 @@
+     } else {
+ 	pattern = xstrdup("%");
+ 	/* now find all the exciting toplevel namespaces -
+-	 * we're using internal names here
++	 * we're using external names here
+ 	 */
+-	mboxlist_findall(NULL, pattern, imapd_userisadmin, imapd_userid,
++	mboxlist_findall(&imapd_namespace, pattern, imapd_userisadmin,
++			 imapd_userid, 
+ 			 imapd_authstate, namespacedata, (void*) sawone);
+ 	free(pattern);
+     }
+@@ -6543,7 +6568,7 @@
+     struct backend *be;
+ };
+ 
+-static int xfer_user_cb(char *name,
++static int xfer_user_cb(char *externalname,
+ 			int matchlen __attribute__((unused)),
+ 			int maycreate __attribute__((unused)),
+ 			void *rock) 
+@@ -6552,12 +6577,17 @@
+     char *toserver = ((struct xfer_user_rock *)rock)->toserver;
+     char *topart = ((struct xfer_user_rock *)rock)->topart;
+     struct backend *be = ((struct xfer_user_rock *)rock)->be;
+-    char externalname[MAX_MAILBOX_NAME+1];
++    char name[MAX_MAILBOX_NAME+1];
+     int mbflags;
+     int r = 0;
+     char *inpath, *inpart, *inacl;
+     char *path = NULL, *part = NULL, *acl = NULL;
+ 
++    r = (*imapd_namespace.mboxname_tointernal)(&imapd_namespace,
++					       externalname,
++					       imapd_userid,
++					       name);
++
+     if (!r) {
+ 	/* NOTE: NOT mlookup() because we don't want to issue a referral */
+ 	/* xxx but what happens if they are remote
+@@ -6570,16 +6600,6 @@
+ 	path = xstrdup(inpath);
+ 	part = xstrdup(inpart);
+ 	acl = xstrdup(inacl);
+-    }
+-
+-    if (!r) {
+-	r = (*imapd_namespace.mboxname_toexternal)(&imapd_namespace,
+-						   name,
+-						   imapd_userid,
+-						   externalname);
+-    }
+-
+-    if(!r) {
+ 	r = do_xfer_single(toserver, topart, externalname, name, mbflags,
+ 			   path, part, acl, 0, mupdate_h, be);
+     }
+@@ -6718,7 +6738,7 @@
+ 	}
+ 
+ 
+-	/* recursively move all sub-mailboxes, using internal names */
++	/* recursively move all sub-mailboxes, using external names */
+ 	if(!r) {
+ 	    struct xfer_user_rock rock;
+ 
+@@ -6728,7 +6748,7 @@
+ 	    rock.be = be;
+ 
+ 	    snprintf(buf, sizeof(buf), "%s.*", mailboxname);
+-	    r = mboxlist_findall(NULL, buf, 1, imapd_userid,
++	    r = mboxlist_findall(&imapd_namespace, buf, 1, imapd_userid,
+ 				 imapd_authstate, xfer_user_cb,
+ 				 &rock);
+ 	}
+@@ -7420,17 +7440,19 @@
+ /*
+  * Issue a LIST or LSUB untagged response
+  */
++/* The 'name' variable now is an external name! // sorcerer */
+ static void mstringdata(char *cmd, char *name, int matchlen, int maycreate,
+ 			int listopts)
+ {
+-    static char lastname[MAX_MAILBOX_PATH+1];
++    static char lastname[MAX_MAILBOX_PATH+1]="";
++    char intname[MAX_MAILBOX_PATH+1];
+     static int lastnamedelayed = 0;
+     static int lastnamenoinferiors = 0;
+     static int nonexistent = 0;
+     static int sawuser = 0;
+     int lastnamehassub = 0;
+-    int c, mbtype;
+-    char mboxname[MAX_MAILBOX_PATH+1];
++    int mbtype;
++    int userprefixlen;
+ 
+     /* We have to reset the sawuser flag before each list command.
+      * Handle it as a dirty hack.
+@@ -7445,7 +7467,7 @@
+     if (lastnamedelayed) {
+ 	/* Check if lastname has children */
+ 	if (name && strncmp(lastname, name, strlen(lastname)) == 0 &&
+-	    name[strlen(lastname)] == '.') {
++	    name[strlen(lastname)] == imapd_namespace.hier_sep) {
+ 	    lastnamehassub = 1;
+ 	}
+ 	prot_printf(imapd_out, "* %s (", cmd);
+@@ -7470,9 +7492,7 @@
+ 	}
+ 	prot_printf(imapd_out, ") \"%c\" ", imapd_namespace.hier_sep);
+ 		    
+-	(*imapd_namespace.mboxname_toexternal)(&imapd_namespace, lastname,
+-					       imapd_userid, mboxname);
+-	printstring(mboxname);
++	printstring(lastname);
+ 	prot_printf(imapd_out, "\r\n");
+ 	lastnamedelayed = lastnamenoinferiors = nonexistent = 0;
+     }
+@@ -7486,7 +7506,7 @@
+     /* Suppress any output of a partial match */
+     if ((name[matchlen]
+ 	 && strncmp(lastname, name, matchlen) == 0
+-	 && (lastname[matchlen] == '\0' || lastname[matchlen] == '.'))) {
++	 && (lastname[matchlen] == '\0' || lastname[matchlen] == imapd_namespace.hier_sep))) {
+ 	return;
+     }
+ 	
+@@ -7494,28 +7514,25 @@
+      * We can get a partial match for "user" multiple times with
+      * other matches inbetween.  Handle it as a special case
+      */
+-    if (matchlen == 4 && strncasecmp(name, "user", 4) == 0) {
++    userprefixlen = strlen(imapd_namespace.prefix[NAMESPACE_USER]) - 1;
++    if (matchlen == userprefixlen && strncmp(name, imapd_namespace.prefix[NAMESPACE_USER], userprefixlen) == 0) {
+ 	if (sawuser) return;
+ 	sawuser = 1;
+     }
+ 
+     strlcpy(lastname, name, sizeof(lastname));
+     lastname[matchlen] = '\0';
+-    nonexistent = 0;
+ 
+     /* Now we need to see if this mailbox exists */
+-    /* first convert "INBOX" to "user.<userid>" */
+-    if (!strncasecmp(lastname, "inbox", 5)) {
+-	(*imapd_namespace.mboxname_tointernal)(&imapd_namespace, "INBOX",
+-					       imapd_userid, mboxname);
+-	strlcat(mboxname, lastname+5, sizeof(mboxname));
+-    }
++
++    if((*imapd_namespace.mboxname_tointernal)(&imapd_namespace, lastname,
++					      imapd_userid, intname))
++	nonexistent = 1;
+     else
+-	strlcpy(mboxname, lastname, sizeof(mboxname));
++	/* Look it up */
++	nonexistent = mboxlist_detail(intname, &mbtype,
++				      NULL, NULL, NULL, NULL);
+ 
+-    /* Look it up */
+-    nonexistent = mboxlist_detail(mboxname, &mbtype,
+-				  NULL, NULL, NULL, NULL);
+     if(!nonexistent && (mbtype & MBTYPE_RESERVE))
+ 	nonexistent = IMAP_MAILBOX_RESERVED;
+ 
+@@ -7525,13 +7542,13 @@
+ 	return;
+     }
+ 
+-    c = name[matchlen];
+-    if (c) name[matchlen] = '\0';
+     prot_printf(imapd_out, "* %s (", cmd);
+-    if (c) {
+-	/* Handle namespace prefix as a special case */ 
+-	if (!strcmp(name, "user") ||
+-	    !strcmp(name, imapd_namespace.prefix[NAMESPACE_SHARED])) {
++    if(name[matchlen]) {
++	int sharedprefixlen = strlen(imapd_namespace.prefix[NAMESPACE_SHARED]) - 1;
++
++	/* Handle namespace prefix as a special case */
++ 	if (((matchlen == userprefixlen) && !strncmp(lastname, imapd_namespace.prefix[NAMESPACE_USER], userprefixlen)) ||
++ 	    ((matchlen == sharedprefixlen) && !strncmp(lastname, imapd_namespace.prefix[NAMESPACE_SHARED], sharedprefixlen))) {
+ 	    prot_printf(imapd_out, "\\Noselect");
+ 	    if (listopts & LIST_EXT)
+ 		prot_printf(imapd_out, " \\PlaceHolder");
+@@ -7550,11 +7567,8 @@
+     }
+     prot_printf(imapd_out, ") \"%c\" ", imapd_namespace.hier_sep);
+ 
+-    (*imapd_namespace.mboxname_toexternal)(&imapd_namespace, name,
+-					   imapd_userid, mboxname);
+-    printstring(mboxname);
++    printstring(lastname);
+     prot_printf(imapd_out, "\r\n");
+-    if (c) name[matchlen] = c;
+     return;
+ }
+ 
+diff -ur cyrus-imapd-2.2.12.superold/imap/ipurge.c cyrus-imapd-2.2.12/imap/ipurge.c
+--- cyrus-imapd-2.2.12.superold/imap/ipurge.c	2004-05-26 19:32:10.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/ipurge.c	2006-02-20 19:04:44.893993000 +0300
+@@ -109,7 +109,6 @@
+ 
+ int main (int argc, char *argv[]) {
+   int option;		/* getopt() returns an int */
+-  char buf[MAX_MAILBOX_PATH+1];
+   char *alt_config = NULL;
+   int r;
+ 
+@@ -184,17 +183,12 @@
+   quotadb_open(NULL);
+ 
+   if (optind == argc) { /* do the whole partition */
+-    strcpy(buf, "*");
++    char *buf="*";
+     (*purge_namespace.mboxlist_findall)(&purge_namespace, buf, 1, 0, 0,
+ 					purge_me, NULL);
+   } else {
+     for (; optind < argc; optind++) {
+-      strncpy(buf, argv[optind], MAX_MAILBOX_NAME);
+-      /* Translate any separators in mailboxname */
+-      mboxname_hiersep_tointernal(&purge_namespace, buf,
+-				  config_virtdomains ?
+-				  strcspn(buf, "@") : 0);
+-      (*purge_namespace.mboxlist_findall)(&purge_namespace, buf, 1, 0, 0,
++      (*purge_namespace.mboxlist_findall)(&purge_namespace, argv[optind], 1, 0, 0,
+ 					  purge_me, NULL);
+     }
+   }
+@@ -228,27 +222,27 @@
+   struct mailbox the_box;
+   int            error;
+   mbox_stats_t   stats;
++  char intname[MAX_MAILBOX_PATH+1];
++
++  if((*purge_namespace.mboxname_tointernal)(&purge_namespace, name,
++					   NULL, intname))
++      return 0;
+ 
+   if( ! forceall ) {
+       /* DON'T purge INBOX* and user.* */
+-      if (!strncasecmp(name,"INBOX",5) || mboxname_isusermailbox(name, 0))
++      if (!strncasecmp(name,"INBOX",5) || mboxname_isusermailbox(intname, 0))
+ 	  return 0;
+   }
+ 
+   memset(&stats, '\0', sizeof(mbox_stats_t));
+ 
+   if (verbose) {
+-      char mboxname[MAX_MAILBOX_NAME+1];
+-
+-      /* Convert internal name to external */
+-      (*purge_namespace.mboxname_toexternal)(&purge_namespace, name,
+-					     "cyrus", mboxname);
+-      printf("Working on %s...\n", mboxname);
++      printf("Working on %s...\n", name);
+   }
+ 
+-  error = mailbox_open_header(name, 0, &the_box);
++  error = mailbox_open_header(intname, 0, &the_box);
+   if (error != 0) { /* did we find it? */
+-    syslog(LOG_ERR, "Couldn't find %s, check spelling", name);
++    syslog(LOG_ERR, "Couldn't find %s, check spelling", intname);
+     return error;
+   }
+   if (the_box.header_fd != -1) {
+@@ -264,7 +258,7 @@
+   error = mailbox_open_index(&the_box);
+   if (error != 0) {
+     mailbox_close(&the_box);
+-    syslog(LOG_ERR, "Couldn't open mailbox index for %s", name);
++    syslog(LOG_ERR, "Couldn't open mailbox index for %s", intname);
+     return error;
+   }
+   (void) mailbox_lock_index(&the_box);
+diff -ur cyrus-imapd-2.2.12.superold/imap/mbexamine.c cyrus-imapd-2.2.12/imap/mbexamine.c
+--- cyrus-imapd-2.2.12.superold/imap/mbexamine.c	2004-12-17 19:32:16.000000000 +0300
++++ cyrus-imapd-2.2.12/imap/mbexamine.c	2006-02-20 19:04:45.010874000 +0300
+@@ -115,7 +115,6 @@
+ int main(int argc, char **argv)
+ {
+     int opt, i, r;
+-    char buf[MAX_MAILBOX_PATH+1];
+     char *alt_config = NULL;
+ 
+ /*    if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE); */
+@@ -161,16 +160,13 @@
+     signals_add_handlers(0);
+ 
+     if (optind == argc) {
+-	strlcpy(buf, "*", sizeof(buf));
++	char *buf="*";
+ 	(*recon_namespace.mboxlist_findall)(&recon_namespace, buf, 1, 0, 0,
+ 					    do_examine, NULL);
+     }
+ 
+     for (i = optind; i < argc; i++) {
+-	/* Handle virtdomains and separators in mailboxname */
+-	(*recon_namespace.mboxname_tointernal)(&recon_namespace, argv[i],
+-					       NULL, buf);
+-	(*recon_namespace.mboxlist_findall)(&recon_namespace, buf, 1, 0,
++	(*recon_namespace.mboxlist_findall)(&recon_namespace, argv[i], 1, 0,
+ 					    0, do_examine, NULL);
+     }
+ 
+@@ -198,7 +194,7 @@
+ {
+     int i,r = 0;
+     int flag = 0;
+-    char ext_name_buf[MAX_MAILBOX_PATH+1];
++    char int_name_buf[MAX_MAILBOX_PATH+1];
+     struct mailbox mailbox;
+     const char *index_base;
+     long int start_offset, record_size;
+@@ -206,12 +202,14 @@
+     signals_poll();
+ 
+     /* Convert internal name to external */
+-    (*recon_namespace.mboxname_toexternal)(&recon_namespace, name,
+-					   "cyrus", ext_name_buf);
+-    printf("Examining %s...\n", ext_name_buf);
++    if((r = (*recon_namespace.mboxname_tointernal)(&recon_namespace, name,
++						   NULL, int_name_buf)))
++	return r;
++
++    printf("Examining %s...\n", name);
+ 
+     /* Open/lock header */
+-    r = mailbox_open_header(name, 0, &mailbox);
++    r = mailbox_open_header(int_name_buf, 0, &mailbox);
+     if (r) {
+ 	return r;
+     }
+diff -ur cyrus-imapd-2.2.12.superold/imap/mboxlist.c cyrus-imapd-2.2.12/imap/mboxlist.c
+--- cyrus-imapd-2.2.12.superold/imap/mboxlist.c	2006-02-20 18:36:15.150194000 +0300
++++ cyrus-imapd-2.2.12/imap/mboxlist.c	2006-02-20 19:04:45.165753000 +0300
+@@ -94,6 +94,7 @@
+ 
+ struct db *mbdb;
+ 
++struct namespace internal_namespace;
+ static int mboxlist_dbopen = 0;
+ 
+ static int mboxlist_opensubs();
+@@ -1075,8 +1076,8 @@
+             }
+ 		/* find if there are subfolders. Then we want to 
+ 		 * keep the existing quota */
+-            mboxlist_findall(NULL, pattern, isadmin, userid,
+-                    auth_state, child_cb, (void *) &has_children);
++            mboxlist_findall(&internal_namespace, pattern, 1, NULL,
++                    NULL, child_cb, (void *) &has_children);
+ 
+ 	    if(!has_children)
+                 if(!mboxlist_mylookup(quotaroot, NULL, NULL, NULL, NULL, NULL, 0 ))
+@@ -1752,35 +1753,39 @@
+     long minmatch;
+     struct glob *g = rock->g;
+     long matchlen;
++    char namebuf[MAX_MAILBOX_NAME+1];
++    char namebuf_out[MAX_MAILBOX_NAME+1];
+ 
+     /* don't list mailboxes outside of the default domain */
+     if (!rock->domainlen && !rock->isadmin && strchr(key, '!')) return 0; 
+ 
+     minmatch = 0;
+-    if (rock->inboxoffset) {
+-	char namebuf[MAX_MAILBOX_NAME+1];
+ 
+-	if(keylen >= sizeof(namebuf)) {
+-	    syslog(LOG_ERR, "oversize keylen in mboxlist.c:find_p()");
+-	    return 0;
+-	}
+-	memcpy(namebuf, key, keylen);
+-	namebuf[keylen] = '\0';
+-	
+-	if (rock->inboxoffset) {
+-	    namebuf[rock->inboxoffset] = rock->inboxcase[0];
+-	    namebuf[rock->inboxoffset+1] = rock->inboxcase[1];
+-	    namebuf[rock->inboxoffset+2] = rock->inboxcase[2];
+-	    namebuf[rock->inboxoffset+3] = rock->inboxcase[3];
+-	    namebuf[rock->inboxoffset+4] = rock->inboxcase[4];
+-	}
+-	
+-	matchlen = glob_test(g, namebuf+rock->inboxoffset,
+-			     keylen-rock->inboxoffset, &minmatch);
+-    } else {
+-	matchlen = glob_test(g, key, keylen, &minmatch);
++    memcpy(namebuf, key, keylen);
++    namebuf[keylen] = '\0';
++
++    /* right work with an alternate (not the build-in)
++       namespace -- sorcerer */
++    if(keylen >= sizeof(namebuf)) {
++	syslog(LOG_ERR, "oversize keylen in mboxlist.c:find_p()");
++	return 0;
++    }
++    if(rock->inboxoffset) {
++	namebuf[rock->inboxoffset] = rock->inboxcase[0];
++	namebuf[rock->inboxoffset+1] = rock->inboxcase[1];
++	namebuf[rock->inboxoffset+2] = rock->inboxcase[2];
++	namebuf[rock->inboxoffset+3] = rock->inboxcase[3];
++	namebuf[rock->inboxoffset+4] = rock->inboxcase[4];
+     }
+ 
++    /* if cant get the external name then skip the current
++       key -- sorcerer */
++    if((rock->namespace->mboxname_toexternal)(rock->namespace, namebuf+rock->inboxoffset, auth_canonuser(rock->auth_state), namebuf_out))
++	return 0;
++
++    matchlen = glob_test(g, namebuf_out,
++			 strlen(namebuf_out), &minmatch);
++
+     /* If its not a match, skip it -- partial matches are ok. */
+     if(matchlen == -1) return 0;
+ 
+@@ -1881,22 +1886,32 @@
+ 	    r = 0;		/* don't bother checking */
+ 	}
+ 
+-	if (!r && rock->inboxoffset) {
+-	    namebuf[rock->inboxoffset] = rock->inboxcase[0];
+-	    namebuf[rock->inboxoffset+1] = rock->inboxcase[1];
+-	    namebuf[rock->inboxoffset+2] = rock->inboxcase[2];
+-	    namebuf[rock->inboxoffset+3] = rock->inboxcase[3];
+-	    namebuf[rock->inboxoffset+4] = rock->inboxcase[4];
+-	}
+-	
+-	matchlen = glob_test(g, namebuf+rock->inboxoffset,
+-			     keylen-rock->inboxoffset, &minmatch);
++	/* right work with an alternate (not the build-in)
++	   namespace // sorcerer */
++	{
++	    char namebuf_out[MAX_MAILBOX_NAME+1];
++	    if(rock->inboxoffset) {
++		namebuf[rock->inboxoffset] = rock->inboxcase[0];
++		namebuf[rock->inboxoffset+1] = rock->inboxcase[1];
++		namebuf[rock->inboxoffset+2] = rock->inboxcase[2];
++		namebuf[rock->inboxoffset+3] = rock->inboxcase[3];
++		namebuf[rock->inboxoffset+4] = rock->inboxcase[4];
++	    }
++	    if((rock->namespace->mboxname_toexternal)(rock->namespace, namebuf+rock->inboxoffset, auth_canonuser(rock->auth_state), namebuf_out)) {
++		r = 0;
++		break;
++	    }
++	    strcpy(namebuf, namebuf_out);
+ 
+-	if (matchlen == -1) {
+-	    r = 0;
+-	    break;
+-	}
++	    matchlen = glob_test(g, namebuf,
++				 strlen(namebuf), &minmatch);
+ 
++	    if (matchlen == -1) {
++		r = 0;
++		break;
++	    }
++	}
++	
+ 	switch (r) {
+ 	case 0:
+ 	    /* found the entry; output it */
+@@ -1915,7 +1930,7 @@
+ 	    }
+ 
+ 	    rock->checkshared = 0;
+-	    r = (*rock->proc)(namebuf+rock->inboxoffset, matchlen, 
++	    r = (*rock->proc)(namebuf, matchlen, 
+ 			      1, rock->procrock);
+ 
+ 	    break;
+@@ -1959,7 +1974,6 @@
+     int prefixlen;
+     int userlen = userid ? strlen(userid) : 0, domainlen = 0;
+     char domainpat[MAX_MAILBOX_NAME+1] = ""; /* do intra-domain fetches only */
+-    char *pat = NULL;
+ 
+     if (config_virtdomains) {
+ 	char *domain;
+@@ -2000,8 +2014,10 @@
+     if (domainpat[0] == '\0')
+ 	strlcpy(domainpat, pattern, sizeof(domainpat));
+ 
+-    cbrock.g = glob_init(pattern, GLOB_HIERARCHY|GLOB_INBOXCASE);
+-    cbrock.namespace = NULL;
++    mboxname_hiersep_tointernal(namespace, domainpat, 0);
++
++    cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY|GLOB_INBOXCASE);
++    cbrock.namespace = namespace;
+     cbrock.domainlen = domainlen;
+     cbrock.inboxcase = glob_inboxcase(cbrock.g);
+     cbrock.isadmin = isadmin;
+@@ -2035,16 +2051,6 @@
+ 	    }
+ 	    else if (r == CYRUSDB_NOTFOUND) r = 0;
+ 	}
+-	else if (!strncmp(pattern,
+-			  usermboxname+domainlen, usermboxnamelen-domainlen) &&
+-		 GLOB_TEST(cbrock.g, usermboxname+domainlen) != -1) {
+-	    r = DB->fetch(mbdb, usermboxname, usermboxnamelen,
+-			  &data, &datalen, NULL);
+-	    if (!r && data) {
+-		r = (*proc)(usermboxname, usermboxnamelen, 1, rock);
+-	    }
+-	    else if (r == CYRUSDB_NOTFOUND) r = 0;
+-	}
+ 	strlcat(usermboxname, ".", sizeof(usermboxname));
+ 	usermboxnamelen++;
+ 
+@@ -2057,33 +2063,18 @@
+ 
+     if (r) goto done;
+ 
+-    /* Make a working copy of pattern */
+-    pattern = pat = xstrdup(pattern);
+-
+     /* Find fixed-string pattern prefix */
+-    for (p = pat; *p; p++) {
++    for (p = (char *)pattern; *p; p++) {
+ 	if (*p == '*' || *p == '%' || *p == '?' || *p == '@') break;
+     }
+     prefixlen = p - pattern;
+-    *p = '\0';
+ 
+     /*
+      * If user.X.* or INBOX.* can match pattern,
+      * search for those mailboxes next
+      */
+-    if (userid &&
+-	(!strncmp(usermboxname+domainlen, pattern, usermboxnamelen-domainlen-1) ||
+-	 !strncasecmp("inbox.", pattern, prefixlen < 6 ? prefixlen : 6))) {
+-
+-	if (!strncmp(usermboxname+domainlen, pattern, usermboxnamelen-domainlen-1)) {
+-	    /* switch to pattern with domain prepended */
+-	    glob_free(&cbrock.g);
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	    cbrock.inboxoffset = 0;
+-	}
+-	else {
+-	    cbrock.inboxoffset = domainlen + userlen;
+-	}
++    if (userid) {
++	cbrock.inboxoffset = domainlen + userlen;
+ 
+ 	cbrock.find_namespace = NAMESPACE_INBOX;
+ 	/* iterate through prefixes matching usermboxname */
+@@ -2095,9 +2086,8 @@
+ 
+     if(!r) {
+ 	cbrock.find_namespace = NAMESPACE_USER;
+-	/* switch to pattern with domain prepended */
+ 	glob_free(&cbrock.g);
+-	cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
++	cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY);
+ 	cbrock.inboxoffset = 0;
+ 	if (usermboxnamelen) {
+ 	    usermboxname[--usermboxnamelen] = '\0';
+@@ -2116,7 +2106,6 @@
+ 
+   done:
+     glob_free(&cbrock.g);
+-    if (pat) free(pat);
+ 
+     return r;
+ }
+@@ -2146,7 +2135,7 @@
+     else
+ 	domainpat[0] = '\0';
+ 
+-    cbrock.g = glob_init(pattern, GLOB_HIERARCHY|GLOB_INBOXCASE);
++    cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY|GLOB_INBOXCASE);
+     cbrock.namespace = namespace;
+     cbrock.domainlen = domainlen;
+     cbrock.inboxcase = glob_inboxcase(cbrock.g);
+@@ -2208,12 +2197,11 @@
+     /*
+      * Personal (INBOX) namespace
+      *
+-     * Append pattern to "INBOX.", search for those mailboxes next
++     * Search for "INBOX.*" mailboxes next
+      */
+     if (userid) {
+-	strlcpy(patbuf, "INBOX.", sizeof(patbuf));
+-	strlcat(patbuf, pattern, sizeof(patbuf));
+-	cbrock.g = glob_init(patbuf, GLOB_HIERARCHY|GLOB_INBOXCASE);
++	/* don't touch the pattern! // sorcerer */
++	cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY|GLOB_INBOXCASE);
+ 	cbrock.inboxcase = glob_inboxcase(cbrock.g);
+ 	cbrock.inboxoffset = domainlen+userlen;
+ 	cbrock.find_namespace = NAMESPACE_INBOX;
+@@ -2243,17 +2231,10 @@
+ 
+     if (!strncmp(namespace->prefix[NAMESPACE_USER], pattern,
+ 		 prefixlen < len ? prefixlen : len)) {
++	/* we'll search for the requested pattern don't making any
++	   stupid modifications of it // sorcerer */
++	cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY);
+ 
+-	if (prefixlen < len) {
+-	    strlcpy(domainpat+domainlen, pattern+prefixlen,
+-		    sizeof(domainpat)-domainlen);
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	}
+-	else {
+-	    strlcpy(domainpat+domainlen, "user", sizeof(domainpat)-domainlen);
+-	    strlcat(domainpat, pattern+len, sizeof(domainpat));
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	}
+ 	cbrock.find_namespace = NAMESPACE_USER;
+ 	cbrock.inboxoffset = 0;
+ 	
+@@ -2285,11 +2266,11 @@
+ 	    /* Skip pattern which matches shared namespace prefix */
+ 	    for (p = pat+prefixlen; *p; p++) {
+ 		if (*p == '%') continue;
+-		else if (*p == '.') p++;
++		else if (*p == namespace->hier_sep) p++;
+ 		break;
+ 	    }
+ 
+-	    if (*pattern && !strchr(pattern, '.') &&
++	    if (*pattern && !strchr(pattern, namespace->hier_sep) &&
+ 		pattern[strlen(pattern)-1] == '%') {
+ 		/* special case:  LIST "" *% -- output prefix */
+   		cbrock.checkshared = 1;
+@@ -2298,25 +2279,21 @@
+ 	    if ((cbrock.checkshared || prefixlen == len) && !*p) {
+ 		/* special case:  LIST "" % -- output prefix
+  		   (if we have a shared mbox) and quit */
+-		strlcpy(domainpat+domainlen, "*", sizeof(domainpat)-domainlen);
+-		cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
++		cbrock.g = glob_init("*", namespace->hier_sep, GLOB_HIERARCHY);
+ 		cbrock.checkshared = 2;
+ 	    }
+-	    else {
+-		strlcpy(domainpat+domainlen, p, sizeof(domainpat)-domainlen);
+-		cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	    }
+-		
++	    else
++		cbrock.g = glob_init(pat, namespace->hier_sep, GLOB_HIERARCHY);
++
+ 	    domainpat[domainlen] = '\0';
+ 	    DB->foreach(mbdb,
+ 			domainpat, domainlen,
+ 			&find_p, &find_cb, &cbrock,
+ 			NULL);
+ 	}
+-	else if (pattern[len] == '.') {
+-	    strlcpy(domainpat+domainlen, pattern+len+1,
+-		    sizeof(domainpat)-domainlen);
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
++	else if (pattern[len] == namespace->hier_sep) {
++	    snprintf(domainpat+domainlen, sizeof(domainpat)-domainlen, "%.*s", prefixlen-(len+1), pattern+len+1);
++	    cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY);
+ 
+ 	    DB->foreach(mbdb,
+ 			domainpat, domainlen+prefixlen-(len+1),
+@@ -2394,7 +2371,7 @@
+ 	if (r) {
+ 	    if (!force && r == IMAP_MAILBOX_NONEXISTENT) {
+ 		/* look for a child mailbox in the proposed quotaroot */
+-		mboxlist_findall(NULL, pattern, 1, NULL, NULL,
++		mboxlist_findall(&internal_namespace, pattern, 1, NULL, NULL,
+ 				 child_cb, (void *) &force);
+ 	    }
+ 
+@@ -2425,7 +2402,7 @@
+     if(have_mailbox)
+ 	mboxlist_changequota(quota.root, 0, 0, &crock);
+     /* submailboxes - we're using internal names here */
+-    mboxlist_findall(NULL, pattern, 1, 0, 0, mboxlist_changequota, &crock);
++    mboxlist_findall(&internal_namespace, pattern, 1, 0, 0, mboxlist_changequota, &crock);
+     
+     r = quota_write(&quota, &tid);
+     if (!r) quota_commit(&tid);
+@@ -2491,7 +2468,7 @@
+             }
+             /* submailboxes - we're using internal names here */
+             if (!k)
+-                k = mboxlist_findall(NULL, pattern, 1, 0, 0, mboxlist_changequota, &crock);
++                k = mboxlist_findall(&internal_namespace, pattern, 1, 0, 0, mboxlist_changequota, &crock);
+             if(!k)
+                 k = quota_write(&rootquota, crock.tid);
+ 
+@@ -2500,7 +2477,7 @@
+            /* top level mailbox */
+            mboxlist_rmquota(root, 0, 0, (void *)root);
+            /* submailboxes - we're using internal names here */
+-           mboxlist_findall(NULL, pattern, 1, 0, 0, mboxlist_rmquota, (void *)root);
++           mboxlist_findall(&internal_namespace, pattern, 1, 0, 0, mboxlist_rmquota, (void *)root);
+        }
+     }
+ 
+@@ -2806,7 +2783,6 @@
+     int prefixlen;
+     int userlen = userid ? strlen(userid) : 0, domainlen = 0;
+     char domainpat[MAX_MAILBOX_NAME+1]; /* do intra-domain fetches only */
+-    char *pat = NULL;
+ 
+     if (config_virtdomains && userid && (p = strchr(userid, '@'))) {
+ 	userlen = p - userid;
+@@ -2816,8 +2792,10 @@
+     else
+ 	strncpy(domainpat, pattern, sizeof(domainpat));
+ 
+-    cbrock.g = glob_init(pattern, GLOB_HIERARCHY|GLOB_INBOXCASE);
+-    cbrock.namespace = NULL;
++    mboxname_hiersep_tointernal(namespace, domainpat, 0);
++
++    cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY|GLOB_INBOXCASE);
++    cbrock.namespace = namespace;
+     cbrock.domainlen = domainlen;
+     cbrock.inboxcase = glob_inboxcase(cbrock.g);
+     cbrock.isadmin = 1;		/* user can always see their subs */
+@@ -2857,16 +2835,6 @@
+ 	    }
+ 	    else if (r == CYRUSDB_NOTFOUND) r = 0;
+ 	}
+-	else if (!strncmp(pattern,
+-			  usermboxname+domainlen, usermboxnamelen-domainlen) &&
+-		 GLOB_TEST(cbrock.g, usermboxname+domainlen) != -1) {
+-	    r = SUBDB->fetch(subs, usermboxname, usermboxnamelen,
+-			     &data, &datalen, NULL);
+-	    if (!r && data) {
+-		r = (*proc)(usermboxname, usermboxnamelen, 1, rock);
+-	    }
+-	    else if (r == CYRUSDB_NOTFOUND) r = 0;
+-	}
+ 	strlcat(usermboxname, ".", sizeof(usermboxname));
+ 	usermboxnamelen++;
+ 
+@@ -2876,33 +2844,18 @@
+ 
+     if (r) goto done;
+ 
+-    /* Make a working copy of pattern */
+-    pattern = pat = xstrdup(pattern);
+-
+     /* Find fixed-string pattern prefix */
+-    for (p = pat; *p; p++) {
++    for (p = (char *)pattern; *p; p++) {
+ 	if (*p == '*' || *p == '%' || *p == '?' || *p == '@') break;
+     }
+     prefixlen = p - pattern;
+-    *p = '\0';
+ 
+     /*
+      * If user.X.* or INBOX.* can match pattern,
+      * search for those mailboxes next
+      */
+-    if (userid &&
+-	(!strncmp(usermboxname+domainlen, pattern, usermboxnamelen-domainlen-1) ||
+-	 !strncasecmp("inbox.", pattern, prefixlen < 6 ? prefixlen : 6))) {
+-
+-	if (!strncmp(usermboxname+domainlen, pattern, usermboxnamelen-domainlen-1)) {
+-	    /* switch to pattern with domain prepended */
+-	    glob_free(&cbrock.g);
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	    cbrock.inboxoffset = 0;
+-	}
+-	else {
+-	    cbrock.inboxoffset = strlen(userid);
+-	}
++    if (userid) {
++	cbrock.inboxoffset = domainlen + userlen;
+ 
+ 	cbrock.find_namespace = NAMESPACE_INBOX;
+ 	/* iterate through prefixes matching usermboxname */
+@@ -2919,9 +2872,8 @@
+     }
+ 
+     cbrock.find_namespace = NAMESPACE_USER;
+-    /* switch to pattern with domain prepended */
+     glob_free(&cbrock.g);
+-    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
++    cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY);
+     cbrock.inboxoffset = 0;
+     if (usermboxnamelen) {
+ 	usermboxname[--usermboxnamelen] = '\0';
+@@ -2936,7 +2888,6 @@
+   done:
+     if (subs) mboxlist_closesubs(subs);
+     glob_free(&cbrock.g);
+-    if (pat) free(pat);
+ 
+     return r;
+ }
+@@ -2967,7 +2918,7 @@
+     else
+ 	domainpat[0] = '\0';
+ 
+-    cbrock.g = glob_init(pattern, GLOB_HIERARCHY|GLOB_INBOXCASE);
++    cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY|GLOB_INBOXCASE);
+     cbrock.namespace = namespace;
+     cbrock.domainlen = domainlen;
+     cbrock.inboxcase = glob_inboxcase(cbrock.g);
+@@ -3034,9 +2985,8 @@
+      * Append pattern to "INBOX.", search for those subscriptions next
+      */
+     if (userid) {
+-	strlcpy(patbuf, "INBOX.", sizeof(patbuf));
+-	strlcat(patbuf, pattern, sizeof(patbuf));
+-	cbrock.g = glob_init(patbuf, GLOB_HIERARCHY|GLOB_INBOXCASE);
++	/* don't touch the pattern! */
++	cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY|GLOB_INBOXCASE);
+ 	cbrock.inboxcase = glob_inboxcase(cbrock.g);
+ 	cbrock.inboxoffset = domainlen+userlen;
+ 	cbrock.find_namespace = NAMESPACE_INBOX;
+@@ -3072,17 +3022,8 @@
+     if (!strncmp(namespace->prefix[NAMESPACE_USER], pattern,
+ 		 prefixlen < len ? prefixlen : len)) {
+ 
+-	if (prefixlen < len) {
+-	    strlcpy(domainpat+domainlen, pattern+prefixlen,
+-		    sizeof(domainpat)-domainlen);
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	}
+-	else {
+-	    strlcpy(domainpat+domainlen, "user",
+-		   sizeof(domainpat)-domainlen);
+-	    strlcat(domainpat, pattern+len, sizeof(domainpat));
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	}
++	/* don't touch the pattern! */
++	cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY);
+ 	cbrock.find_namespace = NAMESPACE_USER;
+ 	cbrock.inboxoffset = 0;
+ 	
+@@ -3114,11 +3055,11 @@
+ 	    /* Skip pattern which matches shared namespace prefix */
+ 	    for (p = pat+prefixlen; *p; p++) {
+ 		if (*p == '%') continue;
+-		else if (*p == '.') p++;
++		else if (*p == namespace->hier_sep) p++;
+ 		break;
+ 	    }
+ 
+-	    if (*pattern && !strchr(pattern, '.') &&
++	    if (*pattern && !strchr(pattern, namespace->hier_sep) &&
+ 		pattern[strlen(pattern)-1] == '%') {
+ 		/* special case:  LSUB "" *% -- output prefix */
+   		cbrock.checkshared = 1;
+@@ -3127,14 +3068,11 @@
+ 	    if ((cbrock.checkshared || prefixlen == len) && !*p) {
+ 		/* special case:  LSUB "" % -- output prefix
+ 		   (if we have a shared mbox) and quit */
+-		strlcpy(domainpat+domainlen, "*", sizeof(domainpat)-domainlen);
+-		cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
++		cbrock.g = glob_init("*", namespace->hier_sep, GLOB_HIERARCHY);
+ 		cbrock.checkshared = 2;
+ 	    }
+-	    else {
+-		strlcpy(domainpat+domainlen, p, sizeof(domainpat)-domainlen);
+-		cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
+-	    }
++	    else
++		cbrock.g = glob_init(pat, namespace->hier_sep, GLOB_HIERARCHY);
+ 
+ 	    domainpat[domainlen] = '\0';
+ 	    SUBDB->foreach(subs,
+@@ -3142,10 +3080,9 @@
+ 			   &find_p, &find_cb, &cbrock,
+ 			   NULL);
+ 	}
+-	else if (pattern[len] == '.') {
+-	    strlcpy(domainpat+domainlen, pattern+len+1,
+-		    sizeof(domainpat)-domainlen);
+-	    cbrock.g = glob_init(domainpat, GLOB_HIERARCHY);
++	else if (pattern[len] == namespace->hier_sep) {
++	    snprintf(domainpat+domainlen, sizeof(domainpat)-domainlen, "%.*s", prefixlen-(len+1), pattern+len+1);
++	    cbrock.g = glob_init(pattern, namespace->hier_sep, GLOB_HIERARCHY);
+ 
+ 	    SUBDB->foreach(subs,
+ 			   domainpat, domainlen+prefixlen-(len+1),
+diff -ur cyrus-imapd-2.2.12.superold/imap/mboxlist.h cyrus-imapd-2.2.12/imap/mboxlist.h
+--- cyrus-imapd-2.2.12.superold/imap/mboxlist.h	2006-02-20 18:36:15.225088000 +0300
++++ cyrus-imapd-2.2.12/imap/mboxlist.h	2006-02-20 19:04:45.259140000 +0300
+@@ -51,6 +51,8 @@
+ #include "mboxname.h"
+ 
+ extern struct db *mbdb;
++/* internal namespace (constant) */
++extern struct namespace internal_namespace;
+ 
+ /*
+  * Maximum length of partition name. [config.c has a limit of 70]
+diff -ur cyrus-imapd-2.2.12.superold/imap/mboxname.c cyrus-imapd-2.2.12/imap/mboxname.c
+--- cyrus-imapd-2.2.12.superold/imap/mboxname.c	2005-02-14 09:39:57.000000000 +0300
++++ cyrus-imapd-2.2.12/imap/mboxname.c	2006-02-20 19:04:45.382207000 +0300
+@@ -95,6 +95,14 @@
+ };
+ #define CHARMOD64(c)  (index_mod64[(unsigned char)(c)])
+ 
++/* Check mailbox name for correct hierseps symbols depending on
++   namespace */
++static int mboxname_check_hierseps(struct namespace *namespace, const char *name, int namelen)
++{
++    if(namespace->hier_sep == '/' && memchr(name, DOTCHAR, namelen))
++	return -1;
++    return 0;
++}
+ 
+ /*
+  * Convert the external mailbox 'name' to an internal name.
+@@ -116,6 +124,9 @@
+     userlen = userid ? strlen(userid) : 0;
+     namelen = strlen(name);
+ 
++    if(mboxname_check_hierseps(namespace, name, namelen))
++	return IMAP_MAILBOX_BADNAME;
++
+     if (config_virtdomains) {
+ 	if (userid && (cp = strrchr(userid, '@'))) {
+ 	    /* user logged in as user@domain */
+@@ -206,6 +217,9 @@
+     userlen = userid ? strlen(userid) : 0;
+     namelen = strlen(name);
+ 
++    if(mboxname_check_hierseps(namespace, name, namelen))
++	return IMAP_MAILBOX_BADNAME;
++
+     if (config_virtdomains) {
+ 	if (userid && (cp = strchr(userid, '@'))) {
+ 	    /* user logged in as user@domain */
+@@ -464,54 +478,68 @@
+     return 0;
+ }
+ 
+-/*
+- * Create namespace based on config options.
+- */
+-int mboxname_init_namespace(struct namespace *namespace, int isadmin)
++/* Just leave the input name untouched. This is needed for internal
++   namespace operations. */
++static int mboxname_transform_copy(struct namespace *namespace,
++				   const char *name,
++				    const char *userid, char *result)
+ {
+-    const char *prefix;
++    strcpy(result, name);
++    return 0;
++}
+ 
++/* create namespace based on given options */
++int mboxname_init_namespace_ext(struct namespace *namespace, int isadmin, char hier_sep, int isalt)
++{
+     assert(namespace != NULL);
+ 
+     namespace->isadmin = isadmin;
++    if(isalt<0) {
++	namespace->hier_sep = '.';
++	namespace->isalt = 0;
++	namespace->mboxname_tointernal = mboxname_transform_copy;
++	namespace->mboxname_toexternal = mboxname_transform_copy;
++	namespace->mboxlist_findall = mboxlist_findall;
++	namespace->mboxlist_findsub = mboxlist_findsub;
++	return 0;
++    }
++    namespace->hier_sep = hier_sep;
++    namespace->isalt = isalt;
++    
++    if (isalt>0) {
++	const char *prefix;
+ 
+-    namespace->hier_sep =
+-	config_getswitch(IMAPOPT_UNIXHIERARCHYSEP) ? '/' : '.';
+-    namespace->isalt = !isadmin && config_getswitch(IMAPOPT_ALTNAMESPACE);
+-
+-    if (namespace->isalt) {
+ 	/* alternate namespace */
+ 	strcpy(namespace->prefix[NAMESPACE_INBOX], "");
+ 
+ 	prefix = config_getstring(IMAPOPT_USERPREFIX);
+ 	if (!prefix || strlen(prefix) == 0 ||
+ 	    strlen(prefix) >= MAX_NAMESPACE_PREFIX ||
+-	    strchr(prefix,namespace->hier_sep) != NULL)
++	    strchr(prefix,hier_sep) != NULL)
+ 	    return IMAP_NAMESPACE_BADPREFIX;
+ 	sprintf(namespace->prefix[NAMESPACE_USER], "%.*s%c",
+-		MAX_NAMESPACE_PREFIX-1, prefix, namespace->hier_sep);
++		MAX_NAMESPACE_PREFIX-1, prefix, hier_sep);
+ 
+ 	prefix = config_getstring(IMAPOPT_SHAREDPREFIX);
+ 	if (!prefix || strlen(prefix) == 0 ||
+ 	    strlen(prefix) >= MAX_NAMESPACE_PREFIX ||
+-	    strchr(prefix, namespace->hier_sep) != NULL ||
++	    strchr(prefix, hier_sep) != NULL ||
+ 	    !strncmp(namespace->prefix[NAMESPACE_USER], prefix, strlen(prefix)))
+ 	    return IMAP_NAMESPACE_BADPREFIX;
+ 	sprintf(namespace->prefix[NAMESPACE_SHARED], "%.*s%c",
+-		MAX_NAMESPACE_PREFIX-1, prefix, namespace->hier_sep); 
++		MAX_NAMESPACE_PREFIX-1, prefix, hier_sep); 
+ 
+ 	namespace->mboxname_tointernal = mboxname_tointernal_alt;
+ 	namespace->mboxname_toexternal = mboxname_toexternal_alt;
+ 	namespace->mboxlist_findall = mboxlist_findall_alt;
+ 	namespace->mboxlist_findsub = mboxlist_findsub_alt;
+     }
+-
+     else {
+ 	/* standard namespace */
+ 	sprintf(namespace->prefix[NAMESPACE_INBOX], "%s%c",
+-		"INBOX", namespace->hier_sep);
++		"INBOX", hier_sep);
+ 	sprintf(namespace->prefix[NAMESPACE_USER], "%s%c",
+-		"user", namespace->hier_sep);
++		"user", hier_sep);
+ 	strcpy(namespace->prefix[NAMESPACE_SHARED], "");
+ 
+ 	namespace->mboxname_tointernal = mboxname_tointernal;
+@@ -524,6 +552,17 @@
+ }
+ 
+ /*
++ * Create namespace based on config options.
++ */
++int mboxname_init_namespace(struct namespace *namespace, int isadmin)
++{
++    return mboxname_init_namespace_ext(namespace,
++				       isadmin,
++				       config_getswitch(IMAPOPT_UNIXHIERARCHYSEP) ? '/' : '.',
++				       !isadmin && config_getswitch(IMAPOPT_ALTNAMESPACE));
++}
++
++/*
+  * Translate separator charactors in a mailboxname from its external
+  * representation to its internal representation '.'.
+  * If using the unixhierarchysep '/', all '.'s get translated to DOTCHAR.
+@@ -664,7 +703,7 @@
+ 
+     if (strlen(name) > MAX_MAILBOX_NAME) return IMAP_MAILBOX_BADNAME;
+     for (i = 0; i < NUM_BADMBOXPATTERNS; i++) {
+-	g = glob_init(badmboxpatterns[i], 0);
++	g = glob_init(badmboxpatterns[i], unixsep?'/':'.', 0);
+ 	if (GLOB_TEST(g, name) != -1) {
+ 	    glob_free(&g);
+ 	    return IMAP_MAILBOX_BADNAME;
+diff -ur cyrus-imapd-2.2.12.superold/imap/mboxname.h cyrus-imapd-2.2.12/imap/mboxname.h
+--- cyrus-imapd-2.2.12.superold/imap/mboxname.h	2004-03-19 17:49:17.000000000 +0300
++++ cyrus-imapd-2.2.12/imap/mboxname.h	2006-02-20 19:04:45.456331000 +0300
+@@ -78,6 +78,8 @@
+ 			    void *rock, int force);
+ };
+ 
++/* create namespace based on given options */
++int mboxname_init_namespace_ext(struct namespace *namespace, int isadmin, char hier_sep, int isalt);
+ /* Create namespace based on config options. */
+ int mboxname_init_namespace(struct namespace *namespace, int isadmin);
+ 
+diff -ur cyrus-imapd-2.2.12.superold/imap/mupdate.c cyrus-imapd-2.2.12/imap/mupdate.c
+--- cyrus-imapd-2.2.12.superold/imap/mupdate.c	2006-02-20 18:36:15.459213000 +0300
++++ cyrus-imapd-2.2.12/imap/mupdate.c	2006-02-20 19:04:45.592064000 +0300
+@@ -529,6 +529,12 @@
+ 	return EC_OSERR;
+     }
+ 
++    if(mboxname_init_namespace_ext(&internal_namespace,
++				   1, '.', -1)) {
++	syslog(LOG_ERR, "Cannot initialize the internal namespace");
++	return EC_TEMPFAIL;
++    }
++
+     database_init();
+ 
+     if (!masterp) {
+@@ -1688,7 +1694,7 @@
+     if(C->list_prefix) C->list_prefix_len = strlen(C->list_prefix);
+     else C->list_prefix_len = 0;
+     
+-    mboxlist_findall(NULL, pattern, 1, NULL,
++    mboxlist_findall(&internal_namespace, pattern, 1, NULL,
+ 		     NULL, sendupdate, (void*)C);
+ 
+     C->streaming = NULL;
+@@ -1739,7 +1745,7 @@
+     C->streaming_hosts = partial;
+ 
+     /* dump initial list */
+-    mboxlist_findall(NULL, pattern, 1, NULL,
++    mboxlist_findall(&internal_namespace, pattern, 1, NULL,
+ 		     NULL, sendupdate, (void*)C);
+ 
+     pthread_mutex_unlock(&mailboxes_mutex); /* UNLOCK */
+@@ -2162,7 +2168,7 @@
+ 
+     rock.boxes = &local_boxes;
+ 
+-    mboxlist_findall(NULL, pattern, 1, NULL,
++    mboxlist_findall(&internal_namespace, pattern, 1, NULL,
+ 		     NULL, sync_findall_cb, (void*)&rock);
+ 
+     /* Traverse both lists, compare the names */
+diff -ur cyrus-imapd-2.2.12.superold/imap/nntpd.c cyrus-imapd-2.2.12/imap/nntpd.c
+--- cyrus-imapd-2.2.12.superold/imap/nntpd.c	2006-02-20 18:36:15.768201000 +0300
++++ cyrus-imapd-2.2.12/imap/nntpd.c	2006-02-20 19:04:45.777635000 +0300
+@@ -530,6 +530,11 @@
+ 	fatal("unable to init duplicate delivery database", EC_SOFTWARE);
+     }
+ 
++    /* initialize the internal namespace structure */
++    if(mboxname_init_namespace_ext(&internal_namespace,
++				   1, '.', -1))
++	fatal("cannot initialize the internal namespace", EC_TEMPFAIL);
++    
+     /* open the mboxlist, we'll need it for real work */
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+@@ -2544,7 +2549,7 @@
+ 	strcpy(pattern, newsprefix);
+ 	strcat(pattern, "*");
+ 	list_cb(NULL, 0, 0, NULL);
+-	mboxlist_findall(NULL, pattern, 0, nntp_userid, nntp_authstate,
++	mboxlist_findall(&internal_namespace, pattern, 0, nntp_userid, nntp_authstate,
+ 			 list_cb, &lrock);
+ 
+ 	/* proxy to the backends */
+@@ -2605,7 +2610,7 @@
+ 	strcpy(pattern, newsprefix);
+ 	strcat(pattern, "*");
+ 	list_cb(NULL, 0, 0, NULL);
+-	mboxlist_findall(NULL, pattern, 0, nntp_userid, nntp_authstate,
++	mboxlist_findall(&internal_namespace, pattern, 0, nntp_userid, nntp_authstate,
+ 			 list_cb, &lrock);
+ 
+ 	/* proxy to the backends */
+diff -ur cyrus-imapd-2.2.12.superold/imap/proxyd.c cyrus-imapd-2.2.12/imap/proxyd.c
+--- cyrus-imapd-2.2.12.superold/imap/proxyd.c	2004-12-17 19:32:20.000000000 +0300
++++ cyrus-imapd-2.2.12/imap/proxyd.c	2006-02-20 19:04:46.217059000 +0300
+@@ -1148,6 +1148,11 @@
+     /* load the SASL plugins */
+     global_sasl_init(1, 1, mysasl_cb);
+ 
++    /* initialize the internal namespace structure */
++    if(mboxname_init_namespace_ext(&internal_namespace,
++				   1, '.', -1))
++	fatal("cannot initialize the internal namespace", EC_TEMPFAIL);
++
+     /* open the mboxlist, we'll need it for real work */
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+@@ -3786,11 +3791,6 @@
+ 	    /* noop */
+ 	}
+     } else if (!strcasecmp(namespace, "all.mailboxes")) {
+-	/* Translate any separators in pattern */
+-	mboxname_hiersep_tointernal(&proxyd_namespace, pattern,
+-				    config_virtdomains ?
+-				    strcspn(pattern, "@") : 0);
+-
+ 	(*proxyd_namespace.mboxlist_findall)(&proxyd_namespace, pattern,
+ 					     proxyd_userisadmin, proxyd_userid,
+ 					     proxyd_authstate, mailboxdata,
+@@ -3883,11 +3883,6 @@
+ 	    pattern = buf;
+ 	}
+ 
+-	/* Translate any separators in pattern */
+-	mboxname_hiersep_tointernal(&proxyd_namespace, pattern,
+- 				    config_virtdomains ?
+- 				    strcspn(pattern, "@") : 0);
+-
+ 	(*proxyd_namespace.mboxlist_findall)(&proxyd_namespace, pattern,
+ 					     proxyd_userisadmin, proxyd_userid,
+ 					     proxyd_authstate, listdata, NULL);
+@@ -4211,8 +4206,16 @@
+     int r;
+     char *this_server;
+     const char *servername = (const char *)rock;
++    char intname[MAX_MAILBOX_NAME+1];
++
++    if((r = (*proxyd_namespace.mboxname_tointernal)(&proxyd_namespace,
++						    name,
++						    proxyd_userid,
++						    intname)))
++	return r;
+     
+-    r = mlookup(name, &this_server, NULL, NULL);
++    
++    r = mlookup(intname, &this_server, NULL, NULL);
+     if(r) return r;
+ 
+     if(strcmp(servername, this_server)) {
+@@ -4247,7 +4250,7 @@
+     if(!r) {
+ 	server_rock = xstrdup(server_rock_tmp);
+ 
+-	snprintf(quotarootbuf, sizeof(quotarootbuf), "%s.*", mailboxname);
++	snprintf(quotarootbuf, sizeof(quotarootbuf), "%s%c*", name, proxyd_namespace.hier_sep);
+ 
+ 	r = mboxlist_findall(&proxyd_namespace, quotarootbuf,
+ 			     proxyd_userisadmin, proxyd_userid,
+@@ -4362,7 +4365,7 @@
+     if(!r) {
+ 	server_rock = xstrdup(server_rock_tmp);
+ 
+-	snprintf(quotarootbuf, sizeof(quotarootbuf), "%s.*", mailboxname);
++	snprintf(quotarootbuf, sizeof(quotarootbuf), "%s%c*", quotaroot, proxyd_namespace.hier_sep);
+ 
+ 	r = mboxlist_findall(&proxyd_namespace, quotarootbuf,
+ 			     proxyd_userisadmin, proxyd_userid,
+@@ -4605,7 +4608,7 @@
+     /* now find all the exciting toplevel namespaces -
+      * we're using internal names here
+      */
+-    mboxlist_findall(NULL, pattern, proxyd_userisadmin, proxyd_userid,
++    mboxlist_findall(&internal_namespace, pattern, proxyd_userisadmin, proxyd_userid,
+ 		     proxyd_authstate, namespacedata, (void*) sawone);
+ 
+     prot_printf(proxyd_out, "* NAMESPACE");
+@@ -4697,11 +4700,7 @@
+ 		       int maycreate __attribute__((unused)), 
+ 		       void* rock __attribute__((unused)))
+ {
+-    char mboxname[MAX_MAILBOX_PATH+1];
+-
+-    (*proxyd_namespace.mboxname_toexternal)(&proxyd_namespace, name,
+-					    proxyd_userid, mboxname);
+-    prot_printf(proxyd_out, "* MAILBOX %s\r\n", mboxname);
++    prot_printf(proxyd_out, "* MAILBOX %s\r\n", name);
+     return 0;
+ }
+ 
+diff -ur cyrus-imapd-2.2.12.superold/imap/quota.c cyrus-imapd-2.2.12/imap/quota.c
+--- cyrus-imapd-2.2.12.superold/imap/quota.c	2004-06-30 23:23:26.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/quota.c	2006-02-20 19:04:46.396981000 +0300
+@@ -297,7 +297,7 @@
+ /*
+  * Account for mailbox 'name' when fixing the quota roots
+  */
+-int fixquota_mailbox(char *name,
++int fixquota_mailbox(char *extname,
+ 		     int matchlen __attribute__((unused)),
+ 		     int maycreate __attribute__((unused)),
+ 		     void* rock)
+@@ -307,7 +307,10 @@
+     int i, len, thisquota, thisquotalen;
+     struct fix_rock *frock = (struct fix_rock *) rock;
+     char *p, *domain = frock->domain;
++    char name[MAX_MAILBOX_PATH+1];
+ 
++    if((*quota_namespace.mboxname_tointernal)(&quota_namespace, extname,
++					     NULL, name));
+     /* make sure the domains match */
+     if (domain &&
+ 	(!(p = strchr(name, '!')) || (p - name) != strlen(domain) ||
+diff -ur cyrus-imapd-2.2.12.superold/imap/reconstruct.c cyrus-imapd-2.2.12/imap/reconstruct.c
+--- cyrus-imapd-2.2.12.superold/imap/reconstruct.c	2004-10-11 18:01:24.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/reconstruct.c	2006-02-20 19:04:46.533951000 +0300
+@@ -125,7 +125,7 @@
+     int mflag = 0;
+     int fflag = 0;
+     int xflag = 0;
+-    char buf[MAX_MAILBOX_PATH+1];
++    char buf[MAX_MAILBOX_PATH+1]="";
+     char mbbuf[MAX_MAILBOX_PATH+1];
+     struct discovered head;
+     char *alt_config = NULL;
+@@ -279,23 +279,28 @@
+     for (i = optind; i < argc; i++) {
+ 	char *domain = NULL;
+ 
++	if(strlen(argv[i])>MAX_MAILBOX_PATH)
++	    continue;
++
+ 	/* save domain */
+ 	if (config_virtdomains) domain = strchr(argv[i], '@');
+-
+-	strlcpy(buf, argv[i], sizeof(buf));
+-	/* Translate any separators in mailboxname */
+-	mboxname_hiersep_tointernal(&recon_namespace, buf,
+-				    config_virtdomains ?
+-				    strcspn(buf, "@") : 0);
+-
++	
+ 	/* reconstruct the first mailbox/pattern */
+-	(*recon_namespace.mboxlist_findall)(&recon_namespace, buf, 1, 0,
++	(*recon_namespace.mboxlist_findall)(&recon_namespace, argv[i], 1, 0,
+ 					    0, do_reconstruct, 
+ 					    fflag ? &head : NULL);
+ 	if (rflag) {
+-	    /* build a pattern for submailboxes */
+-	    /* XXX mboxlist_findall() is destructive and removes domain */
+-	    strlcat(buf, ".*", sizeof(buf));
++	    int buflen;
++
++	    if(domain) {
++		memcpy(buf, argv[i], domain - argv[i]);
++		buf[domain - argv[i]]=0;
++	    }
++	    else
++		strcpy(buf, argv[i]);
++
++	    buflen=strlen(buf);
++	    snprintf(buf+buflen, sizeof(buf)-buflen, "%c*@", recon_namespace.hier_sep);
+ 
+ 	    /* append the domain */
+ 	    if (domain) strlcat(buf, domain, sizeof(buf));
+@@ -311,19 +316,22 @@
+     while (head.next) {
+ 	struct discovered *p;
+ 	int r = 0;
++	int saved_r;
+ 
+ 	p = head.next;
+ 	head.next = p->next;
+ 
+ 	/* create p (database only) and reconstruct it */
+ 	/* partition is defined by the parent mailbox */
+-	r = mboxlist_createmailbox(p->name, 0, NULL, 1,
++	saved_r = mboxlist_createmailbox(p->name, 0, NULL, 1,
+ 				   "cyrus", NULL, 0, 0, !xflag);
+-	if (!r) {
+-	    do_reconstruct(p->name, strlen(p->name), 0, &head);
++	r = (*recon_namespace.mboxname_toexternal)(&recon_namespace, p->name,
++						   "cyrus", buf);
++	if (!saved_r) {
++	    do_reconstruct(buf, strlen(p->name), 0, &head);
+ 	} else {
+ 	    fprintf(stderr, "createmailbox %s: %s\n",
+-		    p->name, error_message(r));
++		    r?p->name:buf, error_message(saved_r));
+ 	}
+ 	/* may have added more things into our list */
+ 
+@@ -371,6 +379,14 @@
+     char buf[MAX_MAILBOX_PATH+1];
+     static char lastname[MAX_MAILBOX_PATH+1] = "";
+ 
++    r = (*recon_namespace.mboxname_tointernal)(&recon_namespace, name,
++					       NULL, buf);
++    if (r) {
++	com_err(name, r, NULL);
++	code = convert_code(r);
++	return 0;
++    }
++
+     signals_poll();
+ 
+     /* don't repeat */
+@@ -383,15 +399,12 @@
+     strncpy(lastname, name, matchlen);
+     lastname[matchlen] = '\0';
+ 
+-    r = reconstruct(lastname, rock);
++    r = reconstruct(buf, rock);
+     if (r) {
+ 	com_err(name, r, (r == IMAP_IOERROR) ? error_message(errno) : NULL);
+ 	code = convert_code(r);
+     } else {
+-	/* Convert internal name to external */
+-	(*recon_namespace.mboxname_toexternal)(&recon_namespace, lastname,
+-					       NULL, buf);
+-	printf("%s\n", buf);
++	printf("%s\n", name);
+     }
+ 
+     return 0;
+diff -ur cyrus-imapd-2.2.12.superold/imap/squatter.c cyrus-imapd-2.2.12/imap/squatter.c
+--- cyrus-imapd-2.2.12.superold/imap/squatter.c	2004-05-22 07:45:52.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/squatter.c	2006-02-20 19:04:46.651129000 +0300
+@@ -298,9 +298,13 @@
+     struct stat index_file_info;
+     struct stat tmp_file_info;
+     char uid_validity_buf[30];
+-    char extname[MAX_MAILBOX_NAME+1];
++    char intname[MAX_MAILBOX_NAME+1];
+     int use_annot = *((int *) rock);
+ 
++    if((*squat_namespace.mboxname_tointernal)(&squat_namespace, name,
++					     NULL, intname))
++	return 1;
++
+     /* make sure the mailbox (or an ancestor) has
+        /vendor/cmu/cyrus-imapd/squat set to "true" */
+     if (use_annot) {
+@@ -311,7 +315,7 @@
+ 	if (config_virtdomains && (p = strchr(name, '!')))
+ 	    domainlen = p - name + 1;
+ 
+-	strlcpy(buf, name, sizeof(buf));
++	strlcpy(buf, intname, sizeof(buf));
+ 
+ 	/* since mailboxes inherit /vendor/cmu/cyrus-imapd/squat,
+ 	   we need to iterate all the way up to "" (server entry) */
+@@ -339,20 +343,16 @@
+ 	    return 0;
+     }
+ 
+-    /* Convert internal name to external */
+-    (*squat_namespace.mboxname_toexternal)(&squat_namespace, name,
+-					   NULL, extname);
+-
+     data.mailbox_stats = &stats;
+     data.mailbox = &m;
+ 
+     /* First we have to jump through hoops to open the mailbox and its
+        Cyrus index. */
+     memset(&m, 0, sizeof(struct mailbox));
+-    r = mailbox_open_header(name, 0, &m);
++    r = mailbox_open_header(intname, 0, &m);
+     if (r) {
+         if (verbose) {
+-            printf("error opening %s: %s\n", extname, error_message(r));
++            printf("error opening %s: %s\n", name, error_message(r));
+         }
+         return 1;
+     }
+@@ -361,7 +361,7 @@
+     if (!r) r = mailbox_lock_pop(&m);
+     if (r) {
+         if (verbose) {
+-            printf("error locking index %s: %s\n", extname, error_message(r));
++            printf("error locking index %s: %s\n", name, error_message(r));
+         }
+         mailbox_close(&m);
+         return 1;
+@@ -378,9 +378,9 @@
+         !stat(index_file_name, &index_file_info)) {
+         if (SKIP_FUZZ + tmp_file_info.st_mtime <
+             index_file_info.st_mtime) {
+-            syslog(LOG_DEBUG, "skipping mailbox %s", extname);
++            syslog(LOG_DEBUG, "skipping mailbox %s", name);
+             if (verbose > 0) {
+-                printf("Skipping mailbox %s\n", extname);
++                printf("Skipping mailbox %s\n", name);
+             }
+             mailbox_close(&m);
+             return 0;
+@@ -390,9 +390,9 @@
+     snprintf(tmp_file_name, sizeof(tmp_file_name),
+              "%s%s.tmp", m.path, FNAME_SQUAT_INDEX);
+ 
+-    syslog(LOG_INFO, "indexing mailbox %s... ", extname);
++    syslog(LOG_INFO, "indexing mailbox %s... ", name);
+     if (verbose > 0) {
+-      printf("Indexing mailbox %s... ", extname);
++      printf("Indexing mailbox %s... ", name);
+     }
+ 
+     if ((fd = open(tmp_file_name,
+@@ -531,12 +531,9 @@
+     }
+ 
+     for (i = optind; i < argc; i++) {
+-	/* Translate any separators in mailboxname */
+-	(*squat_namespace.mboxname_tointernal)(&squat_namespace, argv[i],
+-					       NULL, buf);
+-	index_me(buf, 0, 0, &use_annot);
++	index_me(argv[i], 0, 0, &use_annot);
+ 	if (rflag) {
+-	    strlcat(buf, ".*", sizeof(buf));
++	    snprintf(buf, sizeof(buf), "%s%c*", argv[i], squat_namespace.hier_sep);
+ 	    (*squat_namespace.mboxlist_findall)(&squat_namespace, buf, 1,
+ 						0, 0, index_me, &use_annot);
+ 	}
+diff -ur cyrus-imapd-2.2.12.superold/imap/user.c cyrus-imapd-2.2.12/imap/user.c
+--- cyrus-imapd-2.2.12.superold/imap/user.c	2004-06-22 20:59:17.000000000 +0400
++++ cyrus-imapd-2.2.12/imap/user.c	2006-02-20 19:04:46.746378000 +0300
+@@ -187,7 +187,7 @@
+     /* xxx no reason to do this if user_deleteacl is a stub anyway. */
+     if(wipe_user) {
+ 	const char pat[] = "*";
+-	mboxlist_findall(NULL, pat, sizeof(pat), userid,
++	mboxlist_findall(&internal_namespace, pat, sizeof(pat), userid,
+ 			 authstate, user_deleteacl,
+ 			 user);
+     }
+@@ -350,7 +350,7 @@
+     if (!r) {
+ 	/* copy/rename subscriptions - we're using the internal names here */
+ 	strcpy(pat, "*");
+-	mboxlist_findsub(NULL, pat, 1, olduser, authstate, user_renamesub,
++	mboxlist_findsub(&internal_namespace, pat, 1, olduser, authstate, user_renamesub,
+ 			 &rrock, 1);
+     }
+ 
+diff -ur cyrus-imapd-2.2.12.superold/lib/glob.c cyrus-imapd-2.2.12/lib/glob.c
+--- cyrus-imapd-2.2.12.superold/lib/glob.c	2003-12-08 23:57:13.000000000 +0300
++++ cyrus-imapd-2.2.12/lib/glob.c	2006-02-20 19:04:46.844591000 +0300
+@@ -67,8 +67,9 @@
+  *   4) '*' eats all '*'s and '%'s connected by any wildcard
+  *   5) '%' eats all adjacent '%'s
+  */
+-glob *glob_init_suppress (str, flags, suppress)
++glob *glob_init_suppress (str, sep_char, flags, suppress)
+     const char *str;
++    char sep_char;
+     int flags;
+     const char *suppress;
+ {
+@@ -81,7 +82,7 @@
+     g = (glob *) xmalloc(sizeof (glob) + slen + strlen(str) + 1);
+     if (g != 0) {
+         strcpy(g->inbox, inbox);
+-	g->sep_char = '.';
++	g->sep_char = sep_char;
+ 	dst = g->str;
+ 	/* if we're doing a substring match, put a '*' prefix (1) */
+ 	if (flags & GLOB_SUBSTRING) {
+@@ -284,29 +285,27 @@
+ 		/* look for a match with first char following '%',
+ 		 * stop at a sep_char unless we're doing "*%"
+ 		 */
+-		ptr = phier;
+-		while (ptr != pend && *ghier != *ptr
+-		       && (*ptr != g->sep_char ||
++		while (phier != pend && *ghier != *phier
++		       && (*phier != g->sep_char ||
+ 			   (!*ghier && gstar && *gstar == '%' && min
+-			    && ptr - start < *min))) {
+-		    ++ptr;
++			    && phier - start < *min))) {
++		    ++phier;
+ 		}
+-		if (ptr == pend) {
++		if (phier == pend) {
+ 		    gptr = ghier;
++		    ptr = phier;
+ 		    break;
+ 		}
+-		if (*ptr == g->sep_char) {
++		if (*ghier != *phier && *phier == g->sep_char) {
+ 		    if (!*ghier && min
+-			&& *min < ptr - start && ptr != pend
+-			&& *ptr == g->sep_char
+-			) {
+-			*min = gstar ? ptr - start + 1 : -1;
+-			return (ptr - start);
++			&& *min < phier - start && phier != pend) {
++			*min = gstar ? phier - start + 1 : -1;
++			return (phier - start);
+ 		    }
+ 		    ghier = NULL;
+ 		    sepfound = 1;
+ 		} else {
+-		    phier = ++ptr;
++		    ptr = ++phier;
+ 		    gptr = ghier + 1;
+ 		}
+ 	    }
+@@ -376,29 +375,27 @@
+ 		/* look for a match with first char following '%',
+ 		 * stop at a sep_char unless we're doing "*%"
+ 		 */
+-		ptr = phier;
+-		while (ptr != pend && (unsigned char) *ghier != TOLOWER(*ptr)
+-		       && (*ptr != g->sep_char ||
++		while (phier != pend && (unsigned char) *ghier != TOLOWER(*phier)
++		       && (*phier != g->sep_char ||
+ 			   (!*ghier && gstar && *gstar == '%' && min
+-			    && ptr - start < *min))) {
+-		    ++ptr;
++			    && phier - start < *min))) {
++		    ++phier;
+ 		}
+-		if (ptr == pend) {
++		if (phier == pend) {
+ 		    gptr = ghier;
++		    ptr = phier;
+ 		    break;
+ 		}
+-		if (*ptr == g->sep_char) {
++		if (*ghier != *phier && *phier == g->sep_char) {
+ 		    if (!*ghier && min
+-			&& *min < ptr - start && ptr != pend
+-			&& *ptr == g->sep_char
+-			) {
+-			*min = gstar ? ptr - start + 1 : -1;
+-			return (ptr - start);
++			&& *min < phier - start && phier != pend) {
++			*min = gstar ? phier - start + 1 : -1;
++			return (phier - start);
+ 		    }
+ 		    ghier = NULL;
+ 		    sepfound = 1;
+ 		} else {
+-		    phier = ++ptr;
++		    ptr = ++phier;
+ 		    gptr = ghier + 1;
+ 		}
+ 	    }
+@@ -446,7 +443,7 @@
+     int argc;
+     char* argv[];
+ {
+-    glob *g = glob_init_suppress(argv[1], GLOB_INBOXCASE|GLOB_HIERARCHY,
++    glob *g = glob_init_suppress(argv[1], '.', GLOB_INBOXCASE|GLOB_HIERARCHY,
+ 				 "user.nifty");
+     char text[1024];
+     int len;
+diff -ur cyrus-imapd-2.2.12.superold/lib/glob.h cyrus-imapd-2.2.12/lib/glob.h
+--- cyrus-imapd-2.2.12.superold/lib/glob.h	2003-02-13 23:15:40.000000000 +0300
++++ cyrus-imapd-2.2.12/lib/glob.h	2006-02-20 19:04:46.892503000 +0300
+@@ -78,7 +78,7 @@
+  *  flags    -- see flag values above
+  *  suppress -- prefix to suppress
+  */
+-extern glob *glob_init_suppress P((const char *str, int flags,
++extern glob *glob_init_suppress P((const char *str, char sep_char, int flags,
+ 				   const char *suppress));
+ 
+ /* free a glob structure
+@@ -97,7 +97,7 @@
+ extern int glob_test P((glob *g, const char *str, long len, long *min));
+ 
+ /* macros */
+-#define glob_init(str, flags) glob_init_suppress((str), (flags), NULL)
++#define glob_init(str, sep_char, flags) glob_init_suppress((str), (sep_char), (flags), NULL)
+ #define glob_inboxcase(g) ((g)->inbox)
+ #define GLOB_TEST(g, str) glob_test((g), (str), 0, NULL)
+ #define GLOB_SET_SEPARATOR(g, c) ((g)->sep_char = (c))

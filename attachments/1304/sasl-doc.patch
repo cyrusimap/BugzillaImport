@@ -1,0 +1,846 @@
+diff -rN -U 10 sasl-upstream.orig//sasl/configure.in sasl-upstream/sasl/configure.in
+--- sasl-upstream.orig//sasl/configure.in	2009-05-20 07:24:48.000000000 -0500
++++ sasl-upstream/sasl/configure.in	2010-09-05 21:32:28.000000000 -0500
+@@ -970,21 +970,21 @@
+ AC_SUBST(SASL_STATIC_LIBS)
+ 
+ AC_ARG_WITH(plugindir, [  --with-plugindir=DIR    set the directory where plugins will
+                           be found [[/usr/lib/sasl2]] ],
+   plugindir=$withval,
+   plugindir=/usr/lib/sasl2)
+ AC_DEFINE_UNQUOTED(PLUGINDIR, "$plugindir", [Runtime plugin location])
+ AC_SUBST(plugindir)
+ 
+ AC_ARG_WITH(configdir, [   --with-configdir=DIR    set the directory where config files will
+-                          be found [/usr/lib/sasl2] ],
++                          be found [[PLUGINDIR]]. /etc/sasl2 will be appended to this path ],
+   configdir=$withval,
+   configdir=$plugindir:/etc/sasl2)
+ AC_DEFINE_UNQUOTED(CONFIGDIR, "$configdir", [Runtime config file location])
+ AC_SUBST(configdir)
+ 
+ dnl look for rc4 libraries. we accept the CMU one or one from openSSL
+ AC_ARG_WITH(rc4, [  --with-rc4              use internal rc4 routines [[yes]] ],
+ 	with_rc4=$withval,
+ 	with_rc4=yes)
+ 
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/components.html sasl-upstream/sasl/doc/components.html
+--- sasl-upstream.orig//sasl/doc/components.html	2008-01-23 15:29:55.000000000 -0600
++++ sasl-upstream/sasl/doc/components.html	2010-09-05 20:03:54.000000000 -0500
+@@ -130,34 +130,36 @@
+ </ul>
+ 
+ <p>Mechanism plugins are generally contained in a .so file that has a name
+ similar to the mechanism's name.  Though, in a static compilation they
+ can also be a part of <tt>libsasl2.a</tt></p>
+ 
+ <h3>Plugins (Auxiliary Property)</h3>
+ 
+ <p>Auxiliary Property (or auxprop) plugins provide a database service for the
+ glue layer (and through it, to the mechanisms and application).  Cyrus SASL
+-ships with two auxprop plugins: SASLdb and SQL.  Though they can be use
++ships with three auxprop plugins: SASLdb and SQL, and ldapdb.  Though they can be used
+ in much more generic ways, auxprop plugins are mostly only used by
+ shared secret mechanisms (or by the auxprop password verify) to access the
+ &quot;userPassword&quot; attribute.  This provides a plaintext copy of the
+ password that allows for authentication to take place.</p>
+ 
+ <p>Like the mechanism plugins, these are named similarly to the databases
+ that they implement an interface for.</p>
+ 
+ <h3>Plugins (Username Canonicalization)</h3>
+ 
+-Username Canonicalization plugins are not widely used, however it may be
+-useful to use as a hook if your site has specific requirements for how userids
+-are presented to the applications.
++Username Canonicalization plugins provide a useful hook for presenting
++userids in a site specific way to applications. There are currently two
++plugins: the INTERNAL plugin (default), which removes leading and trailing
++whitespace, and ldapdb, which canonicalizes a username by retrieving a
++specified attribute from a user's LDAP entry.
+ 
+ <h3>Password Verification Services</h3>
+ 
+ <p>As described above, the password verifiers take a username and plaintext
+ password, and say either &quot;yes&quot; or &quot;no&quot;.  It is not possible
+ to use them to verify hashes that might be provided by the shared secret
+ mechanisms.</p>
+ 
+ <p>Password verifiers are selected using the &quot;pwcheck_method&quot;
+ SASL option.  There are two main password verifiers provided with Cyrus SASL:</p>
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/gssapi.html sasl-upstream/sasl/doc/gssapi.html
+--- sasl-upstream.orig//sasl/doc/gssapi.html	2003-09-24 13:54:05.000000000 -0500
++++ sasl-upstream/sasl/doc/gssapi.html	2010-09-04 22:07:11.000000000 -0500
+@@ -15,21 +15,21 @@
+ 
+ <p>I figured that it couldn't hurt to give a quick explanation as to
+ how you get GSSAPI working with the sample apps, since it wasn't
+ obvious to me, and I consider myself not completely ignorant of GSSAPI
+ and Kerberos.
+ 
+ <ol>
+ <li> Compile the Cyrus-SASL distribution with the GSSAPI plugin
+   for your favorite GSS-API mechanism.  I personally use the GSSAPI
+   libraries included with the <a href="http://web.mit.edu/kerberos/www/">MIT</a>
+-  Kerberos 5 distribution; <a href="http://www.pdc.kth.se/heimdal/">Heimdal</a>
++  Kerberos 5 distribution; <a href="http://www.h5l.org/">Heimdal</a>
+   and <a href="http://www.cybersafe.com/">CyberSafe</a> work as well.
+ 
+ <li> Start up the sample-server.  The command-line used for
+   sample-server needs to specify the GSSAPI service name and the
+   location of the plug-ins; your sample command line might look
+   something like this:
+ 
+ <pre>  ./sample-server -s host -p ../plugins/.libs
+ </pre>
+ 
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/index.html sasl-upstream/sasl/doc/index.html
+--- sasl-upstream.orig//sasl/doc/index.html	2004-11-24 12:05:28.000000000 -0600
++++ sasl-upstream/sasl/doc/index.html	2010-09-05 15:28:56.000000000 -0500
+@@ -9,21 +9,21 @@
+ standards-track method for remote computers to authenticate.  The
+ Cyrus SASL library makes supporting various SASL mechanisms easy for
+ both client and server writers.
+ 
+ <P>The Cyrus project is the implementation of an enterprise mail
+ system by the Carnegie Mellon University Computing Services Department.
+ We are interested in scalable, easy to administer systems.
+ 
+ <h2>The Cyrus SASL library distribution</h2>
+ 
+-<p><a href="http://asg.web.cmu.edu/cyrus/download/"><b>Cyrus SASL
++<p><a href="http://www.cyrusimap.org"><b>Cyrus SASL
+ library distribution</B></A>
+ 
+ <h2>Documentation</h2>
+ 
+ <ul>
+ <li> <a href="readme.html"><b>Read Me First</b></A></li>
+ <li> <a href="install.html"><b>Installation Documentation</b></A></li>
+ <li> <a href="upgrading.html"><b>Information for upgrading from SASLv1</b></A></li>
+ <li> <a href="appconvert.html"><b>SASLv1 to SASLv2 Application Conversion Guide</B></A></li>
+ </ul>
+@@ -115,13 +115,13 @@
+ The Secure Remote Password Protocol</a> paper by Thomas Wu</li>
+ <li><a href="http://beepcore-tcl.sourceforge.net/tclsasl.html">TCL extensions
+ for SASL</A></li>
+ <li><a href="http://davenport.sourceforge.net/ntlm.html">
+ The NTLM Authentication Protocol</a> (NTLM)</li>
+ <li><a href="http://www.snia.org/tech_activities/CIFS/CIFS-TR-1p00_FINAL.pdf">
+ Common Internet File System (CIFS) Technical Reference</a> (SMB/NTLM)</li>
+ </ul>
+ 
+ <p><hr><p>
+-<A HREF="http://asg.web.cmu.edu/cyrus">Go</A> to the Project Cyrus Home Page<br>
++<A HREF="http://www.cyrusimap.org">Go</A> to the Project Cyrus Home Page<br>
+ <A HREF="http://asg.web.cmu.edu">Go</A> to the Andrew Systems Group homepage.
+ </body>
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/install.html sasl-upstream/sasl/doc/install.html
+--- sasl-upstream.orig//sasl/doc/install.html	2005-02-16 14:52:05.000000000 -0600
++++ sasl-upstream/sasl/doc/install.html	2010-09-05 20:10:34.000000000 -0500
+@@ -56,33 +56,33 @@
+ 
+ <ol>
+ <li>What mechanisms do you want to support?  Are they plaintext (LOGIN, PLAIN),
+ shared secret (DIGEST-MD5, CRAM-MD5), or Kerberos (KERBEROS_V4, GSSAPI)?
+ Perhaps you will use some combination (generally plaintext with one of
+ the other two types).</li>
+ <li>Given the answer to the previous question, how will the mechanisms
+ perform user verification?
+   <ul>
+   <li>The Kerberos mechanisms just need your existing
+-Kerberos infroastructure.</li>
++Kerberos infrastructure.</li>
+   <li>The shared secret mechanisms will need an auxprop
+ plugin backend.</li>
+   <li>The plaintext mechanisms can make do with saslauthd, Courier authdaemond (not included),
+ *or* by using an auxprop plugin backend.</li>
+   <li>To use Kerberos and Plaintext, you'll likely want to use saslauthd
+ with a kerberos module for plaintext authentication.  To use Shared Secret
+ and plaintext, you'll want to use the auxprop plugin for password verification.
+   </li>
+   </ul></li>
+ <li>If you are using an auxprop plugin, will you be using SASLdb (and
+ if so, Berkeley DB [recommended], GDBM, or NDBM?), LDAP or an SQL backend
+-(Postgres? MySQL?).</li>
++(Postgres, MySQL, SQLite, or SQLite3?).</li>
+ <li>If you are using saslauthd, what module will you be using?  LDAP?
+ Kerberos?  PAM?</li>
+ <li>Also if you are using saslauthd, what communication (IPC) method do
+ you want to use?  On most systems, the correct answer is the default
+ (unix sockets), but on Solaris you can use IPC doors, which have proven
+ to be more stable than equivilant Solaris systems using unix sockets.</li>
+ </ol>
+ 
+ Once you have answered these questions, properly configuring a working
+ configuration of Cyrus SASL becomes significantly easier.
+@@ -91,82 +91,86 @@
+ 
+ <p>You'll probably need the GNU make program, available as of this
+ writing <a href="ftp://ftp.gnu.org/pub/gnu/make/">here</a>.<p>
+ 
+ <p>If you are using SASLdb, you will need to pick your backend.
+ libsasl2 can use gdbm, Berkeley db, or ndbm to implement its
+ user/password lookup. Most systems come with ndbm these days; as of
+ this writing, gdbm is available <a
+ href="ftp://ftp.gnu.org/pub/gnu/gdbm/">here</a>.
+ Berkeley DB is available from: <a
+-href="http://www.sleepycat.com/">Sleepycat</a>
++href="http://www.oracle.com/technetwork/database/berkeleydb/overview/index.html">
++Oracle</a>.
+ 
+ <p>If you are using SQL, you'll need to properly configure your server/tables,
+ and build the necessary client libraries on the system where you will be
+ building and using SASL.  Currently we support <a href=http://postgresql.org>
+-PostgreSQL</a> v7.2 (or higher) and <a href=http://mysql.org>MySQL</a>.
++PostgreSQL</a> v7.2 (or higher), <a href=http://mysql.org>MySQL</a>,
++<a href=http://www.sqlite.org/>SQLite</a>, and <a href=http://www.sqlite.org/>
++SQLite3</a>.
+ 
+ <p>If you are using LDAPDB, you'll need SASL enabled OpenLDAP libraries.  <a
+ href="http://www.openldap.org">OpenLDAP</a> 2.1.27 (or higher) or 2.2.6 (or
+-higher) is support.</p>
++higher) is supported.</p>
+ 
+ <p>For Kerberos support, you'll need the kerberos libraries.  At CMU, the
+-version we use comes from <a href="http://www.pdc.kth.se/kth-krb/">here</a>.
++version we use comes from <a href="http://www.h5l.org/">here</a>.
+ 
+ <p>For GSSAPI support you will need either <a href="http://web.mit.edu/kerberos/www/">MIT Kerberos 5</a>
+-, the <a href="http://www.pdc.kth.se/heimdal">Heimdal</a> or
++, the <a href="http://www.h5l.org/">Heimdal</a> or
+ <a href="http://www.cybersafe.com/">CyberSafe</a> implementation.
+ 
+ <h3>Build Configuration</h3>
+ 
+ <p>Once you have ansered all the necessary questions and installed
+ (and tested!) any required packages for your configuration, you are
+ ready to build SASL.  Building SASL is done with the aid of
+ an autoconf <tt>configure</tt> script, which has a <b>lot</b> of options.
+ Be sure to read the outpit of <tt>configure --help</tt> to be sure you
+ aren't missing any (they are all documented).  Note that often times
+ a <tt>--enable-foo</tt> option has a counterpart like <tt>--disable-foo</tt>
+ to not enable that feature.
+ 
+ <p>Some of the most important configuration options are those which allow
+-you to turn off the comiplation of modules you do not need.  This is often
++you to turn off the compilation of modules you do not need.  This is often
+ the easiest way to solve compilation problems with Cyrus SASL.
+ If you're not going to need a particular mechanism, don't build it!  Not
+ building them can also add performance improvements as it does take system
+ resources to load a given plugin, even if that plugin is otherwise unused
+ (even when it is disabled via the <tt>mech_list</tt> <a href=options.html>option</a>).
+ 
+ <p>As of this writing, modules that are enabled by default but may not
+-be applicable to all systems include CRAM-MD5, DIGEST-MD5, OTP, KERBEROS_V4,
++be applicable to all systems include CRAM-MD5, DIGEST-MD5, OTP,
+ GSSAPI, PLAIN, and ANONYMOUS.  These can be disabled with
+ <tt>--disable-cram</tt>,
+ <tt>--disable-digest</tt>, <tt>--disable-otp</tt>,
+-<tt>--disable-krb4</tt>, <tt>--disable-gssapi</tt>,
+-<tt>--disable-plain</tt>, and <tt>--disable-anon</tt> respecively.
++<tt>--disable-gssapi</tt>,
++<tt>--disable-plain</tt>, and <tt>--disable-anon</tt> respectively.
+ 
+ <p>If you are using an SQL auxprop plugin, you may want to specify one or more
+-of <tt>--enable-sql</tt>, <tt>--with-mysql=PATH</tt>, and
+-<tt>--with-pgsql=PATH</tt>, note that PATH in the later two should be replaced
+-with the path where you installed the necessary client libraries.
++of <tt>--enable-sql</tt>, <tt>--with-mysql=PATH</tt>,
++<tt>--with-pgsql=PATH</tt>, <tt>--with-sqlite=PATH</tt>, and <tt>--with-sqlite3=PATH</tt>.
++Note that PATH should be replaced with the path where you installed the
++necessary client libraries.
+ 
+ <p>If you are using LDAPDB auxprop plugin, you will need to specify
+ <tt>--enable-ldapdb</tt> and <tt>--with-ldap=PATH</tt>.  <b>Warning:</b> LDAPDB
+ auxprop plugin (and LDAP enabled saslauthd) introduces a circular dependency
+ between OpenLDAP and SASL.  I.e., you must have OpenLDAP already built when
+ building LDAPDB in SASL.  In order for LDAPDB to work at runtime, you must have
+ OpenLDAP already built with SASL support. One way to solve this issue is to
+ build Cyrus SASL first without ldap support, then build OpenLDAP, and then come
+ back to SASL and build LDAPDB.</p>
+ 
+ <p>Given the myriad of ways that Berkeley DB can be installed on a system,
+-people useing it may want to look at the <tt>--with-bdb-libdir</tt> and
+-<tt>--with-bdb-incdir</tt> as alternatives to <tt>--with-dbbase</tt> for
++people using it may want to look at the <tt>--with-bdb-libdir</tt> and
++<tt>--with-bdb-incdir</tt> as alternatives to <tt>--with-dblib</tt> for
+ specifying the paths to the Berkeley DB Library and Include directories.
+ 
+ <p>In fact, if you're not planning on using SASLdb at all, it may be worth
+ your time to disable its use entirely with the <tt>--with-dblib=none</tt>
+ option.
+ 
+ <p>If you are planning on using LDAP with saslauthd, be sure to specify
+ the <tt>--with-ldap=PATH</tt> option to <tt>configure</tt>.
+ 
+ <h3>Building and Installation</h3>
+@@ -205,21 +209,21 @@
+ <p>If you are using saslauthd, you will want to arrange for
+ <tt>saslauthd -a pam</tt> (or ldap, or kerberos4, etc) to be run
+ at boot.  If you are not going to be using saslauthd, then this is
+ not necessary.
+ 
+ <p>Many of these pieces are covered in more detail in the
+ <a href=sysadmin.html>SASL System Administrator's Guide</a>.
+ 
+ <h2>Supported platforms</h2>
+ 
+-<p>This has been tested under Linux 2.2, Linux 2.4, Solaris 2.7 and
++<p>This has been tested under Linux 2.2, Linux 2.4, Linux 2.6, Solaris 2.7 and
+ Solaris 2.8.  It should work under any platform where dynamic objects
+ can be linked against other dynamic objects, and where the dynamic
+ library file extension is ".so", or where libtool creates the .la
+ files correctly.  There is also documentation for
+ <a href=windows.html>Win32</a>, <a href=macosx.html>MacOS X</a>, and
+ <a href=os390.html>OS/390</a>.
+ 
+ <hr>
+ Back to the <a href="index.html">index</a>
+ 
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/macosx.html sasl-upstream/sasl/doc/macosx.html
+--- sasl-upstream.orig//sasl/doc/macosx.html	2003-12-11 18:43:03.000000000 -0600
++++ sasl-upstream/sasl/doc/macosx.html	2010-09-04 22:27:45.000000000 -0500
+@@ -56,23 +56,23 @@
+ on the <tt>dlcompat</tt> package in order to load its plugins.
+ <tt>dlcompat-20010505</tt> is a relatively simple version known to work
+ with SASL; it is provided with the distribution in a tarball. You should
+ <tt>make</tt> and <tt>make install</tt> the <tt>dlcompat</tt> library
+ (which probably goes into <tt>/usr/local/lib/libdl.dylib</tt>) before
+ attempting to <tt>./configure</tt> the SASL distribution itself. SASL will
+ then pretend it's a real Unix <tt>libdl</tt>, and link against it. 
+ 
+ <p>Since there are, at this point, newer and far more complex versions of
+ dlcompat, you may prefer to use those instead if other software requires
+-their functionality. The dlcompat homepage is located <a
+-href="http://www.opendarwin.org/projects/dlcompat/">on the OpenDarwin
+-site.</a> Many users may want to install the <tt>/sw</tt> tree from <a
++their functionality; However, the dlcompat project page at
++www.opendarwin.org/projects/dlcompat is now defunct.
++Many users may want to install the <tt>/sw</tt> tree from <a
+ href="http://fink.sourceforge.net/">the Fink project</a> to get this, as
+ well as possibly newer autotools and other software.<br> </p>
+ 
+ <p>As of version 2.1.16, SASL uses and requires a recent version of GNU
+ autotools (autoconf, automake, and libtool) to build its configuration scripts.
+ If you are building from CVS, you will need to have the autotools installed
+ on your system. The version included with all releases of the developer tools
+ for OS X 10.2.x is too old for this; if you aren't using OS X 10.3 or later,
+ you should upgrade to more recent patchlevels of these tools. The easiest way
+ to do this is to <a href="http://fink.sourceforge.net/">install the Fink
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/programming.html sasl-upstream/sasl/doc/programming.html
+--- sasl-upstream.orig//sasl/doc/programming.html	2002-08-06 13:05:01.000000000 -0500
++++ sasl-upstream/sasl/doc/programming.html	2010-09-04 19:43:08.000000000 -0500
+@@ -125,23 +125,22 @@
+ <p>This guide gives a tutorial on the use of the Cyrus SASL library
+ for a client or server application. It complies with versions
+ including and after 2.0.0. The following pages should only be
+ considered a guide, not the final word on programming with the
+ Cyrus SASL library. Consult the header files in the distribution in
+ the case of ambiguities.</p>
+ 
+ <h3><a name="what_is_sasl">What is SASL?</a></h3>
+ 
+ <p>SASL stands for Simple Authentication Security Layer and is
+-explained in <a href="http://ftp.ietf.org/rfc/rfc2222.txt">RFC
+-2222</a>. That document is very difficult to understand however and
+-it should be unnecessary to consult it.</p>
++explained in <a href="http://www.ietf.org/rfc/rfc4422.txt">RFC
++4422</a>.
+ 
+ <h2><a name="background">Background</a></h2>
+ 
+ <h3><a name="world_before">How did the world work before
+ SASL?</a></h3>
+ 
+ <p>Before SASL, when a new protocol was written which required
+ authentication (users proving who they are to an entity), the
+ protocol had to allow explicitly for each individual authentication
+ mechanism. There had to be a distinct way to say "I want to log in
+@@ -166,21 +165,21 @@
+ POP", "Kerberos V4 for SMTP", "CRAM MD5 for IMAP", "CRAM-MD5 for
+ POP", etc... would need to be written. This could quickly create a
+ huge number of different mechanism-protocol pairs to implement.</p>
+ 
+ <h3><a name="sasl_rescue">SASL to the rescue!</a></h3>
+ 
+ <p>SASL hopefully solves all these problems. In practice it makes
+ many of them easier to deal with.</p>
+ 
+ <p>Protocol designers simply have to support SASL (in particular
+-RFC 2222). Consequently, any mechanism that supports SASL (just
++RFC 4422). Consequently, any mechanism that supports SASL (just
+ about anything you would want to use does now) is supported by the
+ protocol. If a new authentication mechanism is invented the
+ protocol automatically supports it without any modifications.</p>
+ 
+ <p>Application writers, instead of having to support every
+ mechanism for every protocol, only need to support SASL for every
+ protocol. Application writers do not need to understand the
+ authentication mechanisms at all: the SASL library handles all
+ that. Also with the Cyrus SASL library if a new mechanism is
+ invented you do not have rewrite your application at all. You may
+@@ -205,21 +204,21 @@
+ 
+ <p>The Cyrus SASL library is good for applications that wish to use
+ protocols that support SASL authentication. An non-exhaustive list
+ of these are: IMAP, SMTP, ACAP, and LDAP. Also if you are making a
+ proprietary system and wish to support authentication it is a good
+ way of supporting many different authentication types.</p>
+ 
+ <h3><a name="what_do">What does the Cyrus SASL library do?</a></h3>
+ 
+ <p>From a client point of view, the Cyrus SASL library, given a
+-list of mechanisms the server supports it will decide the best
++list of mechanisms the server supports, will decide the best
+ mechanism to use and tell you what to send to the server at each
+ step of the authentication. From a server perspective, it handles
+ authentication requests from clients.</p>
+ 
+ <h3><a name="what_doesnt">What doesn't the Cyrus SASL library
+ do?</a></h3>
+ 
+ <p>The Cyrus SASL library is neither network nor protocol aware. It
+ is up to the application to send the data over the wire as well as
+ to send the data in the protocol specific manner. With IMAP this
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/readme.html sasl-upstream/sasl/doc/readme.html
+--- sasl-upstream.orig//sasl/doc/readme.html	2005-02-16 14:52:05.000000000 -0600
++++ sasl-upstream/sasl/doc/readme.html	2010-09-05 20:20:56.000000000 -0500
+@@ -1,45 +1,46 @@
+ <HTML><HEAD>
+ <title>Cyrus SASLv2 README</title>
+ <!-- $Id: readme.html,v 1.13 2005/02/16 20:52:05 shadow Exp $ -->
+ </HEAD>
+ <BODY>
+ <H1>Read Me First</H1>
+ 
+ This document offers a general overview of the Cyrus SASL library.
+ The Cyrus SASL Libray provides applications with an implementation
+-of the Simple Authentication and Security Layer (RFC2222), and
++of the Simple Authentication and Security Layer (RFC4422), and
+ several authentication mechanisms.  Users interested in the "big picture"
+ of what is provided by the library should read about
+ <a href=components.html>Cyrus SASL Components</a>.
+ 
+ <H2>FEATURES</H2>
+ 
+ The following <a href="mechanisms.html">mechanisms</a> are included in
+ this distribution:
+ <ul>
+ <li>ANONYMOUS
+ <li>CRAM-MD5
+ <li>DIGEST-MD5
+ <li>EXTERNAL
+ <li>GSSAPI (MIT Kerberos 5, Heimdal Kerberos 5 or CyberSafe)
+ <li>KERBEROS_V4
+ <li>LOGIN
+ <li>NTLM (requires OpenSSL libcrypto)
+ <li>OTP (requires OpenSSL libcrypto)
++<li>PASSDSS-3DES-1 (requires OpenSSL libcrypto)
+ <li>PLAIN
+ <li>SRP (work in progress; requires OpenSSL libcrypto)
+ </ul>
+ 
+ The library also supports storing user secrets in either a hash
+ database (e.g. Berkeley DB, gdbm, ndbm), LDAP, or in a SQL database 
+-(MySQL, Postgres).
++(MySQL, Postgres, SQLite, or SQLite3).
+ 
+ 
+ Additionally, mechanisms such as PLAIN and LOGIN
+ (where the plaintext password is directly supplied by the client)
+ can perform direct password verification via the saslauthd daemon.  This
+ allows the use of LDAP, PAM, and a variety of other password verification
+ routines.
+ 
+ The sample directory contains two programs which provide a reference
+ for using the library, as well as making it easy to test a mechanism
+@@ -59,63 +60,73 @@
+ First, if you are upgrading from Cyrus SASLv1, please see <a
+ href="upgrading.html">upgrading.html</a>.<p>
+ 
+ Please see the file <a href="install.html">install.html</a> for instructions
+ on how to install this package.<p>
+ 
+ Note that the library can use the environment variable SASL_PATH to locate the
+ directory where the mechanisms are; this should be a colon-separated
+ list of directories containing plugins.  Otherwise it will default to the
+ value of <tt>--with-plugindir</tt> as supplied to <tt>configure</tt> (which
+-itself defaults to <tt>/usr/local/lib</tt>).
++itself defaults to <tt>/usr/lib/sasl2</tt>).
+ 
+ <H2>INSTALLATION ON MAC OS X</H2>
+ Please read <A HREF="macosx.html">macosx.html</A>
+ 
+ <H2>INSTALLATION ON WINDOWS</H2>
+ Please read <A HREF="windows.html">windows.html</A>.  This configuration
+ has not been extensively tested.
+ 
+ <H2>CONFIGURATION</H2>
+ There are two main ways to configure the SASL library for a given
+ application.  The first (and typically easiest) is to make use
+ of the application's configuration files.  Provided the application supports it
+ (via the <tt>SASL_CB_GETOPT</tt> callback), please refer to that documetation
+ for how to supply <a href=options.html>SASL options</a>.<p>
+ 
+-Alternatively, Cyrus SASL looks for configuration files in
+-/usr/lib/sasl/Appname.conf where Appname is settable by the
+-application (for example, Sendmail 8.10 and later set this to
+-"Sendmail").<p>
+-
+-Configuration using the application's configuration files (via
+-the <tt>getopt</tt> callback) will override those supplied by
+-the SASL configuration files.<p>
++Alternatively, Cyrus SASL searches for configuration files
++found in the location specified in the SASL_CONF_PATH environment variable, or will
++default to the value of <tt>--with-configdir</tt> as supplied to <tt>configure</tt>,
++with <tt>:/etc/sasl2</tt> appended (i.e. <tt>/usr/lib/sasl2:/etc/sasl2</tt>).
++The name of the configuration file used is taken from the value of <tt>appname</tt>
++as passed in the <tt>sasl_server_init</tt> call, with <tt>.conf</tt> appended.
++For example, Sendmail 8.10 and later sets this value to "Sendmail", which would
++direct the libsasl glue library to search for <tt>path/Sendmail.conf</tt>.
++
++Note that the SASL_CONF_PATH environment variable is ignored if the application
++is running SUID or SGID.
++
++Configuration using the application's configuration files (via the
++<tt>getopt</tt> callback) may override some or all of the options supplied in
++the SASL configuration file.<p>
+ 
+ For a detailed guide on configuring libsasl, please look at
+ <A HREF=sysadmin.html>sysadmin.html</A> and
+ <A HREF=options.html>options.html</A>
+ 
+ <H2>KNOWN BUGS</H2>
+ <ul>
+ <li>libtool doesn't always link libraries together.  In our environment,
+ we only have static Krb5 libraries; the GSSAPI plugin should link
+ these libraries in on platforms that support it (Solaris and Linux
+ among them) but it does not.  It also doesn't always get the runpath
+ of libraries correct.
+-<li>Also see our <A HREF=http://bugzilla.andrew.cmu.edu>bugzilla</A>.
++<li>Also see our <A HREF=http://bugzilla.cyrusimap.org/bugzilla3/>bugzilla</A>.
+ </ul>
+ 
+ <H2>AUTHORS</H2>
+ 
+ For any comments/suggestions/bug reports, please contact <a
+-href="mailto:cyrus-bugs@andrew.cmu.edu">cyrus-bugs@andrew.cmu.edu</a>.
++href="cyrus-sasl@lists.andrew.cmu.edu">cyrus-sasl@lists.andrew.cmu.edu</a>.
++Archives and subscription instructions can be found at <a
++href="http://www.cyrusimap.org/mediawiki/index.php/Cyrus_Mailing_Lists">
++http://www.cyrusimap.org/mediawiki/index.php/Cyrus_Mailing_Lists</a>.
+ Be sure to include the version of libsasl and your operating system;
+ messages without this information will not be answered.<p>
+ 
+ Major contributors to the libsasl code can be found in the top-level
+ file AUTHORS.  Additionally saslauthd has an AUTHORS file that lists
+ major contributors as well.<p>
+ 
+ People considering doing binary distributions that include saslauthd
+ should be aware that the code is covered by several slightly different
+ (but compatible) licenses, due to how it was contributed.  Details can
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/sysadmin.html sasl-upstream/sasl/doc/sysadmin.html
+--- sasl-upstream.orig//sasl/doc/sysadmin.html	2007-04-23 09:34:53.000000000 -0500
++++ sasl-upstream/sasl/doc/sysadmin.html	2010-09-05 21:23:35.000000000 -0500
+@@ -14,21 +14,21 @@
+ the installation guide</a>.
+ 
+ <h2><A NAME="saslintro">What SASL is</A></h2>
+ 
+ SASL, the Simple Authentication and Security Layer, is a generic
+ mechanism for protocols to accomplish authentication.  Since protocols
+ (such as SMTP or IMAP) use SASL, it is a natural place for code
+ sharing between applications.  Some notable applications that use the
+ Cyrus SASL library include <a
+ href="http://www.sendmail.org">Sendmail</a>,
+-<a href="http://web.asg.cmu.edu/cyrus">Cyrus imapd</a>,
++<a href="http://www.cyrusimap.org">Cyrus imapd</a>,
+ and <a href="http://www.openldap.org">OpenLDAP</a>.
+ 
+ <p> Applications use the SASL library to tell them how to accomplish
+ the SASL protocol exchange, and what the results were.
+ 
+ <p> SASL is only a framework: specific SASL mechanisms govern the
+ exact protocol exchange.  If there are n protocols and m different
+ ways of authenticating, SASL attempts to make it so only n plus m
+ different specifications need be written instead of n times m
+ different specifications.  With the Cyrus SASL library, the mechanisms
+@@ -96,21 +96,21 @@
+ <p>The Kerberos mechanisms treat the SASL realm as the Kerberos
+ realm.  Thus, the realm for Kerberos mechanisms defaults to the
+ default Kerberos realm on the server.  They may support cross-realm
+ authentication; check your application on how it deals with this.
+ 
+ <p>Realms will be passed to saslauthd as part of the saslauthd protocol,
+ however the way each saslauthd module deals with the situation is
+ different (for example, the LDAP plugin allows you to use the realm
+ to query the server, while the rimap and PAM plugins ignore it entirely).
+ 
+-<p>Realms are represented in a username string by any text followinhg
++<p>Realms are represented in a username string by any text following
+ the '@' sign.  So, usernames like rjs3@ANDREW.CMU.EDU, is user 'rjs3'
+ in the realm 'ANDREW.CMU.EDU'.  If no realm is provided, the server's
+ FQDN is assumed (likewise when specifying a realm for saslpasswd2).
+ 
+ <h2><a name="saslhow">How SASL works</a></h2>
+ 
+ How SASL works is governed by what mechanism the client and server 
+ choose to use and the exact implementation of that mechanism.  This
+ section describes the way these mechanisms act in the Cyrus SASL
+ implementation.
+@@ -168,28 +168,25 @@
+ mind that your PAM configuration will need to be configured for each service
+ name that is using saslauthd for authentication. Common service names
+ are &quot;imap&quot;, &quot;sieve&quot;, and &quot;smtp&quot;.
+ 
+ <dt><i>Courier-IMAP authdaemond</i>
+ 
+ <dd> contacts Courier-IMAP's <tt>authdaemond</tt> daemon to check passwords.
+ This daemon is simliar in functionality to <tt>saslauthd</tt>, and is shipped
+ separately with the <a href="http://www.courier-mta.org">Courier</a> mail server.
+ 
+-<p>Note: this feature is <b>not</b> compiled in the library by default, and its 
+-provided for sites with custom/special requirements only (because the
+-internal authentication protocol its not documented anywhere so it could
+-change at any time).  We have tested against the authdaemond included with
+-Courier-IMAP 2.2.1.
++<p>Note: Because the internal authentication protocol of authdaemond is not
++documented anywhere it could change at any time.  We have tested against the
++authdaemond included with Courier-IMAP 2.2.1.
+ 
+-<p>To enable <tt>authdaemond</tt> support, pass <tt>--with-authdaemon</tt> to the 
+-configuration script, set pwcheck_method to ``authdaemond'' and point 
++<p>To enable <tt>authdaemond</tt> support, set pwcheck_method to ``authdaemond'' and point 
+ authdaemond_path to <tt>authdaemond</tt>'s unix socket. Optionally, you can
+ specify --with-authdaemond=PATH to the configure script so that
+ authdaemond_path points to a default, static, location.
+ 
+ <dt><i>pwcheck</i>
+ 
+ <dd> checks passwords with the use of a separate,
+   helper daemon.  This feature is for backwards-compatibility
+   only. New installations should use saslauthd.<p>
+ 
+@@ -274,40 +271,41 @@
+ <h3>Kerberos mechanisms</h3>
+ 
+ The Cyrus SASL library also comes with two mechanisms that make use of
+ Kerberos: KERBEROS_V4, which should be able to use any Kerberos v4
+ implementation, and GSSAPI (tested against MIT Kerberos 5, Heimdal
+ Kerberos 5 and CyberSafe Kerberos 5).  These mechanisms make use of the kerberos infrastructure
+ and thus have no password database.
+ 
+ <p>Applications that wish to use a kerberos mechanism will need access
+ to a service key, stored either in a "srvtab" file (Kerberos 4) or a
+-"keytab" file (Kerberos 5).  Currently, the keytab file location is
+-not configurable and defaults to the system default (probably
+-<tt>/etc/krb5.keytab</tt>).
++"keytab" file (Kerberos 5).  The keytab file location
++defaults to the system default (typically <tt>/etc/krb5.keytab</tt>),
++and may be changed with the <tt>keytab</tt> option, if the kerberos
++implementation supports it.
+ 
+ <p>The Kerberos 4 srvtab file location is configurable; by default it is
+ <tt>/etc/srvtab</tt>, but this is modifiable by the "srvtab" option.
+ Different SASL applications can use different srvtab files.
+ 
+ <p>A SASL application must be able to read its srvtab or keytab file.
+ 
+ <p>You may want to consult the <a href="gssapi.html">GSSAPI Tutorial</a>.</p>
+ 
+ <h3>The OTP mechanism</h3>
+ 
+ The Cyrus SASL library also supports the One-Time-Password (OTP)
+ mechanism.  This mechanism is similar to CRAM-MD5 and DIGEST-MD5 in
+ that is uses a shared secret and a challenge/response exchange.
+ However, OTP is more secure than the other shared secret mechanisms in
+ that the secret is used to generate a sequence of one-time (single
+-use) passwords which prevents reply attacks, and that secret need
++use) passwords which prevents replay attacks, and that secret need
+ not be stored on the system.  These one-time passwords are stored in the
+ <tt>/etc/sasldb2</tt> database.  See the <i>Shared secrets
+ mechanisms</i> section for a discussion of the <tt>/etc/sasldb2</tt>
+ database.
+ 
+ <h4>OTP via OPIE</h4>
+ For sites with an existing OTP infrastructure using OPIE, Cyrus SASL
+ can be configured to use OPIE v2.4 instead of using its own database
+ and server-side routines.
+ OPIE should be configured with the <tt>--disable-user-locking</tt> 
+@@ -335,54 +333,54 @@
+ <tt>pwcheck_method</tt> to be <tt>auxprop</tt>. 
+ 
+ <h2>How to set configuration options</h2>
+ 
+ The Cyrus SASL library comes with a built-in configuration file
+ reader.  However, it is also possible for applications to redefine
+ where the library gets it's configuration options from.
+ 
+ <h3><a name="saslconf">The default configuration file</a></h3>
+ 
+-<p>By default, the Cyrus SASL library reads it's options from
+-<tt>/usr/lib/sasl2/App.conf</tt> (where "App" is the application
+-defined name of the application).  For instance, Sendmail reads it's
+-configuration from "<tt>/usr/lib/sasl2/Sendmail.conf</tt>" and the
+-sample server application included with the library looks in
+-"<tt>/usr/lib/sasl2/sample.conf</tt>".
++<p>By default, the Cyrus SASL library searches for the configuration
++file <tt>/usr/lib/sasl2/app.conf</tt> and <tt>/etc/sasl2/app.conf</tt>,
++in that order, where "app" is the application defined name of the application.
++For instance, Sendmail may read it's configuration from
++"<tt>/usr/lib/sasl2/Sendmail.conf</tt>" and the sample server application
++included with the library may use "<tt>/etc/sasl2/sample.conf</tt>".
+ 
+ <p>A standard Cyrus SASL configuration file looks like: 
+ <pre>
+-srvtab: /var/app/srvtab
++keytab: /var/app/krb5.keytab
+ pwcheck_method: saslauthd
+ </pre>
+ 
+ <h3>Application configuration</h3>
+ 
+ Applications can redefine how the SASL library looks for configuration
+ information.  Check your application's documentation for specifics.
+ 
+ <p>For instance, Cyrus imapd reads its sasl options from it's own
+ configuration file, <tt>/etc/imapd.conf</tt>, by prepending all SASL
+ options with "<tt>sasl_</tt>": the SASL option "pwcheck_method" is set
+ by changing "sasl_pwcheck_method" in <tt>/etc/imapd.conf</tt>.
+ 
+ <h2>Troubleshooting</h2>
+ 
+ <dl compact>
+-<dt><b>Q:</b> Why doesn't KERBEROS_V4 doesn't appear as an
++<dt><b>Q:</b> Why doesn't GSSAPI appear as an
+ available mechanism?
+ <dd>
+-<p><b>A:</b> Check that the <tt>srvtab</tt> file is readable by the
++<p><b>A:</b> Check that the <tt>keytab</tt> file is readable by the
+ user running as the daemon.  For Cyrus imapd, it must be readable by
+-the Cyrus user.  By default, the library looks for the srvtab in
+-<tt>/etc/srvtab</tt>, but it's configurable using the <tt>srvtab</tt>
+-option.
++the Cyrus user.  By default, the library looks for the keytab in
++<tt>/etc/krb5.keytab</tt>, but may be configurable using the <tt>keytab</tt>
++option (depending on Kerberos implementation).
+ 
+ <p>
+ <dt><b>Q:</b> Why doesn't OTP doesn't appear as an available
+ mechanism?
+ <dd>
+ <p><b>A:</b> If using OPIE, check that the <tt>opiekeys</tt> file is
+ readable by the user running the daemon.  For Cyrus imapd, it must
+ be readable by the Cyrus user.  By default, the library looks for the
+ opiekeys in <tt>/etc/opiekeys</tt>, but it's configurable using the
+ <tt>opiekeys</tt> option.
+@@ -395,23 +393,23 @@
+ 
+ <p>
+ <dt><b>Q:</b> I'm having performance problems on each authentication, there is
+ a noticeable slowdown when sasl initializes, what can I do?
+ <dd>
+ <p><b>A:</b>libsasl reads from <tt>/dev/random</tt> as part of its
+ initialization. <tt>/dev/random</tt> is a "secure" source of entropy,
+ and will block your application until a sufficient amount of
+ randomness has been collected to meet libsasl's needs.</p>
+ 
+-<p>To improve performance, you can change DEV_RANDOM in
+-<tt>config.h</tt> to be <tt>/dev/urandom</tt> and recompile
+-libsasl. <tt>/dev/urandom</tt> offers less secure random numbers but
++<p>To improve performance, you can pass --with-devrandom=/dev/urandom
++to the configure script (recompilation required).
++<tt>/dev/urandom</tt> offers less secure random numbers but
+ should return immediately. The included mechanisms, besides OTP and
+ SRP, use random numbers only to generate nonces, so using
+ <tt>/dev/urandom</tt> is safe if you aren't using OTP or SRP.
+ 
+ <p>
+ <dt><b>Q:</b> I've converted the sasldb database to the new format. 
+ Why can't anybody authenticate?
+ <dd>
+ <p><b>A:</b> sasldb is now a plugin module for the auxprop method.
+ Make sure you changed the /usr/lib/sasl2/*.conf files to reflect<br>
+@@ -442,27 +440,23 @@
+ passwords?
+ <dd>
+ <p><b>A:</b> Use the "saslauthd" daemon and setting "pwcheck_method"
+ to "saslauthd".
+ 
+ <p>
+ <dt><b>Q:</b> I want to use Berkeley DB, but it's installed in
+ <tt>/usr/local/BerkeleyDB.3.1</tt> and <tt>configure</tt> can't find
+ it.
+ <dd>
+-<p><b>A:</b> Try setting "CPPFLAGS" and "LDFLAGS" environment
+-variables before running <tt>configure</tt>, like so:
+-<pre>
+-env CPPFLAGS="-I/usr/local/BerkeleyDB.3.1/include" \
+-  LDFLAGS="-L/usr/local/BerkeleyDB.3.1/lib -R/usr/local/BerkeleyDB.3.1/lib" \
+-  ./configure --with-dblib=berkeley 
+-</pre>
++<p>As an alternative to <tt>--with-dblib</tt>, use <tt>--with-bdb-libdir</tt>
++and <tt>--with-bdb-incdir</tt> for specifying the paths to the Berkeley DB
++Library and Include directories.</p>
+ 
+ <p>
+ <dt><b>Q:</b> It's not working and won't tell me why! Help!
+ <dd>
+ <p><b>A:</b> Check syslog output (usually stored in
+ <tt>/var/log</tt>) for more information. You might want to change your
+ syslog configuration (usually <tt>/etc/syslogd.conf</tt>) to log
+ "*.debug" to a file while debugging a problem.</p>
+ 
+ <p>The developers make heavy use of <tt>strace</tt> or <tt>truss</tt>
+@@ -478,22 +472,22 @@
+ <a href=
+ "mailto:majordomo@lists.andrew.cmu.edu?subject=subscribe cyrus-sasl">
+ <tt>majordomo@lists.andrew.cmu.edu</tt></a>
+ with the body of 'subscribe cyrus-sasl'.
+ 
+ <p> An archive is available via
+ <ul>
+  <li> anonymous IMAP at <a
+ href="imap://cyrus.andrew.cmu.edu/archive.cyrus-sasl">imap://cyrus.andrew.cmu.edu/archive.cyrus-sasl</a>.
+   <li> HTTP at <a
+-href="http://asg.web.cmu.edu/archive/mailbox.php3?mailbox=archive.cyrus-sasl">
+-http://asg.web.cmu.edu/archive/mailbox.php3?mailbox=archive.cyrus-sasl</a>
++href="http://www.cyrusimap.org/mediawiki/index.php/Cyrus_Mailing_Lists#Archives">
++http://www.cyrusimap.org/mediawiki/index.php/Cyrus_Mailing_Lists#Archives</a>
+ </ul>
+ 
+ <p>Note: If you are not subscribed, your posts go through human
+ approval before they go out to the list and so posting may be
+ (greatly) delayed.
+ </dl>
+ 
+ <hr>
+ Back to the <A href=index.html>index</a>
+ 
+diff -rN -U 10 sasl-upstream.orig//sasl/doc/upgrading.html sasl-upstream/sasl/doc/upgrading.html
+--- sasl-upstream.orig//sasl/doc/upgrading.html	2003-08-14 16:04:13.000000000 -0500
++++ sasl-upstream/sasl/doc/upgrading.html	2010-09-05 21:27:59.000000000 -0500
+@@ -51,21 +51,21 @@
+ 
+ <h2><A NAME="overview">Backwards Compatibility</A></h2>
+ 
+ Cyrus SASLv2 is completely incompatible with applications that use
+ Cyrus SASLv1.  This means that applications are unable to
+ simultaneously link both versions of the library, and developers are
+ encouraged to instead develop or upgrade their applications to link
+ against the new libsasl.<p>
+ 
+ Likewise, the format for the sasldb database has been completely
+-revamped.  See <A HREF="#db">here</A> for a discussion of the relevant
++revamped.  See below for a discussion of the relevant
+ upgrade issues related to sasldb.  All new passwords stored in the
+ sasldb database will be in plaintext, meaning that a compromised
+ sasldb will compromise all services with the same passwords.  (This
+ situation isn't significantly worse, cryptographicly speaking, than
+ the old method and allows the database to be easy to transition to
+ another format, when the need arises.)  Mechanisms requiring a more
+ secure password database backend (e.g. SRP) should implement their own
+ or use alternate property names within sasldb.<P>
+ 
+ <h2><A NAME="coexist">Coexistence with SASLv1</A></h2>

@@ -1,0 +1,182 @@
+Index: cyrus-cvs/lib/imclient.c
+===================================================================
+RCS file: /cvs/src/cyrus/lib/imclient.c,v
+retrieving revision 1.84
+diff -u -r1.84 imclient.c
+--- cyrus-cvs/lib/imclient.c	22 Oct 2003 18:50:12 -0000	1.84
++++ cyrus-cvs/lib/imclient.c	23 Sep 2004 19:56:58 -0000
+@@ -1670,8 +1670,6 @@
+ #endif
+ }
+ 
+-char *var_tls_CAfile="";
+-char *var_tls_CApath="";
+  /*
+   * This is the setup routine for the SSL client. 
+   *
+@@ -1679,7 +1677,10 @@
+   */
+ 
+ static int tls_init_clientengine(struct imclient *imclient,
+-				 int verifydepth, char *var_tls_cert_file, char *var_tls_key_file)
++				 int verifydepth, char *var_tls_cert_file,
++                                 char *var_tls_key_file,
++                                 char *var_tls_CAfile,
++                                 char *var_tls_CApath)
+ {
+     int     off = 0;
+     int     verify_flags = SSL_VERIFY_NONE;
+@@ -1707,11 +1708,11 @@
+     
+     /* debugging   SSL_CTX_set_info_callback(imclient->tls_ctx, apps_ssl_info_callback); */
+ 
+-    if (strlen(var_tls_CAfile) == 0)
++    if (var_tls_CAfile == NULL || strlen(var_tls_CAfile) == 0)
+ 	CAfile = NULL;
+     else
+ 	CAfile = var_tls_CAfile;
+-    if (strlen(var_tls_CApath) == 0)
++    if (var_tls_CApath == NULL || strlen(var_tls_CApath) == 0)
+ 	CApath = NULL;
+     else
+ 	CApath = var_tls_CApath;
+@@ -1722,11 +1723,11 @@
+ 	    printf("[ TLS engine: cannot load CA data ]\n");
+ 	    return -1;
+ 	}
+-    if (strlen(var_tls_cert_file) == 0)
++    if (var_tls_cert_file == NULL || strlen(var_tls_cert_file) == 0)
+ 	c_cert_file = NULL;
+     else
+ 	c_cert_file = var_tls_cert_file;
+-    if (strlen(var_tls_key_file) == 0)
++    if (var_tls_key_file == NULL || strlen(var_tls_key_file) == 0)
+ 	c_key_file = NULL;
+     else
+ 	c_key_file = var_tls_key_file;
+@@ -1973,13 +1974,23 @@
+ 	   tls_cipher_usebits, tls_cipher_algbits);*/
+     return 0;
+ }
++#endif /* HAVE_SSL */
++
++int imclient_havetls () {
++#ifdef HAVE_SSL
++  return 1;
++#else
++  return 0;
++#endif
++}
+ 
+ int imclient_starttls(struct imclient *imclient,
+-			     int verifydepth __attribute__((unused)),
+-			     char *var_tls_cert_file, 
+-			     char *var_tls_key_file,
+-			     int *layer __attribute__((unused)))
++			     char *cert_file,
++			     char *key_file,
++                             char *CAfile,
++                             char *CApath)
+ {
++#ifdef HAVE_SSL
+   int result;
+   struct authresult theresult;
+   unsigned ssf;
+@@ -1994,7 +2005,8 @@
+     imclient_processoneevent(imclient);
+   }
+ 
+-  result=tls_init_clientengine(imclient, 10, var_tls_cert_file, var_tls_key_file);
++  result=tls_init_clientengine(imclient, 10, cert_file, key_file,
++                               CAfile, CApath);
+   if (result!=0)
+   {
+     printf("[ TLS engine failed ]\n");
+@@ -2030,5 +2042,8 @@
+   if (result!=SASL_OK) return 1;
+ 
+   return 0;
+-}
++#else
++  printf("[ TLS support not present (imclient_starttls) ]\n");
++  return 1;
+ #endif /* HAVE_SSL */
++}
+Index: cyrus-cvs/lib/imclient.h
+===================================================================
+RCS file: /cvs/src/cyrus/lib/imclient.h,v
+retrieving revision 1.26
+diff -u -r1.26 imclient.h
+--- cyrus-cvs/lib/imclient.h	22 Oct 2003 18:50:12 -0000	1.26
++++ cyrus-cvs/lib/imclient.h	23 Sep 2004 19:56:58 -0000
+@@ -88,14 +88,13 @@
+ 				 int minssf, 
+ 				 int maxssf);
+ 
++extern int imclient_have_tls (void);
+ 
+-#ifdef HAVE_SSL
+ extern int imclient_starttls(struct imclient *imclient,
+-			     int verifydepth,
+-			     char *var_tls_cert_file, 
+-			     char *var_tls_key_file,
+-			     int *layer);
+-#endif /* HAVE_SSL */
++			     char *cert_file, 
++			     char *key_file,
++                             char *CAfile,
++                             char *CApath);
+ 
+ extern void imclient_write (struct imclient *imclient,
+ 			    const char *s, size_t len);
+Index: cyrus-cvs/man/imclient.3
+===================================================================
+RCS file: /cvs/src/cyrus/man/imclient.3,v
+retrieving revision 1.10
+diff -u -r1.10 imclient.3
+--- cyrus-cvs/man/imclient.3	22 Oct 2003 18:50:13 -0000	1.10
++++ cyrus-cvs/man/imclient.3	23 Sep 2004 19:56:58 -0000
+@@ -70,6 +70,10 @@
+ .BI "void imclient_processoneevent (struct imclient *" imclient ");"
+ .sp .025i
+ .BI "int imclient_authenticate (struct imclient *" imclient ", struct sasl_client **" availmech ", const char *" service ", const char *" user ", int " protallowed ");"
++.sp .025i
++.BI "int imclient_havetls ();"
++.sp .025i
++.BI "int imclient_starttls (struct imclient *" imclient ", char *" cert_file ", char *" key_file ", char *" CAfile ", char *" CApath ");"
+ 
+ .SH DESCRIPTION
+ The imclient library functions are distributed with Cyrus IMAP and IMSP.
+@@ -255,6 +259,32 @@
+ On success, 0 is returned.  On failure (i.e., "BAD" keyboard, or no
+ authentication mechanisms worked), 1 is returned. On extreme failure
+ (premature "OK"), 2 is returned.
++.IP \fB\imclient_havetls() \fP5
++Returns a Boolean indicating whether the
++.B imclient
++library was compiled with TLS (SSL) support.  If so,
++.B imclient_starttls()
++may be used to secure the IMAP connection.
++.IP \fB\imclient_starttls() \fP5
++Issues a STARTTLS command on an existing IMAP connection and
++negotiates the secure link.  The
++.B cert_file
++and
++.B key_file
++arguments specify the client certificate and secret key to use to
++authenticate ourselves to the server.  If client authentication is not
++needed, set both of these arguments to NULL.
++.sp
++The
++.B CAfile
++and
++.B CApath
++arguments specify a file or directory, respectively, of CA
++certificates for validating server certificates.  (See
++.B SSL_CTX_load_verify_locations(3)
++for details.)  If both of these are NULL, the client will be unable to
++validate the server's certificate, in which case the connection may
++succeed but a warning will be printed to stdout.
+ 
+ .SH EXAMPLES
+ The following code is a possible skeletion of

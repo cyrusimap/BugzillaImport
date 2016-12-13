@@ -1,0 +1,358 @@
+Index: saslauthd/utils.c
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/utils.c,v
+retrieving revision 1.4
+diff -u -r1.4 utils.c
+--- saslauthd/utils.c	9 Sep 2003 15:38:15 -0000	1.4
++++ saslauthd/utils.c	20 Jan 2009 00:34:58 -0000
+@@ -227,6 +227,51 @@
+ 	}
+ }
+ 
++#ifndef HAVE_ASPRINTF
++
++# include <stdarg.h>
++
++/*
++ * asprintf -- work around lame systems that haven't added their own yet
++ *
++ * XXX relies on a valid working (SuSv3) vsnprintf(), OK on SunOS-5.10 BUT NOT BEFORE!
++ */
++int
++asprintf(char **str,
++	 const char *fmt,
++	 ...)
++{
++        va_list ap;
++	char *newstr;
++	size_t len;
++	int ret;
++
++	*str = NULL;
++
++	va_start(ap, fmt);
++	ret = vsnprintf((char *) NULL, (size_t) 0, fmt, ap);
++	va_end(ap);
++	if (ret < 0) {
++		return ret;
++	}
++	len = (size_t) ret + 1;		/* allow for nul */
++	if ((newstr = malloc(len)) == NULL) {
++		return (-1);
++	}
++	va_start(ap, fmt);
++	ret = vsnprintf(newstr, len, fmt, ap);
++	va_end(ap);
++	if (ret >= 0 && (size_t) ret < len) { /* XXX (ret == len-1) */
++		*str = newstr;
++	} else {
++		free(newstr);
++		return ret;
++	}
++
++	return ret;
++}
++#endif /* HAVE_ASPRINTF */
++
+ #ifndef HAVE_STRLCPY
+ /* strlcpy -- copy string smartly.
+  *
+Index: saslauthd/saslauthd.mdoc
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/saslauthd.mdoc,v
+retrieving revision 1.18
+diff -u -r1.18 saslauthd.mdoc
+--- saslauthd/saslauthd.mdoc	25 Mar 2004 18:24:26 -0000	1.18
++++ saslauthd/saslauthd.mdoc	20 Jan 2009 00:34:58 -0000
+@@ -10,7 +10,7 @@
+ .\" manpage in saslauthd.8 whenever you change this source
+ .\" version. Only the pre-formatted manpage is installed.
+ .\"
+-.Dd 10 24 2002
++.Dd 12 12 2005
+ .Dt SASLAUTHD 8
+ .Os "CMU-SASL"
+ .Sh NAME
+@@ -98,8 +98,13 @@
+ Disable the use of a lock file for controlling access to accept().
+ .It Fl r
+ Combine the realm with the login (with an '@' sign in between).  e.g.
+-login: "foo" realm: "bar" will get passed as login: "foo@bar".  Note that
+-the realm will still be passed, which may lead to unexpected behavior.
++login: "foo" realm: "bar" will get passed as login: "foo@bar".  Note
++that the realm will still be passed, which may lead to unexpected
++behavior for authentication mechanisms that make use of the realm,
++however for mechanisms which don't, such as
++.Ar getpwent ,
++this is the only way to authenticate domain-specific users sharing the
++same userid.
+ .It Fl v
+ Print the version number and available authentication
+ mechanisms on standard error, then exit.
+@@ -119,7 +124,7 @@
+ .Qq authentication mechanisms ,
+ dependent upon the facilities provided by the underlying operating system.
+ The mechanism is selected by the
+-.Fl aho
++.Fl a
+ flag from the following list of choices:
+ .Bl -tag -width "kerberos4"
+ .It Li dce
+Index: saslauthd/configure.in
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/configure.in,v
+retrieving revision 1.62
+diff -u -r1.62 configure.in
+--- saslauthd/configure.in	19 Apr 2006 20:24:22 -0000	1.62
++++ saslauthd/configure.in	20 Jan 2009 00:34:59 -0000
+@@ -77,7 +77,7 @@
+   AC_DEFINE(AUTH_SASLDB,[],[Include SASLdb Support])
+   SASL_DB_PATH_CHECK()
+   SASL_DB_CHECK()
+-  SASL_DB_LIB="$SASL_DB_LIB ../sasldb/.libs/libsasldb.al"
++  SASL_DB_LIB="$SASL_DB_LIB ../sasldb/.libs/libsasldb.la"
+ fi
+ 
+ AC_ARG_ENABLE(httpform, [  --enable-httpform       enable HTTP form authentication [[no]] ],
+@@ -195,8 +195,9 @@
+ dnl Checks for library functions.
+ AC_TYPE_SIGNAL
+ AC_CHECK_FUNCS(gethostname mkdir socket strdup)
++dnl Only look for one or the other
+ AC_CHECK_FUNCS(getspnam getuserpw, break)
+-AC_CHECK_FUNCS(strlcat strlcpy)
++AC_CHECK_FUNCS(asprintf strlcat strlcpy)
+ 
+ if test $ac_cv_func_getspnam = yes; then
+ 	AC_MSG_CHECKING(if getpwnam_r/getspnam_r take 5 arguments)
+Index: saslauthd/auth_shadow.c
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/auth_shadow.c,v
+retrieving revision 1.9
+diff -u -r1.9 auth_shadow.c
+--- saslauthd/auth_shadow.c	4 Jul 2006 10:39:04 -0000	1.9
++++ saslauthd/auth_shadow.c	20 Jan 2009 00:34:59 -0000
+@@ -44,6 +44,7 @@
+ # include <sys/types.h>
+ # include <time.h>
+ # include <pwd.h>
++# include <errno.h>
+ # include <syslog.h>
+ 
+ #ifdef HAVE_CRYPT_H
+@@ -60,7 +61,8 @@
+ #  endif /* WITH_SSL_DES */
+ # endif /* WITH_DES */
+ 
+-#endif /* ! HAVE_GETSPNAM */
++# endif /* ! HAVE_GETSPNAM */
++
+ # ifdef HAVE_GETUSERPW
+ #  include <userpw.h>
+ #  include <usersec.h>
+@@ -109,6 +111,7 @@
+     char *cpw;				/* pointer to crypt() result */
+     struct passwd	*pw;		/* return from getpwnam_r() */
+     struct spwd   	*sp;		/* return from getspnam_r() */
++    int errnum;
+ #  ifdef _REENTRANT
+     struct passwd pwbuf;
+     char pwdata[PWBUFSZ];		/* pwbuf indirect data goes in here */
+@@ -121,11 +124,10 @@
+ #  define RETURN(x) return strdup(x)
+ 
+     /*
+-     * "Magic" password field entries for SunOS.
++     * "Magic" password field entries for SunOS/SysV
+      *
+-     * *LK* is hinted at in the shadow(4) man page, but the
+-     * only definition for it (that I could find) is in the passmgmt(1M)
+-     * man page.
++     * "*LK*" is defined at in the shadow(4) man page, but of course any string
++     * inserted in front of the password will prevent the strings from matching
+      *
+      * *NP* is documented in getspnam(3) and indicates the caller had
+      * insufficient permission to read the shadow password database
+@@ -144,12 +146,27 @@
+ #  else
+     pw = getpwnam(login);
+ #  endif /* _REENTRANT */
++    errnum = errno;
+     endpwent();
++
+     if (pw == NULL) {
+-	if (flags & VERBOSE) {
+-	    syslog(LOG_DEBUG, "DEBUG: auth_shadow: getpwnam(%s) returned NULL", login);
++	if (errnum != 0) {
++	    char *errstr;
++
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getpwnam(%s) failure: %m", login);
++	    }
++	    if (asprintf(&errstr, "NO Username lookup failure: %s", strerror(errno)) == -1) {
++		/* XXX the hidden strdup() will likely fail and return NULL here.... */
++		RETURN("NO Username lookup failure: unknown error (ENOMEM formatting strerror())");
++	    }
++	    return errstr;
++	} else {
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getpwnam(%s): invalid username", login);
++	    }
++	    RETURN("NO Invalid username");
+ 	}
+-	RETURN("NO");
+     }
+ 
+     today = (long)time(NULL)/(24L*60*60);
+@@ -163,13 +180,27 @@
+ #  else
+     sp = getspnam(login);
+ #  endif /* _REENTRANT */
++    errnum = errno;
+     endspent();
+ 
+     if (sp == NULL) {
+-	if (flags & VERBOSE) {
+-	    syslog(LOG_DEBUG, "DEBUG: auth_shadow: getspnam(%s) returned NULL", login);
++	if (errnum != 0) {
++	    char *errstr;
++
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getspnam(%s) failure: %m", login);
++	    }
++	    if (asprintf(&errstr, "NO Username shadow lookup failure: %s", strerror(errno)) == -1) {
++		/* XXX the hidden strdup() will likely fail and return NULL here.... */
++		RETURN("NO Username shadow lookup failure: unknown error (ENOMEM formatting strerror())");
++	    }
++	    return errstr;
++	} else {
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_shadow: getspnam(%s): invalid shadow username", login);
++	    }
++	    RETURN("NO Invalid shadow username");
+ 	}
+-	RETURN("NO");
+     }
+ 
+     if (!strcmp(sp->sp_pwdp, SHADOW_PW_EPERM)) {
+@@ -179,20 +210,19 @@
+ 	RETURN("NO Insufficient permission to access NIS authentication database (saslauthd)");
+     }
+ 
+-    /*
+-     * Note: no check for SHADOW_PW_LOCKED. Returning a "locked" notification
+-     * would allow login-id namespace probes, and violates our policy of
+-     * not returning any information about a login until we have validated
+-     * the password.
+-     */
+     cpw = strdup((const char *)crypt(password, sp->sp_pwdp));
+     if (strcmp(sp->sp_pwdp, cpw)) {
+ 	if (flags & VERBOSE) {
++	    /*
++	     * This _should_ reveal the SHADOW_PW_LOCKED prefix to an
++	     * administrator trying to debug the situation, though maybe we
++	     * should do the check here and be less obtuse about it....
++	     */
+ 	    syslog(LOG_DEBUG, "DEBUG: auth_shadow: pw mismatch: '%s' != '%s'",
+ 		   sp->sp_pwdp, cpw);
+ 	}
+ 	free(cpw);
+-	RETURN("NO");
++	RETURN("NO Incorrect password");
+     }
+     free(cpw);
+ 
+@@ -250,10 +280,10 @@
+   
+     if (upw == 0) {
+ 	if (flags & VERBOSE) {
+-	    syslog(LOG_DEBUG, "auth_shadow: getuserpw(%s) == 0",
++	    syslog(LOG_DEBUG, "auth_shadow: getuserpw(%s) failed: %m",
+ 		   login);
+ 	}
+-	RETURN("NO");
++	RETURN("NO Invalid username");
+     }
+   
+     if (strcmp(upw->upw_passwd, crypt(password, upw->upw_passwd)) != 0) {
+@@ -261,7 +291,7 @@
+ 	    syslog(LOG_DEBUG, "auth_shadow: pw mismatch: %s != %s",
+ 		   password, upw->upw_passwd);
+ 	}
+-	RETURN("NO");
++	RETURN("NO Incorrect password");
+     }
+ 
+     RETURN("OK");
+Index: saslauthd/auth_getpwent.c
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/auth_getpwent.c,v
+retrieving revision 1.8
+diff -u -r1.8 auth_getpwent.c
+--- saslauthd/auth_getpwent.c	19 May 2006 19:32:22 -0000	1.8
++++ saslauthd/auth_getpwent.c	20 Jan 2009 00:34:59 -0000
+@@ -40,6 +40,8 @@
+ #include <unistd.h>
+ #include <string.h>
+ #include <pwd.h>
++#include <errno.h>
++#include <syslog.h>
+ 
+ #ifdef HAVE_CRYPT_H
+ #include <crypt.h>
+@@ -52,6 +54,8 @@
+ #   include <des.h>
+ #  endif /* WITH_SSL_DES */
+ # endif /* WITH_DES */
++
++# include "globals.h"
+ /* END PUBLIC DEPENDENCIES */
+ 
+ #define RETURN(x) return strdup(x)
+@@ -70,19 +74,44 @@
+ {
+     /* VARIABLES */
+     struct passwd *pw;			/* pointer to passwd file entry */
++    int errnum;
+     /* END VARIABLES */
+   
++    errno = 0;
+     pw = getpwnam(login);
++    errnum = errno;
+     endpwent();
+ 
+     if (pw == NULL) {
+-	RETURN("NO");
++	if (errnum != 0) {
++	    char *errstr;
++
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_getpwent: getpwnam(%s) failure: %m", login);
++	    }
++	    if (asprintf(&errstr, "NO Username lookup failure: %s", strerror(errno)) == -1) {
++		/* XXX the hidden strdup() will likely fail and return NULL here.... */
++		RETURN("NO Username lookup failure: unknown error (ENOMEM formatting strerror())");
++	    }
++	    return errstr;
++	} else {
++	    if (flags & VERBOSE) {
++		syslog(LOG_DEBUG, "DEBUG: auth_getpwent: getpwnam(%s): invalid username", login);
++	    }
++	    RETURN("NO Invalid username");
++	}
+     }
+ 
+     if (strcmp(pw->pw_passwd, (const char *)crypt(password, pw->pw_passwd))) {
+-	RETURN("NO");
++	if (flags & VERBOSE) {
++	    syslog(LOG_DEBUG, "DEBUG: auth_getpwent: %s: invalid password", login);
++	}
++	RETURN("NO Incorrect password");
+     }
+ 
++    if (flags & VERBOSE) {
++	syslog(LOG_DEBUG, "DEBUG: auth_getpwent: OK: %s", login);
++    }
+     RETURN("OK");
+ }
+ 

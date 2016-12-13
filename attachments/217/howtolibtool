@@ -1,0 +1,77 @@
+First the reason for wanting to upgrade libtool:
+
+*** Warning: inter-library dependencies are not known to be supported.^M
+*** All declared inter-library dependencies are being dropped.^M
+^M
+*** Warning: libtool could not satisfy all declared inter-library^M
+*** dependencies of module libcrammd5.  Therefore, libtool will create^M 
+*** a static module, that should work as long as the dlopening^M
+*** application is linked with the -dlopen flag.^M
+
+Three years on, libtool knows that inter-library dependencies are supported
+and creates real plugins rather than libcrammd5.a, which isn't terribly
+useful.
+
+Now the steps to do so:
+- install autoconf/automake/libtool
+- rm acinclude.m4 (as it contains an old libtool.m4)
+- rm config/ltconfig (no longer needed)
+- replace config/ltmain.sh with one from your new libtool
+  e.g., /usr/local/share/libtool/ltmain.sh
+- (I suspect config/config.{guess,sub} could be upgraded too)
+- apply the cmulocal/libtoolhack.m4 patch, as the macro name changed.
+  It may be that it is simpler to s/CMU_PROG_LIBTOOL/AC_PROG_LIBTOOL/
+  in configure.in, but according to the comment I would need Solaris
+  or HP cc to check that it the hack is no longer necessary.
+- apply the configure.in patch. This is actually the killer: without
+  it even though libtool will successfully discover that you can build
+  shared libraries, and set the global variable can_build_shared
+  accordingly, DO_DLOPEN won't be set, and next time you try
+  imtest localhost, the capability string won't have any AUTH= in it.
+  (It may be that there is a better way of dealing with dlopen in the
+  new libtool, but one step at a time..)
+- rm configure && sh SMakefile
+
+Please could libtool be upgraded.
+
+Index: libtoolhack.m4
+===================================================================
+RCS file: /cvs/src/cmulocal/libtoolhack.m4,v
+retrieving revision 1.3
+diff -u -r1.3 libtoolhack.m4
+--- libtoolhack.m4	25 May 2002 19:57:42 -0000	1.3
++++ libtoolhack.m4	22 Aug 2003 15:33:36 -0000
+@@ -22,7 +22,7 @@
+   esac
+ fi
+ 
+-AM_PROG_LIBTOOL
++AC_PROG_LIBTOOL
+ 
+ if test "$ac_cv_prog_gcc" = no; then
+   case "$host_os" in
+Index: configure.in
+===================================================================
+RCS file: /cvs/src/sasl/configure.in,v
+retrieving revision 1.176
+diff -u -r1.176 configure.in
+--- configure.in	26 Jul 2003 15:14:36 -0000	1.176
++++ configure.in	22 Aug 2003 16:49:37 -0000
+@@ -114,7 +114,7 @@
+ 
+ dnl ltconfig might not have found support for shared libs
+ dnl just do static libs if so.
+-if test "$ac_cv_can_build_shared" = no; then
++if test "$can_build_shared" = no; then
+ 	enable_shared=no
+ 	enable_static=yes
+ fi
+@@ -711,7 +711,7 @@
+     AC_ERROR([--enable-sql chosen but neither Postgres nor MySQL found])
+ fi
+ 
+-if test "$ac_cv_can_build_shared" = yes; then
++if test "$can_build_shared" = yes; then
+ 	AC_DEFINE(DO_DLOPEN)
+ fi
+ 

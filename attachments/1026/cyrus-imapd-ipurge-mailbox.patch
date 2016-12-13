@@ -1,0 +1,121 @@
+diff -u -r cyrus-imapd-2.2.12/imap/ipurge.c cyrus-imapd.ipurge/imap/ipurge.c
+--- cyrus-imapd-2.2.12/imap/ipurge.c	Thu Jul 14 10:23:26 2005
++++ cyrus-imapd.ipurge/imap/ipurge.c	Thu Jul 14 14:13:44 2005
+@@ -101,6 +101,7 @@
+ 
+ int verbose = 1;
+ int forceall = 0;
++char *mailbox_only = NULL;
+ 
+ int purge_me(char *, int, int);
+ int purge_check(struct mailbox *, void *, char *);
+@@ -115,7 +116,7 @@
+ 
+   if (geteuid() == 0) fatal("must run as the Cyrus user", EX_USAGE);
+ 
+-  while ((option = getopt(argc, argv, "C:hxd:b:k:m:fsXi")) != EOF) {
++  while ((option = getopt(argc, argv, "C:hxd:b:k:m:fM:sXi")) != EOF) {
+     switch (option) {
+     case 'C': /* alt config file */
+       alt_config = optarg;
+@@ -150,6 +151,12 @@
+     case 'f' : {
+       forceall = 1;
+     } break;
++    case 'M' : {
++      if (optarg == 0) {
++	usage(argv[0]);
++      }
++      mailbox_only = xstrdup(optarg);
++    } break;
+     case 's' : {
+       skipflagged = 1;
+     } break;
+@@ -183,6 +190,12 @@
+   quotadb_init(0);
+   quotadb_open(NULL);
+ 
++  if (mailbox_only) {
++      mboxname_hiersep_tointernal(&purge_namespace, mailbox_only,
++				  config_virtdomains ?
++				  strcspn(mailbox_only, "@") : 0);
++  }
++
+   if (optind == argc) { /* do the whole partition */
+     strcpy(buf, "*");
+     (*purge_namespace.mboxlist_findall)(&purge_namespace, buf, 1, 0, 0,
+@@ -211,11 +224,12 @@
+ 
+ int
+ usage(char *name) {
+-  printf("usage: %s [-f] [-s] [-C <alt_config>] [-x] [-X] [-i] {-d days | -b bytes|-k Kbytes|-m Mbytes}\n\t[mboxpattern1 ... [mboxpatternN]]\n", name);
++  printf("usage: %s [-f] [-M mailbox] [-s] [-C <alt_config>] [-x] [-X] [-i] {-d days | -b bytes|-k Kbytes|-m Mbytes}\n\t[mboxpattern1 ... [mboxpatternN]]\n", name);
+   printf("\tthere are no defaults and at least one of -d, -b, -k, -m\n\tmust be specified\n");
+   printf("\tif no mboxpattern is given %s works on all mailboxes\n", name);
+   printf("\t -x specifies an exact match for days or size\n");
+   printf("\t -f force also to delete mail below user.* and INBOX.*\n");
++  printf("\t -M delete mail only in a single mailbox\n");
+   printf("\t -s skip over messages that are flagged.\n");
+   printf("\t -X use delivery time instead of date header for date matches.\n");
+   printf("\t -i invert match logic: -x means not equal, date is for newer, size is for smaller.\n");
+@@ -228,11 +242,26 @@
+   struct mailbox the_box;
+   int            error;
+   mbox_stats_t   stats;
++  int            force_mailbox;
++  
++  /* only delete mail in specified folder? */
++  force_mailbox = 0;
++  if (mailbox_only) {
++      if (strcmp(name, mailbox_only)) {
++         if (verbose)
++	      printf("Skipping mailbox %s\n", name);
++	  return 0;
++      } else
++          force_mailbox = 1;
++  }
+ 
+-  if( ! forceall ) {
++  if (!forceall && !force_mailbox) {
+       /* DON'T purge INBOX* and user.* */
+-      if (!strncasecmp(name,"INBOX",5) || mboxname_isusermailbox(name, 0))
++      if (!strncasecmp(name,"INBOX",5) || mboxname_isusermailbox(name, 0)) {
++         if (verbose)
++	      printf("Skipping mailbox %s\n", name);
+ 	  return 0;
++      }
+   }
+ 
+   memset(&stats, '\0', sizeof(mbox_stats_t));
+diff -u -r cyrus-imapd-2.2.12/man/ipurge.8 cyrus-imapd.ipurge/man/ipurge.8
+--- cyrus-imapd-2.2.12/man/ipurge.8	Thu Nov 20 19:47:48 2003
++++ cyrus-imapd.ipurge/man/ipurge.8	Thu Jul 14 11:31:27 2005
+@@ -48,6 +48,10 @@
+ .B \-f
+ ]
+ [
++.B \-M
++.I mailbox
++]
++[
+ .B \-C
+ .I config-file
+ ]
+@@ -92,6 +96,7 @@
+ by default only deletes mail below shared folders, which means that mails
+ in mailbox(es) below INBOX.* and user.* stay untouched. Use the option
+ \fB-f\fR to also delete mail in mailbox(es) below these folders.
++You can explicitly delete mail in a single mailbox via \fB-M mailbox\fR.
+ .PP
+ .I Ipurge
+ reads its configuration options out of the
+@@ -101,6 +106,9 @@
+ .TP
+ .BI \-f
+ Force deletion of mail in \fIall\fR mailboxes.
++.TP
++.BI \-M " mailbox"
++Force deletion of mail in a single mailbox.
+ .TP
+ .BI \-C " config-file"
+ Read configuration options from \fIconfig-file\fR.

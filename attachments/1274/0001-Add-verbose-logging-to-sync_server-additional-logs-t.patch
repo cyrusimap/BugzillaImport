@@ -1,0 +1,322 @@
+From 6ff62a47eed5957337447a909b1bc96cce5ff280 Mon Sep 17 00:00:00 2001
+From: Paul Turgyan <pturgyan@umich.edu>
+Date: Mon, 10 Aug 2009 11:31:35 -0400
+Subject: [PATCH] Add verbose logging to sync_server & additional logs to sync_client
+
+This patch adds a verbose "-l" logging option to sync_server.  It
+also adds additional logging to sync_client to log more detailed
+mailbox/message info. Also disables pretty useless Unlocked
+debug log message.
+---
+ imap/sync_client.c |   35 ++++++++++++++++
+ imap/sync_server.c |  113 ++++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 137 insertions(+), 11 deletions(-)
+
+diff --git a/imap/sync_client.c b/imap/sync_client.c
+index 4dcb862..a10e160 100644
+--- a/imap/sync_client.c
++++ b/imap/sync_client.c
+@@ -91,6 +91,8 @@
+ #include "signals.h"
+ #include "cyrusdb.h"
+ 
++#define MAXSYSLOGBUF 4096
++
+ /* signal to config.c */
+ const int config_need_data = 0;  /* YYY */
+ 
+@@ -1336,8 +1338,16 @@ static int index_list_work(struct mailbox *mailbox,
+     int c = ' ';
+     static struct buf token;   /* BSS */
+ 
++    int totalbuflen;
++    char syslogbuf[MAXSYSLOGBUF]; 
++    int pending_log;
++    int len;
++
+     if (index_list->count == 0) return(0);
+ 
++    if (verbose_logging ) {
++	syslog (LOG_INFO, "UPLOAD mailbox: %s %ld message files", mailbox->name, index_list->count);
++    }
+     prot_printf(toserver, "UPLOAD %lu %lu",
+                 index_list->last_uid, mailbox->last_appenddate); 
+ 
+@@ -1372,6 +1382,28 @@ static int index_list_work(struct mailbox *mailbox,
+ 
+         syslog(LOG_INFO, "UPLOAD: received RESTART");
+     }
++    if (verbose_logging ) {
++	totalbuflen = snprintf (syslogbuf, MAXSYSLOGBUF,
++                "UPLOAD mailbox: %s message file:", mailbox->name);
++	pending_log = 0;
++
++	for (index = index_list->head; index; index = index->next) {
++	    if ( totalbuflen + 10 > MAXSYSLOGBUF ) {
++		syslog (LOG_INFO, "%s", syslogbuf);
++		totalbuflen = snprintf (syslogbuf, MAXSYSLOGBUF,
++			"UPLOAD mailbox: %s message file:", mailbox->name); 
++		pending_log = 0;
++	    }
++	    len = snprintf (&syslogbuf[totalbuflen],
++				MAXSYSLOGBUF - totalbuflen,
++				" %lu.", (unsigned long)index->record.uid);
++	    totalbuflen = totalbuflen + len;
++	    pending_log = 1;
++	}
++	if (pending_log) {
++	    syslog (LOG_INFO, "%s", syslogbuf);
++	}
++    }
+ 
+     return(0);
+ }
+@@ -2424,6 +2456,9 @@ static int do_user_seen(char *user)
+     close(filefd);
+     free(seen_file);
+ 
++    if (verbose_logging) {
++	syslog(LOG_INFO, "SETSEEN_ALL %s", user);
++    }
+     /* Update seen db */
+     prot_printf(toserver, "SETSEEN_ALL ");
+     sync_printastring(toserver, user);
+diff --git a/imap/sync_server.c b/imap/sync_server.c
+index b2f0a7b..e6798da 100644
+--- a/imap/sync_server.c
++++ b/imap/sync_server.c
+@@ -105,6 +105,8 @@
+ #include "sync_commit.h"
+ /*#include "cdb.h"*/
+ 
++#define MAXSYSLOGBUF 4096
++
+ extern int optind;
+ extern char *optarg;
+ extern int opterr;
+@@ -113,6 +115,7 @@ extern int opterr;
+ const int config_need_data = 0;
+ 
+ static sasl_ssf_t extprops_ssf = 0;
++int    verbose_logging;
+ 
+ /* Stuff to make index.c link */
+ int imapd_exists;
+@@ -312,11 +315,14 @@ int service_init(int argc __attribute__((unused)),
+     /* load the SASL plugins */
+     global_sasl_init(1, 1, mysasl_cb);
+ 
+-    while ((opt = getopt(argc, argv, "p:")) != EOF) {
++    while ((opt = getopt(argc, argv, "p:l")) != EOF) {
+ 	switch(opt) {
+ 	case 'p': /* external protection */
+ 	    extprops_ssf = atoi(optarg);
+ 	    break;
++	case 'l': /* verbose Logging */
++	    verbose_logging++;
++	    break;
+ 	default:
+ 	    usage();
+ 	}
+@@ -1417,10 +1423,14 @@ static void cmd_unlock(struct sync_lock *lock, int restart)
+ 		    error_message(r));
+     } else if (restart) {
+         prot_printf(sync_out, "OK [RESTART] Unlocked\r\n");
++#if 0
+         syslog(LOG_DEBUG, "Unlocked [RESTART]");
++#endif
+     } else {
+         prot_printf(sync_out, "OK [CONTINUE] Unlocked\r\n");
++#if 0
+         syslog(LOG_DEBUG, "Unlocked");
++#endif
+     }
+ }
+ 
+@@ -1619,11 +1629,18 @@ static void cmd_setquota(char *root, int limit)
+     /* NB: Minimal interface without two phase expunge */
+     r = mboxlist_setquota(root, limit, 1);
+ 
+-    if (r)
++    if (r) {
+         prot_printf(sync_out, "NO SetQuota failed %s: %s\r\n",
+                  root, error_message(r));
+-    else
++	if (verbose_logging) {
++	    syslog(LOG_INFO, "SETQUOTA: %s limit: %d Failed", root, limit);
++	}
++    } else {
+         prot_printf(sync_out, "OK SetQuota succeeded\r\n");
++	if (verbose_logging) {
++	    syslog(LOG_INFO, "SETQUOTA: %s limit: %d Succeeded", root, limit);
++	}
++    }
+ }
+ 
+ /* ====================================================================== */
+@@ -1875,6 +1892,11 @@ static void cmd_upload(struct mailbox *mailbox,
+     int   r = 0;
+     char *err;
+ 
++    int totalbuflen;
++    char syslogbuf[MAXSYSLOGBUF];
++    int pending_log;
++    int len;
++
+     *restart = 0;
+ 
+     if (!mailbox) {
+@@ -1888,6 +1910,9 @@ static void cmd_upload(struct mailbox *mailbox,
+ 	prot_printf(sync_out, "NO %s\r\n", error_message(r));
+ 	return;
+     }
++    if (verbose_logging ) {
++	syslog (LOG_INFO, "UPLOAD mailbox: %s starting", mailbox->name);
++    }
+ 
+     upload_list = sync_upload_list_create(new_last_uid, mailbox->flagname);
+ 
+@@ -2062,6 +2087,28 @@ static void cmd_upload(struct mailbox *mailbox,
+         prot_printf(sync_out, "NO Failed to commit message upload to %s: %s\r\n",
+                  mailbox->name, error_message(r));
+     } else {
++	if (verbose_logging ) {
++
++	    totalbuflen = snprintf (syslogbuf, MAXSYSLOGBUF,
++		"UPLOAD mailbox: %s message file:", mailbox->name);
++	    pending_log = 0;
++	    for (item = upload_list->head ; item ; item = item->next) {
++		if ( totalbuflen + 10 > MAXSYSLOGBUF ) {
++		    syslog (LOG_INFO, "%s", syslogbuf);
++		    totalbuflen = snprintf (syslogbuf, MAXSYSLOGBUF,
++			"UPLOAD mailbox: %s message file:", mailbox->name);
++	    	    pending_log = 0;
++		}
++		len = snprintf (&syslogbuf[totalbuflen], 
++				MAXSYSLOGBUF - totalbuflen,
++				" %lu.", (unsigned long)item->uid);
++		totalbuflen = totalbuflen + len;
++		pending_log = 1;
++	    }
++	    if (pending_log) {
++		syslog (LOG_INFO, "%s", syslogbuf);
++	    }
++	}
+ 	if ((*restart = sync_message_list_need_restart(message_list)))
+ 	    syslog(LOG_INFO, "UPLOAD: issuing RESTART");
+ 
+@@ -2210,11 +2257,20 @@ static void cmd_setseen(struct mailbox **mailboxp, char *user, char *mboxname,
+         r = seen_write(seendb, lastread, last_recent_uid, lastchange, seenuid);
+     seen_close(seendb);
+ 
+-    if (r)
++    if (r) {
+         prot_printf(sync_out, "NO Setseen Failed on %s %s: %s\r\n",
+                  user, mailbox->name, error_message(r));
+-    else
++	if (verbose_logging) {
++            syslog (LOG_INFO, "SETSEEN Failed on %s %s: %s\r\n",
++                 user, mailbox->name, error_message(r));
++	}
++    } else {
+         prot_printf(sync_out, "OK Setseen Suceeded\r\n");
++        if (verbose_logging) {
++	    syslog (LOG_INFO, "SETSEEN Succeeded on %s %s\r\n",
++                 user, mailbox->name);
++	}
++    }
+ 
+     free(seenuid0);
+ }
+@@ -2256,22 +2312,38 @@ static void cmd_setseen_all(char *user, struct buf *data)
+ 
+     free(seen_file);
+ 
+-    if (r)
++    if (r) {
+         prot_printf(sync_out, "NO Setseen_all Failed on %s: %s\r\n",
+                  user, error_message(r));
+-    else
++	if (verbose_logging) {
++            syslog (LOG_INFO, "SETSEEN_ALL Failed on %s: %s\r\n",
++                 user,  error_message(r));
++	}
++    } else {
+         prot_printf(sync_out, "OK Setseen_all Suceeded\r\n");
++        if (verbose_logging) {
++	    syslog (LOG_INFO, "SETSEEN_ALL Succeeded on %s\r\n",
++                 user);
++	}
++   }
+ }
+ 
+ static void cmd_setacl(char *name, char *acl)
+ {
+     int r = mboxlist_sync_setacls(name, acl);
+ 
+-    if (r)
++    if (r) {
+         prot_printf(sync_out,
+                  "NO SetAcl Failed for %s: %s\r\n", name, error_message(r));
+-    else
++	if (verbose_logging) {
++	    syslog(LOG_INFO, "SETACL: %s acl: %s FAILED", name, acl);
++	}
++    } else {
+         prot_printf(sync_out, "OK SetAcl Suceeded\r\n");
++	if (verbose_logging) {
++	    syslog(LOG_INFO, "SETACL: %s acl: %s Succeded", name, acl);
++	}
++    }
+ }
+ 
+ /* ====================================================================== */
+@@ -2588,7 +2660,12 @@ static void cmd_mailboxes()
+ 
+     prot_printf(sync_out, "OK Mailboxes finished\r\n");
+ 
+-    for (i = 0 ; i < count; i++) free(folder_name[i]);
++    for (i = 0 ; i < count; i++) {
++	if (verbose_logging) {
++	    syslog (LOG_INFO, "MAILBOX: %s", folder_name[i]);
++	}
++	free(folder_name[i]);
++    }
+     free(folder_name);
+     return;
+ 
+@@ -2705,6 +2782,9 @@ static void cmd_user(char *userid)
+     }
+ 
+     prot_printf(sync_out, "OK User completed\r\n");
++    if (verbose_logging) {
++	syslog (LOG_INFO, "USER %s", userid);
++    }
+ }
+ 
+ /* ====================================================================== */
+@@ -2827,9 +2907,20 @@ static void cmd_changesub(char *user, char *name, int add)
+         prot_printf(sync_out, "NO %s %s %s failed: %s\r\n",
+ 		    add ? "Addsub" : "Delsub",
+ 		    user, name, error_message(r));
+-    } else
++	if (verbose_logging) {
++	    syslog (LOG_INFO, "%s %s %s Failed: %s",
++		    add ? "ADDSUB" : "DELSUB",
++		    user, name, error_message(r));
++	}
++    } else {
+         prot_printf(sync_out, "OK %s completed\r\n",
+ 		    add ? "Addsub" : "Delsub");
++	if (verbose_logging) {
++	    syslog (LOG_INFO, "%s %s %s Success",
++		    add ? "ADDSUB" : "DELSUB",
++		    user, name);
++	}
++    }
+ }
+ 
+ /* ====================================================================== */
+-- 
+1.7.1
+

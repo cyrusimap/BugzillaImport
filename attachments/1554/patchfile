@@ -1,0 +1,272 @@
+
+======
+part 1:
+======
+
+--- a/Makefile.am	Tue Mar  3 23:46:12 2015
++++ b/Makefile.am	Thu Mar  5 15:02:01 2015
+@@ -77,6 +77,8 @@
+ 	imap/tz_err.c \
+ 	imap/tz_err.h \
+ 	com_err/et/compile_et \
++	lib/imapopts.c \
++	lib/imapopts.h \
+ 	perl/annotator/Makefile \
+ 	perl/annotator/Makefile.PL \
+ 	perl/imap/Makefile \
+@@ -98,7 +100,6 @@
+ 	imap/lmtpstats.h \
+ 	imap/pushstats.h \
+ 	lib/chartable.c \
+-	lib/imapopts.h \
+ 	sieve/addr.h \
+ 	sieve/sieve.h
+ 
+--- a/Makefile.in	Tue Mar  3 23:56:16 2015
++++ b/Makefile.in	Thu Mar  5 15:02:28 2015
+@@ -1590,6 +1590,8 @@
+ 	imap/tz_err.c \
+ 	imap/tz_err.h \
+ 	com_err/et/compile_et \
++	lib/imapopts.c \
++	lib/imapopts.h \
+ 	perl/annotator/Makefile \
+ 	perl/annotator/Makefile.PL \
+ 	perl/imap/Makefile \
+@@ -1611,7 +1613,6 @@
+ 	imap/lmtpstats.h \
+ 	imap/pushstats.h \
+ 	lib/chartable.c \
+-	lib/imapopts.h \
+ 	sieve/addr.h \
+ 	sieve/sieve.h
+ 
+
+======
+part 2:
+======
+
+--- a/lib/vparse.c	Tue Mar  3 13:09:17 2015
++++ b/lib/vparse.c	Thu Mar  5 11:08:55 2015
+@@ -6,12 +6,13 @@
+ #include <fcntl.h>
+ 
+ #include "vparse.h"
++#include "xmalloc.h"
+ 
+ #define LC(s) do { char *p; for (p = s; *p; p++) if (*p >= 'A' && *p <= 'Z') *p += ('a' - 'A'); } while (0)
+ 
+ static char *buf_dup_cstring(struct buf *buf)
+ {
+-    char *ret = strndup(buf->s, buf->len);
++    char *ret = xstrndup(buf->s, buf->len);
+     /* more space efficient than returning overlength buffers, and
+      * you would just wind up mallocing another buffer anyway */
+     buf->len = 0;
+
+======
+part3:
+======
+
+--- a/tools/vzic/vzic-parse.c	Tue Mar  3 23:44:41 2015
++++ b/tools/vzic/vzic-parse.c	Thu Mar  5 18:45:50 2015
+@@ -32,6 +32,7 @@
+ 
+ #include "vzic.h"
+ #include "vzic-parse.h"
++#include "vzic-output.h"
+ 
+ /* This is the maximum line length we allow. */
+ #define MAX_LINE_LEN	1024
+@@ -500,7 +501,8 @@
+ 
+ #if CREATE_SYMLINK
+   {
+-      int len = strnlen(to,254);
++      int len /* = strnlen(to, 254) */ ;
++      for (char *c = to, len = 0; *c && len < 254; c++, len++);
+       int dirs = 0;
+       int i;
+       for (i = 0; i < len; i++) {
+
+======
+part4:
+======
+
+--- a/master/master.c	Tue Mar  3 13:09:17 2015
++++ b/master/master.c	Thu Mar  5 17:30:20 2015
+@@ -170,7 +170,7 @@
+     int si;			/* Services[] index */
+     char *desc;			/* human readable description for logging */
+     struct timeval spawntime;	/* when the centry was allocated */
+-    time_t sighuptime;		/* when did we send a SIGHUP */;
++    time_t sighuptime;		/* when did we send a SIGHUP */
+     struct centry *next;
+ };
+ static struct centry *ctable[child_table_size];
+
+======
+part5:
+======
+
+--- a/imap/ctl_zoneinfo.c	Tue Mar  3 23:44:41 2015
++++ b/imap/ctl_zoneinfo.c	Thu Mar  5 16:54:52 2015
+@@ -236,7 +236,7 @@
+ 	    /* Path is a regular file (zone) */
+ 	    int fd;
+ 	    const char *base = NULL;
+-	    unsigned long len = 0;
++	    size_t len = 0;
+ 	    icalcomponent *ical, *comp;
+ 	    icalproperty *prop;
+ 
+--- a/imap/http_caldav.c	Tue Mar  3 13:09:17 2015
++++ b/imap/http_caldav.c	Thu Mar  5 17:06:24 2015
+@@ -3866,7 +3866,7 @@
+ {
+     xmlNodePtr prop = (xmlNodePtr) rock;
+     const char *data = NULL, *msg_base = NULL;
+-    unsigned long datalen = 0;
++    size_t datalen = 0;
+     int r = 0;
+ 
+     if (propstat) {
+--- a/imap/http_dav.c	Tue Mar  3 13:09:17 2015
++++ b/imap/http_dav.c	Thu Mar  5 17:04:14 2015
+@@ -4829,7 +4829,7 @@
+     modseq_t basemodseq = 0;
+     modseq_t highestmodseq = 0;
+     modseq_t respmodseq = 0;
+-    uint32_t limit = -1;
++    uint32_t limit = ~0U;
+     uint32_t recno;
+     uint32_t msgno;
+     uint32_t nresp = 0;
+--- a/imap/http_ischedule.c	Tue Mar  3 13:09:17 2015
++++ b/imap/http_ischedule.c	Thu Mar  5 17:03:35 2015
+@@ -974,7 +974,7 @@
+     static struct buf pathbuf = BUF_INITIALIZER;
+     struct stat sbuf;
+     const char *msg_base = NULL;
+-    unsigned long msg_size = 0;
++    size_t msg_size = 0;
+     struct resp_body_t *resp_body = &txn->resp_body;
+ 
+     /* See if file exists and get Content-Length & Last-Modified time */
+--- a/imap/http_rss.c	Tue Mar  3 13:09:17 2015
++++ b/imap/http_rss.c	Thu Mar  5 17:02:51 2015
+@@ -479,7 +479,8 @@
+ {
+     const char *template_file = config_getstring(IMAPOPT_RSS_FEEDLIST_TEMPLATE);
+     const char *var = NULL, *template = NULL, *prefix, *suffix;
+-    unsigned long template_len = 0, prefix_len, suffix_len;
++    size_t template_len = 0;
++    unsigned long prefix_len, suffix_len;
+     size_t varlen = strlen(FEEDLIST_VAR);
+     int fd = -1;
+     struct message_guid guid;
+--- a/imap/http_timezone.c	Tue Mar  3 13:09:17 2015
++++ b/imap/http_timezone.c	Thu Mar  5 16:59:57 2015
+@@ -1037,7 +1037,7 @@
+     if (txn->meth != METH_HEAD) {
+ 	static struct buf pathbuf = BUF_INITIALIZER;
+ 	const char *path, *proto, *host, *msg_base = NULL;
+-	unsigned long msg_size = 0;
++	size_t msg_size = 0;
+ 	icalcomponent *ical, *vtz;
+ 	icalproperty *prop;
+ 	int fd;
+@@ -1250,7 +1250,7 @@
+     if (txn->meth != METH_HEAD) {
+ 	static struct buf pathbuf = BUF_INITIALIZER;
+ 	const char *path, *msg_base = NULL;
+-	unsigned long msg_size = 0;
++	size_t msg_size = 0;
+ 	icalcomponent *ical, *vtz;
+ 	const struct observance *proleptic;
+ 	char dtstamp[21];
+--- a/imap/httpd.c	Tue Mar  3 13:09:17 2015
++++ b/imap/httpd.c	Thu Mar  5 17:10:58 2015
+@@ -165,7 +165,7 @@
+       &digest_send_success, digest_recv_success },
+     { AUTH_SPNEGO, "Negotiate", "GSS-SPNEGO", AUTH_BASE64, NULL, NULL },
+     { AUTH_NTLM, "NTLM", "NTLM", AUTH_NEED_PERSIST | AUTH_BASE64, NULL, NULL },
+-    { -1, NULL, NULL, 0, NULL, NULL }
++    { ~0U, NULL, NULL, 0, NULL, NULL }
+ };
+ 
+ 
+@@ -3509,7 +3509,7 @@
+     static struct buf pathbuf = BUF_INITIALIZER;
+     struct stat sbuf;
+     const char *msg_base = NULL;
+-    unsigned long msg_size = 0;
++    size_t msg_size = 0;
+     struct resp_body_t *resp_body = &txn->resp_body;
+ 
+     /* Check if this is a request for /.well-known/ listing */
+@@ -3747,7 +3747,7 @@
+ {
+     parse_path_t parse_path = (parse_path_t) params;
+     const char **hdr;
+-    unsigned long max_fwd = -1;
++    unsigned long max_fwd = ~0U;
+     struct buf *msg = &txn->resp_body.payload;
+ 
+     /* Response should not be cached */
+--- a/imap/mboxevent.c	Tue Mar  3 13:09:17 2015
++++ b/imap/mboxevent.c	Thu Mar  5 12:43:38 2015
+@@ -829,7 +829,7 @@
+ 			       const struct index_record *record, FILE* content)
+ {
+     const char *base = NULL;
+-    unsigned long len = 0;
++    size_t len = 0;
+     size_t offset, size, truncate;
+ 
+     if (!event)
+--- a/lib/cyrusdb_skiplist.c	Tue Mar  3 13:09:17 2015
++++ b/lib/cyrusdb_skiplist.c	Thu Mar  5 13:08:34 2015
+@@ -1236,7 +1236,7 @@
+     unsigned num_iov;
+     struct txn *tid;
+     struct txn *localtid = NULL;
+-    uint32_t endpadding = htonl(-1);
++    uint32_t endpadding = htonl(~0U);
+     uint32_t zeropadding[4] = { 0, 0, 0, 0 };
+     unsigned updateoffsets[SKIPLIST_MAXLEVEL+1];
+     unsigned newoffsets[SKIPLIST_MAXLEVEL+1];
+--- a/lib/ptrarray.c	Tue Mar  3 13:09:17 2015
++++ b/lib/ptrarray.c	Thu Mar  5 11:15:22 2015
+@@ -45,6 +45,7 @@
+ 
+ #include "ptrarray.h"
+ #include <memory.h>
++#include <string.h>
+ #include "xmalloc.h"
+ 
+ EXPORTED ptrarray_t *ptrarray_new(void)
+--- a/lib/stristr.c	Mon Jul 28 14:16:35 2014
++++ b/lib/stristr.c	Thu Mar  5 14:47:48 2015
+@@ -23,7 +23,7 @@
+ 
+ #include "config.h"
+ 
+-#ifndef _AIX
++#if ! defined(_AIX) && ! defined(__sun)
+ typedef unsigned int uint;
+ #endif
+ 
+--- a/lib/times.c	Mon Jul 28 14:16:35 2014
++++ b/lib/times.c	Thu Mar  5 11:17:14 2015
+@@ -41,6 +41,7 @@
+  */
+ 
+ #include <stdio.h>
++#include <strings.h>
+ #include <memory.h>
+ #include <ctype.h>
+ 
+
+======
+

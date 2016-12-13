@@ -1,0 +1,138 @@
+diff --git a/configure.in b/configure.in
+index 6a925dd..14de166 100644
+--- a/configure.in
++++ b/configure.in
+@@ -172,6 +172,9 @@ AC_SUBST(DEPLIBS)
+ AC_SUBST(LOCALDEFS)
+ AC_FUNC_VPRINTF
+ 
++dnl check whether to use getpassphrase or getpass
++AC_CHECK_FUNCS(getpassphrase)
++
+ dnl function for doing each of the database backends
+ dnl parameters: backend name, variable to set, withval
+ 
+diff --git a/doc/bugs.html b/doc/bugs.html
+index 1081205..56f5d90 100644
+--- a/doc/bugs.html
++++ b/doc/bugs.html
+@@ -90,10 +90,6 @@ overridden.
+ <li> any utilities doing db operations should catch signals and poll
+ for them to see if it should exit (like mbpath, ipurge).
+ 
+-<li> <tt>imtest</tt> uses <tt>getpass()</tt> to grab passwords from
+-users. On some systems (Solaris reported), this will only return the
+-first 8 characters, causing authentication failures.
+-
+ </ul>
+ 
+ <h3>libraries</h3>
+diff --git a/imap/fetchnews.c b/imap/fetchnews.c
+index 44db834..0413605 100644
+--- a/imap/fetchnews.c
++++ b/imap/fetchnews.c
+@@ -352,7 +352,7 @@ int main(int argc, char *argv[])
+ 	else if (!strncmp("381", buf, 3)) {
+ 	    /* password required */
+ 	    if (!password)
+-		password = getpass("Please enter the password: ");
++		password = cyrus_getpass("Please enter the password: ");
+ 
+ 	    if (!password) {
+ 		fprintf(stderr, "failed to get password\n");
+diff --git a/imtest/imtest.c b/imtest/imtest.c
+index cdea59a..3c3e413 100644
+--- a/imtest/imtest.c
++++ b/imtest/imtest.c
+@@ -921,7 +921,7 @@ void interaction (int id, const char *challenge, const char *prompt,
+ 
+     if (id==SASL_CB_PASS && !cmdline_password) {
+ 	printf("%s: ", prompt);
+-	s = xstrdup(getpass(""));
++	s = xstrdup(cyrus_getpass(""));
+ 	strarray_appendm(&stashed_strings, s);
+ 	*tlen = strlen(s);
+ 	*tresult = s;
+@@ -953,7 +953,7 @@ void interaction (int id, const char *challenge, const char *prompt,
+ 	}
+ 	printf("%s: ",prompt);
+ 	if (id==SASL_CB_NOECHOPROMPT) {
+-	    strcpy(result, getpass(""));
++	    strcpy(result, cyrus_getpass(""));
+ 	} else {
+ 	    result[0] = '\0';
+ 	    if (fgets(result, sizeof(result) - 1, stdin) != NULL) {
+diff --git a/installsieve/installscript.c b/installsieve/installscript.c
+index 038d9b5..82f7bea 100644
+--- a/installsieve/installscript.c
++++ b/installsieve/installscript.c
+@@ -116,7 +116,7 @@ getsecret(sasl_conn_t *conn,
+   return -1;
+ 
+   /*  printf("Password: ", prompt);
+-  *tresult=strdup(getpass(""));
++  *tresult=strdup(cyrus_getpass(""));
+   *tlen=strlen(*tresult);
+   if (! password)
+   return SASL_FAIL; */
+@@ -195,7 +195,7 @@ void interaction (int id, const char *prompt,
+ 	
+       } else {
+ 	printf("%s: ", prompt);
+-	*tresult=strdup(getpass(""));
++	*tresult=strdup(cyrus_getpass(""));
+ 	*tlen=strlen(*tresult);
+       }
+ 	return;
+diff --git a/lib/imclient.c b/lib/imclient.c
+index b18862b..0bae1df 100644
+--- a/lib/imclient.c
++++ b/lib/imclient.c
+@@ -1121,7 +1121,7 @@ void interaction(struct imclient *context, sasl_interact_t *t, char *user)
+     } else {
+ 	printf("%s: ", t->prompt);
+ 	if (t->id == SASL_CB_PASS) {
+-	    char *ptr = getpass("");
++	    char *ptr = cyrus_getpass("");
+ 	    strlcpy(result, ptr, sizeof(result));
+ 	} else {
+ 	    if (!fgets(result, sizeof(result)-1, stdin))
+diff --git a/lib/util.h b/lib/util.h
+index ee4389a..5286588 100644
+--- a/lib/util.h
++++ b/lib/util.h
+@@ -51,6 +51,7 @@
+ #include <config.h>
+ #include <sys/types.h>
+ #include <limits.h>
++#include <unistd.h>
+ #include <stdarg.h>
+ 
+ #define BIT32_MAX 4294967295U
+@@ -192,6 +193,13 @@ unsigned int buf_replace_all(struct buf *buf, const char *match,
+ void buf_init(struct buf *buf);
+ void buf_free(struct buf *buf);
+ 
++/* use getpassphrase on machines which support it */
++#ifdef HAVE_GETPASSPHRASE
++#define cyrus_getpass getpassphrase
++#else
++#define cyrus_getpass getpass
++#endif
++
+ /*
+  * Given a list of strings, terminated by (char *)NULL,
+  * return a newly allocated string containing the
+diff --git a/perl/imap/IMAP.xs b/perl/imap/IMAP.xs
+index f9ef08f..ef43cf0 100644
+--- a/perl/imap/IMAP.xs
++++ b/perl/imap/IMAP.xs
+@@ -203,7 +203,7 @@ static int get_password(sasl_conn_t *conn, void *context, int id,
+ 	 * reason */ 
+ 	fprintf(stdout, "Password: ");
+ 	fflush(stdout);
+-	ptr = getpass("");
++	ptr = cyrus_getpass("");
+ 	text->password = safemalloc(sizeof(sasl_secret_t) + strlen(ptr));
+ 	text->password->len = strlen(ptr);
+ 	strncpy((char *) text->password->data, ptr, text->password->len);

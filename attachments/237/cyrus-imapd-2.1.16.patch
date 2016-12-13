@@ -1,0 +1,323 @@
+diff -ruN cyrus-imapd-2.1.16.orig/imap/lmtpd.c cyrus-imapd-2.1.16/imap/lmtpd.c
+--- cyrus-imapd-2.1.16.orig/imap/lmtpd.c	2003-11-23 04:56:28.000000000 -0800
++++ cyrus-imapd-2.1.16/imap/lmtpd.c	2003-11-23 04:58:43.558186000 -0800
+@@ -146,7 +146,7 @@
+ static void removespool(message_data_t *msgdata);
+ 
+ struct lmtp_func mylmtp = { &deliver, &verify_user, &shut_down,
+-			    &spoolfile, &removespool, 0, 1, 0 };
++			    &spoolfile, &removespool, 0, 0, 1, 0 };
+ 
+ static void logdupelem();
+ static void usage();
+@@ -206,8 +206,7 @@
+ 	sieve_dir = NULL;
+     }
+ 
+-    mylmtp.addheaders = xmalloc(80);
+-    snprintf(mylmtp.addheaders, 80, "X-Sieve: %s\r\n", SIEVE_VERSION);
++    addheader(&mylmtp, "X-Sieve", SIEVE_VERSION);
+ 
+     /* setup sieve support */
+     setup_sieve();
+diff -ruN cyrus-imapd-2.1.16.orig/imap/lmtpengine.c cyrus-imapd-2.1.16/imap/lmtpengine.c
+--- cyrus-imapd-2.1.16.orig/imap/lmtpengine.c	2003-11-23 04:56:28.000000000 -0800
++++ cyrus-imapd-2.1.16/imap/lmtpengine.c	2003-11-23 04:58:43.563732000 -0800
+@@ -93,12 +93,6 @@
+ #define RCPT_GROW 30
+ 
+ /* data per message */
+-struct Header {
+-    char *name;
+-    int ncontents;
+-    char *contents[1];
+-};
+-
+ struct address_data {
+     char *user;
+     char *all;
+@@ -892,6 +886,54 @@
+     return 0;
+ }
+ 
++
++static int insert_cache_element (message_data_t *m, char *name, char *body) {
++        int cl, clinit;
++	int nlen = strlen(name) + 1;
++
++	while (nlen--) {
++	    name[nlen] = tolower(name[nlen]);
++	}
++
++        /* put it in the hash table */
++        clinit = cl = hashheader(name);
++        while (m->cache[cl] != NULL && strcmp(name, m->cache[cl]->name)) {
++            cl++;               /* resolve collisions linearly */
++            cl %= HEADERCACHESIZE;
++            if (cl == clinit) break; /* gone all the way around, so bail */
++        }
++
++        /* found where to put it, so insert it into a list */
++        if (m->cache[cl]) {
++            /* add this body on */
++            m->cache[cl]->contents[m->cache[cl]->ncontents++] = body;
++
++            /* whoops, won't have room for the null at the end! */
++            if (!(m->cache[cl]->ncontents % 8)) {
++                /* increase the size */
++                m->cache[cl] = (header_t *)
++                    xrealloc(m->cache[cl],sizeof(header_t) +
++                             ((8 + m->cache[cl]->ncontents) * sizeof(char *)));
++            }
++            /* have no need of this */
++            free(name);
++	    name = 0;
++        } else {
++            /* create a new entry in the hash table */
++            m->cache[cl] = (header_t *) xmalloc(sizeof(header_t) +
++                                                8 * sizeof(char*));
++            m->cache[cl]->name = name;
++            m->cache[cl]->contents[0] = body;
++            m->cache[cl]->ncontents = 1;
++        }
++
++        /* we always want a NULL at the end */
++        m->cache[cl]->contents[m->cache[cl]->ncontents] = NULL;
++
++        return 0;
++}
++
++
+ static int fill_cache(struct protstream *fin, FILE *fout, message_data_t *m)
+ {
+     int r = 0;
+@@ -899,7 +941,6 @@
+     /* let's fill that header cache */
+     for (;;) {
+ 	char *name, *body;
+-	int cl, clinit;
+ 
+ 	if ((r = parseheader(fin, fout, &name, &body)) < 0) {
+ 	    break;
+@@ -909,40 +950,7 @@
+ 	    break;
+ 	}
+ 
+-	/* put it in the hash table */
+-	clinit = cl = hashheader(name);
+-	while (m->cache[cl] != NULL && strcmp(name, m->cache[cl]->name)) {
+-	    cl++;		/* resolve collisions linearly */
+-	    cl %= HEADERCACHESIZE;
+-	    if (cl == clinit) break; /* gone all the way around, so bail */
+-	}
+-
+-	/* found where to put it, so insert it into a list */
+-	if (m->cache[cl]) {
+-	    /* add this body on */
+-	    m->cache[cl]->contents[m->cache[cl]->ncontents++] = body;
+-
+-	    /* whoops, won't have room for the null at the end! */
+-	    if (!(m->cache[cl]->ncontents % 8)) {
+-		/* increase the size */
+-		m->cache[cl] = (header_t *)
+-		    xrealloc(m->cache[cl],sizeof(header_t) +
+-			     ((8 + m->cache[cl]->ncontents) * sizeof(char *)));
+-	    }
+-
+-	    /* have no need of this */
+-	    free(name);
+-	} else {
+-	    /* create a new entry in the hash table */
+-	    m->cache[cl] = (header_t *) xmalloc(sizeof(header_t) + 
+-						8 * sizeof(char*));
+-	    m->cache[cl]->name = name;
+-	    m->cache[cl]->contents[0] = body;
+-	    m->cache[cl]->ncontents = 1;
+-	}
+-
+-	/* we always want a NULL at the end */
+-	m->cache[cl]->contents[m->cache[cl]->ncontents] = NULL;
++	insert_cache_element(m, name, body);
+     }
+ 
+     if (r) {
+@@ -974,6 +982,8 @@
+     int nrcpts = m->rcpt_num;
+     time_t t;
+     char datestr[80];
++    char *name = NULL, *val = NULL;
++    int vlen = 0;
+ 
+     /* Copy to spool file */
+     f = func->spoolfile(m);
+@@ -1002,22 +1012,49 @@
+ 	    hostname = config_servername;
+ 	}
+ 
+-	fprintf(f, "Return-Path: <%s%s%s>\r\n",
++	vlen = strlen(rpath) + (hostname ? 1 + strlen(hostname) : 0) + 2;
++	val = (char*)xmalloc((vlen + 1) * sizeof(char*));
++	sprintf(val, "<%s%s%s>",
+ 		rpath, hostname ? "@" : "", hostname ? hostname : "");
++	val[vlen] = 0;
++	name = xstrdup("Return-Path");
++
++	fprintf(f, "%s: %s\r\n", name, val);
++	insert_cache_element(m, xstrdup(name), xstrdup(val));
++
++	free(name);
++	free(val);
++	name = val = NULL;
++	vlen = 0;
+     }
+ 
+     /* add a received header */
+-    t = time(NULL);
+-    rfc822date_gen(datestr, sizeof(datestr), t);
+-    fprintf(f, "Received: from %s (%s)",
+-	    cd->lhlo_param, cd->clienthost);
+     if (m->authuser) {
+ 	const int *ssfp;
++	int lbits = 0, lssfp;
+ 	sasl_getprop(cd->conn, SASL_SSF, (const void **) &ssfp);
+-	fprintf(f, " (authenticated user=%s bits=%d)", m->authuser, *ssfp);
++
++	lssfp = *ssfp;
++	do {
++	    lbits++;
++	} while ((int)(lssfp/=10) != 0);
++
++	vlen = 28 + strlen(m->authuser) + lbits;
++        val = (char*)xmalloc((vlen + 1) * sizeof(char*));
++	sprintf(val, " (authenticated user=%s bits=%d)", m->authuser, *ssfp);
++    }
++
++    vlen += strlen(cd->lhlo_param) + strlen(cd->clienthost) +
++	    strlen(config_servername) + strlen(CYRUS_VERSION) + 33;
++    if (val == NULL) {
++	val = (char*)xmalloc((vlen + 1) * sizeof(char*));
++	val[0] = '\0';
++    } else {
++	val = (char*)xrealloc(val, (vlen + 1) * sizeof(char*));
+     }
+-    fprintf(f, "\r\n\tby %s (Cyrus %s) with LMTP",
+-		config_servername, CYRUS_VERSION);
++    sprintf(val, "from %s (%s)%s\r\n\tby %s (Cyrus %s) with LMTP",
++	    cd->lhlo_param, cd->clienthost, (val[0] == '\0' ? "" : val),
++	    config_servername, CYRUS_VERSION);
+ 
+ #ifdef HAVE_SSL
+     if (cd->tls_conn) {
+@@ -1026,15 +1063,46 @@
+ 	tls_info[0] = '\0';
+ 	/* grab TLS info for Received: header */
+ 	tls_get_info(cd->tls_conn, tls_info, sizeof(tls_info));
+-	if (*tls_info) fprintf(f, " (%s)", tls_info);
++	if (*tls_info) {
++	    vlen += strlen(tls_info) + 3;
++	    val = (char*)xrealloc(val, (vlen + 1) * sizeof(char*));
++	    sprintf(val, "%s (%s)", val, tls_info);
++	}
+     }
+ #endif /* HAVE_SSL */
+ 
+-    fprintf(f, "; %s\r\n", datestr);
++    t = time(NULL);
++    rfc822date_gen(datestr, sizeof(datestr), t);
++
++    vlen += strlen(datestr) + 2;
++    val = (char*)xrealloc(val, (vlen + 1) * sizeof(char*));
++    sprintf(val, "%s; %s", val, datestr);
++
++    val[vlen] = 0;
++    name = xstrdup("Received");
++
++    fprintf(f, "%s: %s\r\n", name, val);
++    insert_cache_element(m, xstrdup(name), xstrdup(val));
++
++    free(name);
++    free(val);
++    name = val = 0;
+ 
+     /* add any requested headers */
+-    if (func->addheaders) {
+-	fputs(func->addheaders, f);
++    /* need to parse to add to the header cache */
++    if (func->nheaders > 0) {
++	int i = 0;
++	do {
++	    fprintf(f, "%s: %s\r\n", func->addheaders[i].name,
++		     func->addheaders[i].contents[0]);
++
++	    /* copy the data being passed in; addheaders[] will be
++	       freed when lmtpd exits, don't want name freed
++	       before then */
++	    insert_cache_element(m, xstrdup(func->addheaders[i].name),
++		     xstrdup(func->addheaders[i].contents[0]));
++	    i++;
++	} while (i != func->nheaders);
+     }
+ 
+     /* fill the cache */
+@@ -2628,3 +2696,14 @@
+ 
+     return SASL_OK;
+ }
++
++
++int addheader(struct lmtp_func *func, char *name, char *body)
++{
++    func->nheaders++;
++    func->addheaders = (header_t *)xrealloc(func->addheaders, func->nheaders * sizeof(header_t));
++    func->addheaders[func->nheaders - 1].name = xstrdup(name);
++    func->addheaders[func->nheaders - 1].contents[0] = xstrdup(body);
++    func->addheaders[func->nheaders - 1].ncontents = 1;
++    return 0;
++}
+diff -ruN cyrus-imapd-2.1.16.orig/imap/lmtpengine.h cyrus-imapd-2.1.16/imap/lmtpengine.h
+--- cyrus-imapd-2.1.16.orig/imap/lmtpengine.h	2003-11-23 04:56:28.000000000 -0800
++++ cyrus-imapd-2.1.16/imap/lmtpengine.h	2003-11-23 04:58:43.565243000 -0800
+@@ -51,6 +51,12 @@
+ typedef struct Header header_t;
+ typedef struct address_data address_data_t;
+ 
++struct Header {
++    char *name;
++    int ncontents;
++    char *contents[1];
++};
++
+ struct message_data {
+     struct protstream *data;	/* message in temp file */
+     FILE *f;			/* FILE * corresponding */
+@@ -107,11 +113,17 @@
+     void (*shutdown)(int code);
+     FILE *(*spoolfile)(message_data_t *m);
+     void (*removespool)(message_data_t *m);
+-    char *addheaders;		/* add these headers to all messages */
++    header_t *addheaders;	/* add these headers to all messages */
++    int nheaders;		/* count of all headers to add */
+     int addretpath;		/* should i add a return-path header? */
+     int preauth;		/* preauth connection? */
+ };
+ 
++
++/* add arbitrary headers to the lmtp_func struct */
++int addheader(struct lmtp_func *func, char *name, char *body);
++
++
+ /* run LMTP on 'pin' and 'pout', doing callbacks to 'func' where appropriate
+  * 
+  * will call signals_poll() on occasion.
+diff -ruN cyrus-imapd-2.1.16.orig/imap/lmtpproxyd.c cyrus-imapd-2.1.16/imap/lmtpproxyd.c
+--- cyrus-imapd-2.1.16.orig/imap/lmtpproxyd.c	2003-11-23 04:56:28.000000000 -0800
++++ cyrus-imapd-2.1.16/imap/lmtpproxyd.c	2003-11-23 04:58:43.566735000 -0800
+@@ -144,7 +144,7 @@
+ static void usage();
+ 
+ struct lmtp_func mylmtp = { &deliver, &verify_user, &shut_down,
+-			    &proxy_spoolfile, NULL, 0, 0, 0 };
++			    &proxy_spoolfile, NULL, 0, 0, 0, 0 };
+ 
+ /* globals */
+ static int quotaoverride = 0;		/* should i override quota? */

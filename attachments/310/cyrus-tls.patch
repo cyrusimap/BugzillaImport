@@ -1,0 +1,230 @@
+--- cyrus-imapd-2.2.8/perl/imap/cyradm.sh	2004-01-15 06:35:34.000000000 -0800
++++ cyrus-imapd-2.2.8.new/perl/imap/cyradm.sh	2004-10-22 16:18:54.000000000 -0700
+@@ -54,7 +54,8 @@
+ =head1 SYNOPSIS
+ 
+   $ cyradm [--user user] [--[no]rc] [--systemrc file] [--userrc file] \
+-  > [--port n] [--auth mechanism] [--server] server
++  > [--port n] [--auth mechanism] [--tlskey keyfile] [--notls] \
++  > [--server] server
+ 
+ but possibly
+ 
+diff -ru cyrus-imapd-2.2.8/perl/imap/IMAP/Shell.pm cyrus-imapd-2.2.8.new/perl/imap/IMAP/Shell.pm
+--- cyrus-imapd-2.2.8/perl/imap/IMAP/Shell.pm	2004-01-15 06:35:35.000000000 -0800
++++ cyrus-imapd-2.2.8.new/perl/imap/IMAP/Shell.pm	2004-10-22 16:18:54.000000000 -0700
+@@ -428,9 +428,10 @@
+ # (It's not as trivial as run() because it does things expected of standalone
+ # programs, as opposed to things expected from within a program.)
+ sub shell {
+-  my ($server, $port, $authz, $auth, $systemrc, $userrc, $dorc, $mech, $pw) =
++  my ($server, $port, $authz, $auth, $systemrc, $userrc, $dorc, $mech, $pw,
++      $tlskey, $notls) =
+     ('', 143, undef, $ENV{USER} || $ENV{LOGNAME}, '/usr/local/etc/cyradmrc.pl',
+-     "$ENV{HOME}/.cyradmrc.pl", 1, undef, undef);
++     "$ENV{HOME}/.cyradmrc.pl", 1, undef, undef, "", undef);
+   GetOptions('user|u=s' => \$auth,
+ 	     'authz|z=s' => \$authz,
+ 	     'rc|r!' => \$dorc,
+@@ -440,6 +441,8 @@
+ 	     'port|p=i' => \$port,
+ 	     'auth|a=s' => \$mech,
+ 	     'password|w=s' => \$pw,
++  	     'tlskey|t=s' => \$tlskey,
++  	     'notls' => \$notls,
+ 	     'help|h' => sub { cyradm_usage(); exit(0); }
+ 	    );
+   if ($server ne '' && @ARGV) {
+@@ -458,7 +461,8 @@
+ 			  -callback => \&_cb_eof,
+ 			  -rock => \$cyradm});
+     $cyradm->authenticate(-authz => $authz, -user => $auth,
+-			  -mechanism => $mech, -password => $pw)
++			  -mechanism => $mech, -password => $pw,
++			  -tlskey => $tlskey, -notls => $notls)
+       or die "cyradm: cannot authenticate to server with $mech as $auth\n";
+   }
+   my $fstk = [*STDIN, *STDOUT, *STDERR];
+@@ -765,6 +769,20 @@
+       $want = '-service';
+       next;
+     }
++    if (Cyrus::IMAP::imclient_havetls()) {
++      if ($opt ne '' && '-tlskey' =~ /^\Q$opt/ || $opt eq '--tlskey') {
++	$want = '-tlskey';
++	next;
++      }
++      if ($opt ne '' && '-notls' =~ /^\Q$opt/ || $opt eq '--notls') {
++	$want = '-notls';
++	next;
++      }
++      if ($opt =~ /^-/) {
++	die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
++	    "                    [-service name] [-tlskey keyfile] [-notls] [user]\n";
++      }
++    }
+     if ($opt =~ /^-/) {
+       die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
+ 	  "                    [-service name] [user]\n";
+@@ -776,8 +794,13 @@
+   }
+   push(@nargv, @argv);
+   if (@nargv > 1) {
+-    die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
+-        "                    [-service name] [user]\n";
++    if (Cyrus::IMAP::imclient_havetls()) {
++      die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
++          "                    [-service name] [-tlskey keyfile] [-notls] [user]\n";
++    } else {
++      die "usage: authenticate [-minssf N] [-maxssf N] [-mechanisms STR]\n".
++          "                    [-service name] [user]\n";
++    }
+   }
+   if (@nargv) {
+     $opts{-user} = shift(@nargv);
+diff -ru cyrus-imapd-2.2.8/perl/imap/IMAP.pm cyrus-imapd-2.2.8.new/perl/imap/IMAP.pm
+--- cyrus-imapd-2.2.8/perl/imap/IMAP.pm	2003-10-22 11:50:18.000000000 -0700
++++ cyrus-imapd-2.2.8.new/perl/imap/IMAP.pm	2004-10-25 09:57:10.809146653 -0700
+@@ -196,16 +196,43 @@
+ sub authenticate {
+   my ($self, $first) = @_;
+   my (%opts, $rc);
++  my ($starttls, $logindisabled) = (0, 0);
+ 
+   if (defined $first &&
+-      $first =~ /^-\w+|Mechanism|Service|Authz|User|Minssf|Maxssf|Password$/) {
++      $first =~ /^-\w+|Mechanism|Service|Authz|User|Minssf|Maxssf|Password|Tlskey|Notls|CAfile|CApath$/) {
+     (undef, %opts) = @_;
+-    foreach (qw(mechanism service authz user minssf maxssf password)) {
++    foreach (qw(mechanism service authz user minssf maxssf password tlskey notls)) {
+       $opts{'-' . $_} = $opts{ucfirst($_)} if !defined($opts{'-' . $_});
+     }
+   } else {
+     (undef, $opts{-mechanism}, $opts{-service}, $opts{-authz}, $opts{-user},
+-     $opts{-minssf}, $opts{-maxssf}, $opts{-password}) = @_;
++     $opts{-minssf}, $opts{-maxssf}, $opts{-password},
++     $opts{-tlskey}, $opts{-notls}, $opts{-cafile}, $opts{-capath}) = @_;
++  }
++  if (havetls()) {
++    if (!defined($opts{-tlskey})) {
++      $opts{-tlskey} = "";
++    }
++    if (!defined($opts{-cafile})) {
++      $opts{-cafile} = "";
++    }
++    if (!defined($opts{-capath})) {
++      $opts{-capath} = "";
++    }
++    if ($opts{-notls}) {
++      $opts{-tlskey} = undef;
++    }
++    $self->addcallback({-trigger => 'CAPABILITY',
++			-callback => sub {my %a = @_;
++					  map { $starttls = 1
++						    if /^STARTTLS$/i;
++					    }
++					  split(/ /, $a{-text})}});
++    $self->send(undef, undef, 'CAPABILITY');
++    $self->addcallback({-trigger => 'CAPABILITY'});
++    if ($starttls && defined($opts{-tlskey})) {
++      $self->_starttls($opts{-tlskey}, $opts{-tlskey}, $opts{-cafile}, $opts{-capath});
++    }
+   }
+   if (!defined($opts{-mechanism})) {
+     $opts{-mechanism} = '';
+@@ -229,6 +256,20 @@
+ 			       $opts{-authz}, $opts{-user}, $opts{-password},
+ 			       $opts{-minssf}, $opts{-maxssf});
+   }
++  if (!$rc) {
++    $self->addcallback({-trigger => 'CAPABILITY',
++			-callback => sub {my %a = @_;
++					  map { $logindisabled = 1
++						    if /^LOGINDISABLED$/i;
++					    }
++					  split(/ /, $a{-text})}});
++    $self->send(undef, undef, 'CAPABILITY');
++    $self->addcallback({-trigger => 'CAPABILITY'});
++    if ($logindisabled) {
++      warn "Login disabled.\n";
++      return undef;
++    }
++  }
+   $opts{-mechanism} ||= 'plain';
+   if (!$rc && $opts{-mechanism} =~ /(\b|^)(plain|login)($|\b)/i) {
+     $opts{-user} = getlogin if !defined($opts{-user});
+diff -ru cyrus-imapd-2.2.8/perl/imap/IMAP.xs cyrus-imapd-2.2.8.new/perl/imap/IMAP.xs
+--- cyrus-imapd-2.2.8/perl/imap/IMAP.xs	2003-11-25 13:28:23.000000000 -0800
++++ cyrus-imapd-2.2.8.new/perl/imap/IMAP.xs	2004-10-22 16:26:05.000000000 -0700
+@@ -57,6 +57,7 @@
+ #include "xmalloc.h"
+ 
+ #include "cyrperl.h"
++#include "config.h"
+ 
+ typedef struct xscyrus *Cyrus_IMAP;
+ 
+@@ -417,6 +418,44 @@
+ 	  ST(0) = &sv_yes;
+ 	}
+ 
++int
++imclient_havetls()
++CODE:
++#ifdef HAVE_SSL
++	RETVAL = 1;
++#else
++	RETVAL = 0;
++#endif /* HAVE_SSL */
++OUTPUT:
++	RETVAL
++
++SV *
++imclient__starttls(client, tls_cert_file, tls_key_file, CAfile, CApath)
++	Cyrus_IMAP client
++	char* tls_cert_file
++	char* tls_key_file
++        char* CAfile
++        char* CApath
++PREINIT:
++	int rc;
++	int tls_layer;
++CODE:
++	ST(0) = sv_newmortal();
++
++	/* If the tls_{cert, key}_file parameters are undef, set to be NULL */
++	if(!SvOK(ST(2))) tls_cert_file = NULL;
++	if(!SvOK(ST(3))) tls_key_file = NULL;
++#ifdef HAVE_SSL
++	rc = imclient_starttls(client->imclient, tls_cert_file, tls_key_file, CAfile, CApath);
++	if (rc)
++	  ST(0) = &sv_no;
++	else {
++	  ST(0) = &sv_yes;
++	}
++#else
++	ST(0) = &sv_no;
++#endif /* HAVE_SSL */
++
+ void
+ imclient_addcallback(client, ...)
+ 	Cyrus_IMAP client
+diff -ru cyrus-imapd-2.2.8/perl/imap/Makefile.PL cyrus-imapd-2.2.8.new/perl/imap/Makefile.PL
+--- cyrus-imapd-2.2.8/perl/imap/Makefile.PL	2003-10-22 11:50:18.000000000 -0700
++++ cyrus-imapd-2.2.8.new/perl/imap/Makefile.PL	2004-10-22 16:18:54.000000000 -0700
+@@ -1,5 +1,4 @@
+ # 
+-# Copyright (c) 2000 Carnegie Mellon University.  All rights reserved.
+ #
+ # Redistribution and use in source and binary forms, with or without
+ # modification, are permitted provided that the following conditions
+@@ -66,7 +65,7 @@
+     'OBJECT'    => 'IMAP.o',
+     'MYEXTLIB'  => '../../lib/libcyrus.a ../../lib/libcyrus_min.a',
+     'LIBS'	=> ["$BDB_LIB $SASL_LIB $OPENSSL_LIB $LIB_RT -lssl -lcrypto"],
+-    'DEFINE'	=> '-DPERL_POLLUTE',     # e.g., '-DHAVE_SOMETHING' 
+-    'INC'	=> "-I../../lib $SASL_INC $OPENSSL_INC", 
++    'DEFINE'	=> '-DPERL_POLLUTE',    # e.g., '-DHAVE_SOMETHING' 
++    'INC'	=> "-I../../lib -I../.. $SASL_INC $OPENSSL_INC", 
+     'EXE_FILES' => [cyradm],
+ );

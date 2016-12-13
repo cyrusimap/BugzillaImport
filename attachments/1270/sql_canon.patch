@@ -1,0 +1,508 @@
+diff -rw cyrus-sasl-2.1.24/doc/options.html cyrus-sasl-2.1.24-sql/doc/options.html
+176a177,182
+> <TD>sql_auxprop_select</TD><TD>SQL plugin</TD>
+> <TD>SELECT statement to use for fetching properties.  This option is
+> <b>required</b> in order to use the SQL auxprop plugin.</TD>
+> <TD><i>none</i></TD>
+> </TR>
+> <TR>
+177a184,195
+> <TD>SELECT statement to use for fetching properties. <b>Deprecated</b> alias for sql_auxprop_select. This option is
+> <b>required</b> in order to use the SQL auxprop plugin.</TD>
+> <TD><i>none</i></TD>
+> </TR>
+> <TR>
+> <TD>sql_statement</TD><TD>SQL plugin</TD>
+> <TD>SELECT statement to use for fetching properties. <b>Deprecated</b> alias for sql_auxprop_select. This option is
+> <b>required</b> in order to use the SQL auxprop plugin.</TD>
+> <TD><i>none</i></TD>
+> </TR>
+> <TR>
+> <TD>sql_canon_select</TD><TD>SQL plugin</TD>
+179c197
+< <b>required</b> in order to use the SQL plugin.</TD>
+---
+> <b>required</b> in order to use the SQL canon plugin.</TD>
+183c201
+< <TD>sql_insert</TD><TD>SQL plugin</TD>
+---
+> <TD>sql_auxprop_insert</TD><TD>SQL plugin</TD>
+188c206,211
+< <TD>sql_update</TD><TD>SQL plugin</TD>
+---
+> <TD>sql_insert</TD><TD>SQL plugin</TD>
+> <TD>INSERT statement to use for creating properties for new users. <b>Deprecated</b> alias for sql_auxprop_insert.</TD>
+> <TD><i>none</i></TD>
+> </TR>
+> <TR>
+> <TD>sql_auxprop_update</TD><TD>SQL plugin</TD>
+192a216,221
+> <TR>
+> <TD>sql_update</TD><TD>SQL plugin</TD>
+> <TD>UPDATE statement to use for modifying properties. <b>Deprecated</b> alias for sql_auxprop_update</TD>
+> <TD><i>none</i></TD>
+> </TR>
+> <TR>
+212c241
+< <p>The <tt>sql_insert</tt> and <tt>sql_update</tt> options are
+---
+> <p>The <tt>sql_auxprop_insert</tt> and <tt>sql_auxprop_update</tt> options are
+219,220c248,249
+< <p>The SQL statements provided in the <tt>sql_select</tt>,
+< <tt>sql_insert</tt> and <tt>sql_update</tt> options can contain
+---
+> <p>The SQL statements provided in the <tt>sql_auxprop_select</tt>,
+> <tt>sql_auxprop_insert</tt> and <tt>sql_auxprop_update</tt> options can contain
+250c279
+<      <tt>sql_select: SELECT %p FROM user_table WHERE username = '%u' and realm = '%r'</tt>
+---
+>      <tt>sql_auxprop_select: SELECT %p FROM user_table WHERE username = '%u' and realm = '%r'</tt>
+264c293
+<      <tt>sql_insert: INSERT INTO user_table (username, realm, %p) VALUES ('%u', '%r', '%v')</tt>
+---
+>      <tt>sql_auxprop_insert: INSERT INTO user_table (username, realm, %p) VALUES ('%u', '%r', '%v')</tt>
+283a313,323
+> <h2>Notes on SQL canon user plugin options</h2>
+> <p>This plugin shares all configuration with SQL auxprop plugin. Therefore 
+> you have to give options like sql_hostnames and sql_user only once.
+> </p>
+> <p>All above examples for sql_auxprop_select are valid for sql_canon_select, too.
+> </p>
+> <p>NOTE: This plugin tests for recursion 5 iterations. 
+> (e.g. test@test.local->joe@test.local->doe@test.local->test@test.local->joe@test.local)
+> After that it stops the recursion at the current element and issues a warning.
+> </p>
+> 
+diff -rw cyrus-sasl-2.1.24/plugins/makeinit.sh cyrus-sasl-2.1.24-sql/plugins/makeinit.sh
+92c92
+< # ldapdb is also a canon_user plugin
+---
+> # ldapdb and sql are also canon_user plugins
+93a94,95
+> echo "SASL_CANONUSER_PLUG_INIT( sql )" >> sql_init.c
+> 
+diff -rw cyrus-sasl-2.1.24/plugins/sql.c cyrus-sasl-2.1.24-sql/plugins/sql.c
+3c3
+< ** SQL Auxprop plugin
+---
+> ** SQL Auxprop and Canon plugin
+5c5,6
+< ** Ken Murchison
+---
+> ** Lars Duesing -- canon plugin
+> ** Ken Murchison -- original auxprop plugin
+53,55c54,57
+<     const char *sql_select;
+<     const char *sql_insert;
+<     const char *sql_update;
+---
+>     const char *sql_auxprop_select;
+>     const char *sql_canon_select;
+>     const char *sql_auxprop_insert;
+>     const char *sql_auxprop_update;
+802,804c804,806
+<     r = utils->getopt(utils->getopt_context,"SQL", "sql_select",
+< 		      &settings->sql_select, NULL);
+<     if (r || !settings->sql_select ) {
+---
+>     r = utils->getopt(utils->getopt_context,"SQL", "sql_auxprop_select",
+> 		      &settings->sql_auxprop_select, NULL);
+>     if (r || !settings->sql_auxprop_select ) {
+805a808,810
+> 	r = utils->getopt(utils->getopt_context,"SQL", "sql_select",
+> 			  &settings->sql_auxprop_select, NULL);
+> 	if (r || !settings->sql_auxprop_select) {
+807,809c812,824
+< 			  &settings->sql_select, NULL);
+< 	if (r || !settings->sql_select) {
+< 	    settings->sql_select = SQL_BLANK_STRING;
+---
+> 			  &settings->sql_auxprop_select, NULL);
+> 	    if (r || !settings->sql_auxprop_select) {
+> 	        settings->sql_auxprop_select = SQL_BLANK_STRING;
+> 	    } else
+>             {
+>                 utils->log(NULL, SASL_LOG_WARN,
+> 		   "sql plugin: Option sql_statement is deprecated, use sql_auxprop_select instead!");
+>             }
+>         }
+>         else
+>         {
+>             utils->log(NULL, SASL_LOG_WARN,
+>         	   "sql plugin: Option sql_select is deprecated, use sql_auxprop_select instead!");
+810a826,832
+>             
+>     }
+> 
+>     r = utils->getopt(utils->getopt_context, "SQL", "sql_canon_select",
+> 		      &settings->sql_canon_select, NULL);
+>     if (r || !settings->sql_canon_select) {
+> 	settings->sql_canon_select = SQL_BLANK_STRING;
+812a835,837
+>     r = utils->getopt(utils->getopt_context, "SQL", "sql_auxprop_insert",
+> 		      &settings->sql_auxprop_insert, NULL);
+>     if (r || !settings->sql_auxprop_insert) {
+814,816c839,847
+< 		      &settings->sql_insert, NULL);
+<     if (r || !settings->sql_insert) {
+< 	settings->sql_insert = SQL_BLANK_STRING;
+---
+> 		      &settings->sql_auxprop_insert, NULL);
+>         if (r || !settings->sql_auxprop_insert) {
+> 	    settings->sql_auxprop_insert = SQL_BLANK_STRING;
+> 	} else
+>         {
+>             utils->log(NULL, SASL_LOG_WARN,
+> 		   "sql plugin: Option sql_insert is deprecated, use sql_auxprop_insert instead!");
+>         }
+> 
+818a850,852
+>     r = utils->getopt(utils->getopt_context, "SQL", "sql_auxprop_update",
+> 		      &settings->sql_auxprop_update, NULL);
+>     if (r || !settings->sql_auxprop_update) {
+820,822c854,861
+< 		      &settings->sql_update, NULL);
+<     if (r || !settings->sql_update) {
+< 	settings->sql_update = SQL_BLANK_STRING;
+---
+> 		      &settings->sql_auxprop_update, NULL);
+>         if (r || !settings->sql_auxprop_update) {
+> 	    settings->sql_auxprop_update = SQL_BLANK_STRING;
+>         } else
+>         {
+>             utils->log(NULL, SASL_LOG_WARN,
+> 		   "sql plugin: Option sql_update is deprecated, use sql_auxprop_update instead!");
+>         }
+921c960
+< 			"sql plugin Parse the username %s\n", user);
+---
+> 			"sql_auxprop plugin Parse the username %s\n", user);
+970c1009
+< 			    "sql plugin couldn't connect to any host\n");
+---
+> 			    "sql_auxprop plugin couldn't connect to any host\n");
+1025c1064
+< 			    "sql plugin create statement from %s %s %s\n",
+---
+> 			    "sql_auxprop plugin create statement from %s %s %s\n",
+1029c1068
+< 	query = sql_create_statement(settings->sql_select,
+---
+> 	query = sql_create_statement(settings->sql_auxprop_select,
+1039c1078
+< 			    "sql plugin doing query %s\n", query);
+---
+> 			    "sql_auxprop plugin doing query %s\n", query);
+1076c1115
+< 				"sql plugin create statement from %s %s %s\n",
+---
+> 				"sql_auxprop plugin create statement from %s %s %s\n",
+1082c1121
+< 	    query = sql_create_statement(settings->sql_select,
+---
+> 	    query = sql_create_statement(settings->sql_auxprop_select,
+1092c1131
+< 				    "sql plugin doing query %s\n", query);
+---
+> 				    "sql_auxprop plugin doing query %s\n", query);
+1157,1158c1196,1197
+< 	sql_exists(settings->sql_insert) &&
+< 	sql_exists(settings->sql_update)) return SASL_OK;
+---
+> 	sql_exists(settings->sql_auxprop_insert) &&
+> 	sql_exists(settings->sql_auxprop_update)) return SASL_OK;
+1226c1265
+< 	statement = sql_create_statement(settings->sql_select,
+---
+> 	statement = sql_create_statement(settings->sql_auxprop_select,
+1233c1272
+< 	    cmd = settings->sql_update;
+---
+> 	    cmd = settings->sql_auxprop_update;
+1236c1275
+< 	    cmd = settings->sql_insert;
+---
+> 	    cmd = settings->sql_auxprop_insert;
+1295d1333
+< 
+1308a1347,1545
+> 
+> static int
+> sql_canon_server (void *glob_context,
+> 			       sasl_server_params_t * sparams,
+> 			       const char *user, unsigned ulen,
+> 			       unsigned flags __attribute__((unused)),
+> 			       char *out_user,
+> 			       unsigned out_umax, unsigned *out_ulen)
+> {
+>   sparams->utils->seterror (sparams->utils->conn, 0, "sql_canon_server");
+> 
+>   char *userid = NULL;
+>   /* realm could be used for something clever */
+>   char *realm = NULL;
+>   const char *user_realm = NULL;
+>   char value[8192];
+>   size_t value_len;
+>   char old_value[8192];
+>   size_t old_value_len;
+>   char *query = NULL;
+>   char *escap_userid = NULL;
+>   char *escap_realm = NULL;
+>   sql_settings_t *settings;
+>   void *conn = NULL;
+>   unsigned i;
+>   char *in_buf, *userin;
+>   const char *begin_u;
+>   size_t u_apprealm = 0;
+> 
+>   if (!glob_context || !sparams->utils || !user)
+>     return SASL_BADPARAM;
+> 
+>     sparams->utils->log(NULL, SASL_LOG_DEBUG,
+>                         "sql_canon_server Parse the username %s\n", user);
+> 
+> 
+>   in_buf = sparams->utils->malloc ((ulen + 2) * sizeof (char));
+>   if (!in_buf)
+>     return SASL_NOMEM;
+> 
+>   userin = in_buf;
+> 
+>   memcpy (userin, user, ulen);
+>   userin[ulen] = '\0';
+> 
+> 
+>   for (i = 0; isspace ((int) userin[i]) && i < ulen; i++);
+>   begin_u = &(userin[i]);
+>   if (i > 0)
+>     ulen -= i;
+> 
+>   for (; ulen > 0 && isspace ((int) begin_u[ulen - 1]); ulen--);
+>   if (begin_u == &(userin[ulen]))
+>     {
+>       sparams->utils->free (in_buf);
+>       sparams->utils->seterror (sparams->utils->conn, 0,
+> 				"All-whitespace username.");
+>       return SASL_FAIL;
+>     }
+> 
+>   /* Need to append realm if necessary (see sasl.h) */
+>   if (sparams->user_realm)
+>     {
+>       user_realm = sparams->user_realm;
+>     }
+>   else
+>     {
+>       user_realm = sparams->serverFQDN;
+>     }
+> 
+>   if (!strchr (user, '@'))
+>     {
+>       u_apprealm = strlen (user_realm) + 1;
+>     }
+> 
+>   /* setup the settings */
+>   settings = (sql_settings_t *) glob_context;
+> 
+>   /* just need to escape userid and realm now */
+>   /* allocate some memory */
+>   escap_userid = (char *) sparams->utils->malloc (255);
+>   escap_realm = (char *) sparams->utils->malloc (255);
+> 
+>   if (!escap_userid || !escap_realm)
+>     {
+>       sparams->utils->log (NULL, SASL_LOG_DEBUG,
+> 			   "sql_canon_server: memerror \n");
+>       MEMERROR (sparams->utils);
+>       goto done;
+>     }
+> 
+>   conn = sql_connect (settings, sparams->utils);
+>   if (!conn)
+>     {
+>       sparams->utils->log (NULL, SASL_LOG_ERR,
+> 			   "sql_canon_server couldn't connect to any host\n");
+>       goto done;
+>     }
+> 
+>   /* escape out */
+>   settings->sql_engine->sql_escape_str (escap_userid, userin);
+>   settings->sql_engine->sql_escape_str (escap_realm, user_realm);
+> 
+>   /* create a statement that we will use */
+>   sparams->utils->log(NULL, SASL_LOG_DEBUG,
+>                             "sql_canon plugin create statement from %s %s\n",
+>                             escap_userid, escap_realm);
+> 
+>   query = sql_create_statement (settings->sql_canon_select,
+> 				escap_userid, escap_userid,
+> 				escap_realm, NULL, sparams->utils);
+>   memcpy(old_value,userin, strlen (userin));
+>   old_value_len = strlen (userin);
+>   /* run the query */
+>   sparams->utils->log(NULL, SASL_LOG_DEBUG,
+>                             "sql_canon plugin doing query %s\n", query);
+> 
+>   while (!settings->sql_engine->sql_exec (conn, query, value, sizeof (value),
+> 				       &value_len, sparams->utils))
+>     {
+>         memcpy(old_value,value,value_len);
+>         old_value_len=value_len;
+>         settings->sql_engine->sql_escape_str (escap_userid, value);
+>         settings->sql_engine->sql_escape_str (escap_realm, user_realm);
+>         sparams->utils->log(NULL, SASL_LOG_DEBUG,
+>                             "sql_canon plugin create statement from %s %s\n",
+>                             escap_userid, escap_realm);
+> 
+>   /* create a statement that we will use */
+>         query = sql_create_statement (settings->sql_canon_select,
+> 				escap_userid, escap_userid,
+> 				escap_realm, NULL, sparams->utils);
+>        sparams->utils->log(NULL, SASL_LOG_DEBUG,
+>                             "sql_canon plugin doing query %s\n", query);
+> 
+> 	}
+>       if (old_value_len < out_umax)
+> 	{
+> 	  memcpy (out_user, old_value, old_value_len);
+> 	  out_user[old_value_len] = '\0';
+> 	  *out_ulen = old_value_len; 
+>     }
+>       else
+> 	{
+> 	  MEMERROR (sparams->utils);
+> 	  goto done;
+>     }
+>   sparams->utils->free (query);
+> 
+> done:
+>   if (escap_userid)
+>     sparams->utils->free (escap_userid);
+>   if (escap_realm)
+>     sparams->utils->free (escap_realm);
+>   if (conn)
+>     settings->sql_engine->sql_close (conn);
+>   if (userid)
+>     sparams->utils->free (userid);
+>   if (realm)
+>     sparams->utils->free (realm);
+>   return SASL_OK;
+> }
+> 
+> static int
+> sql_canon_client(void *glob_context __attribute__((unused)),
+> 		    sasl_client_params_t *cparams,
+> 		    const char *user,
+> 		    unsigned ulen,
+> 		    unsigned flags __attribute__((unused)),
+> 		    char *out,
+> 		    unsigned out_max,
+> 		    unsigned *out_ulen){
+>     if(!cparams || !user) return SASL_BADPARAM;
+> 
+>     /* Trim whitespace */
+>     while(isspace(*(unsigned char *)user)) {
+> 	user++;
+> 	ulen--;
+>     }
+>     while(isspace((unsigned char)user[ulen-1])) {
+>     	ulen--;
+>     }
+> 
+>     if (!ulen) {
+>     	cparams->utils->seterror(cparams->utils->conn, 0,
+> 	    "All-whitespace username.");
+> 	return SASL_FAIL;
+>     }
+>     if (ulen>out_umax) return SASL_NOMEM;
+>     memcpy(out, user, ulen);
+>     out[ulen] = '\0';
+>     *out_ulen = ulen;
+>     return SASL_OK;
+> }
+> 
+> 
+> 
+> 
+> 
+1346,1347c1583,1584
+<     if (!sql_exists(settings->sql_select)) {
+< 	utils->log(NULL, SASL_LOG_ERR, "sql_select option missing");
+---
+>     if (!sql_exists(settings->sql_auxprop_select)) {
+> 	utils->log(NULL, SASL_LOG_ERR, "sql_auxprop_select option missing");
+1353,1354c1590,1591
+< 	       "sql auxprop plugin using %s engine\n",
+< 	       settings->sql_engine->name);
+---
+> 	      "sql_auxprop_plugin using %s engine with select: %s\n",
+> 	      settings->sql_engine->name, settings->sql_auxprop_select);
+1359a1597,1661
+> static sasl_canonuser_plug_t sql_canonuser_plugin = {
+> 	0,	/* features */
+> 	0,	/* spare */
+> 	NULL,	/* glob_context */
+> 	"sql",	/* name */
+> 	sql_auxprop_free,	/* canon_user_free */
+> 	sql_canon_server,	/* canon_user_server */
+> 	sql_canon_client,	/* canon_user_client */
+> 	NULL,
+> 	NULL,
+> 	NULL
+> };
+> 
+> int
+> sql_canonuser_plug_init (const sasl_utils_t * utils
+> 				  __attribute__ ((unused)), int max_version,
+> 				  int *out_version,
+> 				  sasl_canonuser_plug_t ** plug,
+> 				  const char *plugname
+> 				  __attribute__ ((unused)))
+> {
+>   sql_settings_t *settings;
+> 
+>   if (!out_version || !plug)
+>     return SASL_BADPARAM;
+> 
+>   if (max_version < SASL_CANONUSER_PLUG_VERSION)
+>     return SASL_BADVERS;
+> 
+>   *out_version = SASL_CANONUSER_PLUG_VERSION;
+> 
+>   settings = (sql_settings_t *) utils->malloc (sizeof (sql_settings_t));
+> 
+>   if (!settings)
+>     {
+>       MEMERROR (utils);
+>       return SASL_NOMEM;
+>     }
+> 
+>   memset (settings, 0, sizeof (sql_settings_t));
+>   sql_get_settings (utils, settings);
+> 
+>   if (!settings->sql_engine->name)
+>     return SASL_NOMECH;
+> 
+>   if (!sql_exists (settings->sql_canon_select))
+>     {
+>       utils->log (NULL, SASL_LOG_ERR,
+> 		  "sql_canon_plugin: sql_canon_select option missing");
+>       utils->free (settings);
+>       return SASL_NOMECH;
+>     }
+> 
+>   utils->log (NULL, SASL_LOG_DEBUG,
+> 	      "sql_canon_plugin using %s engine with select: %s\n",
+> 	      settings->sql_engine->name, settings->sql_canon_select);
+> 
+>   sql_canonuser_plugin.glob_context = settings;
+> 
+> 
+> 
+>   *plug = &sql_canonuser_plugin;
+> 
+>   return SASL_OK;
+> }
+diff -rw cyrus-sasl-2.1.24/plugins/sql_init.c cyrus-sasl-2.1.24-sql/plugins/sql_init.c
+38a39
+> SASL_CANONUSER_PLUG_INIT( sql )

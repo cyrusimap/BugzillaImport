@@ -1,0 +1,35 @@
+--- cyrus-imapd-2.2.6-vanilla/configure.in	2004-05-28 20:03:00.000000000 +0200
++++ cyrus-imapd-2.2.6/configure.in	2004-08-07 14:56:53.935174000 +0200
+@@ -956,6 +956,12 @@
+                     MD5OBJ="md5.o"))
+ AC_SUBST(MD5OBJ)
+ 
++dnl Check for MD5 functions
++AC_FUNC_CHECK(MD5Init,,
++	             AC_CHECK_LIB(md5, MD5Init, LIBS="${LIBS} -lmd5",
++				                      MD5OBJ="md5.o"))
++AC_SUBST(MD5OBJ)
++
+ dnl snmp
+ dnl (agentx was depricated, but SNMP_SUBDIRS is conveinent as a placeholder)
+ SNMP_SUBDIRS=""
+@@ -1202,5 +1208,19 @@
+ #endif /* _CYRUS_IMAPD_CONFIG_H_ */
+ ])
+ 
++AC_MSG_CHECKING(use in getaddrinfo() is working)
++AC_RUN_IFELSE([
++#include <netdb.h>
++struct addrinfo hints, *res0 = NULL;
++int main (void) {
++	hints.ai_family = PF_UNSPEC;
++	hints.ai_socktype = SOCK_STREAM;
++	hints.ai_flags = AI_CANONNAME;
++	return(getaddrinfo("asg.web.cmu.edu", "http", &hints, &res0));
++}
++], [AC_MSG_RESULT([ai_flags work correctly, so we can use it])], [AC_MSG_RESULT([ai_flags do not work correctly])
++CFLAGS="${CFLAGS} -DGETADDR_NOFLAGS"])
++AC_SUBST(CFLAGS)
++
+ dnl make sure that Makefile is the last thing output
+ AC_OUTPUT(man/Makefile master/Makefile lib/Makefile imap/Makefile imtest/Makefile netnews/Makefile perl/Makefile $EXTRA_OUTPUT Makefile)

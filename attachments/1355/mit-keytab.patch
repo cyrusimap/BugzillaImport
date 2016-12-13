@@ -1,0 +1,57 @@
+diff -ruN cyrus-sasl-2.1.24.frodo/cmulocal/sasl2.m4 cyrus-sasl-2.1.24/cmulocal/sasl2.m4
+--- cyrus-sasl-2.1.24.frodo/cmulocal/sasl2.m4	2009-08-13 12:36:40.000000000 +0000
++++ cyrus-sasl-2.1.24/cmulocal/sasl2.m4	2011-02-12 03:11:34.146262783 +0000
+@@ -260,6 +260,7 @@
+   cmu_save_LIBS="$LIBS"
+   LIBS="$LIBS $GSSAPIBASE_LIBS"
+   AC_CHECK_FUNCS(gsskrb5_register_acceptor_identity)
++  AC_CHECK_FUNCS(krb5_gss_register_acceptor_identity)
+   LIBS="$cmu_save_LIBS"
+ else
+   AC_MSG_RESULT([disabled])
+diff -ruN cyrus-sasl-2.1.24.frodo/plugins/gssapi.c cyrus-sasl-2.1.24/plugins/gssapi.c
+--- cyrus-sasl-2.1.24.frodo/plugins/gssapi.c	2009-08-13 12:36:46.000000000 +0000
++++ cyrus-sasl-2.1.24/plugins/gssapi.c	2011-02-12 03:16:47.534476516 +0000
+@@ -1216,17 +1216,17 @@
+ };
+ 
+ int gssapiv2_server_plug_init(
+-#ifndef HAVE_GSSKRB5_REGISTER_ACCEPTOR_IDENTITY
+-    const sasl_utils_t *utils __attribute__((unused)),
+-#else
++#ifdef HAVE_GSSKRB5_REGISTER_ACCEPTOR_IDENTITY || HAVE_KRB5_GSS_REGISTER_ACCEPTOR_IDENTITY
+     const sasl_utils_t *utils,
++#else
++    const sasl_utils_t *utils __attribute__((unused)),
+ #endif 
+     int maxversion,
+     int *out_version,
+     sasl_server_plug_t **pluglist,
+     int *plugcount)
+ {
+-#ifdef HAVE_GSSKRB5_REGISTER_ACCEPTOR_IDENTITY
++#ifdef HAVE_GSSKRB5_REGISTER_ACCEPTOR_IDENTITY || HAVE_KRB5_GSS_REGISTER_ACCEPTOR_IDENTITY
+     const char *keytab = NULL;
+     char keytab_path[1024];
+     unsigned int rl;
+@@ -1236,7 +1236,7 @@
+ 	return SASL_BADVERS;
+     }
+     
+-#ifdef HAVE_GSSKRB5_REGISTER_ACCEPTOR_IDENTITY
++#ifdef HAVE_GSSKRB5_REGISTER_ACCEPTOR_IDENTITY || HAVE_KRB5_GSS_REGISTER_ACCEPTOR_IDENTITY
+     /* unfortunately, we don't check for readability of keytab if it's
+        the standard one, since we don't know where it is */
+     
+@@ -1259,7 +1259,11 @@
+ 	
+ 	strncpy(keytab_path, keytab, 1024);
+ 	
++#ifdef HAVE_GSSKRB5_REGISTER_ACCEPTOR_IDENTITY
+ 	gsskrb5_register_acceptor_identity(keytab_path);
++#else /* HAVE_KRB5_GSS_REGISTER_ACCEPTOR_IDENTITY */
++	krb5_gss_register_acceptor_identity(keytab_path);
++#endif
+     }
+ #endif
+     

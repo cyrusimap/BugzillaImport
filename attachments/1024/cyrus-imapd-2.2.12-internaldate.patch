@@ -1,0 +1,31 @@
+diff -r -u cyrus-imapd-2.2.12.orig/imap/append.c cyrus-imapd-2.2.12/imap/append.c
+--- cyrus-imapd-2.2.12.orig/imap/append.c	2004-05-22 05:45:48.000000000 +0200
++++ cyrus-imapd-2.2.12/imap/append.c	2005-08-12 16:26:38.000000000 +0200
+@@ -51,6 +51,7 @@
+ #include <sys/types.h>
+ #include <syslog.h>
+ #include <sys/stat.h>
++#include <utime.h>
+ 
+ #include "acl.h"
+ #include "assert.h"
+@@ -459,6 +460,7 @@
+ {
+     struct mailbox *mailbox = &as->m;
+     struct index_record message_index;
++    struct utimbuf newutime;
+     char fname[MAX_MAILBOX_PATH+1];
+     FILE *destfile;
+     int i, r;
+@@ -567,6 +569,11 @@
+ 	   and makes sure that the file actually hits disk */
+ 	fsync(fileno(destfile));
+ 	fclose(destfile);
++	
++	/* store the internaldate in mtime too (for backup & reconstruct) */
++	newutime.actime=internaldate;
++	newutime.modtime=internaldate;
++	utime(fname,&newutime);
+     }
+     if (r) {
+ 	append_abort(as);

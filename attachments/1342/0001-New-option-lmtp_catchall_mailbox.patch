@@ -1,0 +1,69 @@
+From b805f266514035b6e8d63eda4ec4bf44065485cd Mon Sep 17 00:00:00 2001
+From: Ralf Haferkamp <rhafer@suse.de>
+Date: Wed, 12 Jan 2011 10:28:51 +0100
+Subject: [PATCH] New option "lmtp_catchall_mailbox"
+
+This patch introduces the new option "lmtp_catchall_mailbox". Lmtpd will
+drop mail to non-existing mailboxes into this mailbox. NOTE: This must be
+an existing local mailbox name. NOT an email address!
+(Bug#2360)
+---
+ imap/lmtpengine.c |   26 +++++++++++++++++++++-----
+ lib/imapoptions   |    4 ++++
+ 2 files changed, 25 insertions(+), 5 deletions(-)
+
+diff --git a/imap/lmtpengine.c b/imap/lmtpengine.c
+index 7159c34..550daf4 100644
+--- a/imap/lmtpengine.c
++++ b/imap/lmtpengine.c
+@@ -893,11 +893,27 @@ static int process_recipient(char *addr, struct namespace *namespace,
+     r = verify_user(ret->user, ret->domain, ret->mailbox,
+ 		    (quota_t) (ignorequota ? -1 : msg->size), msg->authstate);
+     if (r) {
+-	/* we lost */
+-	free(ret->all);
+-	free(ret->rcpt);
+-	free(ret);
+-	return r;
++	char *catchall = NULL;
++	if (r == IMAP_MAILBOX_NONEXISTENT) {
++	    catchall = config_getstring(IMAPOPT_LMTP_CATCHALL_MAILBOX);
++	    if (catchall) {
++		if (!verify_user(catchall, NULL, NULL,
++				ignorequota ? -1 : msg->size,
++				msg->authstate)) {
++		    ret->user = xstrdup(catchall);
++		} else {
++		    catchall = NULL;
++		}
++	    }
++	}
++
++	if (catchall == NULL ) {
++	    /* we lost */
++	    free(ret->all);
++	    free(ret->rcpt);
++	    free(ret);
++	    return r;
++	}
+     }
+     ret->ignorequota = ignorequota;
+ 
+diff --git a/lib/imapoptions b/lib/imapoptions
+index 322a8a7..6095a0e 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -1306,6 +1306,10 @@ product version in the capabilities */
+    interface, otherwise the user is assumed to be in the default
+    domain (if set). */
+ 
++{ "lmtp_catchall_mailbox", NULL, STRING }
++/* Send mail to mailboxes, which do not exists, to this user. NOTE: This must
++   be an existing local mailbox name. NOT an email address! */
++
+ /*
+ .SH SEE ALSO
+ .PP
+-- 
+1.7.3.2
+

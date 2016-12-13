@@ -1,0 +1,67 @@
+--- master.c._orig	Sun Feb 17 13:25:33 2002
++++ master.c	Wed Feb 20 01:14:59 2002
+@@ -369,7 +369,12 @@
+ 	sa = (struct sockaddr *) &sin;
+ 	salen = sizeof(sin);
+ 
++	/* XXX what about UDP? */
++	if (strcmp(s->proto, "tcp") == 0) {
+ 	s->socket = socket(AF_INET, SOCK_STREAM, 0);
++	} else {
++	    s->socket = socket(AF_INET, SOCK_DGRAM, 0);
++	}
+ 
+ 	free(listen);
+     }
+@@ -404,7 +409,9 @@
+ 	chmod(s->listen, (mode_t) 0777);
+     }
+ 
+-    if (listen(s->socket, listen_queue_backlog) < 0) {
++    /* XXX what about UDP? */
++    if ((strcmp(s->proto, "tcp") == 0) &&
++	(listen(s->socket, listen_queue_backlog) < 0)) {
+ 	syslog(LOG_ERR, "unable to listen to %s socket: %m", s->name);
+ 	close(s->socket);
+ 	s->socket = 0;
+@@ -863,11 +870,18 @@
+ 	/* we found an existing entry and the port paramters are the same */
+ 	Services[i].exec = tokenize(cmd);
+ 	if (!Services[i].exec) fatal("out of memory", EX_UNAVAILABLE);
++	/* XXX if proto is "udp", force settings to emulate "wait"? */
++	if (strcmp(Services[i].proto, "tcp") == 0) {
+ 	Services[i].desired_workers = prefork;
+ 	Services[i].max_workers = atoi(max);
+ 	if (Services[i].max_workers == -1) {
+ 	    Services[i].max_workers = INT_MAX;
+ 	}
++	} else {
++	    if (prefork > 1) prefork = 1;
++	    Services[i].desired_workers = prefork;
++	    Services[i].max_workers = 1;
++	}
+ 
+ 	if (verbose > 2)
+ 	    syslog(LOG_DEBUG, "reconfig: service %s (%s, %s/%s, %d, %d)",
+@@ -896,11 +910,19 @@
+ 	Services[nservices].saddr = NULL;
+ 
+ 	Services[nservices].ready_workers = 0;
++	/* XXX if proto is "udp", force settings to emulate "wait"? */
++	if (strcmp(Services[nservices].proto, "tcp") == 0) {
+ 	Services[nservices].desired_workers = prefork;
+ 	Services[nservices].max_workers = atoi(max);
+-	if (Services[i].max_workers == -1) {
+-	    Services[i].max_workers = INT_MAX;
++	    if (Services[nservices].max_workers == -1) {
++		Services[nservices].max_workers = INT_MAX;
+ 	}
++	} else {
++	    if (prefork > 1) prefork = 1;
++	    Services[nservices].desired_workers = prefork;
++	    Services[nservices].max_workers = 1;
++	}
++	    
+ 	memset(Services[nservices].stat, 0, sizeof(Services[nservices].stat));
+ 
+ 	Services[nservices].nforks = 0;

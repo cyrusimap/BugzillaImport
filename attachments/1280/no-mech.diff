@@ -1,0 +1,32 @@
+Index: imap/backend.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/backend.c,v
+retrieving revision 1.62
+diff -u -r1.62 backend.c
+--- imap/backend.c	11 May 2010 15:21:00 -0000	1.62
++++ imap/backend.c	24 May 2010 21:12:34 -0000
+@@ -515,7 +515,11 @@
+     if ((server[0] != '/') ||
+ 	(strcmp(prot->sasl_service, "lmtp") &&
+ 	 strcmp(prot->sasl_service, "csync"))) {
+-	char *mlist = xstrdup(mechlist); /* backend_auth is destructive */
++	char *mlist = NULL;
++
++	if ( mechlist ) {
++	    mlist = xstrdup(mechlist); /* backend_auth is destructive */
++	}
+ 
+ 	if ((r = backend_authenticate(ret, prot, &mlist, userid,
+ 				      cb, auth_status))) {
+@@ -556,6 +560,11 @@
+ 
+ 		new_mechlist = ask_capability(ret->out, ret->in, prot,
+ 					      &ret->capability, auto_capa);
++		/*
++		 * A flawed check: backend_authenticate() may be given a
++		 * NULL mechlist, negotiate SSL, and get a new mechlist.
++		 * This new, correct mechlist won't be visible here.
++		 */
+ 		if (new_mechlist && strcmp(new_mechlist, mechlist)) {
+ 		    syslog(LOG_ERR, "possible MITM attack:"
+ 			   "list of available SASL mechanisms changed");

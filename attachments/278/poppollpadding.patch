@@ -1,0 +1,48 @@
+diff -Naur cyrus-imapd.cvs20040305/imap/pop3d.c cyrus-imapd.cvs20040305.poppollpadding/imap/pop3d.c
+--- cyrus-imapd.cvs20040305/imap/pop3d.c	Wed Mar  3 11:22:27 2004
++++ cyrus-imapd.cvs20040305.poppollpadding/imap/pop3d.c	Fri Mar  5 16:48:01 2004
+@@ -677,7 +677,18 @@
+ 	    if (!arg) {
+ 		if (popd_mailbox) {
+ 		    if (!mailbox_lock_index(popd_mailbox)) {
+-			popd_mailbox->pop3_last_login = popd_login_time;
++		        int pollpadding =config_getint(IMAPOPT_POPPOLLPADDING);
++			int minpollsec = config_getint(IMAPOPT_POPMINPOLL)*60;
++		        if ((minpollsec > 0) && (pollpadding > 1)) { 
++			    int mintime = popd_login_time - (minpollsec*(pollpadding));
++			    if (popd_mailbox->pop3_last_login < mintime) {
++			        popd_mailbox->pop3_last_login = mintime + minpollsec; 
++			    } else {
++			        popd_mailbox->pop3_last_login += minpollsec;
++			    }
++		        } else { 
++			    popd_mailbox->pop3_last_login = popd_login_time;
++		        }
+ 			mailbox_write_index_header(popd_mailbox);
+ 			mailbox_unlock_index(popd_mailbox);
+ 		    }
+diff -Naur cyrus-imapd.cvs20040305/lib/imapoptions cyrus-imapd.cvs20040305.poppollpadding/lib/imapoptions
+--- cyrus-imapd.cvs20040305/lib/imapoptions	Thu Feb 26 17:41:32 2004
++++ cyrus-imapd.cvs20040305.poppollpadding/lib/imapoptions	Fri Mar  5 16:48:01 2004
+@@ -544,4 +544,20 @@
+ { "popminpoll", 0, INT }
+ /* Set the minimum amount of time the server forces users to wait
+    between successive POP logins, in minutes.  The default is 0. */ 
++ 
++{ "poppollpadding", 1, INT }
++/* Create a softer minimum poll restriction.  Allows \fIpoppollpadding\fR
++   connections before the minpoll restriction is triggered.  Additionally,
++   one padding entry is recovered every \fIpopminpoll\fR minutes.
++   This allows for the occasional polling rate faster than popminpoll, 
++   (i.e. for clients that require a send/recieve to send mail) but still 
++   enforces the rate long-term.  Default is 1 (disabled).
++.br
++.sp
++   The easiest way to think of it is a queue of past connections, with one
++   slot being filled for every connection, and one slot being cleared 
++   every \fIpopminpoll\fR minutes. When the queue is full, the user
++   will not be able to check mail again until a slot is cleared.  If the 
++   user waits a sufficent amount of time, they will get back many or all
++   of the slots. */
+ 
+

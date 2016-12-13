@@ -1,0 +1,644 @@
+Index: include/sasl.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/include/sasl.h,v
+retrieving revision 1.80
+diff -u -r1.80 sasl.h
+--- include/sasl.h	27 Jun 2003 21:17:57 -0000	1.80
++++ include/sasl.h	14 Jul 2003 13:41:46 -0000
+@@ -63,6 +63,7 @@
+  *  sasl_setpass      Change a password or add a user entry
+  *  sasl_auxprop_request  Request auxiliary properties
+  *  sasl_auxprop_getctx   Get auxiliary property context for connection
++ *  sasl_auxprop_store    Store a set of auxiliary properties
+  *
+  * Basic client model:
+  *  1. client calls sasl_client_init() at startup to load plug-ins
+@@ -1138,6 +1139,24 @@
+  *  returns NULL if conn is invalid.
+  */
+ LIBSASL_API struct propctx *sasl_auxprop_getctx(sasl_conn_t *conn);
++
++/* Store the set of auxiliary properties for the given user.
++ * Use functions in prop.h to set the content.
++ *
++ *  conn         connection context
++ *  ctx          property context from prop_new()/prop_request()/prop_set()
++ *  user         NUL terminated user
++ *
++ * Call with NULL 'ctx' to see if the backend allows storing properties.
++ *
++ * errors
++ *  SASL_OK       -- success
++ *  SASL_BADPARAM -- bad conn/ctx/user parameter
++ *  SASL_NOMEM    -- out of memory
++ *  SASL_FAIL     -- failed to store
++ */
++LIBSASL_API int sasl_auxprop_store(sasl_conn_t *conn,
++				   struct propctx *ctx, const char *user);
+ 
+ /**********************
+  * security layer API *
+Index: include/saslplug.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/include/saslplug.h,v
+retrieving revision 1.33
+diff -u -r1.33 saslplug.h
+--- include/saslplug.h	13 May 2003 21:34:29 -0000	1.33
++++ include/saslplug.h	14 Jul 2003 13:41:46 -0000
+@@ -149,11 +149,12 @@
+     int (*prop_setvals)(struct propctx *ctx, const char *name,
+ 			const char **values);
+     void (*prop_erase)(struct propctx *ctx, const char *name);
++    int (*auxprop_store)(sasl_conn_t *conn,
++			 struct propctx *ctx, const char *user);
+ 
+     /* for additions which don't require a version upgrade; set to 0 */
+     int (*spare_fptr1)();
+     int (*spare_fptr2)();
+-    int (*spare_fptr3)();
+ } sasl_utils_t;
+ 
+ /*
+@@ -830,8 +831,18 @@
+     /* name of the auxprop plugin */
+     char *name;
+ 
+-    /* for additions which don't require a version upgrade; set to 0 */
+-    void (*spare_fptr1)();
++    /* store the fields/values of an auxiliary property context (OPTIONAL)
++     *
++     * if ctx is NULL, just check if storing properties is enabled
++     *
++     * returns
++     *  SASL_OK         on success
++     *  SASL_FAIL       on failure
++     */
++    int (*auxprop_store)(void *glob_context,
++			 sasl_server_params_t *sparams,
++			 struct propctx *ctx,
++			 const char *user, unsigned ulen);
+ } sasl_auxprop_plug_t;
+ 
+ /* auxprop lookup flags */
+Index: lib/auxprop.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/auxprop.c,v
+retrieving revision 1.10
+diff -u -r1.10 auxprop.c
+--- lib/auxprop.c	19 Mar 2003 18:25:27 -0000	1.10
++++ lib/auxprop.c	14 Jul 2003 13:41:47 -0000
+@@ -907,3 +907,54 @@
+ 		  "could not find auxprop plugin, was searching for '%s'",
+ 		  plist ? plist : "[all]");
+ }
++
++/* Do the callbacks for auxprop stores */
++int sasl_auxprop_store(sasl_conn_t *conn,
++		       struct propctx *ctx, const char *user)
++{
++    sasl_getopt_t *getopt;
++    int ret, found = 0;
++    void *context;
++    const char *pluginname = NULL;
++    auxprop_plug_list_t *ptr;
++    sasl_server_params_t *sparams = NULL;
++    unsigned userlen = 0;
++
++    if (ctx) {
++	if (!conn || !user)
++	    return SASL_BADPARAM;
++
++	sparams = ((sasl_server_conn_t *) conn)->sparams;
++	userlen = strlen(user);
++    }
++    
++    /* xxx support more than one at the same time? */
++    if(_sasl_getcallback(NULL, SASL_CB_GETOPT, &getopt, &context) == SASL_OK) {
++	ret = getopt(context, NULL, "auxprop_plugin", &pluginname, NULL);
++	if(ret != SASL_OK) pluginname = NULL;
++    }
++
++    ret = SASL_OK;
++    for(ptr = auxprop_head; ptr && ret == SASL_OK; ptr = ptr->next) {
++	/* Skip non-matching plugins */
++	if(pluginname &&
++	   (!ptr->plug->name || strcasecmp(ptr->plug->name, pluginname)))
++	    continue;
++
++	found=1;
++	if (ptr->plug->auxprop_store)
++	    ret = ptr->plug->auxprop_store(ptr->plug->glob_context,
++					   sparams, ctx, user, userlen);
++	else
++	    ret = SASL_FAIL;
++    }
++
++    if(!found) {
++	_sasl_log(NULL, SASL_LOG_ERR,
++		  "could not find auxprop plugin, was searching for %s",
++		  pluginname ? pluginname : "[any]");
++	return SASL_FAIL;
++    }
++
++    return ret;
++}
+Index: lib/common.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/lib/common.c,v
+retrieving revision 1.92
+diff -u -r1.92 common.c
+--- lib/common.c	16 Apr 2003 19:36:00 -0000	1.92
++++ lib/common.c	14 Jul 2003 13:41:47 -0000
+@@ -1418,12 +1418,12 @@
+   utils->prop_set=&prop_set;
+   utils->prop_setvals=&prop_setvals;
+   utils->prop_erase=&prop_erase;
++  utils->auxprop_store=&sasl_auxprop_store;
+ #endif
+ 
+   /* Spares */
+   utils->spare_fptr = NULL;
+-  utils->spare_fptr1 = utils->spare_fptr2 = 
+-      utils->spare_fptr3 = NULL;
++  utils->spare_fptr1 = utils->spare_fptr2 = NULL;
+   
+   return utils;
+ }
+Index: plugins/otp.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/plugins/otp.c,v
+retrieving revision 1.27
+diff -u -r1.27 otp.c
+--- plugins/otp.c	13 Feb 2003 19:56:04 -0000	1.27
++++ plugins/otp.c	14 Jul 2003 13:41:52 -0000
+@@ -558,22 +558,50 @@
+ #define OTP_MDA_DEFAULT		"md5"
+ #define OTP_LOCK_TIMEOUT	5 * 60		/* 5 minutes */
+ 
++/* Convert the ASCII hex into binary data */
++int hex2bin(char *hex, unsigned char *bin, int binlen)
++{
++    int i;
++    char *c;
++    unsigned char msn, lsn;
++    
++    memset(bin, 0, binlen);
++    
++    for (c = hex, i = 0; i < binlen; c++) {
++	/* whitespace */
++	if (isspace((int) *c))
++	    continue;
++	/* end of string, or non-hex char */
++	if (!*c || !*(c+1) || !isxdigit((int) *c))
++	    break;
++	
++	msn = (*c > '9') ? tolower((int) *c) - 'a' + 10 : *c - '0';
++	c++;
++	lsn = (*c > '9') ? tolower((int) *c) - 'a' + 10 : *c - '0';
++	
++	bin[i++] = (unsigned char) (msn << 4) | lsn;
++    }
++    
++    return (i < binlen) ? SASL_BADAUTH : SASL_OK;
++}
++
+ static int make_secret(const sasl_utils_t *utils,
+ 		       const char *alg, unsigned seq, char *seed, char *otp,
+ 		       time_t timeout, sasl_secret_t **secret)
+ {
+     unsigned sec_len;
+     unsigned char *data;
++    char buf[2*OTP_HASH_SIZE+1];
+     
+     /*
+      * secret is stored as:
+      *
+-     * <alg> \0 <seq> \0 <seed> \0 <otp> <timeout>
++     * <alg> \t <seq> \t <seed> \t <otp> \t <timeout> \0
+      *
+      * <timeout> is used as a "lock" when an auth is in progress
+      * we just set it to zero here (no lock)
+      */
+-    sec_len = strlen(alg)+1+4+1+strlen(seed)+1+OTP_HASH_SIZE+sizeof(time_t);
++    sec_len = strlen(alg)+1+4+1+strlen(seed)+1+2*OTP_HASH_SIZE+1+20+1;
+     *secret = utils->malloc(sizeof(sasl_secret_t)+sec_len);
+     if (!*secret) {
+ 	return SASL_NOMEM;
+@@ -581,15 +609,12 @@
+     
+     (*secret)->len = sec_len;
+     data = (*secret)->data;
+-    memcpy(data, alg, strlen(alg)+1);
+-    data += strlen(alg)+1;
+-    sprintf(data, "%04u", seq);
+-    data += 5;
+-    memcpy(data, seed, strlen(seed)+1);
+-    data += strlen(seed)+1;
+-    memcpy(data, otp, OTP_HASH_SIZE);
+-    data += OTP_HASH_SIZE;
+-    memcpy(data, &timeout, sizeof(time_t));
++
++    bin2hex(otp, OTP_HASH_SIZE, buf);
++    buf[2*OTP_HASH_SIZE] = '\0';
++    
++    sprintf(data, "%s\t%04d\t%s\t%s\t%020ld",
++	    alg, seq, seed, buf, timeout);
+     
+     return SASL_OK;
+ }
+@@ -600,64 +625,62 @@
+ 			unsigned char *otp,
+ 			time_t *timeout)
+ {
+-    unsigned char *c;
+-    
+-    /*
+-     * secret is stored as:
+-     *
+-     * <alg> \0 <seq> \0 <seed> \0 <otp> <timeout>
+-     *
+-     */
+-    
+-    if (seclen < (3+1+1+1+OTP_SEED_MIN+1+OTP_HASH_SIZE+sizeof(time_t))) {
+-	SETERROR(utils, "OTP secret too short");
+-	return SASL_FAIL;
++    if (strlen(secret) < seclen) {
++	unsigned char *c;
++	
++	/*
++	 * old-style (binary) secret is stored as:
++	 *
++	 * <alg> \0 <seq> \0 <seed> \0 <otp> <timeout>
++	 *
++	 */
++	
++	if (seclen < (3+1+1+1+OTP_SEED_MIN+1+OTP_HASH_SIZE+sizeof(time_t))) {
++	    SETERROR(utils, "OTP secret too short");
++	    return SASL_FAIL;
++	}
++	
++	c = secret;
++	
++	strcpy(alg, (char*) c);
++	c += strlen(alg)+1;
++	
++	*seq = strtoul(c, NULL, 10);
++	c += 5;
++	
++	strcpy(seed, (char*) c);
++	c += strlen(seed)+1;
++	
++	memcpy(otp, c, OTP_HASH_SIZE);
++	c += OTP_HASH_SIZE;
++	
++	memcpy(timeout, c, sizeof(time_t));
++	
++	return SASL_OK;
+     }
+-    
+-    c = secret;
+-    
+-    strcpy(alg, (char*) c);
+-    c += strlen(alg)+1;
+-    
+-    *seq = strtoul(c, NULL, 10);
+-    c += 5;
+-    
+-    strcpy(seed, (char*) c);
+-    c += strlen(seed)+1;
+-    
+-    memcpy(otp, c, OTP_HASH_SIZE);
+-    c += OTP_HASH_SIZE;
+-    
+-    memcpy(timeout, c, sizeof(time_t));
+-    
+-    return SASL_OK;
+-}
+ 
+-/* Convert the ASCII hex into binary data */
+-int hex2bin(char *hex, unsigned char *bin, int binlen)
+-{
+-    int i;
+-    char *c;
+-    unsigned char msn, lsn;
+-    
+-    memset(bin, 0, binlen);
+-    
+-    for (c = hex, i = 0; i < binlen; c++) {
+-	/* whitespace */
+-	if (isspace((int) *c))
+-	    continue;
+-	/* end of string, or non-hex char */
+-	if (!*c || !*(c+1) || !isxdigit((int) *c))
+-	    break;
++    else {
++	char buf[2*OTP_HASH_SIZE+1];
+ 	
+-	msn = (*c > '9') ? tolower((int) *c) - 'a' + 10 : *c - '0';
+-	c++;
+-	lsn = (*c > '9') ? tolower((int) *c) - 'a' + 10 : *c - '0';
++	/*
++	 * new-style (ASCII) secret is stored as:
++	 *
++	 * <alg> \t <seq> \t <seed> \t <otp> \t <timeout> \0
++	 *
++	 */
+ 	
+-	bin[i++] = (unsigned char) (msn << 4) | lsn;
++	if (seclen < (3+1+1+1+OTP_SEED_MIN+1+2*OTP_HASH_SIZE+1+20)) {
++	    SETERROR(utils, "OTP secret too short");
++	    return SASL_FAIL;
++	}
++	
++	sscanf(secret, "%s\t%04d\t%s\t%s\t%020ld",
++	       alg, seq, seed, buf, timeout);
++	
++	hex2bin(buf, otp, OTP_HASH_SIZE);
++	
++	return SASL_OK;
+     }
+-    
+-    return (i < binlen) ? SASL_BADAUTH : SASL_OK;
+ }
+ 
+ /* Compare two string pointers */
+@@ -907,12 +930,15 @@
+     size_t authid_len;
+     unsigned lup = 0;
+     int result, n;
+-    const char *secret_request[] = { "*cmusaslsecretOTP",
++    const char *lookup_request[] = { "*cmusaslsecretOTP",
+ 				     NULL };
++    const char *store_request[] = { "cmusaslsecretOTP",
++				    NULL };
+     struct propval auxprop_values[2];
+     char mda[10];
+     time_t timeout;
+     sasl_secret_t *sec = NULL;
++    struct propctx *propctx = NULL;
+     
+     /* should have received authzid NUL authid */
+     
+@@ -964,7 +990,7 @@
+     do {
+ 	/* Get user secret */
+ 	result = params->utils->prop_request(params->propctx,
+-					     secret_request);
++					     lookup_request);
+ 	if (result != SASL_OK) return result;
+ 	
+ 	/* this will trigger the getting of the aux properties */
+@@ -978,7 +1004,7 @@
+ 	if (result != SASL_OK) return result;
+ 	
+ 	result = params->utils->prop_getnames(params->propctx,
+-					      secret_request,
++					      lookup_request,
+ 					      auxprop_values);
+ 	if (result < 0 ||
+ 	    (!auxprop_values[0].name || !auxprop_values[0].values)) {
+@@ -1051,10 +1077,20 @@
+     }
+     
+     /* do the store */
+-    result = (*_sasldb_putdata)(params->utils, params->utils->conn,
+-				text->authid, text->realm, "cmusaslsecretOTP",
+-				sec->data, sec->len);
+-    
++    propctx = prop_new(0);
++    if (!propctx)
++	result = SASL_FAIL;
++    if (result == SASL_OK)
++	result = params->utils->prop_request(propctx, store_request);
++    if (result == SASL_OK)
++	result = params->utils->prop_set(propctx, "cmusaslsecretOTP",
++					 sec->data, sec->len);
++    if (result == SASL_OK)
++	result = params->utils->auxprop_store(params->utils->conn,
++					      propctx, text->authid);
++    if (propctx)
++	prop_dispose(&propctx);
++
+     if (sec) params->utils->free(sec);
+     
+     if (result != SASL_OK) {
+@@ -1092,6 +1128,9 @@
+     char response[OTP_RESPONSE_MAX+1];
+     int result;
+     sasl_secret_t *sec = NULL;
++    struct propctx *propctx = NULL;
++    const char *store_request[] = { "cmusaslsecretOTP",
++				     NULL };
+     
+     if (clientinlen > OTP_RESPONSE_MAX) {
+ 	SETERROR(params->utils, "OTP response too long");
+@@ -1120,11 +1159,20 @@
+     }
+     
+     /* do the store */
+-    result = (*_sasldb_putdata)(params->utils, params->utils->conn,
+-				text->authid, text->realm, "cmusaslsecretOTP",
+-				(sec ? sec->data : NULL),
+-				(sec ? sec->len : 0));
+-    
++    propctx = prop_new(0);
++    if (!propctx)
++	result = SASL_FAIL;
++    if (result == SASL_OK)
++	result = params->utils->prop_request(propctx, store_request);
++    if (result == SASL_OK)
++	result = params->utils->prop_set(propctx, "cmusaslsecretOTP",
++					 sec->data, sec->len);
++    if (result == SASL_OK)
++	result = params->utils->auxprop_store(params->utils->conn,
++					      propctx, text->authid);
++    if (propctx)
++	prop_dispose(&propctx);
++
+     if (result) {
+ 	params->utils->seterror(params->utils->conn, 0, 
+ 				"Error putting OTP secret");
+@@ -1184,6 +1232,9 @@
+ {
+     server_context_t *text = (server_context_t *) conn_context;
+     sasl_secret_t *sec;
++    struct propctx *propctx = NULL;
++    const char *store_request[] = { "cmusaslsecretOTP",
++				     NULL };
+     int r;
+     
+     if (!text) return;
+@@ -1200,10 +1251,20 @@
+ 	}
+ 	
+ 	/* do the store */
+-	r = (*_sasldb_putdata)(utils, utils->conn,
+-			       text->authid, text->realm, "cmusaslsecretOTP",
+-			       (sec ? sec->data : NULL), (sec ? sec->len : 0));
+-	
++	propctx = prop_new(0);
++	if (!propctx)
++	    r = SASL_FAIL;
++	if (!r)
++	    r = utils->prop_request(propctx, store_request);
++	if (!r)
++	    r = utils->prop_set(propctx, "cmusaslsecretOTP",
++				(sec ? sec->data : NULL),
++				(sec ? sec->len : 0));
++	if (!r)
++	    r = utils->auxprop_store(utils->conn, propctx, text->authid);
++	if (propctx)
++	    prop_dispose(&propctx);
++
+ 	if (r) {
+ 	    SETERROR(utils, "Error putting OTP secret");
+ 	}
+@@ -1232,12 +1293,14 @@
+     char *user = NULL;
+     char *realm = NULL;
+     sasl_secret_t *sec;
++    struct propctx *propctx = NULL;
++    const char *store_request[] = { "cmusaslsecretOTP",
++				     NULL };
+     
+-    /* Do we have database support? */
+-    /* Note that we can use a NULL sasl_conn_t because our
+-     * sasl_utils_t is "blessed" with the global callbacks */
+-    if (_sasl_check_db(sparams->utils, NULL) != SASL_OK) {
+-	SETERROR(sparams->utils, "OTP: No database support");
++    /* Do we have a backend that can store properties? */
++    if (!sparams->utils->auxprop_store ||
++	sparams->utils->auxprop_store(NULL, NULL, NULL) != SASL_OK) {
++	SETERROR(sparams->utils, "OTP: auxprop backend can't store properties");
+ 	return SASL_NOMECH;
+     }
+     
+@@ -1299,9 +1362,19 @@
+     }
+     
+     /* do the store */
+-    r = (*_sasldb_putdata)(sparams->utils, sparams->utils->conn,
+-			   user, realm, "cmusaslsecretOTP",
+-			   (sec ? sec->data : NULL), (sec ? sec->len : 0));
++    propctx = prop_new(0);
++    if (!propctx)
++	r = SASL_FAIL;
++    if (!r)
++	r = sparams->utils->prop_request(propctx, store_request);
++    if (!r)
++	r = sparams->utils->prop_set(propctx, "cmusaslsecretOTP",
++				     (sec ? sec->data : NULL),
++				     (sec ? sec->len : 0));
++    if (!r)
++	r = sparams->utils->auxprop_store(sparams->utils->conn, propctx, user);
++    if (propctx)
++	prop_dispose(&propctx);
+     
+     if (r) {
+ 	sparams->utils->seterror(sparams->utils->conn, 0, 
+@@ -1324,11 +1397,10 @@
+ 	  	          sasl_server_params_t *sparams,
+ 		          void **conn_context __attribute__((unused))) 
+ {
+-    /* Do we have database support? */
+-    /* Note that we can use a NULL sasl_conn_t because our
+-     * sasl_utils_t is "blessed" with the global callbacks */
+-    if(_sasl_check_db(sparams->utils, NULL) != SASL_OK) {
+-	SETERROR(sparams->utils, "OTP: No database support");
++    /* Do we have a backend that can store properties? */
++    if (!sparams->utils->auxprop_store ||
++	sparams->utils->auxprop_store(NULL, NULL, NULL) != SASL_OK) {
++	SETERROR(sparams->utils, "OTP: auxprop backend can't store properties");
+ 	return SASL_NOMECH;
+     }
+     
+Index: plugins/sasldb.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/plugins/sasldb.c,v
+retrieving revision 1.7
+diff -u -r1.7 sasldb.c
+--- plugins/sasldb.c	13 Feb 2003 19:56:05 -0000	1.7
++++ plugins/sasldb.c	14 Jul 2003 13:41:52 -0000
+@@ -128,14 +128,75 @@
+     if (user_buf) sparams->utils->free(user_buf);
+ }
+ 
++static int sasldb_auxprop_store(void *glob_context __attribute__((unused)),
++				sasl_server_params_t *sparams,
++				struct propctx *ctx,
++				const char *user,
++				unsigned ulen) 
++{
++    char *userid = NULL;
++    char *realm = NULL;
++    const char *user_realm = NULL;
++    int ret = SASL_FAIL;
++    const struct propval *to_store, *cur;
++    char *user_buf;
++
++    /* just checking if we are enabled */
++    if(!ctx) return SASL_OK;
++    
++    if(!sparams || !user) return SASL_BADPARAM;
++
++    user_buf = sparams->utils->malloc(ulen + 1);
++    if(!user_buf) {
++	ret = SASL_NOMEM;
++	goto done;
++    }
++
++    memcpy(user_buf, user, ulen);
++    user_buf[ulen] = '\0';
++
++    if(sparams->user_realm) {
++	user_realm = sparams->user_realm;
++    } else {
++	user_realm = sparams->serverFQDN;
++    }
++
++    ret = _plug_parseuser(sparams->utils, &userid, &realm, user_realm,
++			  sparams->serverFQDN, user_buf);
++    if(ret != SASL_OK) goto done;
++
++    to_store = sparams->utils->prop_get(ctx);
++    if(!to_store) {
++	ret = SASL_BADPARAM;
++	goto done;
++    }
++
++    for(cur = to_store; cur->name; cur++) {
++	/* We only support one value right now. */
++	ret = _sasldb_putdata(sparams->utils, sparams->utils->conn,
++			      userid, realm, cur->name,
++			      cur->values && cur->values[0] ?
++			      cur->values[0] : NULL,
++			      cur->values && cur->values[0] ?
++			      strlen(cur->values[0]) : 0);
++    }
++
++ done:
++    if (userid) sparams->utils->free(userid);
++    if (realm)  sparams->utils->free(realm);
++    if (user_buf) sparams->utils->free(user_buf);
++
++    return ret;
++}
++
+ static sasl_auxprop_plug_t sasldb_auxprop_plugin = {
+-    0,           /* Features */
+-    0,           /* spare */
+-    NULL,        /* glob_context */
+-    NULL,        /* auxprop_free */
+-    sasldb_auxprop_lookup, /* auxprop_lookup */
+-    "sasldb",    /* name */
+-    NULL         /* spare */
++    0,           		/* Features */
++    0,           		/* spare */
++    NULL,        		/* glob_context */
++    NULL,        		/* auxprop_free */
++    sasldb_auxprop_lookup,	/* auxprop_lookup */
++    "sasldb",			/* name */
++    sasldb_auxprop_store	/* auxprop_store */
+ };
+ 
+ int sasldb_auxprop_plug_init(const sasl_utils_t *utils,

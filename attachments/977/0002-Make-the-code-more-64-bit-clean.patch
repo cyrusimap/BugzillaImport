@@ -1,0 +1,321 @@
+From 145121d9b5bfa0d03bbb19a7efc144293598ce69 Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?G=C3=A1bor=20Gomb=C3=A1s?= <gombasg@sztaki.hu>
+Date: Sat, 29 Dec 2007 16:43:17 +0100
+Subject: [PATCH] Make the code more 64-bit clean.
+
+Fix bugs when the variable size expected by the printf format argument
+does not match the size of the variable that is actually passed.
+
+It would be nice to use the "z" modifier for the *printf() as well but
+that's not portable. So we have to use casts.
+---
+ imap/annotate.c        |    4 ++--
+ imap/deliver.c         |    2 +-
+ imap/imapd.c           |    6 +++---
+ imap/lmtpengine.c      |    2 +-
+ imap/mailbox.c         |    4 ++--
+ imap/mboxlist.c        |    6 +++---
+ imap/mboxname.c        |    6 +++---
+ imap/message.c         |    2 +-
+ imap/nntpd.c           |    6 +++---
+ imap/smmapd.c          |    2 +-
+ lib/cyrusdb_skiplist.c |    6 +++---
+ lib/libconfig.c        |    4 ++--
+ lib/libcyr_cfg.c       |    4 ++--
+ 13 files changed, 27 insertions(+), 27 deletions(-)
+
+diff --git a/imap/annotate.c b/imap/annotate.c
+index 19036a9..ab8dee1 100644
+--- a/imap/annotate.c
++++ b/imap/annotate.c
+@@ -564,7 +564,7 @@ static void output_entryatt(const char *mboxname, const char *entry,
+ 	/* Base the return of the size attribute on whether or not there is
+ 	 * an attribute, not whether size is nonzero. */
+ 	if ((fdata->attribs & ATTRIB_SIZE_SHARED) && attrib->value) {
+-	    snprintf(buf, sizeof(buf), "%u", attrib->size);
++	    snprintf(buf, sizeof(buf), "%u", (unsigned)attrib->size);
+ 	    appendattvalue(&attvalues, "size.shared", buf);
+ 	}
+ 
+@@ -590,7 +590,7 @@ static void output_entryatt(const char *mboxname, const char *entry,
+ 	/* Base the return of the size attribute on whether or not there is
+ 	 * an attribute, not whether size is nonzero. */
+ 	if ((fdata->attribs & ATTRIB_SIZE_PRIV) && attrib->value) {
+-	    snprintf(buf, sizeof(buf), "%u", attrib->size);
++	    snprintf(buf, sizeof(buf), "%u", (unsigned)attrib->size);
+ 	    appendattvalue(&attvalues, "size.priv", buf);
+ 	}
+ 
+diff --git a/imap/deliver.c b/imap/deliver.c
+index 996d05b..2422a4c 100644
+--- a/imap/deliver.c
++++ b/imap/deliver.c
+@@ -339,7 +339,7 @@ static int deliver_msg(char *return_path, char *authuser, int ignorequota,
+ 	/* setup each recipient */
+ 	for (j = 0; j < numusers; j++) {
+ 	    if (mailbox) {
+-		size_t ulen;
++		unsigned ulen;
+ 
+ 		/* we let it leak ! */
+ 		txn->rcpt[j].addr = 
+diff --git a/imap/imapd.c b/imap/imapd.c
+index 6dbad17..28fe777 100644
+--- a/imap/imapd.c
++++ b/imap/imapd.c
+@@ -5037,7 +5037,7 @@ void cmd_delete(char *tag, char *name, int localonly, int force)
+     int mbtype;
+     char *server;
+     char *p;
+-    size_t domainlen = 0;
++    unsigned domainlen = 0;
+ 
+     r = (*imapd_namespace.mboxname_tointernal)(&imapd_namespace, name,
+ 					       imapd_userid, mailboxname);
+@@ -5445,7 +5445,7 @@ void cmd_rename(char *tag, char *oldname, char *newname, char *partition)
+ 	strcpy(olduser, domain ? domain+6 : oldmailboxname+5);
+ 	if (domain)
+ 	    sprintf(olduser+strlen(olduser), "@%.*s",
+-		    domain - oldmailboxname, oldmailboxname);
++		    (int)(domain - oldmailboxname), oldmailboxname);
+ 	strcpy(acl_olduser, olduser);
+ 
+ 	/* Translate any separators in source old userid (for ACLs) */
+@@ -5457,7 +5457,7 @@ void cmd_rename(char *tag, char *oldname, char *newname, char *partition)
+ 	strcpy(newuser, domain ? domain+6 : newmailboxname+5);
+ 	if (domain)
+ 	    sprintf(newuser+strlen(newuser), "@%.*s",
+-		    domain - newmailboxname, newmailboxname);
++		    (int)(domain - newmailboxname), newmailboxname);
+ 	strcpy(acl_newuser, newuser);
+ 
+ 	/* Translate any separators in destination new userid (for ACLs) */
+diff --git a/imap/lmtpengine.c b/imap/lmtpengine.c
+index 6fd8fbd..227706a 100644
+--- a/imap/lmtpengine.c
++++ b/imap/lmtpengine.c
+@@ -699,7 +699,7 @@ static int savemsg(struct clientdata *cd,
+  
+     fprintf(f, "Received: ");
+     for (i = 0, p = addbody; i < nfold; p = fold[i], i++) {
+-	fprintf(f, "%.*s\r\n\t", fold[i] - p, p);
++	fprintf(f, "%.*s\r\n\t", (int)(fold[i] - p), p);
+     }
+     fprintf(f, "%s\r\n", p);
+     spool_cache_header(xstrdup("Received"), addbody, m->hdrcache);
+diff --git a/imap/mailbox.c b/imap/mailbox.c
+index 4692449..fe5a070 100644
+--- a/imap/mailbox.c
++++ b/imap/mailbox.c
+@@ -1599,7 +1599,7 @@ static void mailbox_upgrade_index_work(struct mailbox *mailbox,
+         char *err = xmalloc(MAX_MAILBOX_NAME+128);
+         snprintf(err, MAX_MAILBOX_NAME+128,
+                  "Mailbox %s needs reconstruct: Record size %d > %d",
+-                 mailbox->name, oldrecord_size, INDEX_RECORD_SIZE);
++                 mailbox->name, (int)oldrecord_size, (int)INDEX_RECORD_SIZE);
+         fatal(err, EC_SOFTWARE);
+     }
+ 
+@@ -1988,7 +1988,7 @@ static int process_records(struct mailbox *mailbox, FILE *newindex,
+ 			   "IOERROR: reading cache record for %s:"
+ 			   " got bogus offset %d for %u/%lu; try reconstruct",
+ 			   mailbox->name,
+-			   cacheitem - (mailbox->cache_base + cache_offset),
++			   (int)(cacheitem - (mailbox->cache_base + cache_offset)),
+ 			   msgno, mailbox->exists);
+ 		    return IMAP_IOERROR;
+ 		}
+diff --git a/imap/mboxlist.c b/imap/mboxlist.c
+index 9aaed61..62e1012 100644
+--- a/imap/mboxlist.c
++++ b/imap/mboxlist.c
+@@ -506,7 +506,7 @@ mboxlist_mycreatemailboxcheck(char *name,
+ 	    if (mbox != name) {
+ 		/* add domain to identifier */
+ 		sprintf(identifier+strlen(identifier),
+-			"@%.*s", mbox - name - 1, name);
++			"@%.*s", (int)(mbox - name - 1), name);
+ 	    }
+ 	    cyrus_acl_set(&acl, identifier, ACL_MODE_SET, ACL_ALL,
+ 		    (cyrus_acl_canonproc_t *)0, (void *)0);
+@@ -1570,7 +1570,7 @@ int mboxlist_setacl(const char *name, const char *identifier,
+ 		!strcmp(identifier, "anonymous") ||
+ 		!strcmp(identifier, "anyone")) {
+ 		snprintf(ident, sizeof(ident),
+-			 "%.*s", cp - identifier, identifier);
++			 "%.*s", (int)(cp - identifier), identifier);
+ 	    } else {
+ 		strlcpy(ident, identifier, sizeof(ident));
+ 	    }
+@@ -2169,7 +2169,7 @@ int mboxlist_findall(struct namespace *namespace __attribute__((unused)),
+ 		domainlen = strlen(p);
+ 	    }
+ 	    snprintf(domainpat+domainlen, sizeof(domainpat)-domainlen,
+-		     "%.*s", p - pattern, pattern);
++		     "%.*s", (int)(p - pattern), pattern);
+ 	}
+     }
+ 
+diff --git a/imap/mboxname.c b/imap/mboxname.c
+index bc8a7b0..e6e76d6 100644
+--- a/imap/mboxname.c
++++ b/imap/mboxname.c
+@@ -376,7 +376,7 @@ static int mboxname_toexternal(struct namespace *namespace, const char *name,
+ 	    return IMAP_MAILBOX_BADNAME;
+ 
+ 	snprintf(result+resultlen, MAX_MAILBOX_NAME+1-resultlen, 
+-		 "@%.*s", domainlen, domain);
++		 "@%.*s", (int)domainlen, domain);
+     }
+ 
+     return 0;
+@@ -439,7 +439,7 @@ static int mboxname_toexternal_alt(struct namespace *namespace, const char *name
+ 	    return IMAP_MAILBOX_BADNAME;
+ 
+ 	sprintf(result, "%.*s",
+-		prefixlen-1, namespace->prefix[NAMESPACE_USER]);
++		(int)prefixlen-1, namespace->prefix[NAMESPACE_USER]);
+ 	resultlen = strlen(result);
+ 	if (name[4] == '.') {
+ 	    sprintf(result+resultlen, "%c%s", namespace->hier_sep, name+5);
+@@ -665,7 +665,7 @@ char *mboxname_inbox_touserid(const char *inboxname)
+     if (domain) {
+ 	/* append domain */
+ 	sprintf(userid+strlen(userid), "@%.*s",
+-		domainlen, domain);
++		(int)domainlen, domain);
+     }
+ 
+     return(userid);
+diff --git a/imap/message.c b/imap/message.c
+index 2c285d5..0bbe121 100644
+--- a/imap/message.c
++++ b/imap/message.c
+@@ -2294,7 +2294,7 @@ char *s;
+     if (*p || len >= 1024) {
+ 	/* Write out as literal */
+ 	char buf[100];
+-	snprintf(buf, sizeof(buf), "{%u}\r\n", strlen(s));
++	snprintf(buf, sizeof(buf), "{%u}\r\n", (unsigned)strlen(s));
+ 	message_ibuf_ensure(ibuf, strlen(s)+strlen(buf));
+ 	for (p = buf; *p; p++) *(ibuf->end)++ = *p;
+ 	for (p = s; *p; p++) *(ibuf->end)++ = *p;
+diff --git a/imap/nntpd.c b/imap/nntpd.c
+index 9c3b29e..06d5508 100644
+--- a/imap/nntpd.c
++++ b/imap/nntpd.c
+@@ -2880,7 +2880,7 @@ static int parse_groups(const char *groups, message_data_t *msg)
+ {
+     const char *p;
+     char *rcpt = NULL;
+-    size_t n;
++    unsigned n;
+ 
+     for (p = groups;; p += n) {
+ 	/* skip whitespace */
+@@ -3025,7 +3025,7 @@ static int savemsg(message_data_t *m, FILE *f)
+ 		if (body || newspostuser) {
+ 		    const char **postto, *p;
+ 		    char *replyto, *r, *fold = NULL, *sep = "";
+-		    size_t n;
++		    unsigned n;
+ 
+ 		    if (newspostuser) {
+ 			/* add "post" email addresses based on newsgroup */
+@@ -3088,7 +3088,7 @@ static int savemsg(message_data_t *m, FILE *f)
+ 		    fprintf(f, "Reply-To: ");
+ 		    r = replyto;
+ 		    if (fold) {
+-			fprintf(f, "%.*s\r\n\t", fold - r, r);
++			fprintf(f, "%.*s\r\n\t", (int)(fold - r), r);
+ 			r = fold;
+ 		    }
+ 		    fprintf(f, "%s\r\n", r);
+diff --git a/imap/smmapd.c b/imap/smmapd.c
+index fead7fc..9d6037d 100644
+--- a/imap/smmapd.c
++++ b/imap/smmapd.c
+@@ -353,7 +353,7 @@ int verify_user(const char *key, long quotacheck,
+                return r;
+             }
+ 
+-            sprintf(buf,"%d:cyrus %s,%c",strlen(key)+6,key,4);
++            sprintf(buf,"%d:cyrus %s,%c",(int)strlen(key)+6,key,4);
+             sendto(soc,buf,strlen(buf),0,(struct sockaddr *)&sin,sizeof(sin));
+ 
+             x = sizeof(sfrom);
+diff --git a/lib/cyrusdb_skiplist.c b/lib/cyrusdb_skiplist.c
+index e9e7f30..066d58f 100644
+--- a/lib/cyrusdb_skiplist.c
++++ b/lib/cyrusdb_skiplist.c
+@@ -1769,7 +1769,7 @@ static int dump(struct db *db, int detail __attribute__((unused)))
+     ptr = db->map_base + DUMMY_OFFSET(db);
+     end = db->map_base + db->map_size;
+     while (ptr < end) {
+-	printf("%04X: ", ptr - db->map_base);
++	printf("%04X: ", (unsigned int)(ptr - db->map_base));
+ 	switch (TYPE(ptr)) {
+ 	case DUMMY:
+ 	    printf("DUMMY ");
+@@ -1844,7 +1844,7 @@ static int myconsistent(struct db *db, struct txn *tid, int locked)
+ 		fprintf(stdout, 
+ 			"skiplist inconsistent: %04X: ptr %d is %04X; "
+ 			"eof is %04X\n", 
+-			ptr - db->map_base,
++			(unsigned int) (ptr - db->map_base),
+ 			i, offset, (unsigned int) db->map_size);
+ 		return CYRUSDB_INTERNAL;
+ 	    }
+@@ -1859,7 +1859,7 @@ static int myconsistent(struct db *db, struct txn *tid, int locked)
+ 		    fprintf(stdout, 
+ 			    "skiplist inconsistent: %04X: ptr %d is %04X; "
+ 			    "db->compar() = %d\n", 
+-			    ptr - db->map_base,
++			    (unsigned int) (ptr - db->map_base),
+ 			    i,
+ 			    offset, cmp);
+ 		    return CYRUSDB_INTERNAL;
+diff --git a/lib/libconfig.c b/lib/libconfig.c
+index 3847321..27ef38d 100644
+--- a/lib/libconfig.c
++++ b/lib/libconfig.c
+@@ -102,7 +102,7 @@ int config_getint(enum imapopt opt)
+ #if (SIZEOF_LONG != 4)
+     if ((imapopts[opt].val.i > 0x7fffffff)||
+ 	(imapopts[opt].val.i < -0x7fffffff)) {
+-	syslog(LOG_ERR, "config_getint: %s: %lld too large for type",
++	syslog(LOG_ERR, "config_getint: %s: %ld too large for type",
+ 	       imapopts[opt].optname, imapopts[opt].val.i);
+     }
+ #endif    
+@@ -116,7 +116,7 @@ int config_getswitch(enum imapopt opt)
+ #if (SIZEOF_LONG != 4)
+     if ((imapopts[opt].val.b > 0x7fffffff)||
+ 	(imapopts[opt].val.b < -0x7fffffff)) {
+-	syslog(LOG_ERR, "config_getswitch: %s: %lld too large for type", 
++	syslog(LOG_ERR, "config_getswitch: %s: %ld too large for type", 
+ 	       imapopts[opt].optname, imapopts[opt].val.b);
+     }
+ #endif    
+diff --git a/lib/libcyr_cfg.c b/lib/libcyr_cfg.c
+index 384128a..3af4731 100644
+--- a/lib/libcyr_cfg.c
++++ b/lib/libcyr_cfg.c
+@@ -146,7 +146,7 @@ int libcyrus_config_getint(enum cyrus_opt opt)
+     assert(cyrus_options[opt].t == CYRUS_OPT_INT);
+ #if (SIZEOF_LONG != 4)
+     if ((cyrus_options[opt].val.i > 0x7fffffff)||(cyrus_options[opt].val.i < -0x7fffffff)) {
+-	syslog(LOG_ERR, "libcyrus_config_getint: option %d: %lld too large for type", cyrus_options[opt].opt, cyrus_options[opt].val.i);
++	syslog(LOG_ERR, "libcyrus_config_getint: option %d: %ld too large for type", cyrus_options[opt].opt, cyrus_options[opt].val.i);
+     }
+ #endif    
+     return cyrus_options[opt].val.i;
+@@ -159,7 +159,7 @@ int libcyrus_config_getswitch(enum cyrus_opt opt)
+     assert(cyrus_options[opt].t == CYRUS_OPT_SWITCH);
+ #if (SIZEOF_LONG != 4)
+     if ((cyrus_options[opt].val.b > 0x7fffffff)||(cyrus_options[opt].val.b < -0x7fffffff)) {
+-	syslog(LOG_ERR, "libcyrus_config_getswitch: option %d: %lld too large for type", cyrus_options[opt].opt, cyrus_options[opt].val.b);
++	syslog(LOG_ERR, "libcyrus_config_getswitch: option %d: %ld too large for type", cyrus_options[opt].opt, cyrus_options[opt].val.b);
+     }
+ #endif    
+     return cyrus_options[opt].val.b;

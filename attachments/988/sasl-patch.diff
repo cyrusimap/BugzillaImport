@@ -1,0 +1,47 @@
+Index: server.c
+===================================================================
+RCS file: /cvs/src/sasl/lib/server.c,v
+retrieving revision 1.147
+diff -u -r1.147 server.c
+--- server.c	3 Jul 2006 14:43:16 -0000	1.147
++++ server.c	23 Dec 2007 01:52:25 -0000
+@@ -129,6 +129,7 @@
+     int result = SASL_OK, tmpresult;
+     sasl_server_conn_t *s_conn = (sasl_server_conn_t *) conn;
+     const char *password_request[] = { SASL_AUX_PASSWORD_PROP, NULL };
++    struct propctx *propctx = NULL;
+     sasl_server_userdb_setpass_t *setpass_cb = NULL;
+     void *context = NULL;
+     int tried_setpass = 0;
+@@ -172,14 +173,18 @@
+ 	    pass = NULL;
+ 	    passlen = 0;
+ 	}
+-
+-	result = prop_request(s_conn->sparams->propctx, password_request);
++ 
++	propctx = prop_new(0);
++	if ( !propctx ) {
++		RETURN(conn, SASL_NOMEM);
++	}
++	result = prop_request(propctx, password_request);
+ 	if (result == SASL_OK) {
+-	    result = prop_set(s_conn->sparams->propctx, SASL_AUX_PASSWORD_PROP,
++	    result = prop_set(propctx, SASL_AUX_PASSWORD_PROP,
+ 			      pass, passlen);
+ 	}
+ 	if (result == SASL_OK) {
+-	    result = sasl_auxprop_store(conn, s_conn->sparams->propctx, user);
++	    result = sasl_auxprop_store(conn, propctx, user);
+ 	}
+ 	if (result != SASL_OK) {
+ 	    _sasl_log(conn, SASL_LOG_ERR,
+@@ -189,6 +194,7 @@
+ 	    _sasl_log(conn, SASL_LOG_NOTE,
+ 		      "setpass succeeded for %s", user);
+ 	}
++	prop_dispose(&propctx);
+     }
+ 
+     /* We want to preserve the current value of result, so we use tmpresult below */
+

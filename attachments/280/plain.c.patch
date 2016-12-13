@@ -1,0 +1,47 @@
+Index: plain.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/sasl/plugins/plain.c,v
+retrieving revision 1.62
+diff -u -r1.62 plain.c
+--- plain.c	25 Jul 2003 16:11:15 -0000	1.62
++++ plain.c	14 Apr 2004 01:31:10 -0000
+@@ -272,6 +272,7 @@
+     int auth_result = SASL_OK;
+     int pass_result = SASL_OK;
+     int result;
++    char *p;
+     
+     *clientout = NULL;
+     *clientoutlen = 0;
+@@ -356,9 +357,9 @@
+     if (result != SASL_OK) goto cleanup;
+     
+     /* send authorized id NUL authentication id NUL password */
+-    *clientoutlen = (oparams->ulen + 1
+-		     + oparams->alen + 1
+-		     + password->len);
++    *clientoutlen = ((user && *user ? oparams->ulen : 0) +
++		     1 + oparams->alen +
++		     1 + password->len);
+     
+     /* remember the extra NUL on the end for stupid clients */
+     result = _plug_buf_alloc(params->utils, &(text->out_buf),
+@@ -366,10 +367,14 @@
+     if (result != SASL_OK) goto cleanup;
+     
+     memset(text->out_buf, 0, *clientoutlen + 1);
+-    memcpy(text->out_buf, oparams->user, oparams->ulen);
+-    memcpy(text->out_buf + oparams->ulen + 1, oparams->authid, oparams->alen);
+-    memcpy(text->out_buf + oparams->ulen + oparams->alen + 2,
+-	   password->data, password->len);
++    p = text->out_buf;
++    if (user && *user) {
++	memcpy(p, oparams->user, oparams->ulen);
++	p += oparams->ulen;
++    }
++    memcpy(++p, oparams->authid, oparams->alen);
++    p += oparams->alen;
++    memcpy(++p, password->data, password->len);
+     
+     *clientout = text->out_buf;
+     

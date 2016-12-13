@@ -1,0 +1,57 @@
+Index: cyrus-imapd-2.3.12p2/lib/cyrusdb_skiplist.c
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/lib/cyrusdb_skiplist.c	2008-09-12 08:57:26.000000000 +1000
++++ cyrus-imapd-2.3.12p2/lib/cyrusdb_skiplist.c	2008-09-12 08:57:26.000000000 +1000
+@@ -1942,6 +1942,7 @@
+ 			"eof is %04X\n", 
+ 			ptr - db->map_base,
+ 			i, offset, (unsigned int) db->map_size);
++		if (!locked) unlock(db);
+ 		return CYRUSDB_INTERNAL;
+ 	    }
+ 
+@@ -1958,6 +1959,7 @@
+ 			    ptr - db->map_base,
+ 			    i,
+ 			    offset, cmp);
++		    if (!locked) unlock(db);
+ 		    return CYRUSDB_INTERNAL;
+ 		}
+ 	    }
+Index: cyrus-imapd-2.3.12p2/imap/cyr_dbtool.c
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/imap/cyr_dbtool.c	2008-09-12 08:57:21.000000000 +1000
++++ cyrus-imapd-2.3.12p2/imap/cyr_dbtool.c	2008-09-12 08:57:26.000000000 +1000
+@@ -245,6 +245,10 @@
+             keylen = strlen(key);
+             DB_OLD->foreach(odb, key, keylen, NULL, printer_cb, NULL, &tid);
+         }
++    } else if (!strcmp(action, "consistency")) {
++        if (DB_OLD->consistent(odb)) {
++            printf("Consistency Error for %s\n", old_db);
++        }
+     } else {
+         printf("Unknown action %s\n", action);
+     }
+Index: cyrus-imapd-2.3.12p2/man/cyr_dbtool.8
+===================================================================
+--- cyrus-imapd-2.3.12p2.orig/man/cyr_dbtool.8	2008-09-12 11:45:49.000000000 +1000
++++ cyrus-imapd-2.3.12p2/man/cyr_dbtool.8	2008-09-12 11:46:56.000000000 +1000
+@@ -71,12 +71,17 @@
+ .PP
+ .BI delete " <key>"
+ .PP
++.BI consistency
++.PP
+ You may omit key or key/value and specify one per line on stdin. Keys are
+ terminated by tab or newline, values are terminated by newline.
+ .PP
+ Running without any options will list the available database backends and
+ usable actions.
+ .PP
++The 'consistency' command runs a consistency check on the DB by calling
++'myconsistent' on it.
++.PP
+ .I cyr_dbtool
+ reads any applicable configuration options out of the
+ .IR imapd.conf (5)

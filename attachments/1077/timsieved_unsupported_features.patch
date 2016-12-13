@@ -1,0 +1,92 @@
+*** 114,120 ****
+  
+  static commandlist_t *ret;
+  static sieve_script_t *parse_script;
+! static int check_reqs(stringlist_t *sl);
+  static test_t *build_address(int t, struct aetags *ae,
+  			     stringlist_t *sl, stringlist_t *pl);
+  static test_t *build_header(int t, struct htags *h,
+--- 120,126 ----
+  
+  static commandlist_t *ret;
+  static sieve_script_t *parse_script;
+! static char* check_reqs(stringlist_t *sl);
+  static test_t *build_address(int t, struct aetags *ae,
+  			     stringlist_t *sl, stringlist_t *pl);
+  static test_t *build_header(int t, struct htags *h,
+***************
+*** 219,226 ****
+  	| require reqs
+  	;
+  
+! require: REQUIRE stringlist ';'	{ if (!check_reqs($2)) {
+!                                     yyerror("Unsupported feature(s) in \"require\"");
+  				    YYERROR; 
+                                    } }
+  	;
+--- 229,244 ----
+  	| require reqs
+  	;
+  
+! require: REQUIRE stringlist ';'	{ char *x = check_reqs($2);
+! 				  if (x[0]) {
+! 				    char *z = malloc(strlen(x) + 40);
+! 				    if (strchr(x, ','))
+! 				      sprintf(z, "Unsupported features in \"require\": %s", x);
+! 				    else
+! 				      sprintf(z, "Unsupported feature in \"require\": %s", x);
+! 				    yyerror(z);
+! 				    free(z);
+! 				    free(x);
+  				    YYERROR; 
+                                    } }
+  	;
+***************
+*** 718,738 ****
+      return 0;
+  }
+  
+! static int check_reqs(stringlist_t *sl)
+  {
+      int i = 1;
+      stringlist_t *s;
+!     
+      while (sl != NULL) {
+  	s = sl;
+  	sl = sl->next;
+! 
+! 	i &= script_require(parse_script, s->s);
+  
+  	if (s->s) free(s->s);
+  	free(s);
+      }
+!     return i;
+  }
+  
+  static test_t *build_address(int t, struct aetags *ae,
+--- 780,804 ----
+      return 0;
+  }
+  
+! static char* check_reqs(stringlist_t *sl)
+  {
+      stringlist_t *s;
+!     char* ret = malloc(1000); //POTENTIAL BUFFER OVERFLOW
+!     ret[0] = '\0';
+      while (sl != NULL) {
+  	s = sl;
+  	sl = sl->next;
+! 	if (script_require(parse_script, s->s) == 0) {
+! 	  strcat(ret, s->s);
+! 	  strcat(ret, ", ");
+! 	}
+  
+  	if (s->s) free(s->s);
+  	free(s);
+      }
+!     if (ret[0])
+!       ret[strlen(ret)-2] = '\0';
+!     return ret;
+  }
+  
+  static test_t *build_address(int t, struct aetags *ae,

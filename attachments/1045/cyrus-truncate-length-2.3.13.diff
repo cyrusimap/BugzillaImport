@@ -1,0 +1,38 @@
+Index: cyrus-imapd-2.3.13/imap/append.c
+===================================================================
+--- cyrus-imapd-2.3.13.orig/imap/append.c	2008-12-05 02:56:42.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/append.c	2008-12-05 02:58:44.000000000 +0000
+@@ -234,8 +234,10 @@ int append_setup(struct appendstate *as,
+ 	as->userid[0] = '\0';
+     }
+ 
++    /* store original size to truncate if append is aborted */
++    as->orig_cache_size = as->m.cache_size;
++
+     /* zero out metadata */
+-    as->orig_cache_len = as->m.cache_len;
+     as->nummsg = as->numanswered = 
+ 	as->numdeleted = as->numflagged = 0;
+     as->quota_used = 0;
+@@ -369,7 +371,7 @@ int append_abort(struct appendstate *as)
+     }
+ 
+     /* truncate the cache */
+-    ftruncate(as->m.cache_fd, as->orig_cache_len);
++    ftruncate(as->m.cache_fd, as->orig_cache_size);
+ 
+     /* unlock mailbox */
+     mailbox_unlock_index(&as->m);
+Index: cyrus-imapd-2.3.13/imap/append.h
+===================================================================
+--- cyrus-imapd-2.3.13.orig/imap/append.h	2008-12-05 02:56:42.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/append.h	2008-12-05 02:57:12.000000000 +0000
+@@ -76,7 +76,7 @@ struct appendstate {
+ 				/* current state of append */
+ 
+     /* if we abort, where should we truncate the cache file? */
+-    unsigned long orig_cache_len;
++    unsigned long orig_cache_size;
+ 
+     int writeheader;		/* did we change the mailbox header? */
+ 

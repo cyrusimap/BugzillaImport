@@ -1,0 +1,263 @@
+--- cyrus-imapd-2.3.13/imap/ctl_mboxlist.c	2008-09-24 07:45:50.000000000 -0400
++++ cyrus-imapd-2.3.13um15/imap/ctl_mboxlist.c	2008-10-22 16:51:00.000000000 -0400
+@@ -125,6 +125,7 @@
+ static struct mb_node *act_head = NULL, **act_tail = &act_head;
+ static struct mb_node *del_head = NULL;
+ static struct mb_node *wipe_head = NULL, *unflag_head = NULL;
++static struct mb_node *add_head = NULL;
+ 
+ /* assume the local copy is authoritative and that it should just overwrite
+  * mupdate */
+@@ -132,16 +133,58 @@
+ static int warn_only = 0;
+ static int interactive = 0;
+ 
+-/* For each mailbox that this guy gets called for, check that
+- * it is a mailbox that:
+- * a) mupdate server thinks *we* host
+- *    -> Because we were called, this is the case, provided we
+- *    -> gave the prefix parameter to the remote.
+- * b) we do not actually host
+- *
+- * if that's the case, enqueue a delete
+- * otherwise, we both agree that it exists, but we still need
+- * to verify that its info is up to date.
++int mboxdb_store(const char *name, int mbtype, const char *partition,
++		 const char *acl, struct txn **tid)
++{
++    int r = 0;
++    int namelen = strlen(name);
++    int datalen;
++    int tries = 0;
++    char *data = NULL;
++
++    if (strlen(name) > MAX_MAILBOX_NAME) {
++	fprintf(stderr, "line %d: mailbox name too long\n", name);
++	return 0;
++    }
++    if (strlen(partition) >= MAX_PARTITION_LEN) {
++	fprintf(stderr, "line %d: partition name too long\n", partition);
++	return 0;
++    }
++
++    namelen = strlen(name);
++    data = mboxlist_makeentry(mbtype, partition, acl); datalen = strlen(data);
++
++  retry:
++    r = config_mboxlist_db->store(mbdb, name, namelen, data, datalen, tid);
++    switch (r) {
++    case 0:
++	break;
++    case CYRUSDB_AGAIN:
++	if (tries++ < 5) {
++	    fprintf(stderr, "warning: DB_LOCK_DEADLOCK; retrying\n");
++	    goto retry;
++	}
++	fprintf(stderr, "error: too many deadlocks, aborting\n");
++	break;
++    default:
++        r = IMAP_IOERROR;
++	break;
++    }
++
++    free(data);
++
++    return r;
++}
++
++/* For each mailbox that this gets called for, mupdate
++ * thinks we should have it in our list. check that:
++ * 1) it's not on our mailbox list
++ * 	a) if it's suppose to be local to us
++ * 		-> remove it from mupdate
++ * 	b) if it's remote
++ * 		-> add it to our mailbox list
++ * 2) it's in our mailbox list
++ *	-> enqueue a verify that its info is up to date
+  */
+ static int mupdate_list_cb(struct mupdate_mailboxdata *mdata,
+ 			   const char *cmd,
+@@ -153,12 +196,26 @@
+     ret = mboxlist_lookup(mdata->mailbox, NULL, NULL);
+     if(ret) {
+ 	struct mb_node *next;
+-	
+-	next = xzmalloc(sizeof(struct mb_node));
+-	strlcpy(next->mailbox, mdata->mailbox, sizeof(next->mailbox));
+-	
+-	next->next = del_head;
+-	del_head = next;
++	char *p;
++	char *host = xstrdup(mdata->server);
++	p = strchr(host, '!');
++	if( p != NULL ) {
++	    *p = '\0';
++	}
++
++	if( !strcmp( config_servername, host )) {
++	    next = xzmalloc(sizeof(struct mb_node));
++	    strlcpy(next->mailbox, mdata->mailbox, sizeof(next->mailbox));
++	    next->next = del_head;
++	    del_head = next;
++	} else {
++	    next = xzmalloc(sizeof(struct mb_node));
++	    strlcpy(next->mailbox, mdata->mailbox, sizeof(next->mailbox));
++	    strlcpy(next->server, mdata->server, sizeof(next->server));
++	    next->acl = xstrdup(mdata->acl);
++	    next->next = add_head;
++	    add_head = next;
++	}
+     } else {
+ 	/* we both agree that it exists */
+ 	/* throw it onto the back of the activate queue */
+@@ -411,6 +468,10 @@
+     struct dumprock d;
+     int ret;
+     char buf[8192];
++    char last_commit[MAX_MAILBOX_NAME+1];
++    char name[MAX_MAILBOX_NAME+1];
++    struct txn *tid = NULL;
++    int untilCommit = PER_COMMIT;
+ 
+     assert(op == DUMP || op == M_POPULATE);
+     assert(op == DUMP || !purge);
+@@ -431,8 +492,12 @@
+ 	/* now we need a list of what the remote thinks we have
+ 	 * To generate it, ask for a prefix of '<our hostname>!',
+ 	 * (to ensure we get exactly our hostname) */
+-	snprintf(buf, sizeof(buf), "%s!", config_servername);
+-	ret = mupdate_list(d.h, mupdate_list_cb, buf, NULL);
++	if(config_mupdate_config != IMAP_ENUM_MUPDATE_CONFIG_UNIFIED) {
++	    snprintf(buf, sizeof(buf), "%s!", config_servername);
++	    ret = mupdate_list(d.h, mupdate_list_cb, buf, NULL);
++	} else {
++	    ret = mupdate_list(d.h, mupdate_list_cb, NULL, NULL);
++	}
+ 	if(ret) {
+ 	    fprintf(stderr, "couldn't do LIST command on mupdate server\n");
+ 	    exit(1);
+@@ -511,6 +576,50 @@
+ 	    free(me);
+ 	}
+ 
++	/* add remote mailboxes to local database (add_head) */
++	last_commit[0] = '\0';
++	while(add_head) {
++	    struct mb_node *me = add_head;
++
++	    add_head = add_head->next;
++	    if(warn_only) {
++		printf("Add remote mailbox: %s\n", me->mailbox);
++	    } else {
++		ret = mboxdb_store(me->mailbox, MBTYPE_REMOTE,
++		    me->server, me->acl, &tid);
++		strlcpy(name, me->mailbox,sizeof(name));
++
++		if(--untilCommit == 0) {
++		    /* commit */
++		    ret = config_mboxlist_db->commit(mbdb, tid);
++		    if(!ret) {
++			strlcpy(last_commit,me->mailbox,sizeof(last_commit));
++			tid = NULL;
++			untilCommit = PER_COMMIT;
++		    }
++		}
++		free(me);
++
++		if(ret) break;
++	    }
++	}
++	if(tid) {
++	    if(!ret) {
++		// commit the last transaction /
++		ret = config_mboxlist_db->commit(mbdb, tid);
++	    } else {
++		config_mboxlist_db->abort(mbdb, tid);
++		fprintf(stderr, "db error: %s\n", cyrusdb_strerror(r));
++		fprintf(stderr, "was processing mailbox: %s\n", name);
++		if(last_commit[0]){
++		    fprintf(stderr, "last successful commit was: %s\n",
++			last_commit);
++		} else {
++		fprintf(stderr, "no commits!\n");
++		}
++	    }
++	}
++
+ 	/* Delete local mailboxes where needed (wipe_head) */
+ 	if (interactive) {
+ 	    int count = 0;
+@@ -556,6 +665,7 @@
+     int r = 0;
+     char buf[16384];
+     int line = 0;
++    char *name, *partition, *acl;
+     char last_commit[MAX_MAILBOX_NAME];
+     char *key=NULL, *data=NULL;
+     int keylen, datalen;
+@@ -565,7 +675,6 @@
+     last_commit[0] = '\0';
+ 
+     while (fgets(buf, sizeof(buf), stdin)) {
+-	char *name, *partition, *acl;
+ 	char *p;
+ 	int mbtype = 0, tries = 0;
+ 	
+@@ -596,37 +705,8 @@
+ 	for (; *p && *p != '\r' && *p != '\n'; p++) ;
+ 	*p++ = '\0';
+ 
+-	if (strlen(name) > MAX_MAILBOX_NAME) {
+-	    fprintf(stderr, "line %d: mailbox name too long\n", line);
+-	    continue;
+-	}
+-	if (strlen(partition) >= MAX_PARTITION_LEN) {
+-	    fprintf(stderr, "line %d: partition name too long\n", line);
+-	    continue;
+-	}
+-
+-	key = name; keylen = strlen(key);
+-	data = mboxlist_makeentry(mbtype, partition, acl); datalen = strlen(data);
+-	
+-	tries = 0;
+-    retry:
+-	r = config_mboxlist_db->store(mbdb, key, keylen, data, datalen, &tid);
+-	switch (r) {
+-	case 0:
+-	    break;
+-	case CYRUSDB_AGAIN:
+-	    if (tries++ < 5) {
+-		fprintf(stderr, "warning: DB_LOCK_DEADLOCK; retrying\n");
+-		goto retry;
+-	    }
+-	    fprintf(stderr, "error: too many deadlocks, aborting\n");
+-	    break;
+-	default:
+-	    r = IMAP_IOERROR;
+-	    break;
+-	}
+-	
+-	free(data);
++	r = mboxdb_store(name, mbtype, partition, acl, &tid);
++	if(r) break;
+ 
+ 	if(--untilCommit == 0) {
+ 	    /* commit */
+@@ -634,7 +714,7 @@
+ 	    if(r) break;
+ 	    tid = NULL;
+ 	    untilCommit = PER_COMMIT;
+-	    strlcpy(last_commit,key,sizeof(last_commit));
++	    strlcpy(last_commit,name,sizeof(last_commit));
+ 	}
+ 
+ 	if (r) break;
+@@ -648,7 +728,7 @@
+     if (r) {
+ 	if(tid) config_mboxlist_db->abort(mbdb, tid);
+ 	fprintf(stderr, "db error: %s\n", cyrusdb_strerror(r));
+-	if(key) fprintf(stderr, "was processing mailbox: %s\n", key);
++	if(name) fprintf(stderr, "was processing mailbox: %s\n", name);
+ 	if(last_commit[0]) fprintf(stderr, "last commit was at: %s\n",
+ 				   last_commit);
+ 	else fprintf(stderr, "no commits\n");

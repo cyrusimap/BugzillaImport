@@ -1,0 +1,88 @@
+--- imap/Makefile.Oin	Tue Jan  9 11:41:35 2007
++++ imap/Makefile.in	Sat Feb 10 09:50:27 2007
+@@ -123,7 +123,7 @@
+ 	lmtpstats.c lmtpstats.h xversion.h mupdate_err.c mupdate_err.h \
+ 	nntp_err.c nntp_err.h
+ 
+-all: $(BUILTSOURCES) $(PROGS) $(SUIDPROGS)
++all: xversion $(BUILTSOURCES) $(PROGS) $(SUIDPROGS)
+ 
+ pure: imapd.pure lmtpd.pure mupdate.pure
+ 
+@@ -151,11 +151,10 @@
+ 
+ ### Built Source Files
+ 
+-xversion:
+-	rm -f version.o
++xversion xversion.h:
+ 	AWK=$(AWK) $(srcdir)/xversion.sh
+ 
+-xversion.h: xversion
++version.o: xversion.h
+ 
+ pushstats.c: pushstats.snmp $(srcdir)/../snmp/snmpgen
+ 	$(srcdir)/../snmp/snmpgen $(srcdir)/pushstats.snmp
+@@ -199,7 +198,7 @@
+ 	 $(SERVICE) lmtpd.o proxy.o $(LMTPOBJS) $(SIEVE_OBJS) \
+ 	 mutex_fake.o libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
+ 
+-imapd: xversion $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
++imapd: $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o imapd \
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o \
+ 	libimap.a $(DEPLIBS) $(LIBS) $(LIB_WRAP)
+--- imap/xversion.Osh	Wed Oct 22 13:03:00 2003
++++ imap/xversion.sh	Sat Feb 10 08:04:31 2007
+@@ -9,12 +9,13 @@
+     AWK=awk
+ fi
+ 
++TMPF=/tmp/xversion.$$
+ DATEPAT=[1-2][0-9][0-9][0-9]/[0-1][0-9]/[0-3][0-9]
+ TIMEPAT=[0-2][0-9]:[0-5][0-9]:[0-5][0-9]
+ 
+-printf "/* Generated automatically by xversion.sh */\n\n" > xversion.h
++printf "/* Generated automatically by xversion.sh */\n\n" > $TMPF
+ 
+-printf "#define CYRUS_CVSDATE " >> xversion.h
++printf "#define CYRUS_CVSDATE " >> $TMPF
+ 
+ find .. -name '*.[chly]' -print | \
+ 	xargs egrep '\$Id: ' | \
+@@ -22,4 +23,12 @@
+ 	match ($0, pattern) {
+ 	    printf "\"%s\"\n", substr($0, RSTART, RLENGTH)
+ 	}' pattern="$DATEPAT $TIMEPAT" | \
+-	sort | tail -1 >> xversion.h
++	sort | tail -1 >> $TMPF
++
++if [ -f xversion.h ] && cmp -s $TMPF xversion.h
++then
++    rm $TMPF
++else
++    mv $TMPF xversion.h
++fi
++
+--- perl/Makefile.Oin	Wed Oct 22 13:50:17 2003
++++ perl/Makefile.in	Fri Feb  9 17:54:37 2007
+@@ -77,7 +77,7 @@
+ 	@for d in  $(SUBDIRS); \
+ 	do \
+ 		(cd $$d; echo "### Making" all "in" `pwd`;	\
+-			if [ -f Makefile.PL ]; then \
++			if [ -f Makefile.PL -a ! -f Makefile ]; then \
+ 			   LIB_RT="$(LIB_RT)" \
+ 			   BDB_LIB="$(BDB_LIB)" BDB_INC="$(BDB_INC)" \
+ 			   OPENSSL_LIB="$(OPENSSL_LIB)" OPENSSL_INC="$(OPENSSL_INC)" \
+--- perl/sieve/Makefile.Oin	Wed Oct 22 13:50:24 2003
++++ perl/sieve/Makefile.in	Fri Feb  9 18:02:16 2007
+@@ -79,7 +79,7 @@
+ 	@for d in  $(SUBDIRS); \
+ 	do \
+ 		(cd $$d; echo "### Making" all "in" `pwd`;	\
+-			if [ -f Makefile.PL ]; then \
++			if [ -f Makefile.PL -a ! -f Makefile ]; then \
+ 			   LIB_RT="$(LIB_RT)" \
+ 			   BDB_LIB="$(BDB_LIB)" BDB_INC="$(BDB_INC)" \
+ 			   OPENSSL_LIB="$(OPENSSL_LIB)" OPENSSL_INC="$(OPENSSL_INC)" \

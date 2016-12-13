@@ -1,0 +1,476 @@
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/SMakefile cyrus-imapd-2.2_cvs_snmp/SMakefile
+--- cyrus-imapd-2.2_cvs/SMakefile	2003-09-24 03:24:15.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/SMakefile	2003-09-24 11:09:02.000000000 -0400
+@@ -114,7 +114,7 @@
+ SASL_CONFIG="--with-staticsasl=/usr/local --with-gssapi=/usr/local"
+ KRB_CONFIG="--enable-statickrb --with-krb=/usr/local"
+ FEATURE_CONFIG="--enable-murder --enable-annotatemore --enable-cmulocal"
+-EXT_PACKAGE_CONFIG="--with-inn=/usr/news --with-ucdsnmp=/usr/local"
++EXT_PACKAGE_CONFIG="--with-inn=/usr/news --with-netsnmp=/usr/local"
+ 
+ MFCOMMAND="./configure $WITHAUTH $KRB_CONFIG $DB_CONFIG --enable-experiment --with-cyrus-group=staff $FEATURE_CONFIG $EXT_PACKAGE_CONFIG $SASL_CONFIG $DEBUG"
+ 
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/acconfig.h cyrus-imapd-2.2_cvs_snmp/acconfig.h
+--- cyrus-imapd-2.2_cvs/acconfig.h	2003-09-24 03:24:15.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/acconfig.h	2003-09-24 11:09:31.000000000 -0400
+@@ -116,8 +116,8 @@
+ /* is Sieve enabled? */
+ #undef USE_SIEVE
+ 
+-/* do we have the UCD SNMP libraries? */
+-#undef HAVE_UCDSNMP
++/* do we have the Net-SNMP libraries? */
++#undef HAVE_NETSNMP
+ 
+ /* _POSIX_PTHREAD_SEMANTICS needed? */
+ #undef _POSIX_PTHREAD_SEMANTICS
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/cmulocal/nadine.m4 cyrus-imapd-2.2_cvs_snmp/cmulocal/nadine.m4
+--- cyrus-imapd-2.2_cvs/cmulocal/nadine.m4	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/cmulocal/nadine.m4	2003-09-24 11:10:13.000000000 -0400
+@@ -77,8 +77,8 @@
+ 		AC_MSG_ERROR([No argument for --with-nadine-include])
+ 	fi])
+ 
+-        if test "$with_ucdsnmp" = "no" ; then
+-             AC_MSG_WARN([Nadine requires UCD SNMP. Disabling Nadine support])
++        if test "$with_netsnmp" = "no" ; then
++             AC_MSG_WARN([Nadine requires Net-SNMP. Disabling Nadine support])
+              with_nadine=no
+              with_nadine_lib=no
+              with_nadine_include=no
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/cmulocal/ucdsnmp.m4 cyrus-imapd-2.2_cvs_snmp/cmulocal/ucdsnmp.m4
+--- cyrus-imapd-2.2_cvs/cmulocal/ucdsnmp.m4	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/cmulocal/ucdsnmp.m4	2003-09-24 16:32:40.000000000 -0400
+@@ -1,30 +1,31 @@
+-dnl look for the ucdsnmp libraries
+-dnl $Id: ucdsnmp.m4,v 1.3.4.3 2003/02/14 16:14:51 ken3 Exp $
++dnl look for the netsnmp libraries
++dnl $Id: netsnmp.m4,v 1.3.4.3 2003/02/14 16:14:51 ken3 Exp $
+ 
+-AC_DEFUN(CMU_UCDSNMP, [
++AC_DEFUN(CMU_NETSNMP, [
+   AC_REQUIRE([CMU_SOCKETS])
+-  AC_ARG_WITH(ucdsnmp, 
+-              [  --with-ucdsnmp=DIR      use ucd snmp (rooted in DIR) [yes] ],
+-              with_ucdsnmp=$withval, with_ucdsnmp=yes)
+-  if test "$with_ucdsnmp" != no; then
+-    if test -d "$with_ucdsnmp"; then
+-      CPPFLAGS="$CPPFLAGS -I${with_ucdsnmp}/include"
+-      LDFLAGS="$LDFLAGS -L${with_ucdsnmp}/lib"
++  AC_ARG_WITH(netsnmp, 
++              [  --with-netsnmp=DIR      use net snmp (rooted in DIR) [yes] ],
++              with_netsnmp=$withval, with_netsnmp=yes)
++  if test "$with_netsnmp" != no; then
++    if test -d "$with_netsnmp"; then
++      CPPFLAGS="$CPPFLAGS -I${with_netsnmp}/include"
++      LDFLAGS="$LDFLAGS -L${with_netsnmp}/lib"
+     fi
+     cmu_save_LIBS="$LIBS"
+-    AC_CHECK_LIB(snmp, sprint_objid, [
+-		 AC_CHECK_HEADER(ucd-snmp/version.h,, with_ucdsnmp=no)],
+-		 with_ucdsnmp=no, ${LIB_SOCKET})
++    AC_CHECK_LIB(netsnmp, snprint_objid, [
++		 AC_CHECK_HEADER(net-snmp/version.h,, with_netsnmp=no)],
++		 with_netsnmp=no, ${LIB_SOCKET})
+     LIBS="$cmu_save_LIBS"
+   fi
+-  AC_MSG_CHECKING(UCD SNMP libraries)
+-  AC_MSG_RESULT($with_ucdsnmp)
+-  LIB_UCDSNMP=""
+-  if test "$with_ucdsnmp" != no; then
+-    AC_DEFINE(HAVE_UCDSNMP)
+-    LIB_UCDSNMP="-lucdagent -lucdmibs -lsnmp"
+-    AC_CHECK_LIB(rpm, rpmdbOpen,
+-		 LIB_UCDSNMP="${LIB_UCDSNMP} -lrpm -lpopt",,-lpopt)
++  AC_MSG_CHECKING(Net-SNMP libraries)
++  AC_MSG_RESULT($with_netsnmp)
++  LIB_NETSNMP=""
++  if test "$with_netsnmp" != no; then
++    AC_DEFINE(HAVE_NETSNMP)
++    NETSNMP_CONFIG=$with_netsnmp/bin/net-snmp-config
++    NETSNMP_CFLAGS="`$NETSNMP_CONFIG --cflags`"
++    LIB_NETSNMP="`$NETSNMP_CONFIG --agent-libs`"
+   fi
+-  AC_SUBST(LIB_UCDSNMP)
++  AC_SUBST(LIB_NETSNMP)
++  AC_SUBST(NETSNMP_CFLAGS)
+ ])
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/configure.in cyrus-imapd-2.2_cvs_snmp/configure.in
+--- cyrus-imapd-2.2_cvs/configure.in	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/configure.in	2003-09-24 11:11:02.000000000 -0400
+@@ -1005,12 +1005,12 @@
+ AC_SUBST(MD5OBJ)
+ 
+ dnl snmp
+-dnl (agentx was depricated, but SNMP_SUBDIRS is conveinent as a placeholder)
++dnl (agentx was deprecated, but SNMP_SUBDIRS is conveinent as a placeholder)
+ SNMP_SUBDIRS=""
+ AC_SUBST(SNMP_SUBDIRS)
+ 
+ CMU_LIBWRAP
+-CMU_UCDSNMP
++CMU_NETSNMP
+ 
+ # Figure out what directories we're linking against.
+ # Lots of fun for the whole family.
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/contrib/cyrus-graphtools.1.0/README cyrus-imapd-2.2_cvs_snmp/contrib/cyrus-graphtools.1.0/README
+--- cyrus-imapd-2.2_cvs/contrib/cyrus-graphtools.1.0/README	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/contrib/cyrus-graphtools.1.0/README	2003-09-24 11:16:19.000000000 -0400
+@@ -6,7 +6,7 @@
+ --------
+ 
+ This archive contains the scripts necessary for collecting data from
+-CMU cyrus server with UCD SNMP support.  It contains:
++CMU cyrus server with Net-SNMP support.  It contains:
+ 
+ script/cyrus.pl - script for retrieving data from the server and
+ 		  dumping it into an rrdtool database
+@@ -31,7 +31,7 @@
+ http://ee-staff.ethz.ch/~oetiker/webtools/rrdtool/pub  
+ 
+ 
+-Also required is net-snmp 4.2 (formerly ucd-snmp), however this is
++Also required is net-snmp 5.0 (formerly ucd-snmp), however this is
+ required for the cyrus snmp functionality as well.  It is available at
+ http://net-snmp.sourceforge.net/
+ 
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/contrib/drac_auth.patch cyrus-imapd-2.2_cvs_snmp/contrib/drac_auth.patch
+--- cyrus-imapd-2.2_cvs/contrib/drac_auth.patch	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/contrib/drac_auth.patch	2003-09-24 19:07:01.000000000 -0400
+@@ -100,7 +100,7 @@
+ +AC_SUBST(DRACLIBS)
+ +
+  CMU_LIBWRAP
+- CMU_UCDSNMP
++ CMU_NETSNMP
+  
+ Index: imap/Makefile.in
+ diff -u imap/Makefile.in.orig imap/Makefile.in
+@@ -118,20 +118,20 @@
+  imapd: xversion $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+  	$(CC) $(LDFLAGS) -o imapd \
+  	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o \
+--	libimap.a $(DEPLIBS) $(LIBS) $(LIB_WRAP)
+-+	libimap.a $(DEPLIBS) $(LIBS) $(LIB_WRAP) $(DRAC_LIBS)
++-	libimap.a $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+++	libimap.a $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP) $(DRAC_LIBS)
+  
+  imapd.pure: $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+  	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o imapd.pure \
+  	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o libimap.a \
+--	$(DEPLIBS) $(LIBS) $(LIB_WRAP)
+-+	$(DEPLIBS) $(LIBS) $(LIB_WRAP) $(DRAC_LIBS)
++-	$(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+++	$(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP) $(DRAC_LIBS)
+  
+  imapd.quant: $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+  	$(QUANTIFY) $(QUANTOPT) $(CC) $(LDFLAGS) -o imapd.quant \
+  	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o libimap.a \
+--	$(DEPLIBS) $(LIBS) $(LIB_WRAP)
+-+	$(DEPLIBS) $(LIBS) $(LIB_WRAP) $(DRAC_LIBS) $(DRAC_LIBS)
++-	$(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+++	$(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP) $(DRAC_LIBS)
+  
+  proxyd: $(PROXYDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+  	$(CC) $(LDFLAGS) -o proxyd \
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/doc/install-compile.html cyrus-imapd-2.2_cvs_snmp/doc/install-compile.html
+--- cyrus-imapd-2.2_cvs/doc/install-compile.html	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/doc/install-compile.html	2003-09-24 11:18:19.000000000 -0400
+@@ -183,7 +183,7 @@
+ <dt><tt>--with-libwrap=PATH</tt>
+ <dd>Specifies where to find the TCP wrappers library.<P>
+ 
+-<dt><tt>--with-ucdsnmp=PATH</tt>
++<dt><tt>--with-netsnmp=PATH</tt>
+ <dd>Specifies where to find the SNMP library.<P>
+ 
+ <dt><tt>--with-zephyr=PATH</tt>
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/doc/install-prereq.html cyrus-imapd-2.2_cvs_snmp/doc/install-prereq.html
+--- cyrus-imapd-2.2_cvs/doc/install-prereq.html	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/doc/install-prereq.html	2003-09-24 11:20:17.000000000 -0400
+@@ -63,7 +63,7 @@
+ href="ftp://ftp.porcupine.org/pub/security/">ftp://ftp.porcupine.org/pub/security/</a>
+ in the <tt>tcp_wrappers</tt> package..
+ 
+-<li> <b>Net-SNMP</b> (formerly UCD-SNMP), version 4.2 or higher.
++<li> <b>Net-SNMP</b> (formerly UCD-SNMP), version 5.0 or higher.
+ Required for SNMP monitoring of the IMAP server.  Available from <a
+ href="http://www.net-snmp.org/">http://www.net-snmp.org/</a>.
+ 
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/imap/Makefile.in cyrus-imapd-2.2_cvs_snmp/imap/Makefile.in
+--- cyrus-imapd-2.2_cvs/imap/Makefile.in	2003-09-24 03:24:16.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/imap/Makefile.in	2003-09-24 19:52:31.000000000 -0400
+@@ -68,9 +68,11 @@
+ IMAP_COM_ERR_LIBS = @IMAP_COM_ERR_LIBS@
+ LIB_WRAP = @LIB_WRAP@
+ LIBS = $(IMAP_LIBS) $(IMAP_COM_ERR_LIBS)
++LIB_NETSNMP = @LIB_NETSNMP@
+ DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+ 
+ CFLAGS = @CFLAGS@
++NETSNMP_CFLAGS = @CFLAGS@
+ LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@ 
+ 
+ SHELL = /bin/sh
+@@ -139,7 +141,7 @@
+ 	ln -f $(DESTDIR)$(cyrus_prefix)/bin/pop3d $(DESTDIR)$(cyrus_prefix)/bin/pop3proxyd
+ 
+ .c.o:
+-	$(CC) -c $(CPPFLAGS) $(DEFS) $(CFLAGS) \
++	$(CC) -c $(CPPFLAGS) $(DEFS) $(CFLAGS) $(NETSNMP_CFLAGS) \
+ 	$<
+ 
+ ### libimap
+@@ -191,50 +193,50 @@
+ 	$(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o lmtpd \
+ 	 $(SERVICE) lmtpd.o $(LMTPOBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ lmtpd.pure: lmtpd.o $(LMTPOBJS) mutex_fake.o \
+ 	libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o lmtpd.pure \
+ 	 $(SERVICE) lmtpd.o $(LMTPOBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ lmtpproxyd: lmtpproxyd.o $(LMTPOBJS) mutex_fake.o \
+ 	libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o lmtpproxyd \
+ 	 $(SERVICE) lmtpproxyd.o $(LMTPOBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ lmtpproxyd.pure: lmtpproxyd.o $(LMTPOBJS) mutex_fake.o \
+ 	libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o lmtpproxyd.pure \
+ 	 $(SERVICE) lmtpproxyd.o $(LMTPOBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP) 
+ 
+ imapd: xversion $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o imapd \
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o \
+-	libimap.a $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	libimap.a $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ imapd.pure: $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o imapd.pure \
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o libimap.a \
+-	$(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	$(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ imapd.quant: $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(QUANTIFY) $(QUANTOPT) $(CC) $(LDFLAGS) -o imapd.quant \
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o libimap.a \
+-	$(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	$(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ proxyd: $(PROXYDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o proxyd \
+ 	 $(SERVICE) $(PROXYDOBJS) mutex_fake.o libimap.a \
+-	 $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ proxyd.pure: $(PROXYDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o proxyd.pure \
+ 	 $(SERVICE) $(PROXYDOBJS) mutex_fake.o libimap.a \
+-	 $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 $(DEPLIBS) $(LIBS) $(LIB_NETSNMP) $(LIB_WRAP)
+ 
+ mupdate: mupdate.o mupdate-slave.o mupdate-client.o mutex_pthread.o tls.o \
+ 	libimap.a $(DEPLIBS)
+@@ -278,7 +280,7 @@
+ 
+ deliver: deliver.o $(LMTPOBJS) mutex_fake.o libimap.a $(DEPLIBS)
+ 	$(CC) $(LDFLAGS) -o deliver deliver.o $(LMTPOBJS) mutex_fake.o \
+-	libimap.a $(DEPLIBS) $(LIBS)
++	libimap.a $(DEPLIBS) $(LIB_NETSNMP) $(LIBS)
+ 
+ ctl_deliver: ctl_deliver.o $(CLIOBJS) libimap.a $(DEPLIBS)
+ 	$(CC) $(LDFLAGS) -o \
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/imap/version.c cyrus-imapd-2.2_cvs_snmp/imap/version.c
+--- cyrus-imapd-2.2_cvs/imap/version.c	2003-09-24 03:24:17.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/imap/version.c	2003-09-24 11:42:15.000000000 -0400
+@@ -48,8 +48,8 @@
+ #ifdef HAVE_KRB
+ #include <krb.h>
+ #endif
+-#ifdef HAVE_UCDSNMP
+-#include <ucd-snmp/version.h>
++#ifdef HAVE_NETSNMP
++#include <net-snmp/version.h>
+ #endif
+ 
+ #include <string.h>
+@@ -149,9 +149,9 @@
+     snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+ 	     "; TCP Wrappers");
+ #endif
+-#ifdef HAVE_UCDSNMP
++#ifdef HAVE_NETSNMP
+     snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+-	     "; UCD-SNMP %s", VersionInfo);
++	     "; NET-SNMP %s", NetSnmpVersionInfo);
+ #endif
+     snprintf(env_buf + strlen(env_buf), MAXIDVALUELEN - strlen(env_buf),
+ 	     "; mmap = %s", map_method_desc);
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/master/.index cyrus-imapd-2.2_cvs_snmp/master/.index
+--- cyrus-imapd-2.2_cvs/master/.index	1969-12-31 19:00:00.000000000 -0500
++++ cyrus-imapd-2.2_cvs_snmp/master/.index	2003-09-24 12:32:38.000000000 -0400
+@@ -0,0 +1 @@
++CYRUS-MASTER-MIB CYRUS-MASTER.mib
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/master/Makefile.in cyrus-imapd-2.2_cvs_snmp/master/Makefile.in
+--- cyrus-imapd-2.2_cvs/master/Makefile.in	2003-09-24 03:24:19.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/master/Makefile.in	2003-09-24 16:44:02.000000000 -0400
+@@ -57,8 +57,9 @@
+ DEPLIBS = @DEPLIBS@
+ 
+ CFLAGS = @CFLAGS@
++NETSNMP_CFLAGS = @NETSNMP_CFLAGS@
+ LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@
+-LIBS = ../lib/libcyrus_min.a @LIB_UCDSNMP@ @LIBS@ @COM_ERR_LIBS@
++LIBS = ../lib/libcyrus_min.a @LIB_NETSNMP@ @LIBS@ @COM_ERR_LIBS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+@@ -81,7 +82,7 @@
+ 	done
+ 
+ .c.o:
+-	$(CC) -c $(CPPFLAGS) $(DEFS) $(CFLAGS) \
++	$(CC) -c $(CPPFLAGS) $(DEFS) $(CFLAGS) $(NETSNMP_CFLAGS)\
+ 	$<
+ 
+ master: master.o masterconf.o cyrusMasterMIB.o ../lib/lock_@WITH_LOCK@.o
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/master/cyrusMasterMIB.c cyrus-imapd-2.2_cvs_snmp/master/cyrusMasterMIB.c
+--- cyrus-imapd-2.2_cvs/master/cyrusMasterMIB.c	2003-09-24 03:24:19.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/master/cyrusMasterMIB.c	2003-09-24 14:31:17.000000000 -0400
+@@ -1,13 +1,13 @@
+ #include <config.h>
+ 
+-#ifdef HAVE_UCDSNMP
++#ifdef HAVE_NETSNMP
+ 
+ /* This file was generated by mib2c and is intended for use as a mib module
+-   for the ucd-snmp snmpd agent. */
++   for the net-snmp snmpd agent. */
+ 
+ 
+-#ifdef IN_UCD_SNMP_SOURCE
+-/* If we're compiling this file inside the ucd-snmp source tree */
++#ifdef IN_NET_SNMP_SOURCE
++/* If we're compiling this file inside the net-snmp source tree */
+ 
+ 
+ /* This should always be included first before anything else */
+@@ -19,16 +19,16 @@
+ #include "util_funcs.h"
+ 
+ 
+-#else /* !IN_UCD_SNMP_SOURCE */
++#else /* !IN_NET_SNMP_SOURCE */
+ 
+ 
+-#include <ucd-snmp/ucd-snmp-config.h>
+-#include <ucd-snmp/ucd-snmp-includes.h>
+-#include <ucd-snmp/ucd-snmp-agent-includes.h>
+-#include <ucd-snmp/util_funcs.h>
++#include <net-snmp/net-snmp-config.h>
++#include <net-snmp/net-snmp-includes.h>
++#include <net-snmp/agent/net-snmp-agent-includes.h>
++#include <net-snmp/utilities.h>
+ 
+ 
+-#endif /* !IN_UCD_SNMP_SOURCE */
++#endif /* !IN_NET_SNMP_SOURCE */
+ 
+ #include <time.h>
+ #include <string.h>
+@@ -225,4 +225,4 @@
+ 
+ 
+ 
+-#endif /* HAVE_UCDSNMP */
++#endif /* HAVE_NETSNMP */
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/master/cyrusMasterMIB.h cyrus-imapd-2.2_cvs_snmp/master/cyrusMasterMIB.h
+--- cyrus-imapd-2.2_cvs/master/cyrusMasterMIB.h	2003-09-24 03:24:19.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/master/cyrusMasterMIB.h	2003-09-24 14:33:59.000000000 -0400
+@@ -9,7 +9,7 @@
+ /* we may use header_generic and header_simple_table from the util_funcs module */
+ 
+ 
+-config_require(util_funcs)
++config_require(utilities)
+ 
+ 
+ /* function prototypes */
+diff -Naur -x CVS cyrus-imapd-2.2_cvs/master/master.c cyrus-imapd-2.2_cvs_snmp/master/master.c
+--- cyrus-imapd-2.2_cvs/master/master.c	2003-09-24 03:24:19.000000000 -0400
++++ cyrus-imapd-2.2_cvs_snmp/master/master.c	2003-09-24 15:06:00.000000000 -0400
+@@ -85,10 +85,10 @@
+ #define	IPV6_V6ONLY	IPV6_BINDV6ONLY
+ #endif
+ 
+-#ifdef HAVE_UCDSNMP
+-#include <ucd-snmp/ucd-snmp-config.h>
+-#include <ucd-snmp/ucd-snmp-includes.h>
+-#include <ucd-snmp/ucd-snmp-agent-includes.h>
++#ifdef HAVE_NETSNMP
++#include <net-snmp/net-snmp-config.h>
++#include <net-snmp/net-snmp-includes.h>
++#include <net-snmp/agent/net-snmp-agent-includes.h>
+ 
+ #include "cyrusMasterMIB.h"
+ #endif
+@@ -840,7 +840,7 @@
+ 	syslog(LOG_ERR, "sigterm_handler: kill(0, SIGTERM): %m");
+     }
+ 
+-#if HAVE_UCDSNMP
++#if HAVE_NETSNMP
+     /* tell master agent we're exiting */
+     snmp_shutdown("cyrusMaster");
+ #endif
+@@ -1535,11 +1535,11 @@
+ 
+     syslog(LOG_NOTICE, "process started");
+ 
+-#ifdef HAVE_UCDSNMP
++#ifdef HAVE_NETSNMP
+     /* initialize SNMP agent */
+     
+     /* make us a agentx client. */
+-    ds_set_boolean(DS_APPLICATION_ID, DS_AGENT_ROLE, 1);
++    netsnmp_ds_set_boolean(NETSNMP_DS_APPLICATION_ID, NETSNMP_DS_AGENT_ROLE, 1);
+ 
+     /* initialize the agent library */
+     init_agent("cyrusMaster");
+@@ -1574,7 +1574,7 @@
+ 	int r, i, msg, maxfd;
+ 	struct timeval tv, *tvptr;
+ 	time_t now = time(NULL);
+-#if HAVE_UCDSNMP
++#if HAVE_NETSNMP
+ 	int blockp = 0;
+ #endif
+ 
+@@ -1655,7 +1655,7 @@
+ 	    tvptr = &tv;
+ 	}
+ 
+-#ifdef HAVE_UCDSNMP
++#ifdef HAVE_NETSNMP
+ 	if (tvptr == NULL) blockp = 1;
+ 	snmp_select_info(&maxfd, &rfds, tvptr, &blockp);
+ #endif
+@@ -1668,7 +1668,7 @@
+ 	    fatal("select failed: %m", 1);
+ 	}
+ 
+-#ifdef HAVE_UCDSNMP
++#ifdef HAVE_NETSNMP
+ 	/* check for SNMP queries */
+ 	snmp_read(&rfds);
+ 	snmp_timeout();

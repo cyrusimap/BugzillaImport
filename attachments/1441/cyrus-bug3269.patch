@@ -1,0 +1,133 @@
+ imap/global.c       |    4 ++++
+ imap/tls.c          |    4 ++--
+ lib/imapoptions     |    3 +++
+ lib/libconfig.c     |    5 +++++
+ lib/libconfig.h     |    1 +
+ master/master.c     |    4 ++--
+ master/masterconf.c |    4 ++++
+ 7 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/imap/global.c b/imap/global.c
+index 991e2b1..0b154cb 100644
+--- a/imap/global.c
++++ b/imap/global.c
+@@ -164,6 +164,10 @@ int cyrus_init(const char *alt_config, const char *ident, unsigned flags)
+ 	/* don't free the openlog() string! */
+     }
+ 
++    /* allow debug logging */
++    if (!config_debug)
++	setlogmask(~LOG_MASK(LOG_DEBUG));
++
+     /* Look up default partition */
+     config_defpartition = config_getstring(IMAPOPT_DEFAULTPARTITION);
+     for (p = (char *)config_defpartition; p && *p; p++) {
+diff --git a/imap/tls.c b/imap/tls.c
+index 469f074..3dfed40 100644
+--- a/imap/tls.c
++++ b/imap/tls.c
+@@ -252,9 +252,9 @@ static DH *load_dh_param(const char *keyfile, const char *certfile)
+ 
+     if (ret == NULL) {
+ 	ret = get_dh1024();
+-	syslog(LOG_NOTICE, "imapd:Loading hard-coded DH parameters");
++	syslog(LOG_DEBUG, "imapd:Loading hard-coded DH parameters");
+     } else {
+-	syslog(LOG_NOTICE, "imapd:Loading DH parameters from file");
++	syslog(LOG_DEBUG, "imapd:Loading DH parameters from file");
+     }
+ 
+     if (bio != NULL) BIO_free(bio);
+diff --git a/lib/imapoptions b/lib/imapoptions
+index e132262..93fe002 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -442,6 +442,9 @@ Blank lines and lines beginning with ``#'' are ignored.
+    hashing done on configuration directories.  This is recommended if
+    one partition has a very bushy mailbox tree. */
+ 
++{ "debug", 0, SWITCH }
++/* If enabled, allow syslog() to pass LOG_DEBUG messages. */
++
+ # Commented out - there's no such thing as "hostname_mechs", but we need
+ # this for the man page
+ # { "hostname_mechs", NULL, STRING }
+diff --git a/lib/libconfig.c b/lib/libconfig.c
+index 388635d..634d212 100644
+--- a/lib/libconfig.c
++++ b/lib/libconfig.c
+@@ -84,6 +84,7 @@ int config_auditlog;
+ unsigned config_maxword;
+ unsigned config_maxquoted;
+ int config_qosmarking;
++int config_debug;
+ 
+ /* declared in each binary that uses libconfig */
+ extern const int config_need_data;
+@@ -239,6 +240,7 @@ void config_reset(void)
+     config_maxquoted = 0;
+     config_maxword = 0;
+     config_qosmarking = 0;
++    config_debug = 0;
+ 
+     /* reset all the options */
+     for (opt = IMAPOPT_ZERO; opt < IMAPOPT_LAST; opt++) {
+@@ -399,6 +401,9 @@ void config_read(const char *alt_config)
+ 
+     ival = config_getenum(IMAPOPT_QOSMARKING);
+     config_qosmarking = qos[ival];
++
++    /* allow debug logging */
++    config_debug = config_getswitch(IMAPOPT_DEBUG);
+ }
+ 
+ #define GROWSIZE 4096
+diff --git a/lib/libconfig.h b/lib/libconfig.h
+index cee9643..427e121 100644
+--- a/lib/libconfig.h
++++ b/lib/libconfig.h
+@@ -83,6 +83,7 @@ extern int config_auditlog;
+ extern unsigned config_maxquoted;
+ extern unsigned config_maxword;
+ extern int config_qosmarking;
++extern int config_debug;
+ 
+ /* config requirement flags */
+ #define CONFIG_NEED_PARTITION_DATA (1<<0)
+diff --git a/master/master.c b/master/master.c
+index ab7cf0e..68413d6 100644
+--- a/master/master.c
++++ b/master/master.c
+@@ -1977,7 +1977,7 @@ int main(int argc, char **argv)
+ 	if (pidlock_fd != -1) close(pidlock_fd);
+     }
+ 
+-    syslog(LOG_NOTICE, "process started");
++    syslog(LOG_DEBUG, "process started");
+ 
+ #if defined(HAVE_UCDSNMP) || defined(HAVE_NETSNMP)
+     /* initialize SNMP agent */
+@@ -2034,7 +2034,7 @@ int main(int argc, char **argv)
+     init_janitor();
+     
+     /* ok, we're going to start spawning like mad now */
+-    syslog(LOG_NOTICE, "ready for work");
++    syslog(LOG_DEBUG, "ready for work");
+ 
+     now = time(NULL);
+     for (;;) {
+diff --git a/master/masterconf.c b/master/masterconf.c
+index c8858fe..b2f2847 100644
+--- a/master/masterconf.c
++++ b/master/masterconf.c
+@@ -99,6 +99,10 @@ int masterconf_init(const char *ident, const char *alt_config)
+         /* don't free the openlog() string! */
+     }
+ 
++    /* drop debug messages locally */
++    if (!config_debug)
++	setlogmask(~LOG_MASK(LOG_DEBUG));
++
+     return 0;
+ }
+ 

@@ -1,0 +1,127 @@
+diff -urB cyrus-imapd-2.4.6/imap/imapd.c cyrus-imapd-2.4.6-idle/imap/imapd.c
+--- cyrus-imapd-2.4.6/imap/imapd.c	2010-12-20 13:15:49.000000000 +0000
++++ cyrus-imapd-2.4.6-idle/imap/imapd.c	2011-01-28 18:11:04.000000000 +0000
+@@ -2674,8 +2674,31 @@
+ 	 * connection abort we tell idled about it */
+ 	idling = 1;
+ 
+-	/* Get continuation data */
+-	c = getword(imapd_in, &arg);
++        for (;;) {
++                /* Get continuation data */
++                c = getword(imapd_in, &arg);
++
++                if (!config_getswitch(IMAPOPT_OUTLOOK_IDLE_WORKAROUND))
++                        break;
++
++                /* has read some data */
++                if (c != EOF)
++                        break;
++
++                /* At this point we don't know :
++                 * - if we sent an unsolicited IMAP response
++                 * - if the timeout is reached
++                 *
++                 * Apply Outlook workaround in all case :
++                 * - send something on the wire to keep alive FW and IMAP client
++                 * - reset client timeout and wait again for end of command
++                 */
++                prot_printf(imapd_out, "* OK keep alive\r\n");
++                prot_flush(imapd_out);
++
++                prot_reset(imapd_in);
++                prot_resettimeout(imapd_in);
++        }
+ 
+ 	/* Stop updates and do any necessary cleanup */
+ 	idling = 0;
+@@ -2732,6 +2755,18 @@
+ 	    /* If not running IDLE on backend, poll the mailbox for updates */
+ 	    if (!CAPA(backend_current, CAPA_IDLE)) {
+ 		imapd_check(NULL, 0);
++
++                /* Apply Outlook workaround.
++                 * Since the backend doesn't support idle,
++                   proxy must send keep alive by itself */
++                if (done && config_getswitch(IMAPOPT_OUTLOOK_IDLE_WORKAROUND)
++                                && prot_hasexpired(imapd_in)) {
++                        prot_printf(imapd_out, "* OK keep alive\r\n");
++                        prot_flush(imapd_out);
++
++                        prot_resettimeout(imapd_in);
++                        done = 0;
++                }
+ 	    }
+ 	}
+ 
+diff -urB cyrus-imapd-2.4.6/lib/imapoptions cyrus-imapd-2.4.6-idle/lib/imapoptions
+--- cyrus-imapd-2.4.6/lib/imapoptions	2010-12-20 13:15:49.000000000 +0000
++++ cyrus-imapd-2.4.6-idle/lib/imapoptions	2011-01-28 18:11:04.000000000 +0000
+@@ -1310,6 +1310,9 @@
+    interface, otherwise the user is assumed to be in the default
+    domain (if set). */
+ 
++{ "outlook_idle_workaround", 0, SWITCH }
++/* See bug reported here for more details : http://www.washington.edu/imap/IMAP-FAQs/index.html#7.37 */
++
+ /*
+ .SH SEE ALSO
+ .PP
+diff -urB cyrus-imapd-2.4.6/lib/prot.c cyrus-imapd-2.4.6-idle/lib/prot.c
+--- cyrus-imapd-2.4.6/lib/prot.c	2010-12-20 13:15:49.000000000 +0000
++++ cyrus-imapd-2.4.6-idle/lib/prot.c	2011-01-28 18:11:04.000000000 +0000
+@@ -411,6 +411,17 @@
+ }
+ 
+ /*
++ * Check if timeout for the stream 's' has expired.
++ * 's' must have been created for reading.
++ */
++int prot_hasexpired(struct protstream *s)
++{
++        assert(!s->write);
++
++        return (s->timeout_mark - time(NULL)) <= 0;
++}
++
++/*
+  * Set the stream 's' to flush the stream 'flushs' before
+  * blocking for reading. 's' must have been created for reading,
+  * 'flushs' for writing.
+@@ -529,6 +540,15 @@
+ }
+ 
+ /*
++ * Permit to reuse the stream after an error
++ */
++void prot_reset(struct protstream *s)
++{
++        s->error = 0;
++        s->eof = 0;
++}
++
++/*
+  * Read data into the empty buffer for the stream 's' and return the
+  * first character.  Returns EOF on EOF or error.
+  */
+diff -urB cyrus-imapd-2.4.6/lib/prot.h cyrus-imapd-2.4.6-idle/lib/prot.h
+--- cyrus-imapd-2.4.6/lib/prot.h	2010-12-20 13:15:49.000000000 +0000
++++ cyrus-imapd-2.4.6-idle/lib/prot.h	2011-01-28 18:11:04.000000000 +0000
+@@ -216,6 +216,9 @@
+ /* Reset the timeout timer for the connection (in seconds) */
+ extern int prot_resettimeout(struct protstream *s);
+ 
++/* Check if the timeout has expired for the connection */
++extern int prot_hasexpired(struct protstream *s);
++
+ /* Connect two streams so that when you block on reading s, the layer
+  * will automaticly flush flushs */
+ extern int prot_setflushonread(struct protstream *s,
+@@ -233,6 +236,7 @@
+ 
+ extern const char *prot_error(struct protstream *s);
+ extern int prot_rewind(struct protstream *s);
++extern void prot_reset(struct protstream *s);
+ 
+ /* Fill the buffer for a read stream with waiting data (may block) */
+ extern int prot_fill(struct protstream *s);

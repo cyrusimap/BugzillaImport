@@ -1,0 +1,415 @@
+--- acconfig.h	2003-08-18 08:59:58.000000000 -0300
++++ ../../cyrus21-imapd/in-cvs/main/acconfig.h	2003-09-24 21:17:32.000000000 -0300
+@@ -271,7 +313,11 @@
+     SQUAT_ENGINE = 1,
+ 
+     /* should we have long LMTP error messages? */
+-    LMTP_LONG_ERROR_MSGS = 1
++    LMTP_LONG_ERROR_MSGS = 1,
++
++    /* default time to wait, in seconds, before giving up 
++     * trying to lock something */
++    LOCK_GIVEUP_TIMER_DEFAULT = 100
+ };
+ 
+ #endif /* _CYRUS_IMAPD_CONFIG_H_ */
+--- lib/lock.h	2003-02-13 21:54:31.000000000 -0200
++++ ../../cyrus21-imapd/in-cvs/main/lib/lock.h	2003-09-24 18:00:50.000000000 -0300
+@@ -53,6 +53,8 @@
+ 
+ #include <sys/stat.h>
+ 
++extern int lock_wait_time;
++
+ extern const char *lock_method_desc;
+ 
+ extern int lock_reopen P((int fd, const char *filename,
+--- lib/lock_fcntl.c	2003-02-13 21:54:31.000000000 -0200
++++ ../../cyrus21-imapd/in-cvs/main/lib/lock_fcntl.c	2003-09-24 21:26:44.000000000 -0300
+@@ -47,10 +47,41 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <errno.h>
++#include <signal.h>
++#include <syslog.h>
+ 
+ #include "lock.h"
+ 
+ const char *lock_method_desc = "fcntl";
++int lock_wait_time = LOCK_GIVEUP_TIMER_DEFAULT;
++
++/* Signal handling. We REQUIRE SYSV abort-syscall behaviour */
++
++static volatile int lock_gotsigalrm = 0;
++void lock_sigalrm_handler(int sig __attribute__((unused)))
++{
++    lock_gotsigalrm = 1;
++}
++
++static int setsigalrm(int enable)
++{
++    struct sigaction action;
++
++    sigemptyset(&action.sa_mask);
++    action.sa_flags = SA_RESETHAND;
++
++    if(enable) {
++	action.sa_handler = lock_sigalrm_handler;
++    } else {
++	action.sa_handler = SIG_IGN;
++    }
++    if (sigaction(SIGALRM, &action, NULL) < 0) {
++	syslog(LOG_ERR, "installing SIGALRM handler: sigaction: %m");
++	return -1;
++    }
++    lock_gotsigalrm = 0;
++    return 0;
++}
+ 
+ /*
+  * Block until we obtain an exclusive lock on the file descriptor 'fd',
+@@ -65,12 +96,11 @@
+  * 'failaction' is provided, it is filled in with a pointer to a fixed
+  * string naming the action that failed.
+  *
++ * We use POSIX semanthics and alarm() to avoid deadlocks
++ *
+  */
+-int lock_reopen(fd, filename, sbuf, failaction)
+-int fd;
+-const char *filename;
+-struct stat *sbuf;
+-const char **failaction;
++int lock_reopen(int fd, const char *filename, struct stat *sbuf, 
++		const char **failaction)
+ {
+     int r;
+     struct flock fl;
+@@ -79,6 +109,8 @@
+ 
+     if (!sbuf) sbuf = &sbufspare;
+ 
++    setsigalrm(1);
++    alarm(lock_wait_time);
+     for (;;) {
+ 	fl.l_type= F_WRLCK;
+ 	fl.l_whence = SEEK_SET;
+@@ -86,8 +118,10 @@
+ 	fl.l_len = 0;
+ 	r = fcntl(fd, F_SETLKW, &fl);
+ 	if (r == -1) {
+-	    if (errno == EINTR) continue;
++	    if (errno == EINTR && !lock_gotsigalrm) continue;
+ 	    if (failaction) *failaction = "locking";
++	    alarm(0);
++	    setsigalrm(0);
+ 	    return -1;
+ 	}
+ 
+@@ -100,6 +134,8 @@
+ 	    fl.l_start = 0;
+ 	    fl.l_len = 0;
+ 	    r = fcntl(fd, F_SETLKW, &fl);
++	    alarm(0);
++	    setsigalrm(0);
+ 	    return -1;
+ 	}
+ 
+@@ -113,11 +149,15 @@
+ 	    fl.l_start = 0;
+ 	    fl.l_len = 0;
+ 	    r = fcntl(fd, F_SETLKW, &fl);
++	    alarm(0);
++	    setsigalrm(0);
+ 	    return -1;
+ 	}
+ 	dup2(newfd, fd);
+ 	close(newfd);
+     }
++    alarm(0);
++    setsigalrm(0);
+ }
+ 
+ /*
+@@ -125,12 +165,13 @@
+  * Returns 0 for success, -1 for failure, with errno set to an
+  * appropriate error code.
+  */
+-int lock_blocking(fd)
+-int fd;
++int lock_blocking(int fd)
+ {
+     int r;
+     struct flock fl;
+ 
++    setsigalrm(1);
++    alarm(lock_wait_time);
+     for (;;) {
+ 	fl.l_type= F_WRLCK;
+ 	fl.l_whence = SEEK_SET;
+@@ -138,9 +179,15 @@
+ 	fl.l_len = 0;
+ 	r = fcntl(fd, F_SETLKW, &fl);
+ 	if (r != -1) return 0;
+-	if (errno == EINTR) continue;
++	if (errno == EINTR && !lock_gotsigalrm) continue;
++	alarm(0);
++	setsigalrm(0);
+ 	return -1;
+     }
++
++    alarm(0);
++    setsigalrm(0);
++    return 0;
+ }
+ 
+ /*
+@@ -148,12 +195,13 @@
+  * Returns 0 for success, -1 for failure, with errno set to an
+  * appropriate error code.
+  */
+-int lock_shared(fd)
+-int fd;
++int lock_shared(int fd)
+ {
+     int r;
+     struct flock fl;
+ 
++    setsigalrm(1);
++    alarm(lock_wait_time);
+     for (;;) {
+ 	fl.l_type= F_RDLCK;
+ 	fl.l_whence = SEEK_SET;
+@@ -161,9 +209,15 @@
+ 	fl.l_len = 0;
+ 	r = fcntl(fd, F_SETLKW, &fl);
+ 	if (r != -1) return 0;
+-	if (errno == EINTR) continue;
++	if (errno == EINTR && !lock_gotsigalrm) continue;
++	alarm(0);
++	setsigalrm(0);
+ 	return -1;
+     }
++
++    alarm(0);
++    setsigalrm(0);
++    return 0;
+ }
+ 
+ /*
+@@ -171,8 +225,7 @@
+  * Returns 0 for success, -1 for failure, with errno set to an
+  * appropriate error code.
+  */
+-int lock_nonblocking(fd)
+-int fd;
++int lock_nonblocking(int fd)
+ {
+     int r;
+     struct flock fl;
+@@ -187,10 +240,14 @@
+ 	if (errno == EINTR) continue;
+ 	return -1;
+     }
++
++    return 0;
+ }
+ 
+ /*
+- * Release any lock on 'fd'.  Always returns success.
++ * Release any lock on 'fd'
++ * Returns 0 for success, -1 for failure, with errno set to an
++ * appropriate error code.
+  */
+ int lock_unlock(int fd)
+ { 
+@@ -206,8 +263,9 @@
+         r = fcntl(fd, F_SETLKW, &fl);
+         if (r != -1) return 0;
+         if (errno == EINTR) continue;
+-        /* xxx help! */
+         return -1;
+     }
++
++    return 0;
+ }
+ 
+--- lib/lock_flock.c	2003-02-13 21:54:31.000000000 -0200
++++ ../../cyrus21-imapd/in-cvs/main/lib/lock_flock.c	2003-09-26 00:04:52.000000000 -0300
+@@ -46,6 +46,8 @@
+ #include <sys/stat.h>
+ #include <fcntl.h>
+ #include <errno.h>
++#include <syslog.h>
++#include <signal.h>
+ #ifdef HAVE_UNISTD_H
+ #include <unistd.h>
+ #endif
+@@ -53,6 +55,35 @@
+ #include "lock.h"
+ 
+ const char *lock_method_desc = "flock";
++int lock_wait_time = LOCK_GIVEUP_TIMER_DEFAULT;
++
++/* Signal handling. We REQUIRE SYSV abort-syscall behaviour */
++
++static volatile int lock_gotsigalrm = 0;
++void lock_sigalrm_handler(int sig __attribute__((unused)))
++{
++    lock_gotsigalrm = 1;
++}
++
++static int setsigalrm(int enable)
++{
++    struct sigaction action;
++
++    sigemptyset(&action.sa_mask);
++    action.sa_flags = SA_RESETHAND;
++
++    if(enable) {
++	action.sa_handler = lock_sigalrm_handler;
++    } else {
++	action.sa_handler = SIG_IGN;
++    }
++    if (sigaction(SIGALRM, &action, NULL) < 0) {
++	syslog(LOG_ERR, "installing SIGALRM handler: sigaction: %m");
++	return -1;
++    }
++    lock_gotsigalrm = 0;
++    return 0;
++}
+ 
+ /*
+  * Block until we obtain an exclusive lock on the file descriptor 'fd',
+@@ -68,11 +99,7 @@
+  * string naming the action that failed.
+  *
+  */
+-int lock_reopen(fd, filename, sbuf, failaction)
+-int fd;
+-const char *filename;
+-struct stat *sbuf;
+-const char **failaction;
++int lock_reopen(int fd, const char *filename, struct stat *sbuf, const char **failaction)
+ {
+     int r;
+     struct stat sbuffile, sbufspare;
+@@ -80,11 +107,15 @@
+ 
+     if (!sbuf) sbuf = &sbufspare;
+ 
++    setsigalrm(1);
++    alarm(lock_wait_time);
+     for (;;) {
+ 	r = flock(fd, LOCK_EX);
+ 	if (r == -1) {
+-	    if (errno == EINTR) continue;
++	    if (errno == EINTR && !lock_gotsigalrm) continue;
+ 	    if (failaction) *failaction = "locking";
++	    alarm(0);
++	    setsigalrm(0);
+ 	    return -1;
+ 	}
+ 
+@@ -93,6 +124,8 @@
+ 	if (r == -1) {
+ 	    if (failaction) *failaction = "stating";
+ 	    flock(fd, LOCK_UN);
++	    alarm(0);
++	    setsigalrm(0);
+ 	    return -1;
+ 	}
+ 
+@@ -102,11 +135,16 @@
+ 	if (newfd == -1) {
+ 	    if (failaction) *failaction = "opening";
+ 	    flock(fd, LOCK_UN);
++	    alarm(0);
++	    setsigalrm(0);
+ 	    return -1;
+ 	}
+ 	dup2(newfd, fd);
+ 	close(newfd);
+     }
++    alarm(0);
++    setsigalrm(0);
++    return 0;
+ }
+ 
+ /*
+@@ -114,17 +152,23 @@
+  * Returns 0 for success, -1 for failure, with errno set to an
+  * appropriate error code.
+  */
+-int lock_blocking(fd)
+-int fd;
++int lock_blocking(int fd)
+ {
+     int r;
+ 
++    setsigalrm(1);
++    alarm(lock_wait_time);
+     for (;;) {
+ 	r = flock(fd, LOCK_EX);
+ 	if (r != -1) return 0;
+-	if (errno == EINTR) continue;
++	if (errno == EINTR && !lock_gotsigalrm) continue;
++	alarm(0);
++	setsigalrm(0);
+ 	return -1;
+     }
++    alarm(0);
++    setsigalrm(0);
++    return 0;
+ }
+ 
+ /*
+@@ -132,17 +176,23 @@
+  * Returns 0 for success, -1 for failure, with errno set to an
+  * appropriate error code.
+  */
+-int lock_shared(fd)
+-int fd;
++int lock_shared(int fd)
+ {
+     int r;
+ 
++    setsigalrm(1);
++    alarm(lock_wait_time);
+     for (;;) {
+ 	r = flock(fd, LOCK_SH);
+ 	if (r != -1) return 0;
+-	if (errno == EINTR) continue;
++	if (errno == EINTR && !lock_gotsigalrm) continue;
++	alarm(0);
++	setsigalrm(0);
+ 	return -1;
+     }
++    alarm(0);
++    setsigalrm(0);
++    return 0;
+ }
+ 
+ /*
+@@ -164,7 +214,9 @@
+ }
+ 
+ /*
+- * Release any lock on 'fd'.  Always returns success.
++ * Release any lock on 'fd'.
++ * Returns 0 for success, -1 for failure, with errno set to an
++ * appropriate error code.
+  */
+ int lock_unlock(int fd)
+ {
+@@ -174,8 +226,9 @@
+         r = flock(fd, LOCK_UN);
+         if (r != -1) return 0;
+         if (errno == EINTR) continue;
+-        /* xxx help! */
+         return -1;
+     }
++
++    return 0;
+ }
+ 

@@ -1,0 +1,456 @@
+Index: master.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/master.c,v
+retrieving revision 1.67.4.20
+diff -u -r1.67.4.20 master.c
+--- master.c	1 Apr 2003 16:18:03 -0000	1.67.4.20
++++ master.c	4 Sep 2003 19:53:51 -0000
+@@ -135,14 +135,28 @@
+ };
+ static struct event *schedule = NULL;
+ 
++typedef enum {
++    SERVICE_STATE_UNKNOWN = 0,  /* duh */
++    SERVICE_STATE_READY   = 1,  /* Service can handle a connection
++				 * (though it may have just forked) */
++    SERVICE_STATE_BUSY    = 2,  /* Service told us it is not ready */
++    SERVICE_STATE_DEAD    = 3   /* We received a sigchld from this service */
++} service_state_t;
++
+ struct centry {
+     pid_t pid;
++    service_state_t service_state;
++    time_t janitor_deadline;
+     struct service *s;
+     struct centry *next;
+ };
+ static struct centry *ctable[child_table_size];
+ static struct centry *cfreelist;
+ 
++static int janitor_frequency = 1;	/* Janitor sweeps per second */
++static int janitor_position;		/* Entry to begin at in next sweep */
++static struct timeval janitor_mark;	/* Last time janitor did a sweep */
++
+ void limit_fds(rlim_t);
+ void schedule_event(struct event *a);
+ 
+@@ -248,6 +262,8 @@
+     t = cfreelist;
+     cfreelist = cfreelist->next;
+ 
++    t->janitor_deadline = 0;
++
+     return t;
+ }
+ 
+@@ -544,7 +560,6 @@
+     static char name_env[100], name_env2[100];
+     struct centry *c;
+     time_t now = time(NULL);
+-    int msg;
+     
+     /* update our fork rate */
+     if(now - s->last_interval_start >= FORKRATE_INTERVAL) {
+@@ -631,9 +646,6 @@
+ 
+ 	execv(path, s->exec);
+ 	syslog(LOG_ERR, "couldn't exec %s: %m", path);
+-	if (write(STATUS_FD, &msg, sizeof(msg)) != sizeof(msg)) {
+-	    syslog(LOG_ERR, "unable to tell master %x: %m", msg);
+-	}
+ 	exit(EX_OSERR);
+ 
+     default:			/* parent */
+@@ -645,6 +657,7 @@
+ 	/* add to child table */
+ 	c = get_centry();
+ 	c->pid = p;
++	c->service_state = SERVICE_STATE_READY;
+ 	c->s = s;
+ 	c->next = ctable[p % child_table_size];
+ 	ctable[p % child_table_size] = c;
+@@ -734,6 +747,7 @@
+ 		/* add to child table */
+ 		c = get_centry();
+ 		c->pid = p;
++		c->service_state = SERVICE_STATE_UNKNOWN;
+ 		c->s = NULL;
+ 		c->next = ctable[p % child_table_size];
+ 		ctable[p % child_table_size] = c;
+@@ -775,49 +789,137 @@
+ 
+ 	/* account for the child */
+ 	c = ctable[pid % child_table_size];
++	while(c && c->pid != pid) c = c->next;
++	
+ 	if (c && c->pid == pid) {
+-	    /* first thing in the linked list */
+-
+ 	    /* decrement active count for service */
+-	    if (c->s) c->s->nactive--;
+-
+-	    ctable[pid % child_table_size] = c->next;
+-	    c->next = cfreelist;
+-	    cfreelist = c;
++	    if (c->s) {
++		c->s->nactive--;
++		switch (c->service_state) {
++		case SERVICE_STATE_READY:
++		    c->s->ready_workers--;
++		    if (WIFSIGNALED(status) ||
++			(WIFEXITED(status) && WEXITSTATUS(status))) {
++			syslog(LOG_WARNING,
++			       "available child %d terminated abnormally",
++			       pid);
++		    }
++		    break;
++		    
++		case SERVICE_STATE_DEAD:
++		    /* uh? either we got duplicate signals, or we are now MT */
++		    syslog(LOG_WARNING,
++			   "receiving duplicate signals from child %d, service %s",
++			   pid, c->s->name);
++		    break;
++		    
++		case SERVICE_STATE_BUSY:
++		    /* Do nothing, service was busy */
++		    if (WIFSIGNALED(status) ||
++			(WIFEXITED(status) && WEXITSTATUS(status))) {
++			syslog(LOG_DEBUG,
++			       "busy child %d terminated abnormally",
++			       pid);
++		    }
++		    break;
++
++		case SERVICE_STATE_UNKNOWN:
++		    syslog(LOG_WARNING,
++			   "service %d in Unknown or Init state exited",
++			   pid);
++		    break;
++		}
++	    }
++	    c->service_state = SERVICE_STATE_DEAD;
++	    c->janitor_deadline = time(NULL) + 2;
+ 	} else {
+-	    /* not the first thing in the linked list */
++	    /* weird. Are we multithreaded now? we don't know this child */
++	    syslog(LOG_WARNING,
++		   "receiving signals from unregistered children. Handling it anyway");
++	    c = get_centry();
++	    c->pid = pid;
++	    c->service_state = SERVICE_STATE_DEAD;
++	    c->janitor_deadline = time(NULL) + 2;
++	    c->s = NULL;	/* we don't know it yet */
++	    c->next = ctable[pid % child_table_size];
++	    ctable[pid % child_table_size] = c;
++	}
++    }
++}
+ 
+-	    while (c->next) {
+-		if (c->next->pid == pid) break;
+-		c = c->next;
+-	    }
+-	    if (c->next) {
+-		struct centry *t;
+-
+-		t = c->next;
+-		/* decrement active count for service */
+-		if (t->s) t->s->nactive--;
+-
+-		c->next = t->next; /* remove node */
+-		t->next = cfreelist; /* add to freelist */
+-		cfreelist = t;
++void init_janitor(void)
++{
++    struct event *evt = (struct event *) malloc(sizeof(struct event));
++    
++    if (!evt) fatal("out of memory", EX_UNAVAILABLE);
++    memset(evt, 0, sizeof(struct event));
++    
++    gettimeofday(&janitor_mark, NULL);
++    janitor_position = 0;
++    
++    evt->name = "janitor periodic wakeup call";
++    evt->period = 10;
++    evt->mark = time(NULL) + 2;
++    schedule_event(evt);
++}
++
++void child_janitor(void)
++{
++    int i;
++    struct centry **p;
++    struct centry *c;
++    struct timeval rightnow;
++    time_t now;
++
++    now = time(NULL);
++    
++    /* Estimate the number of entries to clean up in this sweep */
++    gettimeofday(&rightnow, NULL);
++    if (rightnow.tv_sec > janitor_mark.tv_sec + 1) {
++	/* overflow protection */
++	i = child_table_size;
++    } else {
++	double n;
++	
++	n = child_table_size * janitor_frequency * 
++	    (double) ((rightnow.tv_sec - janitor_mark.tv_sec) * 1000000 +
++		      rightnow.tv_usec - janitor_mark.tv_usec ) / 1000000;
++	if (n < child_table_size) {
++	    i = n;
++	} else {
++	    i = child_table_size;
++	}
++    }
++    
++    while (i-- > 0) {
++	p = &ctable[janitor_position++];
++	janitor_position = janitor_position % child_table_size;
++	while (*p) {
++	    c = *p;
++	    if (c->service_state == SERVICE_STATE_DEAD) {
++		if (c->janitor_deadline < now) {
++		    *p = c->next;
++		    c->next = cfreelist;
++		    cfreelist = c;
++		} else {
++		    p = &((*p)->next);
++		}
+ 	    } else {
+-		/* yikes! don't know about this child! */
+-		syslog(LOG_ERR, "process %d not recognized", pid);
++		p = &((*p)->next);
+ 	    }
+ 	}
+     }
++    gettimeofday(&janitor_mark, NULL);
+ }
+ 
+-static int gotsigchld = 0;
++static volatile int gotsigchld = 0;
++static volatile int gotsighup = 0;
+ 
+ void sigchld_handler(int sig __attribute__((unused)))
+ {
+     gotsigchld = 1;
+ }
+ 
+-static int gotsighup = 0;
+-
+ void sighup_handler(int sig __attribute__((unused)))
+ {
+     gotsighup = 1;
+@@ -886,24 +988,74 @@
+     }
+ }
+ 
+-void process_msg(struct service *s, int msg)
++void process_msg(struct service *s, struct notify_message *msg)
+ {
+-    switch (msg) {
++    struct centry * c;
++    
++    /* Search hash table with linked list for pid */
++    c = ctable[msg->service_pid % child_table_size];
++    while (c && c->pid != msg->service_pid) c = c->next;
++    
++    /* Did we find it? */
++    if (!c || c->pid != msg->service_pid) {
++	syslog(LOG_WARNING, "can't find pid %d to process message %d, service %s", 
++	       msg->service_pid, msg->message, s->name);
++	/* resilience paranoia. Causes small performance loss when used */
++	c = get_centry();
++	c->s = s;
++	c->pid = msg->service_pid;
++	c->service_state = SERVICE_STATE_UNKNOWN;
++	c->next = ctable[c->pid % child_table_size];
++	ctable[c->pid % child_table_size] = c;
++    }
++    
++    switch (msg->message) {
+     case MASTER_SERVICE_AVAILABLE:
+-	s->ready_workers++;
++	if (c->service_state != SERVICE_STATE_DEAD) {
++	    syslog(LOG_DEBUG, "service %s pid %d now ready\n",
++		   s->name, c->pid);
++	    /* maybe we should also ignore SERVICE_STATE_UNKNOWN ? */
++	    c->service_state = SERVICE_STATE_READY;
++	    s->ready_workers++;
++	}
+ 	break;
+ 
+     case MASTER_SERVICE_UNAVAILABLE:
+-	s->ready_workers--;
++	syslog(LOG_DEBUG, "service %s pid %d now unready\n",
++	       s->name, c->pid);
++	if (c->service_state != SERVICE_STATE_DEAD) {
++	    c->service_state = SERVICE_STATE_BUSY;
++	    s->ready_workers--;
++	}
+ 	break;
+ 
+     case MASTER_SERVICE_CONNECTION:
+-	s->nconnections++;
++	syslog(LOG_DEBUG, "service %s pid %d now serving connection\n",
++	       s->name, c->pid);
++	switch (c->service_state) {
++	case SERVICE_STATE_DEAD:
++	    /* dead? ignore it */
++	    break;
++	    
++	case SERVICE_STATE_BUSY:
++	    s->nconnections++;
++	    break;
++	    
++	default:
++	    syslog(LOG_ERR,
++		   "non-busy child pid %d, service %s reported new connection",
++		   msg->service_pid, s->name);
++	    /* be resilient on face of a bogon source, so lets err to the side
++	     * of non-denial-of-service */
++	    c->service_state = SERVICE_STATE_BUSY;
++	    s->nconnections++;
++	    s->ready_workers--;
++	}
+ 	break;
+ 	
+     default:
+ 	syslog(LOG_ERR, "unrecognized message for service '%s': %x", 
+-	       s->name, msg);
++	       s->name, msg->message);
+ 	break;
+     }
+ 
+@@ -1323,7 +1475,7 @@
+ 
+     p = getenv("CYRUS_VERBOSE");
+     if (p) verbose = atoi(p) + 1;
+-    while ((opt = getopt(argc, argv, "C:M:p:l:Dd")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:M:p:l:Ddj:")) != EOF) {
+ 	switch (opt) {
+ 	case 'C': /* alt imapd.conf file */
+ 	    alt_config = optarg;
+@@ -1351,6 +1503,13 @@
+ 		fatal("Unable to be both debug and daemon mode", EX_CONFIG);
+ 	    close_std = 0;
+ 	    break;
++	case 'j':
++	    /* Janitor frequency */
++	    janitor_frequency = atoi(optarg);
++	    if(janitor_frequency < 1)
++		fatal("The janitor period must be at least 1 second",
++		      EX_CONFIG);
++	    break;
+ 	default:
+ 	    break;
+ 	}
+@@ -1562,11 +1721,15 @@
+ 
+     if (become_cyrus_early) become_cyrus();
+ 
++    /* init ctable janitor */
++    init_janitor();
++
+     /* ok, we're going to start spawning like mad now */
+     syslog(LOG_NOTICE, "ready for work");
+ 
+     for (;;) {
+-	int r, i, msg, maxfd;
++	int r, i, maxfd;
++	struct notify_message msg;
+ 	struct timeval tv, *tvptr;
+ 	time_t now = time(NULL);
+ #if HAVE_UCDSNMP
+@@ -1674,13 +1837,14 @@
+ 	    int j;
+ 
+ 	    if (FD_ISSET(x, &rfds)) {
+-		r = read(x, &msg, sizeof(int));
+-		if (r != sizeof(int)) {
+-		    syslog(LOG_ERR, "got weird response from child: %x", i);
++		r = read(x, &msg, sizeof(msg));
++		if (r != sizeof(msg)) {
++		    syslog(LOG_ERR,
++			   "got incorrectly sized response from child: %x", i);
+ 		    continue;
+ 		}
+ 		
+-		process_msg(&Services[i], msg);
++		process_msg(&Services[i], &msg);
+ 	    }
+ 
+ 	    if (Services[i].nactive < Services[i].max_workers) {
+@@ -1699,5 +1863,6 @@
+ 		}
+ 	    }
+ 	}
++	child_janitor();
+     }
+ }
+Index: service-thread.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/service-thread.c,v
+retrieving revision 1.6.4.8
+diff -u -r1.6.4.8 service-thread.c
+--- service-thread.c	29 May 2003 14:44:28 -0000	1.6.4.8
++++ service-thread.c	4 Sep 2003 19:41:40 -0000
+@@ -77,8 +77,11 @@
+ 
+ void notify_master(int fd, int msg)
+ {
+-    if (verbose) syslog(LOG_DEBUG, "telling master %d", msg);
+-    if (write(fd, &msg, sizeof(msg)) != sizeof(msg)) {
++    struct notify_message notifymsg;
++    if (verbose) syslog(LOG_DEBUG, "telling master %x", msg);
++    notifymsg.message = msg;
++    notifymsg.service_pid = getpid();
++    if (write(fd, &notifymsg, sizeof(notifymsg)) != sizeof(notifymsg)) {
+ 	syslog(LOG_ERR, "unable to tell master %x: %m", msg);
+     }
+ }
+Index: service.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/service.c,v
+retrieving revision 1.37.4.10
+diff -u -r1.37.4.10 service.c
+--- service.c	29 May 2003 14:44:28 -0000	1.37.4.10
++++ service.c	4 Sep 2003 19:41:38 -0000
+@@ -75,13 +75,16 @@
+ /* number of times this service has been used */
+ static int use_count = 0;
+ static int verbose = 0;
+-static int gotalrm = 0;
++static volatile int gotalrm = 0;
+ static int lockfd = -1;
+ 
+ void notify_master(int fd, int msg)
+ {
+-    if (verbose) syslog(LOG_DEBUG, "telling master %d", msg);
+-    if (write(fd, &msg, sizeof(msg)) != sizeof(msg)) {
++    struct notify_message notifymsg;
++    if (verbose) syslog(LOG_DEBUG, "telling master %x", msg);
++    notifymsg.message = msg;
++    notifymsg.service_pid = getpid();
++    if (write(fd, &notifymsg, sizeof(notifymsg)) != sizeof(notifymsg)) {
+ 	syslog(LOG_ERR, "unable to tell master %x: %m", msg);
+     }
+ }
+Index: service.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/master/service.h,v
+retrieving revision 1.13.4.1
+diff -u -r1.13.4.1 service.h
+--- service.h	13 Feb 2003 20:33:20 -0000	1.13.4.1
++++ service.h	4 Sep 2003 17:17:11 -0000
+@@ -64,4 +64,9 @@
+     REUSE_TIMEOUT = 60
+ };
+ 
++struct notify_message {
++    int message;
++    pid_t service_pid;
++};
++
+ #endif

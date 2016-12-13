@@ -1,0 +1,75 @@
+--- imapurl.c	Fri Feb 01 14:43:36 2002
++++ patched/imapurl.c	Wed Feb 12 03:31:44 2003
+@@ -72,12 +72,16 @@
+  *    UTF-7 can be slightly denser than UTF-8
+  *     (worst case: 8 octets UTF-7 becomes 9 octets UTF-8)
+  */
+-static void MailboxToURL(char *dst, const char *src)
++static void MailboxToURL(char *dst, size_t dst_len, const char *src)
+ {
+     unsigned char c, i, bitcount;
+     unsigned long ucs4, utf16, bitbuf;
+     unsigned char base64[256], utf8[6];
+ 
++    if (dst_len<=0)
++       {/* trigger halt? syslog? */
++        return;
++       }
+     /* initialize modified base64 decoding table */
+     memset(base64, UNDEFINED, sizeof (base64));
+     for (i = 0; i < sizeof (base64chars); ++i) {
+@@ -90,12 +94,20 @@
+         /* deal with literal characters and &- */
+         if (c != '&' || *src == '-') {
+             if (c < ' ' || c > '~' || strchr(urlunsafe, c) != NULL) {
++                if (dst_len<4)
++                   {*dst='\0'; /* trigger halt? syslog? */
++                    return;
++                   }
+                 /* hex encode if necessary */
+                 dst[0] = '%';
+                 dst[1] = hex[c >> 4];
+                 dst[2] = hex[c & 0x0f];
+-                dst += 3;
++                dst += 3; dst_len-=3;
+             } else {
++                if (dst_len==1)
++                   {*dst='\0'; /* trigger halt? syslog? */
++                    return;
++                   }
+                 /* encode literally */
+                 *dst++ = c;
+             }
+@@ -112,6 +124,10 @@
+                 bitcount += 6;
+                 /* enough bits for a UTF-16 character? */
+                 if (bitcount >= 16) {
++                   if (dst_len<4)
++                      {*dst='\0'; /* trigger halt? syslog? */
++                       return;
++                      }
+                     bitcount -= 16;
+                     utf16 = (bitcount ? bitbuf >> bitcount
+                              : bitbuf) & 0xffff;
+@@ -310,10 +326,18 @@
+     }
+ }
+ 
+-void imapurl_toURL(char *dst, const char *server, const char *mailbox,
++void imapurl_toURL(char *dst, size_t dst_len, const char *server, const char *mailbox,
+ 		   const char *mechname)
+-{
++{size_t len;
++
++    if(mechname) len=strlen("imap://;AUTH=@/")+strlen(mechname)+strlen(server);
++    else len=strlen("imap:///")+strlen(server);
++    if (len>dst_len-1)
++       {*dst='\0';  /* trigger halt? syslog? */
++        return;
++       }
+     if(mechname) sprintf(dst, "imap://;AUTH=%s@%s/",mechname,server);
+     else sprintf(dst, "imap://%s/", server);
+-    MailboxToURL(dst + strlen(dst), mailbox);
++    len=strlen(dst);
++    MailboxToURL(dst + len, dst_len-len, mailbox);
+ }

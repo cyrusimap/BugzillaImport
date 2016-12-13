@@ -1,0 +1,70 @@
+From be46456b2d611c9a8d7c303a5d5e28212379bd38 Mon Sep 17 00:00:00 2001
+From: Brian Awood <bawood@umich.edu>
+Date: Mon, 8 Feb 2010 14:07:32 -0500
+Subject: [PATCH] Fix long mailbox name w/delayed delete bug
+
+When delayed delete is enabled a DELETED prefix and timestamp
+postfix is added to the renamed mailbox, this was preventing
+mailboxes near the max length from being deleted.  This patch
+makes some of the necessary buffers longer and skips the policy
+check when it's a mailbox with the deleted prefix.
+---
+ imap/mboxlist.c |    2 +-
+ imap/mboxname.c |   13 +++++++++++--
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/imap/mboxlist.c b/imap/mboxlist.c
+index 9410f90..2cefd04 100644
+--- a/imap/mboxlist.c
++++ b/imap/mboxlist.c
+@@ -3474,7 +3474,7 @@ mboxlist_count_inferiors(char *mailboxname, int isadmin, char *userid,
+                          struct auth_state *authstate)
+ {
+     int count = 0;
+-    char mailboxname2[MAX_MAILBOX_NAME+1];
++    char mailboxname2[MAX_MAILBOX_BUFFER];
+     char *p;
+ 
+     strcpy(mailboxname2, mailboxname);
+diff --git a/imap/mboxname.c b/imap/mboxname.c
+index 1e0a5e2..dc4ad57 100644
+--- a/imap/mboxname.c
++++ b/imap/mboxname.c
+@@ -178,7 +178,7 @@ static int mboxname_tointernal(struct namespace *namespace, const char *name,
+ 	    return IMAP_MAILBOX_BADNAME;
+ 	}
+ 
+-	if (domainlen+namelen+userlen > MAX_MAILBOX_NAME) {
++	if (domainlen+namelen+userlen > MAX_MAILBOX_BUFFER) {
+ 	    return IMAP_MAILBOX_BADNAME;
+ 	}
+ 
+@@ -190,7 +190,7 @@ static int mboxname_tointernal(struct namespace *namespace, const char *name,
+     }
+ 
+     /* Other Users & Shared namespace */
+-    if (domainlen+namelen > MAX_MAILBOX_NAME) {
++    if (domainlen+namelen > MAX_MAILBOX_BUFFER) {
+ 	return IMAP_MAILBOX_BADNAME;
+     }
+     sprintf(result, "%.*s", namelen, name);
+@@ -733,7 +733,16 @@ int mboxname_policycheck(char *name)
+ 
+     unixsep = config_getswitch(IMAPOPT_UNIXHIERARCHYSEP);
+ 
++    /* Skip policy check on mailbox created in delayed delete namespace
++     * assuming the mailbox existed before and was OK then.
++     * This should allow mailboxes that are extremely long to be
++     * deleted when delayed_delete is enabled.
++     * A thorough fix might remove the prefix and timestamp
++     * then continue with the check
++     */
++   if (!mboxname_isdeletedmailbox(name)) {
+     if (strlen(name) > MAX_MAILBOX_NAME) return IMAP_MAILBOX_BADNAME;
++   }
+     for (i = 0; i < NUM_BADMBOXPATTERNS; i++) {
+ 	g = glob_init(badmboxpatterns[i], 0);
+ 	if (GLOB_TEST(g, name) != -1) {
+-- 
+1.7.1
+

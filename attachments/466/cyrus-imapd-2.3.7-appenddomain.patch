@@ -1,0 +1,44 @@
+diff -Naur cyrus-imapd-2.3.7.orig/imap/global.c cyrus-imapd-2.3.7/imap/global.c
+--- cyrus-imapd-2.3.7.orig/imap/global.c	2005-12-13 20:35:50.000000000 +0100
++++ cyrus-imapd-2.3.7/imap/global.c	2006-10-03 11:21:20.000000000 +0200
+@@ -355,6 +355,14 @@
+     char *domain = NULL;
+     int len = strlen(user);
+     char buf[81];
++    char tmp[MAX_MAILBOX_NAME+1];
++
++    if (config_getstring(IMAPOPT_APPENDDOMAIN)) {
++        if( !strchr(user, '@') ) {
++            snprintf(tmp, (MAX_MAILBOX_NAME+1), "%s@%s", user, config_getstring(IMAPOPT_APPENDDOMAIN));
++            user = tmp;
++        }
++    }
+ 
+     /* check for domain */
+     if (config_virtdomains &&
+diff -Naur cyrus-imapd-2.3.7.orig/lib/imapoptions cyrus-imapd-2.3.7/lib/imapoptions
+--- cyrus-imapd-2.3.7.orig/lib/imapoptions	2006-06-27 17:58:42.000000000 +0200
++++ cyrus-imapd-2.3.7/lib/imapoptions	2006-10-03 11:21:20.000000000 +0200
+@@ -187,7 +187,10 @@
+    mailbox that does not have a parent mailbox. */
+ 
+ { "defaultdomain", NULL, STRING }
+-/* The default domain for virtual domain support */
++/* The default domain for virtual domain support. If the domain part of 
++   user@domain is the same as the value specified, it will be removed from
++   usernames. Use this option if you add virtual domain support and do not 
++   want to rename exisiting mailboxes. See appenddomain */
+ 
+ { "defaultpartition", "default", STRING }
+ /* The partition name used by default for new mailboxes. */
+@@ -1007,6 +1010,10 @@
+    interface, otherwise the user is assumed to be in the default
+    domain (if set). */
+ 
++{ "appenddomain", NULL, STRING }
++/* Append this doman name to user names without a domain portion. Do not use
++   with the default domain option */
++
+ /*
+ .SH SEE ALSO
+ .PP

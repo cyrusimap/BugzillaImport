@@ -1,0 +1,283 @@
+From 9c7ec4077a406c9e390bedb04ed04bebe1decf62 Mon Sep 17 00:00:00 2001
+From: Brian Awood <bawood@umich.edu>
+Date: Mon, 2 Nov 2009 12:53:22 -0500
+Subject: [PATCH 3/3] Add "machine readable" -m option to unexpunge command
+
+This patch adds the -m flag to be combined with -l
+option of the unexpunge command so the list is more
+easily parsed with perl or other similar tools.
+Output for each message is on one line and fields
+separated with % since that char should only be
+possible in the Subject field.
+
+diff --git a/imap/unexpunge.c b/imap/unexpunge.c
+index 95824b5..8494930 100644
+--- a/imap/unexpunge.c
++++ b/imap/unexpunge.c
+@@ -92,6 +92,7 @@ extern void parse_env_address(char *str, struct address *addr);
+ const int config_need_data = 0;
+ int  unsetdeleted = 0;
+ time_t time_since;
++char sepchar = '\n';
+ 
+ enum {
+     MODE_UNKNOWN = -1,
+@@ -137,6 +138,23 @@ int compare_msg(const void *a, const void *b)
+     return ((struct msg *) a)->uid - ((struct msg *) b)->uid;
+ }
+ 
++int escape_string(char *inbuf, int len, char *outbuf, const char c)
++{
++    int x;
++    char *ret = outbuf;
++
++    for ( x = 0; x < len; x++ ) {
++	if ( *inbuf != c ) {
++	    *outbuf++ = *inbuf++;
++	} else {
++	    *outbuf++ = '\\';
++	    *outbuf++ = *inbuf++;
++	}
++    }
++    *outbuf = '\0';
++    return strlen(ret);
++}
++
+ void list_expunged(struct mailbox *mailbox,
+ 		   struct msg *msgs, unsigned long exists,
+ 		   const char *expunge_index_base)
+@@ -146,10 +164,13 @@ void list_expunged(struct mailbox *mailbox,
+     unsigned long uid, size, cache_offset;
+     time_t internaldate, sentdate, last_updated;
+     cacherecord crec;
+-    int cachelen;
++    int cachelen, datelen;
+     char *env;
+     char *envtokens[NUMENVTOKENS];
+     struct address addr;
++    char date[200];
++    char *format = "%c";
++    char *escstr;
+ 
+     for (msgno = 0; msgno < exists; msgno++) {
+ 	/* Jump to index record for this message */
+@@ -162,12 +183,22 @@ void list_expunged(struct mailbox *mailbox,
+ 	size = ntohl(*((bit32 *)(rec+OFFSET_SIZE)));
+ 	cache_offset = ntohl(*((bit32 *)(rec+OFFSET_CACHE_OFFSET)));
+ 	last_updated = ntohl(*((bit32 *)(rec+OFFSET_LAST_UPDATED)));
+-
+-	printf("UID: %lu\n", uid);
+-	printf("\tSize: %lu\n", size);
+-	printf("\tSent: %s", ctime(&sentdate));
+-	printf("\tRecv: %s", ctime(&internaldate));
+-	printf("\tExpg: %s", ctime(&last_updated));
++	datelen = strlen(ctime(&internaldate));
++
++	if (sepchar != '\n') printf("%s%c", mailbox->name, sepchar);
++	if (sepchar == '\n') printf("UID: ");
++	printf("%lu%c", uid, sepchar);
++	if (sepchar == '\n') printf("\tSize: ");
++	printf("%lu%c", size, sepchar);
++	if (sepchar == '\n') printf("\tSent: ");
++	strftime( date, sizeof(date), format, localtime(&sentdate));
++	printf("%s%c", date, sepchar);
++	if (sepchar == '\n') printf("\tRecv: ");
++	strftime( date, sizeof(date), format, localtime(&internaldate));
++	printf("%s%c", date, sepchar);
++	if (sepchar == '\n') printf("\tExpg: ");
++	strftime( date, sizeof(date), format, localtime(&last_updated));
++	printf("%s%c", date, sepchar);
+ 
+ 	if ((cachelen = mailbox_cacherecord_offset(mailbox,
+ 			cache_offset, &crec)) == 0) {
+@@ -179,39 +210,57 @@ void list_expunged(struct mailbox *mailbox,
+ 
+ 	if ( envtokens[ ENV_FROM ] ) {
+ 	    parse_env_address( envtokens[ ENV_FROM ], &addr );
+-	    printf("\tFrom: " );
++	    if (sepchar == '\n') printf("\tFrom: " );
+ 	    if ( addr.name ) printf("\"%s\" ", addr.name );
+-	    printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	    printf( "<%s@%s>%c", addr.mailbox, addr.domain, sepchar );
+ 	} else {
+-	    printf("\tFrom: \n" );
++	    if (sepchar == '\n') printf("\tFrom: \n" );
++	    else printf( "%c", sepchar );
+ 	}
+ 	if ( envtokens[ ENV_TO ] ) {
+ 	    parse_env_address( envtokens[ ENV_TO ], &addr );
+-	    printf("\tTo  : " );
++	    if (sepchar == '\n') printf("\tTo  : " );
+ 	    if ( addr.name ) printf("\"%s\" ", addr.name );
+-	    printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	    printf( "<%s@%s>%c", addr.mailbox, addr.domain, sepchar );
+ 	} else {
+-	    printf("\tTo  : \n" );
++	    if (sepchar == '\n') printf("\tTo  : \n" );
++	    else printf( "%c", sepchar );
+ 	}
+ 	if ( envtokens[ ENV_CC ] ) {
+ 	    parse_env_address( envtokens[ ENV_CC ], &addr );
+-	    printf("\tCc  : " );
++	    if (sepchar == '\n') printf("\tCc  : " );
+ 	    if ( addr.name ) printf("\"%s\" ", addr.name );
+-	    printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++	    printf( "<%s@%s>%c", addr.mailbox, addr.domain, sepchar );
+ 	} else {
+-	    printf("\tCc  : \n" );
++	    if (sepchar == '\n') printf("\tCc  : \n" );
++	    else printf( "%c", sepchar );
+ 	}
+ 	if ( envtokens[ ENV_BCC ] ) {
+ 	    parse_env_address( envtokens[ ENV_BCC ], &addr );
+-	    printf("\tBcc : " );
++	    if (sepchar == '\n') printf("\tBcc : " );
+ 	    if ( addr.name ) printf("\"%s\" ", addr.name );
+-		printf( "<%s@%s>\n", addr.mailbox, addr.domain );
++		printf( "<%s@%s>%c", addr.mailbox, addr.domain, sepchar );
++	} else {
++	    if (sepchar == '\n') printf("\tBcc : \n" );
++	    else printf( "%c", sepchar );
++	}
++	if ( envtokens[ ENV_SUBJECT ] ) {
++	    if ( sepchar != '\n' ) {
++		cachelen = strlen(envtokens[ENV_SUBJECT]);
++		escstr = xmalloc( 2 * cachelen + 1 );
++		if ( escape_string( envtokens[ENV_SUBJECT], cachelen,
++				escstr, '%' ) != 0 ) {
++		    printf("%s", escstr);
++		}
++		free (escstr);
++	    } else {
++		printf("\tSubj: %s\n", envtokens[ ENV_SUBJECT ]);
++	    }
+ 	} else {
+-	    printf("\tBcc : \n" );
++	    if (sepchar == '\n') printf("\tSubj:\n");
+ 	}
+-	printf("\tSubj: %s\n\n", envtokens[ENV_SUBJECT]);
++	printf("\n");
+ 	free (env);
+-
+     }
+ }
+ 
+@@ -514,9 +563,13 @@ unexpunge(char *mboxname, unsigned long *uids, unsigned nuids)
+ 
+     if (r) {
+ 	/* mailbox corrupt/nonexistent -- skip it */
+-	syslog(LOG_WARNING, "unable to open/lock mailbox %s", mboxname);
+-	if (doclose) mailbox_close(&mailbox);
+-	return 0;
++	if (doclose) {
++	    syslog(LOG_WARNING, "unable to open/lock mailbox index %s", mboxname);
++	    mailbox_close(&mailbox);
++	} else {
++	    syslog(LOG_WARNING, "unable to open mailbox header %s", mboxname);
++	}
++	return r;
+     }
+ 
+     /* Open expunge index */
+@@ -540,7 +593,7 @@ unexpunge(char *mboxname, unsigned long *uids, unsigned nuids)
+ 			     mailbox.name, NULL, buf);
+ 	    printf("%s: 0\n", buf);
+ 	}
+-	/* mailbox corrupt/nonexistent -- skip it */
++	/* mailbox expunge file nonexistent -- skip it */
+ 	syslog(LOG_WARNING, "unable to open %s: %m", expunge_fname);
+ 	if (doclose) mailbox_close(&mailbox);
+ 	return 0;
+@@ -564,23 +617,25 @@ unexpunge(char *mboxname, unsigned long *uids, unsigned nuids)
+ 	if (sbuf.st_size < INDEX_HEADER_SIZE) {
+ 	    syslog(LOG_ERR, "ERROR: %s cyrus.expunge invalid",
+ 		    mailbox.name);
+-	    goto done;
++	    r = IMAP_IOERROR;
+ 	}
+ 
+-	exists = ntohl(*((bit32 *)(expunge_index_base+OFFSET_EXISTS)));
+-	if (sbuf.st_size < ( INDEX_HEADER_SIZE + (exists * INDEX_RECORD_SIZE))) {
+-	    syslog(LOG_ERR,
+-		    "ERROR: %s cyrus.expunge too short for %lu messages",
++	if (!r) exists = ntohl(*((bit32 *)(expunge_index_base+OFFSET_EXISTS)));
++	if (!r && sbuf.st_size < ( INDEX_HEADER_SIZE + (exists * INDEX_RECORD_SIZE))) {
++	    syslog(LOG_ERR, "ERROR: %s cyrus.expunge too short for %lu messages",
+ 		    mailbox.name, exists);
+-	    goto done;
++	    r = IMAP_IOERROR;
+ 	}
+ 
+     if (mode == MODE_COUNT) {
+ 	/* Translate mailboxname */
+ 	char buf[MAX_MAILBOX_PATH+1];
+ 	(*unex_namespace.mboxname_toexternal)(&unex_namespace, mailbox.name, NULL, buf);
+-	printf("%s: %lu\n", buf, exists);
+-    } else {
++	/* in count mode, if there's a problem, print an error and continue */
++	if (!r) printf("%s: %lu\n", buf, exists);
++	else printf("%s: -1\n", buf);
++	r = 0;
++    } else if (!r) {
+ 	msgs = (struct msg *) xmalloc(exists * sizeof(struct msg));
+ 
+ 	/* Get UIDs of expunged messages */
+@@ -672,7 +727,7 @@ int main(int argc, char *argv[])
+ 	fatal("must run as the Cyrus user", EC_USAGE);
+     }
+ 
+-    while ((opt = getopt(argc, argv, "C:laudt:vcr")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:laudt:vcrm")) != EOF) {
+ 	switch (opt) {
+ 	case 'C': /* alt config file */
+ 	    alt_config = optarg;
+@@ -737,6 +792,11 @@ int main(int argc, char *argv[])
+ 	    recursive = 1;
+ 	    break;
+ 
++	case 'm':
++	    if (mode != MODE_LIST) usage();
++	    sepchar = '%';
++	    break;
++	
+ 	default:
+ 	    usage();
+ 	    break;
+@@ -788,7 +848,6 @@ int main(int argc, char *argv[])
+ 	strlcat(buf, "*", sizeof(buf));
+ 	r = (*unex_namespace.mboxlist_findall)(&unex_namespace, buf, 1, 0, 0,
+ 					   do_unexpunge, NULL);
+-/* XXX call unexpunge appropriately XXX */
+     }
+ 
+     if (uids) free(uids);
+diff --git a/man/unexpunge.8 b/man/unexpunge.8
+index 3152af0..955f67b 100644
+--- a/man/unexpunge.8
++++ b/man/unexpunge.8
+@@ -50,6 +50,9 @@ unexpunge \- restore expunged (but yet unremoved) messages
+ .I config-file
+ ]
+ .B \-l
++[
++.B \-m
++]
+ .I mailbox
+ .br
+ .B unexpunge
+@@ -120,6 +123,12 @@ file.
+ List the expunged messages in the specified mailbox which are available
+ for restoration.
+ .TP
++.B \-m
++When listing with -l, print data fields for each message on one
++line separated by '%'.  Occurances of '%' in a Subject field are escaped
++with a '\\'.  Data is in the same order as plain -l, with the addition of
++the mailbox name in the first field, however field titles are not included.
++.TP
+ .BI \-t " time-interval"
+ Unexpunge messages which were expunged in the last time-interval seconds.
+ (modifiers: m: minutes, h: hours, d: days, w: weeks).
+-- 
+1.7.0.3
+

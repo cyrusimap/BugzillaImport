@@ -1,0 +1,64 @@
+Index: imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.474
+diff -u -r1.474 imapd.c
+--- imapd.c	6 Jul 2004 20:02:19 -0000	1.474
++++ imapd.c	13 Jul 2004 17:28:09 -0000
+@@ -3867,6 +3867,10 @@
+     if (!strcasecmp(oldname, "inbox")) {
+ 	recursive_rename = 0;
+     }
++    /* if this is the user namespace, fail */
++    else if (!strcmp(oldname, "user")) {
++	r = IMAP_MAILBOX_NOTSUPPORTED;
++    }
+     /* check if we're an admin renaming a user */
+     else if (config_getswitch(IMAPOPT_ALLOWUSERMOVES) &&
+ 	     mboxname_isusermailbox(oldmailboxname, 1) &&
+@@ -3904,6 +3908,12 @@
+ 				   imapd_userid, imapd_authstate);
+     }
+ 
++    /* if we fail to rename the base mailbox, don't recursively rename
++       stuff, unless the mailbox doesn't exist and we're not renaming a user */
++    if (r && (rename_user || r != IMAP_MAILBOX_NONEXISTENT)) {
++	recursive_rename = 0;
++    }
++
+     /* If we're renaming a user, take care of changing quotaroot, ACL,
+        seen state, subscriptions and sieve scripts */
+     if (!r && rename_user) {
+@@ -3940,7 +3950,7 @@
+ 	/* XXX report status/progress of meta-data */
+     }
+ 
+-    if (!r) {
++    if (!r || recursive_rename) {
+ 	/* Rename mailbox annotations */
+ 	annotatemore_rename(oldmailboxname, newmailboxname,
+ 			    rename_user ? olduser : NULL,
+@@ -3948,7 +3958,7 @@
+     }
+ 
+     /* rename all mailboxes matching this */
+-    if (!r && recursive_rename) {
++    if (recursive_rename) {
+ 	struct renrock rock;
+ 	int ol = omlen + 1;
+ 	int nl = nmlen + 1;
+@@ -3960,9 +3970,11 @@
+ 					       newmailboxname,
+ 					       imapd_userid, newextname);
+ 
+-	prot_printf(imapd_out, "* OK rename %s %s\r\n",
+-		    oldextname, newextname);
+-	prot_flush(imapd_out);
++	if (!r) {
++	    prot_printf(imapd_out, "* OK rename %s %s\r\n",
++			oldextname, newextname);
++	    prot_flush(imapd_out);
++	}
+ 
+ 	strcat(oldmailboxname, ".*");
+ 	strcat(newmailboxname, ".");

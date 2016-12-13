@@ -1,0 +1,179 @@
+diff -ur cyrus-imapd-2.2.x_cvs/cmulocal/ucdsnmp.m4 cyrus-imapd-2.2.x_cvs_snmp/cmulocal/ucdsnmp.m4
+--- cyrus-imapd-2.2.x_cvs/cmulocal/ucdsnmp.m4	2003-10-22 14:50:02.000000000 -0400
++++ cyrus-imapd-2.2.x_cvs_snmp/cmulocal/ucdsnmp.m4	2004-02-17 02:08:23.000000000 -0500
+@@ -1,10 +1,10 @@
+-dnl look for the ucdsnmp libraries
+-dnl $Id: ucdsnmp.m4,v 1.8 2003/10/22 18:50:02 rjs3 Exp $
++dnl look for the snmp libraries
++dnl $Id: $
+ 
+ AC_DEFUN([CMU_UCDSNMP], [
+   AC_REQUIRE([CMU_SOCKETS])
+   AC_ARG_WITH(ucdsnmp, 
+-              [  --with-ucdsnmp=DIR      use ucd snmp (rooted in DIR) [yes] ],
++              [  --with-ucdsnmp=DIR      use <UCD/Net> SNMP (rooted in DIR) [yes] ],
+               with_ucdsnmp=$withval, with_ucdsnmp=yes)
+   if test "$with_ucdsnmp" != no; then
+     if test -d "$with_ucdsnmp"; then
+@@ -13,18 +13,33 @@
+     fi
+     cmu_save_LIBS="$LIBS"
+     AC_CHECK_LIB(snmp, sprint_objid, [
+-		 AC_CHECK_HEADER(ucd-snmp/version.h,, with_ucdsnmp=no)],
+-		 with_ucdsnmp=no, ${LIB_SOCKET})
++		 AC_CHECK_HEADER(ucd-snmp/version.h, with_snmp=yes, with_snmp=no)], [
++		 AC_CHECK_LIB(snmp, snprint_objid, [
++			      if test -f $with_ucdsnmp/include/ucd-snmp/version.h; then
++			        with_netsnmp=yes
++			        with_snmp=no
++			      else
++			        with_netsnmp=no
++			        with_snmp=no
++			      fi],
++			      with_snmp=no with_netsnmp=no with_ucdsnmp=no, ${LIB_SOCKET})],
++		 ${LIB_SOCKET})
+     LIBS="$cmu_save_LIBS"
+   fi
+   AC_MSG_CHECKING(UCD SNMP libraries)
+   AC_MSG_RESULT($with_ucdsnmp)
+   LIB_UCDSNMP=""
+-  if test "$with_ucdsnmp" != no; then
+-    AC_DEFINE(HAVE_UCDSNMP,1,[Do we have SNMP support?])
++  if test "$with_snmp" != no; then
++    AC_DEFINE(HAVE_UCDSNMP,1,[Do we have UCD SNMP support?])
+     LIB_UCDSNMP="-lucdagent -lucdmibs -lsnmp"
+     AC_CHECK_LIB(rpm, rpmdbOpen,
+-		 LIB_UCDSNMP="${LIB_UCDSNMP} -lrpm -lpopt",,-lpopt)
++		 LIB_SNMP="${LIB_SNMP} -lrpm -lpopt",,-lpopt)
++  elif test "$with_netsnmp" != no; then
++    AC_DEFINE(HAVE_UCDSNMP,1,[Do we have UCD SNMP support?])
++    AC_DEFINE(UCD_COMPATIBLE,1,[Do we have Net-SNMP support?])
++    LIB_UCDSNMP=`$with_ucdsnmp/bin/net-snmp-config --agent-libs`
++    AC_CHECK_LIB(rpm, rpmdbOpen,
++                 LIB_UCDSNMP="${LIB_UCDSNMP} -lrpm -lpopt",,-lpopt)
+   fi
+   AC_SUBST(LIB_UCDSNMP)
+ ])
+diff -ur cyrus-imapd-2.2.x_cvs/imap/Makefile.in cyrus-imapd-2.2.x_cvs_snmp/imap/Makefile.in
+--- cyrus-imapd-2.2.x_cvs/imap/Makefile.in	2004-02-08 13:31:14.000000000 -0500
++++ cyrus-imapd-2.2.x_cvs_snmp/imap/Makefile.in	2004-02-17 02:21:34.000000000 -0500
+@@ -67,6 +67,7 @@
+ SIEVE_OBJS = @SIEVE_OBJS@
+ SIEVE_LIBS = @SIEVE_LIBS@
+ IMAP_COM_ERR_LIBS = @IMAP_COM_ERR_LIBS@
++LIB_UCDSNMP = @LIB_UCDSNMP@
+ LIB_WRAP = @LIB_WRAP@
+ LIBS = $(IMAP_LIBS) $(IMAP_COM_ERR_LIBS)
+ DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+@@ -193,50 +194,50 @@
+ 	$(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o lmtpd \
+ 	 $(SERVICE) lmtpd.o $(LMTPOBJS) $(SIEVE_OBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ lmtpd.pure: lmtpd.o $(LMTPOBJS) $(SIEVE_OBJS) mutex_fake.o \
+ 	libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o lmtpd.pure \
+ 	 $(SERVICE) lmtpd.o $(LMTPOBJS) $(SIEVE_OBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ lmtpproxyd: lmtpproxyd.o backend.o $(LMTPOBJS) mutex_fake.o \
+ 	libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o lmtpproxyd \
+ 	 $(SERVICE) lmtpproxyd.o backend.o $(LMTPOBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ lmtpproxyd.pure: lmtpproxyd.o backend.o $(LMTPOBJS) mutex_fake.o \
+ 	libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o lmtpproxyd.pure \
+ 	 $(SERVICE) lmtpproxyd.o backend.o $(LMTPOBJS) mutex_fake.o \
+-	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 libimap.a $(SIEVE_LIBS) $(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ imapd: xversion $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o imapd \
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o \
+-	libimap.a $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	libimap.a $(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ imapd.pure: $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o imapd.pure \
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o libimap.a \
+-	$(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	$(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ imapd.quant: $(IMAPDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(QUANTIFY) $(QUANTOPT) $(CC) $(LDFLAGS) -o imapd.quant \
+ 	 $(SERVICE) $(IMAPDOBJS) mutex_fake.o libimap.a \
+-	$(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	$(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ proxyd: $(PROXYDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(CC) $(LDFLAGS) -o proxyd \
+ 	 $(SERVICE) $(PROXYDOBJS) mutex_fake.o libimap.a \
+-	 $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 $(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ proxyd.pure: $(PROXYDOBJS) mutex_fake.o libimap.a $(DEPLIBS) $(SERVICE)
+ 	$(PURIFY) $(PUREOPT) $(CC) $(LDFLAGS) -o proxyd.pure \
+ 	 $(SERVICE) $(PROXYDOBJS) mutex_fake.o libimap.a \
+-	 $(DEPLIBS) $(LIBS) $(LIB_WRAP)
++	 $(DEPLIBS) $(LIBS) $(LIB_UCDSNMP) $(LIB_WRAP)
+ 
+ mupdate: mupdate.o mupdate-slave.o mupdate-client.o mutex_pthread.o tls.o \
+ 	libimap.a $(DEPLIBS)
+@@ -284,7 +285,7 @@
+ 
+ deliver: deliver.o backend.o $(LMTPOBJS) mutex_fake.o libimap.a $(DEPLIBS)
+ 	$(CC) $(LDFLAGS) -o deliver deliver.o backend.o $(LMTPOBJS) \
+-	mutex_fake.o libimap.a $(DEPLIBS) $(LIBS)
++	mutex_fake.o libimap.a $(DEPLIBS) $(LIB_UCDSNMP) $(LIBS)
+ 
+ ctl_deliver: ctl_deliver.o $(CLIOBJS) libimap.a $(DEPLIBS)
+ 	$(CC) $(LDFLAGS) -o \
+diff -ur cyrus-imapd-2.2.x_cvs/master/cyrusMasterMIB.c cyrus-imapd-2.2.x_cvs_snmp/master/cyrusMasterMIB.c
+--- cyrus-imapd-2.2.x_cvs/master/cyrusMasterMIB.c	2004-02-04 16:46:39.000000000 -0500
++++ cyrus-imapd-2.2.x_cvs_snmp/master/cyrusMasterMIB.c	2004-02-17 02:41:13.000000000 -0500
+@@ -25,7 +25,16 @@
+ #include <ucd-snmp/ucd-snmp-config.h>
+ #include <ucd-snmp/ucd-snmp-includes.h>
+ #include <ucd-snmp/ucd-snmp-agent-includes.h>
++
++/* We have to do this because the ucd-snmp/util_funcs.h file in
++ * net-snmp is borken. It points to a non-existent file in the
++ * net-snmp include directory.
++ */
++#ifdef UCD_COMPATIBLE
++#include <net-snmp/utilities.h>
++#else
+ #include <ucd-snmp/util_funcs.h>
++#endif /* UCD_COMPATIBLE */
+ 
+ 
+ #endif /* !IN_UCD_SNMP_SOURCE */
+diff -ur cyrus-imapd-2.2.x_cvs/master/master.c cyrus-imapd-2.2.x_cvs_snmp/master/master.c
+--- cyrus-imapd-2.2.x_cvs/master/master.c	2004-02-11 14:25:23.000000000 -0500
++++ cyrus-imapd-2.2.x_cvs_snmp/master/master.c	2004-02-17 02:45:59.000000000 -0500
+@@ -90,6 +90,19 @@
+ #include <ucd-snmp/ucd-snmp-includes.h>
+ #include <ucd-snmp/ucd-snmp-agent-includes.h>
+ 
++/* Include the following headers because the constants defined
++ * in them are not part of the above list of header files or
++ * their includes. Define the below constant because there is
++ * no comparable set of defines in the ds_agent.h header, as
++ * there are in the default store.h file. Seems some of the
++ * net-snmp compatibility code is borked.
++ */
++#ifdef UCD_COMPATIBLE
++#include <ucd-snmp/default_store.h>
++#define DS_AGENT_ROLE        NETSNMP_DS_AGENT_ROLE
++#include <ucd-snmp/ds_agent.h>
++#endif /* UCD_COMPATIBLE */
++
+ #include "cyrusMasterMIB.h"
+ 
+ int allow_severity = LOG_DEBUG;

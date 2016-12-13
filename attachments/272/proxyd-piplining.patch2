@@ -1,0 +1,744 @@
+Index: imap/proxyd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/proxyd.c,v
+retrieving revision 1.178
+diff -c -r1.178 proxyd.c
+*** imap/proxyd.c	9 Mar 2004 18:08:41 -0000	1.178
+--- imap/proxyd.c	15 Mar 2004 18:46:27 -0000
+***************
+*** 137,142 ****
+--- 137,143 ----
+  /* per-user session state */
+  struct protstream *proxyd_out = NULL;
+  struct protstream *proxyd_in = NULL;
++ struct protgroup *protin = NULL;
+  static char proxyd_clienthost[NI_MAXHOST*2+1] = "[local]";
+  static int proxyd_logfd = -1;
+  time_t proxyd_logtime;
+***************
+*** 1110,1115 ****
+--- 1111,1119 ----
+      
+      proxyd_in = proxyd_out = NULL;
+  
++     if (protin) protgroup_free(protin);
++     protin = NULL;
++ 
+  #ifdef HAVE_SSL
+      if (tls_conn) {
+  	if (tls_reset_servertls(&tls_conn) == -1) {
+***************
+*** 1333,1338 ****
+--- 1337,1344 ----
+  	prot_free(proxyd_out);
+      }
+  
++     if (protin) protgroup_free(protin);
++ 
+  #ifdef HAVE_SSL
+      tls_shutdown_serverengine();
+  #endif
+***************
+*** 1387,1393 ****
+--- 1393,1406 ----
+  	close(fd);
+      }
+  
++     protin = protgroup_new(2); /* XXX should we start with more? */
++     protgroup_insert(protin, proxyd_in);
++ 
+      for (;;) {
++ 	struct protgroup *protout = NULL;
++ 	struct timeval timeout;
++ 	int n, clientin;
++ 
+  	if (! proxyd_userisadmin && shutdown_file(shut, sizeof(shut))) {
+  	    for (p = shut; *p == '['; p++); /* can't have [ be first char */
+  	    prot_printf(proxyd_out, "* BYE [ALERT] %s\r\n", p);
+***************
+*** 1396,1401 ****
+--- 1409,1469 ----
+  
+  	signals_poll();
+  
++ 	/* flush any buffered output */
++ 	if (backend_current) prot_flush(backend_current->out);
++ 	prot_flush(proxyd_out);
++ 
++ 	timeout.tv_sec = 60;
++ 	timeout.tv_usec = 0;
++ 
++ 	n = prot_select(protin, PROT_NO_FD, &protout, NULL, &timeout);
++ 	if (n == -1) {
++ 	    syslog(LOG_ERR, "prot_select() failed in cmdloop(): %m");
++ 	    fatal("prot_select() failed in cmdloop()", EC_TEMPFAIL);
++ 	}
++ 
++ 	clientin = 0;
++ 	if (n && protout) {
++ 	    struct protstream *ptmp;
++ 
++ 	    /* see who has input */
++ 	    for (; n; n--) {
++ 		ptmp = protgroup_getelement(protout, n-1);
++ 
++ 		if (ptmp == proxyd_in) {
++ 		    /* input from client, process it later */
++ 		    clientin = 1;
++ 		}
++ 		else if (backend_current && ptmp == backend_current->in){
++ 		    /* input from selected backend, stream it to client */
++ 		    do {
++ 			char buf[4096];
++ 			int c = prot_read(backend_current->in, buf, sizeof(buf));
++ 			if (c == 0 || c < 0) break;
++ 			prot_write(proxyd_out, buf, c);
++ 		    } while (backend_current->in->cnt > 0);
++ 
++ 		    if (prot_error(backend_current->in)) {
++ 			/* uh oh, we're not happy */
++ 			fatal("Lost connection to selected backend",
++ 			      EC_UNAVAILABLE);
++ 		    }
++ 		}
++ 		else {
++ 		    /* XXX shouldn't get here !!! */
++ 		    fatal("unknown protstream returned by prot_select in cmdloop",
++ 			  EC_SOFTWARE);
++ 		}
++ 	    }
++ 	}
++ 	if (protout) protgroup_free(protout);
++ 	protout = NULL;
++ 
++ 	if (!clientin) {
++ 	    /* no input from client */
++ 	    continue;
++ 	}
++ 
+  	/* Parse tag */
+  	c = getword(proxyd_in, &tag);
+  	if (c == EOF) {
+***************
+*** 1665,1670 ****
+--- 1733,1748 ----
+  		if (c == '\r') c = prot_getc(proxyd_in);
+  		if (c != '\n') goto extraargs;
+  		
++ 		/* force any responses from our selected backend */
++ 		if (backend_current) {
++ 		    char mytag[128];
++ 
++ 		    proxyd_gentag(mytag, sizeof(mytag));
++ 
++ 		    prot_printf(backend_current->out, "%s Noop\r\n", mytag);
++ 		    pipe_until_tag(backend_current, mytag, 0);
++ 		}
++ 
+  		prot_printf(proxyd_out, 
+  			    "* BYE %s\r\n", error_message(IMAP_BYE_LOGOUT));
+  		prot_printf(proxyd_out, "%s OK %s\r\n", 
+***************
+*** 2306,2312 ****
+  {
+      if (backend_current) {
+  	prot_printf(backend_current->out, "%s %s\r\n", tag, cmd);
+- 	pipe_including_tag(backend_current, tag, 0);
+      } else {
+  	prot_printf(proxyd_out, "%s OK %s\r\n", tag,
+  		    error_message(IMAP_OK_COMPLETED));
+--- 2384,2389 ----
+***************
+*** 2521,2528 ****
+  {
+      static int idle_period = -1;
+      static struct buf arg;
+!     struct protgroup *protin = protgroup_new(2);
+!     struct protgroup *protout = NULL;
+      struct timeval timeout;
+      int c = EOF, n, done = 0, shutdown = 0;
+      char buf[2048], shut[1024];
+--- 2598,2605 ----
+  {
+      static int idle_period = -1;
+      static struct buf arg;
+!     struct protgroup *idlein = protgroup_new(2);
+!     struct protgroup *idleout = NULL;
+      struct timeval timeout;
+      int c = EOF, n, done = 0, shutdown = 0;
+      char buf[2048], shut[1024];
+***************
+*** 2540,2547 ****
+      }
+  
+      /* Reset protin to all zeros (to preserve memory allocation) */
+!     protgroup_reset(protin);
+!     protgroup_insert(protin, proxyd_in);
+  
+      if (backend_current && CAPA(backend_current, CAPA_IDLE)) {
+  	/* Start IDLE on backend */
+--- 2617,2624 ----
+      }
+  
+      /* Reset protin to all zeros (to preserve memory allocation) */
+!     protgroup_reset(idlein);
+!     protgroup_insert(idlein, proxyd_in);
+  
+      if (backend_current && CAPA(backend_current, CAPA_IDLE)) {
+  	/* Start IDLE on backend */
+***************
+*** 2561,2567 ****
+  	    goto done;
+  	}
+  
+! 	protgroup_insert(protin, backend_current->in);
+      }
+  
+      /* Tell client we are idling and waiting for end of command */
+--- 2638,2644 ----
+  	    goto done;
+  	}
+  
+! 	protgroup_insert(idlein, backend_current->in);
+      }
+  
+      /* Tell client we are idling and waiting for end of command */
+***************
+*** 2585,2607 ****
+  	    prot_flush(proxyd_out);
+  	}
+  
+! 	/* Clear protout if needed */
+! 	protgroup_free(protout);
+! 	protout = NULL;
+  
+  	timeout.tv_sec = idle_period;
+  	timeout.tv_usec = 0;
+  
+! 	n = prot_select(protin, PROT_NO_FD, &protout, NULL, &timeout);
+  	if (n == -1) {
+  	    syslog(LOG_ERR, "prot_select() failed in cmd_idle(): %m");
+  	    fatal("prot_select() failed in cmd_idle()", EC_TEMPFAIL);
+  	}
+! 	if (n && protout) {
+  	    struct protstream *ptmp;
+  
+  	    for (; n; n--) {
+! 		ptmp = protgroup_getelement(protout, n-1);
+  		if (ptmp == proxyd_in) {
+  		    /* The client sent us something, we're done */
+  		    done = 1;
+--- 2662,2684 ----
+  	    prot_flush(proxyd_out);
+  	}
+  
+! 	/* Clear idleout if needed */
+! 	protgroup_free(idleout);
+! 	idleout = NULL;
+  
+  	timeout.tv_sec = idle_period;
+  	timeout.tv_usec = 0;
+  
+! 	n = prot_select(idlein, PROT_NO_FD, &idleout, NULL, &timeout);
+  	if (n == -1) {
+  	    syslog(LOG_ERR, "prot_select() failed in cmd_idle(): %m");
+  	    fatal("prot_select() failed in cmd_idle()", EC_TEMPFAIL);
+  	}
+! 	if (n && idleout) {
+  	    struct protstream *ptmp;
+  
+  	    for (; n; n--) {
+! 		ptmp = protgroup_getelement(idleout, n-1);
+  		if (ptmp == proxyd_in) {
+  		    /* The client sent us something, we're done */
+  		    done = 1;
+***************
+*** 2634,2641 ****
+      c = getword(proxyd_in, &arg);
+  
+    done:
+!     protgroup_free(protin);
+!     protgroup_free(protout);
+  
+      if (done && backend_current && CAPA(backend_current, CAPA_IDLE)) {
+  	/* Either the client timed out, or gave us a continuation,
+--- 2711,2718 ----
+      c = getword(proxyd_in, &arg);
+  
+    done:
+!     protgroup_free(idlein);
+!     protgroup_free(idleout);
+  
+      if (done && backend_current && CAPA(backend_current, CAPA_IDLE)) {
+  	/* Either the client timed out, or gave us a continuation,
+***************
+*** 2748,2762 ****
+  	s = proxyd_findserver(newserver);
+  	if (!s) r = IMAP_SERVER_UNAVAILABLE;
+      }
+-     if (!r) {
+- 	prot_printf(s->out, "%s Append {%d+}\r\n%s ", tag, strlen(name), name);
+- 	if (!pipe_command(s, 16384)) {
+- 	    pipe_until_tag(s, tag, 0);
+- 	}
+-     } else {
+- 	eatline(proxyd_in, prot_getc(proxyd_in));
+-     }
+- 
+      if (backend_current && backend_current != s) {
+  	char mytag[128];
+  
+--- 2825,2830 ----
+***************
+*** 2765,2777 ****
+  	prot_printf(backend_current->out, "%s Noop\r\n", mytag);
+  	pipe_until_tag(backend_current, mytag, 0);
+      }
+! 
+!     if (r) {
+! 	prot_printf(proxyd_out, "%s NO %s\r\n", tag, error_message(r));
+      } else {
+! 	/* we're allowed to reference last_result since the noop, if
+! 	   sent, went to a different server */
+! 	prot_printf(proxyd_out, "%s %s", tag, s->last_result);
+      }
+  }
+  
+--- 2833,2847 ----
+  	prot_printf(backend_current->out, "%s Noop\r\n", mytag);
+  	pipe_until_tag(backend_current, mytag, 0);
+      }
+!     if (!r) {
+! 	prot_printf(s->out, "%s Append {%d+}\r\n%s ", tag, strlen(name), name);
+! 	if (!pipe_command(s, 16384)) {
+! 	    if (!backend_current || s != backend_current)
+! 		pipe_including_tag(s, tag, 0);
+! 	}
+      } else {
+! 	eatline(proxyd_in, prot_getc(proxyd_in));
+! 	prot_printf(proxyd_out, "%s NO %s\r\n", tag, error_message(r));
+      }
+  }
+  
+***************
+*** 2808,2813 ****
+--- 2878,2886 ----
+      if (backend_current && backend_current != backend_next) {
+  	char mytag[128];
+  
++ 	/* remove backend_current from the protgroup */
++ 	protgroup_delete(protin, backend_current->in);
++ 
+  	/* switching servers; flush old server output */
+  	proxyd_gentag(mytag, sizeof(mytag));
+  	prot_printf(backend_current->out, "%s Unselect\r\n", mytag);
+***************
+*** 2829,2834 ****
+--- 2902,2910 ----
+  	proc_register("proxyd", proxyd_clienthost, proxyd_userid, mailboxname);
+  	syslog(LOG_DEBUG, "open: user %s opened %s on %s", proxyd_userid, name,
+  	       newserver);
++ 
++ 	/* add backend_current to the protgroup */
++ 	protgroup_insert(protin, backend_current->in);
+  	break;
+      default:
+  	syslog(LOG_DEBUG, "open: user %s failed to open %s", proxyd_userid,
+***************
+*** 2845,2850 ****
+--- 2921,2929 ----
+  void cmd_close(char *tag)
+  {
+      assert(backend_current != NULL);
++ 
++     /* remove backend_current from the protgroup */
++     protgroup_delete(protin, backend_current->in);
+      
+      prot_printf(backend_current->out, "%s Close\r\n", tag);
+      /* xxx do we want this to say OK if the connection is gone?
+***************
+*** 2861,2866 ****
+--- 2940,2948 ----
+  {
+      assert(backend_current != NULL);
+  
++     /* remove backend_current from the protgroup */
++     protgroup_delete(protin, backend_current->in);
++ 
+      prot_printf(backend_current->out, "%s Unselect\r\n", tag);
+      /* xxx do we want this to say OK if the connection is gone?
+       * saying NO is clearly wrong, hense the fatal request. */
+***************
+*** 2880,2888 ****
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s %s ", tag, cmd, sequence);
+!     if (!pipe_command(backend_current, 65536)) {
+! 	pipe_including_tag(backend_current, tag, 0);
+!     }
+  }
+  
+  /*
+--- 2962,2968 ----
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s %s ", tag, cmd, sequence);
+!     pipe_command(backend_current, 65536);
+  }
+  
+  /*
+***************
+*** 2894,2900 ****
+  
+      prot_printf(backend_current->out, "%s Partial %s %s %s %s\r\n",
+  		tag, msgno, data, start, count);
+-     pipe_including_tag(backend_current, tag, 0);
+  }
+  
+  /*
+--- 2974,2979 ----
+***************
+*** 2910,2918 ****
+  
+      prot_printf(backend_current->out, "%s %s %s %s ",
+  		tag, cmd, sequence, operation);
+!     if (!pipe_command(backend_current, 65536)) {
+! 	pipe_including_tag(backend_current, tag, 0);
+!     }
+  }
+  
+  void cmd_search(char *tag, int usinguid)
+--- 2989,2995 ----
+  
+      prot_printf(backend_current->out, "%s %s %s %s ",
+  		tag, cmd, sequence, operation);
+!     pipe_command(backend_current, 65536);
+  }
+  
+  void cmd_search(char *tag, int usinguid)
+***************
+*** 2922,2930 ****
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s ", tag, cmd);
+!     if (!pipe_command(backend_current, 65536)) {
+! 	pipe_including_tag(backend_current, tag, 0);
+!     }
+  }
+  
+  void cmd_sort(char *tag, int usinguid)
+--- 2999,3005 ----
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s ", tag, cmd);
+!     pipe_command(backend_current, 65536);
+  }
+  
+  void cmd_sort(char *tag, int usinguid)
+***************
+*** 2934,2942 ****
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s ", tag, cmd);
+!     if (!pipe_command(backend_current, 65536)) {
+! 	pipe_including_tag(backend_current, tag, 0);
+!     }
+  }
+  
+  void cmd_thread(char *tag, int usinguid)
+--- 3009,3015 ----
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s ", tag, cmd);
+!     pipe_command(backend_current, 65536);
+  }
+  
+  void cmd_thread(char *tag, int usinguid)
+***************
+*** 2946,2954 ****
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s ", tag, cmd);
+!     if (!pipe_command(backend_current, 65536)) {
+! 	pipe_including_tag(backend_current, tag, 0);
+!     }
+  }
+  
+  static int chomp(struct protstream *p, char *s)
+--- 3019,3025 ----
+      assert(backend_current != NULL);
+  
+      prot_printf(backend_current->out, "%s %s ", tag, cmd);
+!     pipe_command(backend_current, 65536);
+  }
+  
+  static int chomp(struct protstream *p, char *s)
+***************
+*** 3055,3061 ****
+  	/* this is the easy case */
+  	prot_printf(backend_current->out, "%s %s %s {%d+}\r\n%s\r\n",
+  		    tag, cmd, sequence, strlen(name), name);
+- 	pipe_including_tag(backend_current, tag, 0);
+      } else {
+  	char mytag[128];
+  	struct d {
+--- 3126,3131 ----
+***************
+*** 3389,3395 ****
+      } else {
+  	prot_printf(backend_current->out, "%s Expunge\r\n", tag);
+      }
+-     pipe_including_tag(backend_current, tag, 0);
+  }    
+  
+  /*
+--- 3459,3464 ----
+***************
+*** 3439,3446 ****
+  	/* ok, send the create to that server */
+  	prot_printf(s->out, "%s CREATE {%d+}\r\n%s\r\n", 
+  		    tag, strlen(name), name);
+! 	res = pipe_including_tag(s, tag, 0);
+! 	tag = "*";		/* can't send another tagged response */
+  	
+  	if (!CAPA(s, CAPA_MUPDATE)) {
+  	    /* do MUPDATE create operations */
+--- 3508,3517 ----
+  	/* ok, send the create to that server */
+  	prot_printf(s->out, "%s CREATE {%d+}\r\n%s\r\n", 
+  		    tag, strlen(name), name);
+! 	if (!backend_current || s != backend_current) {
+! 	    res = pipe_including_tag(s, tag, 0);
+! 	    tag = "*";		/* can't send another tagged response */
+! 	}
+  	
+  	if (!CAPA(s, CAPA_MUPDATE)) {
+  	    /* do MUPDATE create operations */
+***************
+*** 3480,3487 ****
+      if (!r) {
+  	prot_printf(s->out, "%s DELETE {%d+}\r\n%s\r\n", 
+  		    tag, strlen(name), name);
+! 	res = pipe_including_tag(s, tag, 0);
+! 	tag = "*";		/* can't send another tagged response */
+  
+  	if (!CAPA(s, CAPA_MUPDATE) && res == PROXY_OK) {
+  	    /* do MUPDATE delete operations */
+--- 3551,3560 ----
+      if (!r) {
+  	prot_printf(s->out, "%s DELETE {%d+}\r\n%s\r\n", 
+  		    tag, strlen(name), name);
+! 	if (!backend_current || s != backend_current) {
+! 	    res = pipe_including_tag(s, tag, 0);
+! 	    tag = "*";		/* can't send another tagged response */
+! 	}
+  
+  	if (!CAPA(s, CAPA_MUPDATE) && res == PROXY_OK) {
+  	    /* do MUPDATE delete operations */
+***************
+*** 3811,3817 ****
+  			tag, cmd, 
+  			strlen(name), name);
+  	}
+! 	pipe_including_tag(backend_inbox, tag, 0);
+      } else {
+  	r = IMAP_SERVER_UNAVAILABLE;
+      }
+--- 3884,3891 ----
+  			tag, cmd, 
+  			strlen(name), name);
+  	}
+! 	if (!backend_current || backend_inbox != backend_current)
+! 	    pipe_including_tag(backend_inbox, tag, 0);
+      } else {
+  	r = IMAP_SERVER_UNAVAILABLE;
+      }
+***************
+*** 4051,4058 ****
+  			tag, strlen(name), name,
+  			strlen(identifier), identifier);
+  	}	    
+! 	res = pipe_including_tag(s, tag, 0);
+! 	tag = "*";		/* can't send another tagged response */
+  	if (!CAPA(s, CAPA_MUPDATE) && res == PROXY_OK) {
+  	    /* setup new ACL in MUPDATE */
+  	}
+--- 4125,4134 ----
+  			tag, strlen(name), name,
+  			strlen(identifier), identifier);
+  	}	    
+! 	if (!backend_current || s != backend_current) {
+! 	    res = pipe_including_tag(s, tag, 0);
+! 	    tag = "*";		/* can't send another tagged response */
+! 	}
+  	if (!CAPA(s, CAPA_MUPDATE) && res == PROXY_OK) {
+  	    /* setup new ACL in MUPDATE */
+  	}
+***************
+*** 4150,4156 ****
+  	if (s) {
+  	    prot_printf(s->out, "%s Getquotaroot {%d+}\r\n%s\r\n",
+  			tag, strlen(name), name);
+! 	    pipe_including_tag(s, tag, 0);
+  	} else {
+  	    r = IMAP_SERVER_UNAVAILABLE;
+  	}
+--- 4226,4233 ----
+  	if (s) {
+  	    prot_printf(s->out, "%s Getquotaroot {%d+}\r\n%s\r\n",
+  			tag, strlen(name), name);
+! 	    if (!backend_current || s != backend_current)
+! 		pipe_including_tag(s, tag, 0);
+  	} else {
+  	    r = IMAP_SERVER_UNAVAILABLE;
+  	}
+***************
+*** 4375,4385 ****
+      if (!r) s = proxyd_findserver(server);
+      if (!r && !s) r = IMAP_SERVER_UNAVAILABLE;
+      if (!r) {
+- 	prot_printf(s->out, "%s Status {%d+}\r\n%s ", tag,
+- 		    strlen(name), name);
+- 	if (!pipe_command(s, 65536)) {
+- 	    pipe_until_tag(s, tag, 0);
+- 	}
+  	if (backend_current && s != backend_current) {
+  	    char mytag[128];
+  	    
+--- 4452,4457 ----
+***************
+*** 4388,4400 ****
+  	    prot_printf(backend_current->out, "%s Noop\r\n", mytag);
+  	    pipe_until_tag(backend_current, mytag, 0);
+  	}
+      } else {
+  	eatline(proxyd_in, prot_getc(proxyd_in));
+-     }
+- 
+-     if (!r) {
+- 	prot_printf(proxyd_out, "%s %s", tag, s->last_result);
+-     } else {
+  	prot_printf(proxyd_out, "%s NO %s\r\n", tag, error_message(r));
+      }
+  }
+--- 4460,4473 ----
+  	    prot_printf(backend_current->out, "%s Noop\r\n", mytag);
+  	    pipe_until_tag(backend_current, mytag, 0);
+  	}
++ 	prot_printf(s->out, "%s Status {%d+}\r\n%s ", tag,
++ 		    strlen(name), name);
++ 	if (!pipe_command(s, 65536)) {
++ 	    if (!backend_current || s != backend_current)
++ 		pipe_including_tag(s, tag, 0);
++ 	}
+      } else {
+  	eatline(proxyd_in, prot_getc(proxyd_in));
+  	prot_printf(proxyd_out, "%s NO %s\r\n", tag, error_message(r));
+      }
+  }
+Index: lib/prot.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/prot.c,v
+retrieving revision 1.86
+diff -c -r1.86 prot.c
+*** lib/prot.c	27 Feb 2004 22:08:56 -0000	1.86
+--- lib/prot.c	15 Mar 2004 18:46:28 -0000
+***************
+*** 1004,1009 ****
+--- 1004,1010 ----
+  	time_t this_timeout = 0;   /* this stream */
+  	
+  	s = readstreams->group[i];
++ 	if (!s) continue;
+  
+  	assert(!s->write);
+  
+***************
+*** 1105,1110 ****
+--- 1106,1112 ----
+  	
+  	for(i = 0; i<readstreams->next_element; i++) {
+  	    s = readstreams->group[i];
++ 	    if (!s) continue;
+  
+  	    if(FD_ISSET(s->fd, &rfds)) {
+  		found_fds++;
+***************
+*** 1198,1213 ****
+  
+  void protgroup_insert(struct protgroup *group, struct protstream *item) 
+  {
+      assert(group);
+      assert(item);
+!     /* Double size of the protgroup if we're at our limit */
+!     if(group->next_element == group->nalloced) {
+  	group->nalloced *= 2;
+  	group->group = xrealloc(group->group,
+  				group->nalloced * sizeof(struct protstream *));
+      }
+!     /* Insert the item on the end of the group */
+!     group->group[group->next_element++] = item;
+  }
+  
+  struct protstream *protgroup_getelement(struct protgroup *group,
+--- 1200,1240 ----
+  
+  void protgroup_insert(struct protgroup *group, struct protstream *item) 
+  {
++     int i, empty;
++ 
+      assert(group);
+      assert(item);
+! 
+!     /* See if we already have this protstream */
+!     for (i = 0, empty = group->next_element; i < group->next_element; i++) {
+! 	if (!group->group[i]) empty = i;
+! 	else if (group->group[i] == item) return;
+!     }
+!     /* Double size of the protgroup if we're at our limit */ 
+!     if (empty == group->next_element &&
+! 	group->next_element++ == group->nalloced) {
+  	group->nalloced *= 2;
+  	group->group = xrealloc(group->group,
+  				group->nalloced * sizeof(struct protstream *));
+      }
+!     /* Insert the item at the empty location */
+!     group->group[empty] = item;
+! }
+! 
+! void protgroup_delete(struct protgroup *group, struct protstream *item) 
+! {
+!     int i;
+! 
+!     assert(group);
+!     assert(item);
+! 
+!     /* find the protstream */
+!     for (i = 0; i < group->next_element; i++) {
+! 	if (group->group[i] == item) {
+! 	    group->group[i] = NULL;
+! 	    return;
+! 	}
+!     }
+  }
+  
+  struct protstream *protgroup_getelement(struct protgroup *group,
+Index: lib/prot.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/prot.h,v
+retrieving revision 1.41
+diff -c -r1.41 prot.h
+*** lib/prot.h	27 Feb 2004 22:08:57 -0000	1.41
+--- lib/prot.h	15 Mar 2004 18:46:28 -0000
+***************
+*** 232,237 ****
+--- 232,240 ----
+  /* Insert an element into a protgroup */
+  void protgroup_insert(struct protgroup *group, struct protstream *item);
+  
++ /* Delete an element from a protgroup */
++ void protgroup_delete(struct protgroup *group, struct protstream *item);
++ 
+  /* Returns the protstream at that position in the protgroup, or NULL if
+   * an invalid element is requested */
+  struct protstream *protgroup_getelement(struct protgroup *group,

@@ -1,0 +1,272 @@
+diff -Naur cyrus-imapd-2.4.11.orig/imap/imapd.c cyrus-imapd-2.4.11/imap/imapd.c
+--- cyrus-imapd-2.4.11.orig/imap/imapd.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/imapd.c	2011-09-19 20:02:48.482797900 +0300
+@@ -63,6 +63,8 @@
+ #include <arpa/inet.h>
+ 
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
++#include <sasl/saslutil.h>
+ 
+ #ifdef HAVE_SSL
+ #include <openssl/hmac.h>
+@@ -558,9 +560,9 @@
+ }
+ 
+ static const struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_PROXY_POLICY, &imapd_proxy_policy, (void*) &imapd_proxyctx },
+-    { SASL_CB_CANON_USER, &imapd_canon_user, (void*) &disable_referrals },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_PROXY_POLICY, (sasl_callback_ft)&imapd_proxy_policy, (void*) &imapd_proxyctx },
++    { SASL_CB_CANON_USER, (sasl_callback_ft)&imapd_canon_user, (void*) &disable_referrals },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imap/lmtpd.c cyrus-imapd-2.4.11/imap/lmtpd.c
+--- cyrus-imapd-2.4.11.orig/imap/lmtpd.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/lmtpd.c	2011-09-19 20:02:32.374349500 +0300
+@@ -63,6 +63,7 @@
+ #include <netinet/in.h>
+ #include <arpa/inet.h>
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
+ #include <sasl/saslutil.h>
+ 
+ #include "acl.h"
+@@ -164,9 +165,9 @@
+ };
+ 
+ static struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_PROXY_POLICY, &mysasl_proxy_policy, NULL },
+-    { SASL_CB_CANON_USER, &mysasl_canon_user, NULL },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_PROXY_POLICY, (sasl_callback_ft)&mysasl_proxy_policy, NULL },
++    { SASL_CB_CANON_USER, (sasl_callback_ft)&mysasl_canon_user, NULL },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imap/lmtpengine.c cyrus-imapd-2.4.11/imap/lmtpengine.c
+--- cyrus-imapd-2.4.11.orig/imap/lmtpengine.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/lmtpengine.c	2011-09-19 20:02:39.187946850 +0300
+@@ -70,6 +70,7 @@
+ #include <netinet/in.h>
+ #include <arpa/inet.h>
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
+ #include <sasl/saslutil.h>
+ 
+ #include "assert.h"
+@@ -943,7 +944,7 @@
+ }
+ 
+ static struct sasl_callback localauth_override_cb[] = {
+-    { SASL_CB_GETOPT, &localauth_mechlist_override, NULL },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&localauth_mechlist_override, NULL },
+     { SASL_CB_LIST_END, NULL, NULL },
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imap/mupdate.c cyrus-imapd-2.4.11/imap/mupdate.c
+--- cyrus-imapd-2.4.11.orig/imap/mupdate.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/mupdate.c	2011-09-19 20:03:00.832577000 +0300
+@@ -69,6 +69,7 @@
+ 
+ #include <pthread.h>
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
+ #include <sasl/saslutil.h>
+ 
+ #include "mupdate.h"
+@@ -496,8 +497,8 @@
+ }
+ 
+ static struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_PROXY_POLICY, &mupdate_proxy_policy, NULL },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_PROXY_POLICY, (sasl_callback_ft)&mupdate_proxy_policy, NULL },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imap/nntpd.c cyrus-imapd-2.4.11/imap/nntpd.c
+--- cyrus-imapd-2.4.11.orig/imap/nntpd.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/nntpd.c	2011-09-19 20:02:21.782707600 +0300
+@@ -75,6 +75,7 @@
+ #include <ctype.h>
+ 
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
+ #include <sasl/saslutil.h>
+ 
+ #include "assert.h"
+@@ -250,9 +251,9 @@
+ } saslprops = {NULL,NULL,0,NULL};
+ 
+ static struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_PROXY_POLICY, &mysasl_proxy_policy, (void*) &nntp_proxyctx },
+-    { SASL_CB_CANON_USER, &mysasl_canon_user, NULL },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_PROXY_POLICY, (sasl_callback_ft)&mysasl_proxy_policy, (void*) &nntp_proxyctx },
++    { SASL_CB_CANON_USER, (sasl_callback_ft)&mysasl_canon_user, NULL },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imap/pop3d.c cyrus-imapd-2.4.11/imap/pop3d.c
+--- cyrus-imapd-2.4.11.orig/imap/pop3d.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/pop3d.c	2011-09-19 20:03:20.629942350 +0300
+@@ -64,6 +64,7 @@
+ #include "prot.h"
+ 
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
+ #include <sasl/saslutil.h>
+ 
+ #include "assert.h"
+@@ -313,9 +314,9 @@
+ }
+ 
+ static struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_PROXY_POLICY, &popd_proxy_policy, (void*) &popd_proxyctx },
+-    { SASL_CB_CANON_USER, &popd_canon_user, NULL },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_PROXY_POLICY, (sasl_callback_ft)&popd_proxy_policy, (void*) &popd_proxyctx },
++    { SASL_CB_CANON_USER, (sasl_callback_ft)&popd_canon_user, NULL },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imap/saslclient.c cyrus-imapd-2.4.11/imap/saslclient.c
+--- cyrus-imapd-2.4.11.orig/imap/saslclient.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/saslclient.c	2011-09-19 20:32:22.948339800 +0300
+@@ -48,6 +48,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
+ #include <sasl/saslutil.h>
+ #include <syslog.h>
+ 
+@@ -121,7 +122,7 @@
+     if (username) {
+ 	/* user callback */
+ 	ret[n].id = SASL_CB_USER;
+-	ret[n].proc = &mysasl_simple_cb;
++	ret[n].proc = (sasl_callback_ft)&mysasl_simple_cb;
+ 	ret[n].context = (char *) username;
+ 	n++;
+     }	
+@@ -129,7 +130,7 @@
+     if (authname) {
+ 	/* authname */
+ 	ret[n].id = SASL_CB_AUTHNAME;
+-	ret[n].proc = &mysasl_simple_cb;
++	ret[n].proc = (sasl_callback_ft)&mysasl_simple_cb;
+ 	ret[n].context = (char *) authname;
+ 	n++;
+     }
+@@ -137,7 +138,7 @@
+     if (realm) {
+ 	/* realm */
+ 	ret[n].id = SASL_CB_GETREALM;
+-	ret[n].proc = &mysasl_getrealm_cb;
++	ret[n].proc = (sasl_callback_ft)&mysasl_getrealm_cb;
+ 	ret[n].context = (char *) realm;
+ 	n++;
+     }
+@@ -157,7 +158,7 @@
+ 		
+ 	/* password */
+ 	ret[n].id = SASL_CB_PASS;
+-	ret[n].proc = &mysasl_getsecret_cb;
++	ret[n].proc = (sasl_callback_ft)&mysasl_getsecret_cb;
+ 	ret[n].context = secret;
+ 	n++;
+     }
+diff -Naur cyrus-imapd-2.4.11.orig/imap/sync_client.c cyrus-imapd-2.4.11/imap/sync_client.c
+--- cyrus-imapd-2.4.11.orig/imap/sync_client.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/sync_client.c	2011-09-19 20:07:02.637893800 +0300
+@@ -66,6 +66,10 @@
+ 
+ #include <netinet/tcp.h>
+ 
++#include <sasl/sasl.h>
++#include <sasl/saslplug.h>
++#include <sasl/saslutil.h>
++
+ #include "global.h"
+ #include "assert.h"
+ #include "append.h"
+@@ -2704,8 +2708,8 @@
+ /* ====================================================================== */
+ 
+ static struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_CANON_USER, &mysasl_canon_user, NULL },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_CANON_USER, (sasl_callback_ft)&mysasl_canon_user, NULL },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imap/sync_server.c cyrus-imapd-2.4.11/imap/sync_server.c
+--- cyrus-imapd-2.4.11.orig/imap/sync_server.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imap/sync_server.c	2011-09-19 20:02:06.205957900 +0300
+@@ -71,6 +71,7 @@
+ #include <ctype.h>
+ 
+ #include <sasl/sasl.h>
++#include <sasl/saslplug.h>
+ #include <sasl/saslutil.h>
+ 
+ #include "assert.h"
+@@ -174,9 +175,9 @@
+ };
+ 
+ static struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_PROXY_POLICY, &mysasl_proxy_policy, (void*) &sync_proxyctx },
+-    { SASL_CB_CANON_USER, &mysasl_canon_user, NULL },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_PROXY_POLICY, (sasl_callback_ft)&mysasl_proxy_policy, (void*) &sync_proxyctx },
++    { SASL_CB_CANON_USER, (sasl_callback_ft)&mysasl_canon_user, NULL },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 
+diff -Naur cyrus-imapd-2.4.11.orig/imtest/imtest.c cyrus-imapd-2.4.11/imtest/imtest.c
+--- cyrus-imapd-2.4.11.orig/imtest/imtest.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/imtest/imtest.c	2011-09-19 20:25:26.103720950 +0300
+@@ -159,7 +159,7 @@
+     }, {
+ 	SASL_CB_PASS, NULL, NULL    
+     }, {
+-	SASL_CB_GETOPT, &mysasl_config, NULL    
++	SASL_CB_GETOPT, (int)&mysasl_config, NULL    
+     }, {
+ 	SASL_CB_LIST_END, NULL, NULL
+     }
+diff -Naur cyrus-imapd-2.4.11.orig/timsieved/timsieved.c cyrus-imapd-2.4.11/timsieved/timsieved.c
+--- cyrus-imapd-2.4.11.orig/timsieved/timsieved.c	2011-09-08 21:57:42.000000000 +0300
++++ cyrus-imapd-2.4.11/timsieved/timsieved.c	2011-09-19 20:03:50.171145200 +0300
+@@ -49,6 +49,8 @@
+ #endif
+ 
+ #include <sasl/sasl.h> /* yay! sasl */
++#include <sasl/saslplug.h>
++#include <sasl/saslutil.h>
+ 
+ #include <stdlib.h>
+ #include <stdio.h>
+@@ -233,9 +235,9 @@
+ }
+ 
+ static struct sasl_callback mysasl_cb[] = {
+-    { SASL_CB_GETOPT, &mysasl_config, NULL },
+-    { SASL_CB_PROXY_POLICY, &mysasl_proxy_policy, (void*) &sieved_proxyctx },
+-    { SASL_CB_CANON_USER, &mysasl_canon_user, (void*) &sieved_domainfromip },
++    { SASL_CB_GETOPT, (sasl_callback_ft)&mysasl_config, NULL },
++    { SASL_CB_PROXY_POLICY, (sasl_callback_ft)&mysasl_proxy_policy, (void*) &sieved_proxyctx },
++    { SASL_CB_CANON_USER, (sasl_callback_ft)&mysasl_canon_user, (void*) &sieved_domainfromip },
+     { SASL_CB_LIST_END, NULL, NULL }
+ };
+ 

@@ -1,0 +1,57 @@
+--- cyrus-imapd-2.4.18/imap/mboxlist.c	2015-07-06 05:38:29.000000000 +0200
++++ cyrus-imapd-2.4.18.mupdate_commit_patched/imap/mboxlist.c	2016-02-25 17:29:32.000000000 +0100
+@@ -992,6 +992,7 @@
+ 			   int forceuser, int ignorequota)
+ {
+     int r;
++    int mupdatecommiterror = 0;
+     long myrights;
+     int isusermbox = 0; /* Are we renaming someone's inbox */
+     int partitionmove = 0;
+@@ -1171,6 +1172,7 @@
+ 	    syslog(LOG_ERR,
+ 		   "MUPDATE: can't commit mailbox entry for '%s'",
+ 		   newname);
++            mupdatecommiterror = r;
+ 	}
+ 	if (mupdate_h) mupdate_disconnect(&mupdate_h);
+     }
+@@ -1180,7 +1182,37 @@
+ 	r = mailbox_commit(newmailbox);
+ 
+     if (r) {
+-	/* XXX - rollback DB changes if it was an mupdate failure */
++	/* rollback DB changes if it was an mupdate failure */
++        if (mupdatecommiterror) {
++            r = 0;
++    
++            /* recreate a old entry */
++            if (!isusermbox)
++                r = DB->store(mbdb, oldname, strlen(oldname),
++                              mboxent, strlen(mboxent), &tid);
++    
++            /* delete the new entry */
++            if (!r)
++                r = DB->delete(mbdb, newname, strlen(newname), &tid, 0);
++    
++            /* Commit transaction */
++            if (!r)
++                r = DB->commit(mbdb, tid);
++
++            tid = NULL;
++            if (r) {
++                /* XXX HOWTO repair this mess! */
++                syslog(LOG_ERR, "DBERROR: failed DB rollback on mailboxrename %s %s: %s",
++                       oldname, newname, cyrusdb_strerror(r));
++                syslog(LOG_ERR, "DBERROR: mailboxdb on mupdate and backend ARE NOT CONSISTEND");
++                syslog(LOG_ERR, "DBERROR: mailboxdb on mupdate has entry for %s, mailboxdb on backend has entry for %s and files are on the old position", oldname, newname);
++                r = IMAP_IOERROR;
++            } else {
++                r = mupdatecommiterror;
++            }
++            
++        }            
++
+ 	if (newmailbox) mailbox_delete(&newmailbox);
+ 	if (partitionmove && newpartition)
+ 	    mailbox_delete_cleanup(newpartition, newname);

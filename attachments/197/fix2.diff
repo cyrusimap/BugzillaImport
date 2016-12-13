@@ -1,0 +1,51 @@
+diff -ur cyrus-sasl-2.1.13/lib/windlopen.c cyrus-sasl-2.1.13-fix/lib/windlopen.c
+--- cyrus-sasl-2.1.13/lib/windlopen.c	Thu Feb 13 18:55:55 2003
++++ cyrus-sasl-2.1.13-fix/lib/windlopen.c	Sun Jun 29 16:03:31 2003
+@@ -151,7 +151,16 @@
+     return SASL_OK;
+ }
+ 
+-
++/* undoes action done by _sasl_get_plugin */
++void _sasl_remove_last_plugin()
++{
++	lib_list_t *last_plugin = lib_list_head;
++	lib_list_head = lib_list_head->next;
++	if (last_plugin->library) {
++		FreeLibrary(last_plugin->library);
++	}
++	sasl_FREE(last_plugin);
++}
+ 
+ /* gets the list of mechanisms */
+ int _sasl_load_plugins(const add_plugin_list_t *entrypoints,
+@@ -243,6 +252,7 @@
+ 	    void *library;
+ 	    char *c;
+ 	    char plugname[PATH_MAX];
++		int entries;
+ 
+ 	    length = strlen(finddata.name);
+ 	    if (length < 5) { /* At least <Ch>.dll */
+@@ -276,12 +286,19 @@
+ 	    if (result != SASL_OK) {
+ 		continue;
+ 	    }
+-
++		entries = 0;
+ 	    for (cur_ep = entrypoints; cur_ep->entryname; cur_ep++) {
+-		    _sasl_plugin_load(plugname, library, cur_ep->entryname,
++		    result = _sasl_plugin_load(plugname, library, cur_ep->entryname,
+ 				      cur_ep->add_plugin);
++			if (result == SASL_OK) {
++				++entries;
++			}
+ 		/* If this fails, it's not the end of the world */
+ 	    }
++		if (entries == 0) {
++			_sasl_remove_last_plugin();
++		}
++
+ 	} while (_findnext (fhandle, &finddata) == 0);
+ 	
+ 	_findclose (fhandle);

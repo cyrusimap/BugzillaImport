@@ -1,0 +1,95 @@
+Index: mailbox.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.137
+retrieving revision 1.138
+diff -u -r1.137 -r1.138
+--- mailbox.c	2002/08/29 14:21:37	1.137
++++ mailbox.c	2002/09/30 19:33:41	1.138
+@@ -1,5 +1,5 @@
+ /* mailbox.c -- Mailbox manipulation routines
+- $Id: mailbox.c,v 1.137 2002/08/29 14:21:37 ken3 Exp $
++ $Id: mailbox.c,v 1.138 2002/09/30 19:33:41 rjs3 Exp $
+  
+  * Copyright (c) 1998-2000 Carnegie Mellon University.  All rights reserved.
+  *
+@@ -2317,30 +2317,6 @@
+ 	    (void) unlink(newfname);
+ 	}
+     }
+-
+-    return r;
+-}
+-
+-/* Requires a locked mailbox */
+-int mailbox_rename_finish(struct mailbox *newmailbox) 
+-{
+-    int r = 0;
+-
+-    if (newmailbox->quota.root) {
+-	r = mailbox_lock_quota(&(newmailbox->quota));
+-	newmailbox->quota.used += newmailbox->quota_mailbox_used;
+-	if (!r) {
+-	    r = mailbox_write_quota(&(newmailbox->quota));
+-	    mailbox_unlock_quota(&(newmailbox->quota));
+-	}
+-	if (r) {
+-	    syslog(LOG_ERR,
+-	      "LOSTQUOTA: unable to record use of %lu bytes in quota %s",
+-		   newmailbox->quota_mailbox_used, newmailbox->quota.root);
+-	}
+-    }
+-
+-    /* Ugh, we'd have to back all the way out at this point. */
+ 
+     return r;
+ }
+Index: mailbox.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/mailbox.h,v
+retrieving revision 1.69
+retrieving revision 1.70
+diff -u -r1.69 -r1.70
+--- mailbox.h	2002/08/23 17:59:25	1.69
++++ mailbox.h	2002/09/30 19:33:41	1.70
+@@ -1,5 +1,5 @@
+ /* mailbox.h -- Mailbox format definitions
+- $Id: mailbox.h,v 1.69 2002/08/23 17:59:25 rjs3 Exp $
++ $Id: mailbox.h,v 1.70 2002/09/30 19:33:41 rjs3 Exp $
+  *
+  * Copyright (c) 1998-2000 Carnegie Mellon University.  All rights reserved.
+  *
+@@ -305,7 +305,6 @@
+ 			       const char *newname, char *newpath,
+ 			       bit32 *olduidvalidityp, bit32 *newuidvalidityp,
+ 			       struct mailbox *mailboxp);
+-extern int mailbox_rename_finish(struct mailbox *newmailbox);
+ extern int mailbox_rename_cleanup(struct mailbox *oldmailbox,
+ 				  int isinbox);
+ 
+Index: mboxlist.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/mboxlist.c,v
+retrieving revision 1.203
+retrieving revision 1.204
+diff -u -r1.203 -r1.204
+--- mboxlist.c	2002/08/26 16:47:58	1.203
++++ mboxlist.c	2002/09/30 19:33:41	1.204
+@@ -40,7 +40,7 @@
+  *
+  */
+ /*
+- * $Id: mboxlist.c,v 1.203 2002/08/26 16:47:58 rjs3 Exp $
++ * $Id: mboxlist.c,v 1.204 2002/09/30 19:33:41 rjs3 Exp $
+  */
+ 
+ #include <config.h>
+@@ -1168,8 +1168,6 @@
+ 	r = IMAP_IOERROR;
+ 	goto done;
+     }
+-
+-    r = mailbox_rename_finish(&newmailbox);
+ 
+  done: /* Commit or cleanup */
+     if (r != 0) {

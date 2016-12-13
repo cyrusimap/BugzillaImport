@@ -1,0 +1,311 @@
+Here's my main local patch set including fixes to make static linking
+actually work properly.  These are in the configure.in and Makefile.am
+changes.
+
+Also included are some minor patches to make debugging easier, as well
+as some fixes to make things work properly on Solaris-10 with system
+password authentication.  These are in the *.c changes.
+
+
+diff --git a/Makefile.am b/Makefile.am
+index b35164e..6d273aa 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -1,4 +1,5 @@
+ AUTOMAKE_OPTIONS = 1.7
++ACLOCAL_AMFLAGS = -I cmulocal -I config
+ # Top-level Makefile.am for SASL
+ # Rob Earhart
+ #
+diff --git a/configure.in b/configure.in
+index af00a44..3e34982 100644
+--- a/configure.in
++++ b/configure.in
+@@ -108,7 +108,7 @@ if test -z "$target"; then
+ fi
+ 
+ # new libtool
+-AM_DISABLE_STATIC
++#AM_DISABLE_STATIC
+ AC_PROG_LIBTOOL
+ 
+ target=$save_target
+@@ -392,15 +392,54 @@ if test "$cram" != no; then
+     CPPFLAGS="$CPPFLAGS -DOBSOLETE_CRAM_ATTR=1"
+   fi
+   if test "$enable_static" = yes; then
+-    SASL_STATIC_OBJS="$SASL_STATIC_OBJS cram.o"
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/cram.c"
++    SASL_STATIC_OBJS="$SASL_STATIC_OBJS cram.o"
+     AC_DEFINE(STATIC_CRAMMD5, [], [Link CRAM-MD5 Statically])
+   fi
+ else
+   AC_MSG_RESULT(disabled)
+ fi
+ 
+-CMU_HAVE_OPENSSL
++dnl
++dnl Test for OpenSSL
++dnl
++IMAP_PROGS=""
++AC_ARG_WITH(openssl,[  --with-openssl=PATH     use OpenSSL from PATH],
++	with_openssl="${withval}")
++
++OPENSSL_INC=
++OPENSSL_LIB=
++case "$with_openssl" in
++	no) with_openssl="no";;
++	""|yes) 
++	  dnl if openssl has been compiled with the rsaref2 libraries,
++	  dnl we need to include the rsaref libraries in the crypto check
++                LIB_RSAREF=""
++	        AC_CHECK_LIB(rsaref, RSAPublicEncrypt,
++		       LIB_RSAREF="-lRSAglue -lrsaref"; cmu_have_rsaref=yes,
++		       cmu_have_rsaref=no)
++
++		with_openssl="yes"
++		AC_CHECK_LIB(crypt,des_cipher,
++				LIBS="-lcrypt ${LIBS}",
++				with_openssl="no")
++		AC_CHECK_LIB(crypto,BIO_accept,
++                                    LIBS="-lcrypto $LIB_RSAREF ${LIBS}",
++		                    with_openssl="no", -lcrypt $LIB_RSAREF)
++		AC_CHECK_LIB(ssl, SSL_CTX_new,
++				  LIBS="-lssl ${LIBS}",
++				  with_openssl="no", -lcrypto -lcrypt $LIB_RSAREF)
++		
++		;;
++	*)  OPENSSL_INC="-I${with_openssl}/include"
++	    OPENSSL_LIBPATH="${with_openssl}/lib"
++	    OPENSSL_LIB="-L${OPENSSL_LIBPATH}"
++	    CPPFLAGS="${CPPFLAGS} ${OPENSSL_INC}"
++	    CMU_ADD_LIBPATH(${OPENSSL_LIBPATH})
++	    CMU_ADD_LIBPATH_TO(${OPENSSL_LIBPATH}, OPENSSL_LIB)
++	    LIBS="${LIBS} -lssl -lcrypto -lcrypt";;
++esac
++
+ AC_MSG_CHECKING(for OpenSSL)
+ AC_MSG_RESULT($with_openssl)
+ 
+@@ -592,8 +631,8 @@ if test "$anon" != no; then
+   AC_MSG_RESULT(enabled)
+   SASL_MECHS="$SASL_MECHS libanonymous.la"
+   if test "$enable_static" = yes; then
+-    SASL_STATIC_OBJS="$SASL_STATIC_OBJS anonymous.o"
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/anonymous.c"
++    SASL_STATIC_OBJS="$SASL_STATIC_OBJS anonymous.o"
+     AC_DEFINE(STATIC_ANONYMOUS, [], [Link ANONYMOUS Statically])
+   fi
+ else
+@@ -662,8 +701,8 @@ if test "$passdss" != no; then
+ 
+   SASL_MECHS="$SASL_MECHS libpassdss.la"
+   if test "$enable_static" = yes; then
+-    SASL_STATIC_OBJS="$SASL_STATIC_OBJS passdss.o"
+     SASL_STATIC_SRCS="$SASL_STATIC_SRCS \$(top_srcdir)/plugins/passdss.c"
++    SASL_STATIC_OBJS="$SASL_STATIC_OBJS passdss.o"
+     AC_DEFINE(STATIC_PASSDSS,[],[Link PASSDSS Statically])
+   fi
+ else
+@@ -946,6 +985,12 @@ dnl LDAPDB
+ AC_ARG_ENABLE(ldapdb, [  --enable-ldapdb         enable LDAPDB plugin [no] ],
+   ldapdb=$enableval,
+   ldapdb=no)
++
++if test "$with_openssl" = no; then
++  AC_WARN([OpenSSL not found -- LDAPDB will be disabled])
++  ldapdb=no
++fi
++
+ AC_MSG_CHECKING(LDAPDB)
+ if test "$ldapdb" != no; then
+     AC_MSG_RESULT(enabled)
+@@ -1001,10 +1046,16 @@ else
+ fi
+ 
+ AC_SUBST(SASL_MECHS)
++SASL_MECHS_LIBS=""
++for lib in ${SASL_MECHS}; do
++    SASL_MECHS_LIBS="$SASL_MECHS_LIBS ../plugins/${lib}"
++done
++AC_SUBST(SASL_MECHS_LIBS)
+ AC_SUBST(SASL_STATIC_SRCS)
+ AC_SUBST(SASL_STATIC_OBJS)
+ AC_SUBST(SASL_STATIC_LIBS)
+ 
++plugindir=/usr/lib/sasl2
+ AC_ARG_WITH(plugindir, [  --with-plugindir=DIR    set the directory where plugins will
+                           be found [[/usr/lib/sasl2]] ],
+   plugindir=$withval,
+@@ -1013,7 +1064,7 @@ AC_DEFINE_UNQUOTED(PLUGINDIR, "$plugindir", [Runtime plugin location])
+ AC_SUBST(plugindir)
+ 
+ AC_ARG_WITH(configdir, [   --with-configdir=DIR    set the directory where config files will
+-                          be found [/usr/lib/sasl2] ],
++                          be found [$plugindir:/etc/sasl2] ],
+   configdir=$withval,
+   configdir=$plugindir:/etc/sasl2)
+ AC_DEFINE_UNQUOTED(CONFIGDIR, "$configdir", [Runtime config file location])
+diff --git a/lib/Makefile.am b/lib/Makefile.am
+index 3beccf0..88aab48 100644
+--- a/lib/Makefile.am
++++ b/lib/Makefile.am
+@@ -46,9 +46,6 @@ sasl_version = 2:25:0
+ INCLUDES=-DLIBSASL_EXPORTS=1 -I$(top_srcdir)/include -I$(top_srcdir)/plugins -I$(top_builddir)/include -I$(top_srcdir)/sasldb
+ 
+ EXTRA_DIST = windlopen.c staticopen.h NTMakefile
+-EXTRA_LIBRARIES = libsasl2.a
+-noinst_LIBRARIES = @SASL_STATIC_LIBS@
+-libsasl2_a_SOURCES=
+ 
+ BUILT_SOURCES = $(SASL_STATIC_SRCS)
+ 
+@@ -76,10 +73,32 @@ else
+ install-exec-hook:
+ endif
+ 
++# we have to update libsasl2.a and libsasl2.la after they have been
++# built so as to include the desired statically compiled plugin module
++# code as well
++#
++all-local: fix-libsasl2-la
++
++# we should probably use the already compiled plugin code .o files
++# instead of recompiling them again (we already depend on the plugin
++# .la files being created)
++#
+ libsasl2.a: libsasl2.la $(SASL_STATIC_OBJS)
+ 	@echo adding static plugins and dependencies
+ 	$(AR) cru .libs/$@ $(SASL_STATIC_OBJS)
+-	@for i in ./libsasl2.la ../sasldb/libsasldb.la ../plugins/lib*.la; do \
++	rm -f $@
++	ln -s .libs/$@ $@
++
++clean-local:
++	rm -f libsasl2.a
++
++# here we accumulate the -L and -l options from all the plugin module
++# libtool .la files and add them to libsasl2.la so libtool will see
++# them on install.
++#
++fix-libsasl2-la: libsasl2.a $(SASL_MECHS_LIBS)
++	@echo updating dependency_libs in libsasl2.la
++	@for i in ./libsasl2.la $(SASL_MECHS_LIBS); do \
+ 	if test ! -f $$i; then continue; fi; . $$i; \
+ 	for j in $$dependency_libs foo; do \
+ 	case $$j in foo) ;; \
+@@ -92,11 +111,10 @@ libsasl2.a: libsasl2.la $(SASL_STATIC_OBJS)
+ 	esac; done; dependency_libs=""; done; \
+ 	sed -e "/^dependency_libs=/s%=.*%='$${depdirs}$${deplibs}'%" \
+ 	libsasl2.la >TMP.$$ && mv TMP.$$ libsasl2.la
+-	rm -f $@
+-	ln -s .libs/$@ $@
++###	rm -f $@
++###	ln -s .libs/$@ $@
+ 
+ $(SASL_STATIC_SRCS): linksrcs
+ 
+ linksrcs:
+ 	-ln -s $(SASL_STATIC_SRCS) .
+-
+diff --git a/lib/auxprop.c b/lib/auxprop.c
+index 0644e5f..6d30671 100644
+--- a/lib/auxprop.c
++++ b/lib/auxprop.c
+@@ -813,13 +813,15 @@ int sasl_auxprop_add_plugin(const char *plugname,
+ 
+     /* Check if out_version is too old.
+        We only support the current at the moment */
++    /* XXX why check this again?  *_auxprop_plug_init() functions do this check already! */
+     if (result == SASL_OK && out_version < SASL_AUXPROP_PLUG_VERSION) {
+         result = SASL_BADVERS;
+     }
+ 
+     if(result != SASL_OK) {
+-	_sasl_log(NULL, SASL_LOG_ERR, "auxpropfunc error %s\n",
+-		  sasl_errstring(result, NULL, NULL));
++	_sasl_log(NULL, (result != SASL_NOMECH) ? SASL_LOG_WARN : SASL_LOG_NOTE,
++		  "%s_auxprop_plug_init() failed in sasl_auxprop_add_plugin(): %z\n",
++		  plugname, result);
+ 	return result;
+     }
+ 
+diff --git a/plugins/Makefile.am b/plugins/Makefile.am
+index b00915f..12efea7 100644
+--- a/plugins/Makefile.am
++++ b/plugins/Makefile.am
+@@ -133,7 +133,7 @@ libsql_la_SOURCES = sql.c sql_init.c $(common_sources)
+ libsql_la_LDFLAGS = $(LIB_MYSQL) $(LIB_PGSQL) $(LIB_SQLITE) $(LIB_SQLITE3) \
+ 	$(AM_LDFLAGS)
+ libsql_la_DEPENDENCIES = $(COMPAT_OBJS)
+-libsql_la_LIBADD = $(COMPAT_OBJS)
++libsql_la_LIBADD =  $(LIB_MYSQL) $(LIB_PGSQL) $(LIB_SQLITE) $(COMPAT_OBJS)
+ 
+ 
+ # Instructions for making the _init files
+diff --git a/saslauthd/Makefile.am b/saslauthd/Makefile.am
+index ce1e92b..1a226b7 100644
+--- a/saslauthd/Makefile.am
++++ b/saslauthd/Makefile.am
+@@ -1,4 +1,5 @@
+ AUTOMAKE_OPTIONS = 1.7
++ACLOCAL_AMFLAGS = -I ../cmulocal -I ../config
+ sbin_PROGRAMS	= saslauthd testsaslauthd
+ EXTRA_PROGRAMS  = saslcache
+ 
+diff --git a/saslauthd/auth_getpwent.c b/saslauthd/auth_getpwent.c
+diff --git a/saslauthd/auth_getpwent.h b/saslauthd/auth_getpwent.h
+diff --git a/saslauthd/auth_shadow.c b/saslauthd/auth_shadow.c
+diff --git a/saslauthd/configure.in b/saslauthd/configure.in
+index f79d65d..1c29ee0 100644
+--- a/saslauthd/configure.in
++++ b/saslauthd/configure.in
+@@ -77,7 +77,7 @@ if test "$authsasldb" != no; then
+   AC_DEFINE(AUTH_SASLDB,[],[Include SASLdb Support])
+   SASL_DB_PATH_CHECK()
+   SASL_DB_CHECK()
+-  SASL_DB_LIB="$SASL_DB_LIB ../sasldb/.libs/libsasldb.al"
++  SASL_DB_LIB="$SASL_DB_LIB ../sasldb/.libs/libsasldb.la"
+ fi
+ 
+ AC_ARG_ENABLE(httpform, [  --enable-httpform       enable HTTP form authentication [[no]] ],
+diff --git a/saslauthd/utils.c b/saslauthd/utils.c
+diff --git a/utils/Makefile.am b/utils/Makefile.am
+index 7e2f983..c34f6c1 100644
+--- a/utils/Makefile.am
++++ b/utils/Makefile.am
+@@ -43,7 +43,6 @@
+ ################################################################
+ 
+ all_sasl_libs = ../lib/libsasl2.la $(SASL_DB_LIB) $(LIB_SOCKET)
+-all_sasl_static_libs = ../lib/.libs/libsasl2.a $(SASL_DB_LIB) $(LIB_SOCKET) $(GSSAPIBASE_LIBS) $(GSSAPI_LIBS) $(SASL_KRB_LIB) $(LIB_DES) $(PLAIN_LIBS) $(SRP_LIBS) $(LIB_MYSQL) $(LIB_PGSQL) $(LIB_SQLITE)
+ 
+ sbin_PROGRAMS = @SASL_DB_UTILS@ @SMTPTEST_PROGRAM@ pluginviewer
+ EXTRA_PROGRAMS = saslpasswd2 sasldblistusers2 testsuite testsuitestatic smtptest pluginviewer
+@@ -58,9 +57,12 @@ endif
+ 
+ saslpasswd2_LDADD = ../sasldb/libsasldb.la $(all_sasl_libs)
+ saslpasswd2_SOURCES = saslpasswd.c
++
+ sasldblistusers2_LDADD = ../sasldb/libsasldb.la $(all_sasl_libs)
+ sasldblistusers2_SOURCES = sasldblistusers.c
++
+ dbconverter_2_LDADD = ../sasldb/libsasldb.la $(all_sasl_libs)
++
+ pluginviewer_LDADD = $(all_sasl_libs)
+ pluginviewer_SOURCES = pluginviewer.c
+ 
+@@ -69,8 +71,11 @@ testsuite_LDADD = $(all_sasl_libs) @DMALLOC_LIBS@
+ CLEANFILES=$(EXTRA_PROGRAMS)
+ 
+ testsuitestatic_SOURCES = testsuite.c
+-testsuitestatic_LDADD = $(all_sasl_static_libs) @DMALLOC_LIBS@ @SASL_DL_LIB@
+-testsuitestatic_DEPENDENCIES = ../lib/.libs/libsasl2.a
++# XXX what/why SASL_DL_LIB!?!?!?
++testsuitestatic_LDADD = $(all_sasl_libs) @DMALLOC_LIBS@ @SASL_DL_LIB@
++# libtool translates -static properly, and gets all dependent libs too using .la files!
++testsuitestatic_LDFLAGS = -static
++testsuitestatic_DEPENDENCIES = ../lib/libsasl2.la
+ 
+ smtptest_SOURCES =
+ smtptest_DEPENDENCIES = ./smtptest.lo ./libsfsasl2.la

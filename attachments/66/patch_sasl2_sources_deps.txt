@@ -1,0 +1,88 @@
+> cvs -d :pserver:anoncvs@cvs.andrew.cmu.edu:/cvs diff sasl saslauthd/configure.in saslauthd/Makefile.am config/sasldb.m4 
+Index: saslauthd/configure.in
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/configure.in,v
+retrieving revision 1.24
+diff -u -r1.24 configure.in
+--- configure.in        2002/08/21 19:05:49     1.24
++++ configure.in        2002/09/07 11:55:50
+@@ -89,8 +89,7 @@
+ AC_ARG_WITH(ipctype, [  --with-ipctype={unix,doors}    use ipctype [unix] ],
+        with_ipctype=$withval,
+        with_ipctype="unix")
+-IPCTYPE=$with_ipctype
+-AC_SUBST(IPCTYPE)
++COMPAT_OBJ="$COMPAT_OBJ saslauthd-$with_ipctype.o"
+ if test "$with_ipctype" = "doors"; then
+   AC_DEFINE(SASLAUTHD_THREADED)
+   LIBS="$LIBS -ldoor -lpthread"
+@@ -147,7 +146,6 @@
+ IPv6_CHECK_FUNC(getaddrinfo,
+            [AC_DEFINE(HAVE_GETADDRINFO)], [sasl_cv_getaddrinfo=yes])
+ if test $sasl_cv_getaddrinfo = yes; then
+-    COMPAT_SRC="$COMPAT_SRC getaddrinfo.c"
+     COMPAT_OBJ="$COMPAT_OBJ getaddrinfo.o"
+ fi
+ 
+@@ -157,11 +155,9 @@
+ IPv6_CHECK_FUNC(getnameinfo,
+            [AC_DEFINE(HAVE_GETNAMEINFO)], [sasl_cv_getnameinfo=yes])
+ if test $sasl_cv_getnameinfo = yes; then
+-       COMPAT_SRC="$COMPAT_SRC getnameinfo.c"
+        COMPAT_OBJ="$COMPAT_OBJ getnameinfo.o"
+ fi
+ 
+-AC_SUBST(COMPAT_SRC)
+ AC_SUBST(COMPAT_OBJ)
+ 
+ IPv6_CHECK_SS_FAMILY()
+Index: saslauthd/Makefile.am
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/Makefile.am,v
+retrieving revision 1.28
+diff -u -r1.28 Makefile.am
+--- Makefile.am 2002/08/09 16:15:54     1.28
++++ Makefile.am 2002/09/07 11:55:51
+@@ -1,13 +1,14 @@
+ sbin_PROGRAMS  = saslauthd
+ EXTRA_PROGRAMS  = testsaslauthd
+ 
+-saslauthd_SOURCES = saslauthd-$(IPCTYPE).c mechanisms.c globals.h \
++saslauthd_SOURCES = mechanisms.c globals.h \
+                mechanisms.h auth_dce.c auth_dce.h auth_getpwent.c \
+                auth_getpwent.h auth_krb5.c auth_krb5.h auth_krb4.c \
+                auth_krb4.h auth_pam.c auth_pam.h auth_rimap.c \
+                auth_rimap.h auth_shadow.c auth_shadow.h auth_sia.c \
+                auth_sia.h auth_sasldb.c auth_sasldb.h lak.c lak.h \
+-               auth_ldap.c auth_ldap.h $(COMPAT_SRC)
++               auth_ldap.c auth_ldap.h
++EXTRA_saslauthd_SOURCES = saslauthd-unix.c saslauthd-doors.c getaddrinfo.c getnameinfo.c
+ saslauthd_DEPENDENCIES = @COMPAT_OBJ@
+ saslauthd_LDADD        = @COMPAT_OBJ@ @SASL_KRB_LIB@ @GSSAPIBASE_LIBS@ \
+              @GSSAPI_LIBS@ @PLAIN_LIBS@ @LIB_SIA@ @LIB_SOCKET@ \
+Index: config/sasldb.m4
+===================================================================
+RCS file: /cvs/src/sasl/config/sasldb.m4,v
+retrieving revision 1.8
+diff -u -r1.8 sasldb.m4
+--- sasldb.m4   2002/09/05 19:21:13     1.8
++++ sasldb.m4   2002/09/07 11:55:52
+@@ -139,7 +139,7 @@
+ AC_MSG_RESULT($dblib)
+ 
+ SASL_DB_BACKEND="db_${dblib}.lo"
+-SASL_DB_BACKEND_STATIC="../sasldb/db_${dblib}.o ../sasldb/allockey.o"
++SASL_DB_BACKEND_STATIC="db_${dblib}.o allockey.o"
+ SASL_DB_UTILS="saslpasswd2 sasldblistusers2"
+ SASL_DB_MANS="saslpasswd2.8 sasldblistusers2.8"
+ 
+@@ -156,7 +156,7 @@
+   *)
+     AC_MSG_WARN([Disabling SASL authentication database support])
+     SASL_DB_BACKEND="db_none.lo"
+-    SASL_DB_BACKEND_STATIC="../sasldb/db_none.o"
++    SASL_DB_BACKEND_STATIC="db_none.o"
+     SASL_DB_UTILS=""
+     SASL_DB_MANS=""
+     SASL_DB_LIB=""
+cvs server: Diffing sasl

@@ -1,0 +1,42 @@
+From 9498545e000e88a0d5d2b3fedb86c6caff38da08 Mon Sep 17 00:00:00 2001
+From: Thomas Jarosch <thomas.jarosch@intra2net.com>
+Date: Thu, 21 Nov 2013 11:50:20 +0100
+Subject: [PATCH] Fix ACL string corruption on removal of an ACL identifier
+
+It's an invalid operation to call strcpy() on overlapping memory buffers.
+Newer glibc versions use special optimizations and therefore
+compute unexpected results (=trash the ACLs).
+
+Fix it by constructing the modified ACL string in a new buffer.
+---
+ lib/acl_afs.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/lib/acl_afs.c b/lib/acl_afs.c
+index c89404d..f227293 100644
+--- a/lib/acl_afs.c
++++ b/lib/acl_afs.c
+@@ -180,8 +180,18 @@ EXPORTED int cyrus_acl_set(char **acl, const char *identifier,
+     }
+ 
+     if (access == 0L) {
+-	/* Remove any existing entry for 'identifier' */
+-	strcpy(thisid, nextid);
++	/* Remove any existing entry for 'identifier'.
++	   Special case: When we try to delete an invalid/non-existent identifier,
++	   both 'thisid' and 'nextid' point to the end of *acl. */
++	newacl = xmalloc(strlen(*acl) + strlen(nextid) - strlen(thisid) + 1);
++	/* Copy existing ACLs without the current identifier.
++	   Note: The buffer will not be zero terminated. */
++	strncpy(newacl, *acl, (thisid - *acl));
++	/* Append the remaining ACL string. Zero-terminates the string. */
++	strcpy(newacl + (thisid - *acl), nextid);
++
++	free(*acl);
++	*acl = newacl;
+     }
+     else {
+ 	/* Replace any existing entry for 'identifier' */
+-- 
+1.7.11.7
+

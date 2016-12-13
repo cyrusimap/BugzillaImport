@@ -1,0 +1,61 @@
+--- imap/mupdate.c	27 Aug 2008 08:28:47 -0000	1.103
++++ imap/mupdate.c	19 Sep 2008 02:37:39 -0000
+@@ -156,8 +156,9 @@
+ 
+     /* pending changes to send, in reverse order */
+     pthread_mutex_t m;
+-    pthread_cond_t cond;
++//    pthread_cond_t cond;
+     struct pending *plist;
++    struct pending *ptail;
+     struct conn *updatelist_next;
+     struct prot_waitevent *ev; /* invoked every 'update_wait' seconds
+ 				  to send out updates */
+@@ -1547,6 +1536,7 @@
+     for (upc = updatelist; upc != NULL; upc = upc->updatelist_next) {
+ 	/* for each connection, add to pending list */
+ 	struct pending *p = (struct pending *) xmalloc(sizeof(struct pending));
++	p->next = NULL;
+ 	strlcpy(p->mailbox, mailbox, sizeof(p->mailbox));
+ 	
+ 	/* this might need to be inside the mutex, but I doubt it */
+@@ -1558,12 +1548,17 @@
+ 	    /* No Match! Continue! */
+ 	    continue;
+ 	}
+-	
++
+ 	pthread_mutex_lock(&upc->m);
+-	p->next = upc->plist;
+-	upc->plist = p;
+-	
+-	pthread_cond_signal(&upc->cond);
++
++	if ( upc->plist == NULL ) {
++	    upc->plist = upc->ptail = p;
++	} else {
++	    upc->ptail->next = p;
++	    upc->ptail = p;
++	}
++
++//	pthread_cond_signal(&upc->cond);
+ 	pthread_mutex_unlock(&upc->m);
+     }
+ }
+@@ -1848,7 +1843,7 @@
+     char pattern[2] = {'*','\0'};
+ 
+     /* initialize my condition variable */
+-    pthread_cond_init(&C->cond, NULL);
++//    pthread_cond_init(&C->cond, NULL);
+ 
+     /* The inital dump of the database can result in a lot of data,
+      * let's do this nonblocking */
+@@ -1889,6 +1884,7 @@
+     /* just grab the update list and release the lock */
+     p = C->plist;
+     C->plist = NULL;
++    C->ptail = NULL;
+     pthread_mutex_unlock(&C->m);
+ 
+     while (p != NULL) {

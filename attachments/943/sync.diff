@@ -1,0 +1,67 @@
+--- sync_commit.c	2007-07-10 17:22:04.000000000 -0400
++++ /home/pturgyan/sync_commit.c	2007-07-13 11:38:07.000000000 -0400
+@@ -154,7 +154,8 @@
+             goto fail;
+         }
+ #else
+-	if (sync_message_copy_fromstage(item->message, mailbox, item->uid)) {
++	if (sync_message_copy_fromstage(item->message, mailbox, item->uid,
++		item->internaldate)) {
+ 	    goto fail;
+ 	}
+ #endif
+@@ -553,7 +554,8 @@
+             goto fail;
+         }
+ #else
+-	if (sync_message_copy_fromstage(item->message, mailbox, item->uid)) {
++	if (sync_message_copy_fromstage(item->message, mailbox, item->uid,
++		item->internaldate)) {
+ 	    goto fail;
+ 	}
+ #endif
+--- sync_support.h	2007-07-10 17:22:04.000000000 -0400
++++ /home/pturgyan/sync_support.h	2007-07-13 11:38:31.000000000 -0400
+@@ -314,7 +314,8 @@
+ 
+ int sync_message_copy_fromstage(struct sync_message *message,
+ 				struct mailbox *mailbox,
+-				unsigned long uid);
++				unsigned long uid,
++				time_t internaldate);
+ 
+ /* ====================================================================== */
+ 
+--- sync_support.c	2007-07-10 18:08:33.000000000 -0400
++++ /home/pturgyan/sync_support.c	2007-07-13 11:38:22.000000000 -0400
+@@ -990,13 +990,15 @@
+ 
+ int sync_message_copy_fromstage(struct sync_message *message,
+ 				struct mailbox *mailbox,
+-				unsigned long uid)
++				unsigned long uid,
++				time_t internaldate)
+ {
+     int r;
+     const char *root;
+     char *partition, stagefile[MAX_MAILBOX_PATH+1], *p;
+     size_t sflen;
+     char  target[MAX_MAILBOX_PATH+1];
++    struct utimbuf settime;
+  
+     /* Find mailbox partition */
+     r = mboxlist_detail(mailbox->name, NULL, NULL, NULL, &partition, NULL, NULL);
+@@ -1075,7 +1077,12 @@
+ 
+     snprintf(target, MAX_MAILBOX_PATH, "%s/%lu.", mailbox->path, uid);
+ 
+-    return mailbox_copyfile(p, target, 0);
++    r = mailbox_copyfile(p, target, 0);
++    if (!r) {
++	settime.actime = settime.modtime = internaldate;
++	utime(target, &settime);
++    }
++    return (r);
+ }
+ 
+ void sync_message_list_free(struct sync_message_list **lp)

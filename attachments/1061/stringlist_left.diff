@@ -1,0 +1,55 @@
+diff --git a/sieve.y b/sieve.y
+index 1ea6ce0..b84d2be 100644
+--- a/sieve.y
++++ b/sieve.y
+@@ -435,12 +435,12 @@ vtags: /* empty */		 { $$ = new_vtags(); }
+ 				   else { $$->mime = MIME; } }
+ 	;
+ 
+-stringlist: '[' strings ']'      { $$ = $2; }
++stringlist: '[' strings ']'      { $$ = sl_reverse($2); }
+ 	| STRING		 { $$ = new_sl($1, NULL); }
+ 	;
+ 
+ strings: STRING			 { $$ = new_sl($1, NULL); }
+-	| STRING ',' strings	 { $$ = new_sl($1, $3); }
++	| strings ',' STRING	 { $$ = new_sl($3, $1); }
+ 	;
+ 
+ block: '{' commands '}'		 { $$ = $2; }
+diff --git a/tree.c b/tree.c
+index 71aed18..d14c943 100644
+--- a/tree.c
++++ b/tree.c
+@@ -61,6 +61,19 @@ stringlist_t *new_sl(char *s, stringlist_t *n)
+     return p;
+ }
+ 
++stringlist_t *sl_reverse(stringlist_t *l)
++{
++    stringlist_t *prev = NULL;
++    stringlist_t *next;
++    stringlist_t *cur = l;
++    while (cur) {
++	next = cur->next;
++	cur->next = prev;
++	prev = cur;
++	cur = next;
++    }
++    return prev;
++}
+ 
+ tag_t *new_tag(int type, char *s)
+ {
+diff --git a/tree.h b/tree.h
+index a63b67a..709de4a 100644
+--- a/tree.h
++++ b/tree.h
+@@ -168,6 +168,7 @@ struct Commandlist {
+ };
+ 
+ stringlist_t *new_sl(char *s, stringlist_t *n);
++stringlist_t *sl_reverse(stringlist_t *l);
+ tag_t *new_tag(int type, char *s);
+ taglist_t *new_taglist(tag_t *t, taglist_t *n);
+ test_t *new_test(int type);

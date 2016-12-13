@@ -1,0 +1,70 @@
+Return-Path: <bostic@abyssinian.sleepycat.com>
+X-Sieve: cmu-sieve 1.3
+Return-Path: <bostic@abyssinian.sleepycat.com>
+Received: from po5.andrew.cmu.edu (PO5.ANDREW.CMU.EDU [128.2.10.105])
+	by mail1.andrew.cmu.edu (8.9.3/8.9.3) with ESMTP id WAA22032
+	for <leg+@MAIL1.ANDREW.cmu.edu>; Wed, 19 Jul 2000 22:12:33 -0400 (EDT)
+Received: (from daemon@localhost)
+	by po5.andrew.cmu.edu (8.9.3/8.9.3) id WAA14501
+	for leg+@MAIL1.ANDREW.CMU.EDU; Wed, 19 Jul 2000 22:12:32 -0400 (EDT)
+Received: via switchmail for leg+@andrew.cmu.edu; Wed, 19 Jul 2000 22:12:31 -0400 (EDT)
+Received: from abyssinian.sleepycat.com (abyssinian.sleepycat.com [199.103.241.218])
+	by po5.andrew.cmu.edu (8.9.3/8.9.3) with ESMTP id WAA14496
+	for <leg+@andrew.cmu.edu>; Wed, 19 Jul 2000 22:12:30 -0400 (EDT)
+Received: (from bostic@localhost)
+	by abyssinian.sleepycat.com (8.9.3/8.9.3) id WAA19156;
+	Wed, 19 Jul 2000 22:13:16 -0400 (EDT)
+Date: Wed, 19 Jul 2000 22:13:16 -0400 (EDT)
+From: Keith Bostic <bostic@abyssinian.sleepycat.com>
+Message-Id: <200007200213.WAA19156@abyssinian.sleepycat.com>
+To: leg+@andrew.cmu.edu
+Subject: Re: Cyrus Imap v2.0.5 deadlock [#2378]
+Cc: wcw+@cmu.edu
+
+> I'll be around for quite a while tonight
+
+I've attached a patch that I think may fix the problem.  One of
+the core dumps jogged my memory, and I think it's possible what
+you're seeing is a different manifestation of a bug we fixed a
+few weeks ago.
+
+Anyway, could you please apply this patch and let me know if it
+makes any difference?
+
+Regards,
+--keith
+
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Keith Bostic			
+Sleepycat Software Inc.		bostic@sleepycat.com
+394 E. Riding Dr.		+1-978-371-0408
+Carlisle, MA 01741-1601		http://www.sleepycat.com
+
+
+*** mp/mp_fopen.c.orig	2000/05/17 19:29:21	11.30
+--- mp/mp_fopen.c	2000/06/30 21:32:54
+***************
+*** 251,258 ****
+  	 */
+  	if (needlock)
+  		R_LOCK(dbenv, dbmp->reginfo);
+! 	ret = mfp == NULL ? __memp_mf_open(
+! 	    dbmp, path, pagesize, last_pgno, finfop, flags, &mfp) : 0;
+  	if (needlock)
+  		R_UNLOCK(dbenv, dbmp->reginfo);
+  	if (ret != 0)
+--- 251,263 ----
+  	 */
+  	if (needlock)
+  		R_LOCK(dbenv, dbmp->reginfo);
+! 	if (mfp == NULL)
+! 		ret = __memp_mf_open(
+! 		    dbmp, path, pagesize, last_pgno, finfop, flags, &mfp);
+! 	else {
+! 		++mfp->ref_cnt;
+! 		ret = 0;
+! 	}
+  	if (needlock)
+  		R_UNLOCK(dbenv, dbmp->reginfo);
+  	if (ret != 0)
+

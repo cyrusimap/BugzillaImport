@@ -1,0 +1,67 @@
+--- ldapdb.c.X	2007-01-12 16:55:58.000000000 -0800
++++ ldapdb.c	2007-02-19 15:37:48.000000000 -0800
+@@ -311,7 +311,7 @@
+     if (!strncasecmp(ctx->canon.bv_val, rdn, ctx->canon.bv_len) &&
+     	rdn[ctx->canon.bv_len] == '=') {
+ 	char *comma;
+-	rdn += ctx->canon.bv_len + 2;
++	rdn += ctx->canon.bv_len + 1;
+ 	comma = strchr(rdn, ',');
+ 	if ( comma )
+ 	    len = comma - rdn;
+@@ -320,6 +320,7 @@
+ 	if ( len > out_max )
+ 	    len = out_max;
+ 	memcpy(out, rdn, len);
++	out[len] = '\0';
+ 	*out_ulen = len;
+ 	ret = SASL_OK;
+ 	ber_bvfree(cp.dn);
+@@ -361,6 +362,38 @@
+ }
+ 
+ static int
++ldapdb_canon_client(void *glob_context,
++		    sasl_client_params_t *cparams,
++		    const char *user,
++		    unsigned ulen,
++		    unsigned flags,
++		    char *out,
++		    unsigned out_max,
++		    unsigned *out_ulen)
++{
++    if(!cparams || !user) return SASL_BADPARAM;
++
++    /* Trim whitespace */
++    while(isspace(*(unsigned char *)user)) {
++	user++;
++	ulen--;
++    }
++    while(isspace((unsigned char)user[ulen-1])) {
++    	ulen--;
++    }
++    
++    if (!ulen) {
++    	cparams->utils->seterror(cparams->utils->conn, 0,
++	    "All-whitespace username.");
++	return SASL_FAIL;
++    }
++    memcpy(out, user, ulen);
++    out[ulen] = '\0';
++    *out_ulen = ulen;
++    return SASL_OK;
++}
++
++static int
+ ldapdb_config(const sasl_utils_t *utils)
+ {
+     ldapctx *p = &ldapdb_ctx;
+@@ -446,7 +479,7 @@
+ 	ldapdb,	/* name */
+ 	NULL,	/* canon_user_free */
+ 	ldapdb_canon_server,	/* canon_user_server */
+-	NULL,	/* canon_user_client */
++	ldapdb_canon_client,	/* canon_user_client */
+ 	NULL,
+ 	NULL,
+ 	NULL

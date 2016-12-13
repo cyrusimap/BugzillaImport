@@ -1,0 +1,3228 @@
+Index: configure.in
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/configure.in,v
+retrieving revision 1.276
+diff -u -u -r1.276 configure.in
+--- configure.in	3 Jan 2004 20:12:31 -0000	1.276
++++ configure.in	6 Jan 2004 21:52:30 -0000
+@@ -166,7 +166,7 @@
+ dnl function for doing each of the database backends
+ dnl parameters: backend name, variable to set, withval
+ 
+-CYRUSDB_OBJS="cyrusdb_flat.o cyrusdb_skiplist.o"
++CYRUSDB_OBJS="cyrusdb_flat.o cyrusdb_skiplist.o cyrusdb_quotalegacy.o"
+ 
+ dnl Berkeley DB Detection
+ 
+Index: imap/Makefile.in
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/Makefile.in,v
+retrieving revision 1.179
+diff -u -u -r1.179 Makefile.in
+--- imap/Makefile.in	12 Nov 2003 04:02:01 -0000	1.179
++++ imap/Makefile.in	6 Jan 2004 21:52:32 -0000
+@@ -101,7 +101,7 @@
+ 	global.o imap_err.o mupdate_err.o proc.o setproctitle.o \
+ 	convert_code.o duplicate.o saslclient.o saslserver.o signals.o \
+ 	annotate.o search_engines.o squat.o squat_internal.o mbdump.o \
+-	imapparse.o telemetry.o user.o notify.o protocol.o \
++	imapparse.o telemetry.o user.o notify.o protocol.o quota_db.o \
+ 	$(SEEN) $(IDLE)
+ 
+ IMAPDOBJS=pushstats.o backend.o imapd.o index.o tls.o version.o
+Index: imap/append.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/append.c,v
+retrieving revision 1.102
+diff -u -u -r1.102 append.c
+--- imap/append.c	22 Oct 2003 18:50:07 -0000	1.102
++++ imap/append.c	6 Jan 2004 21:52:32 -0000
+@@ -65,6 +65,7 @@
+ #include "mboxlist.h"
+ #include "seen.h"
+ #include "retry.h"
++#include "quota.h"
+ 
+ struct stagemsg {
+     char fname[1024];
+@@ -136,21 +137,18 @@
+ 	return IMAP_MAILBOX_NOTSUPPORTED;
+     }
+ 
+-    r = mailbox_read_quota(&m.quota);
+-    if (r) {
+-	mailbox_close(&m);
+-	return r;
+-    }
+-
+-    if (m.quota.limit >= 0 && quotacheck >= 0 &&
+-	m.quota.used + quotacheck > 
++    r = quota_read(&m.quota, NULL, 0);
++    if (!r) {
++	if (m.quota.limit >= 0 && quotacheck >= 0 &&
++	    m.quota.used + quotacheck > 
+ 	    ((unsigned) m.quota.limit * QUOTA_UNITS)) {
+-	mailbox_close(&m);
+-	return IMAP_QUOTA_EXCEEDED;
++	    r = IMAP_QUOTA_EXCEEDED;
++	}
+     }
++    else if (r == IMAP_QUOTAROOT_NONEXISTENT) r = 0;
+ 
+     mailbox_close(&m);
+-    return 0;
++    return r;
+ }
+ 
+ /*
+@@ -206,17 +204,20 @@
+ 	return r;
+     }
+ 
+-    r = mailbox_lock_quota(&as->m.quota);
+-    if (r) {
+-	mailbox_close(&as->m);
+-	return r;
++    r = quota_read(&as->m.quota, NULL, 0);
++    if (!r) {
++	if (as->m.quota.limit >= 0 && quotacheck >= 0 &&
++	    as->m.quota.used + quotacheck > 
++	    ((unsigned) as->m.quota.limit * QUOTA_UNITS)) {
++	    mailbox_close(&as->m);
++	    r = IMAP_QUOTA_EXCEEDED;
++	}
+     }
++    else if (r == IMAP_QUOTAROOT_NONEXISTENT) r = 0;
+ 
+-    if (as->m.quota.limit >= 0 && quotacheck >= 0 &&
+-	as->m.quota.used + quotacheck > 
+-	    ((unsigned) as->m.quota.limit * QUOTA_UNITS)) {
++    if (r) {
+ 	mailbox_close(&as->m);
+-	return IMAP_QUOTA_EXCEEDED;
++	return r;
+     }
+ 
+     if (userid) {
+@@ -242,11 +243,13 @@
+ /* may return non-zero, indicating that the entire append has failed
+  and the mailbox is probably in an inconsistent state. */
+ int append_commit(struct appendstate *as, 
++		  long quotacheck,
+ 		  unsigned long *uidvalidity, 
+ 		  unsigned long *start,
+ 		  unsigned long *num)
+ {
+     int r = 0;
++    struct txn *tid = NULL;
+     
+     if (as->s == APPEND_DONE) return 0;
+ 
+@@ -302,8 +305,21 @@
+     }
+ 
+     /* Write out quota file */
+-    as->m.quota.used += as->quota_used;
+-    r = mailbox_write_quota(&as->m.quota);
++    r = quota_read(&as->m.quota, &tid, 1);
++    if (!r) {
++	if (as->m.quota.limit >= 0 && quotacheck >= 0 &&
++	    as->m.quota.used + quotacheck > 
++	    ((unsigned) as->m.quota.limit * QUOTA_UNITS)) {
++	    quota_abort(&tid);
++	    append_abort(as);
++	    return IMAP_QUOTA_EXCEEDED;
++	}
++
++	as->m.quota.used += as->quota_used;
++	r = quota_write(&as->m.quota, &tid);
++	if (!r) quota_commit(&tid);
++    }
++    else if (r == IMAP_QUOTAROOT_NONEXISTENT) r = 0;
+     if (r) {
+ 	syslog(LOG_ERR,
+ 	       "LOSTQUOTA: unable to record use of %u bytes in quota file %s",
+@@ -318,7 +334,6 @@
+ 	free(as->seen_msgrange);
+     }
+ 
+-    mailbox_unlock_quota(&as->m.quota);
+     mailbox_unlock_index(&as->m);
+     mailbox_unlock_header(&as->m);
+     mailbox_close(&as->m);
+@@ -356,7 +371,6 @@
+     ftruncate(as->m.cache_fd, as->orig_cache_len);
+ 
+     /* unlock mailbox */
+-    mailbox_unlock_quota(&as->m.quota);
+     mailbox_unlock_index(&as->m);
+     mailbox_unlock_header(&as->m);
+     mailbox_close(&as->m);
+Index: imap/append.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/append.h,v
+retrieving revision 1.24
+diff -u -u -r1.24 append.h
+--- imap/append.h	22 Oct 2003 18:50:07 -0000	1.24
++++ imap/append.h	6 Jan 2004 21:52:32 -0000
+@@ -107,6 +107,7 @@
+ 			long aclcheck, long quotacheck);
+ 
+ extern int append_commit(struct appendstate *mailbox,
++			 long quotacheck,
+ 			 unsigned long *uidvalidity, 
+ 			 unsigned long *startuid, 
+ 			 unsigned long *num);
+Index: imap/ctl_cyrusdb.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/ctl_cyrusdb.c,v
+retrieving revision 1.20
+diff -u -u -r1.20 ctl_cyrusdb.c
+--- imap/ctl_cyrusdb.c	15 Dec 2003 21:02:49 -0000	1.20
++++ imap/ctl_cyrusdb.c	6 Jan 2004 21:52:32 -0000
+@@ -96,6 +96,7 @@
+     int archive;
+ } dblist[] = {
+     { FNAME_MBOXLIST,		&config_mboxlist_db,	1 },
++    { FNAME_QUOTADB,		&config_quota_db,	1 },
+     { FNAME_ANNOTATIONS,	&config_annotation_db,	1 },
+     { FNAME_DELIVERDB,		&config_duplicate_db,	0 },
+     { FNAME_TLSSESSIONS,	&config_tlscache_db,	0 },
+Index: imap/cyr_expire.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/cyr_expire.c,v
+retrieving revision 1.3
+diff -u -u -r1.3 cyr_expire.c
+--- imap/cyr_expire.c	24 Oct 2003 18:24:05 -0000	1.3
++++ imap/cyr_expire.c	6 Jan 2004 21:52:32 -0000
+@@ -238,6 +238,10 @@
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+ 
++    /* open the quota db, we'll need it for expunge */
++    quotadb_init(0);
++    quotadb_open(NULL);
++
+     if (duplicate_init(NULL, 0) != 0) {
+ 	fprintf(stderr, 
+ 		"cyr_expire: unable to init duplicate delivery database\n");
+@@ -265,6 +269,8 @@
+ 
+     free_hash_table(&expire_table, free);
+ 
++    quotadb_close();
++    quotadb_done();
+     mboxlist_close();
+     mboxlist_done();
+     annotatemore_close();
+Index: imap/global.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/global.c,v
+retrieving revision 1.5
+diff -u -u -r1.5 global.c
+--- imap/global.c	29 Dec 2003 20:22:54 -0000	1.5
++++ imap/global.c	6 Jan 2004 21:52:32 -0000
+@@ -82,6 +82,7 @@
+ 
+ int config_implicitrights;        /* "lca" */
+ struct cyrusdb_backend *config_mboxlist_db;
++struct cyrusdb_backend *config_quota_db;
+ struct cyrusdb_backend *config_subscription_db;
+ struct cyrusdb_backend *config_annotation_db;
+ struct cyrusdb_backend *config_seenstate_db;
+@@ -162,6 +163,8 @@
+     /* lookup the database backends */
+     config_mboxlist_db =
+ 	cyrusdb_fromname(config_getstring(IMAPOPT_MBOXLIST_DB));
++    config_quota_db =
++	cyrusdb_fromname(config_getstring(IMAPOPT_QUOTA_DB));
+     config_subscription_db =
+ 	cyrusdb_fromname(config_getstring(IMAPOPT_SUBSCRIPTION_DB));
+     config_annotation_db =
+@@ -193,6 +196,8 @@
+ 			      config_getswitch(IMAPOPT_FULLDIRHASH));
+     libcyrus_config_setstring(CYRUSOPT_PTSCACHE_DB,
+ 			      config_getstring(IMAPOPT_PTSCACHE_DB));
++    libcyrus_config_setswitch(CYRUSOPT_VIRTDOMAINS,
++			      config_getenum(IMAPOPT_VIRTDOMAINS));
+ 
+     /* Not until all configuration parameters are set! */
+     libcyrus_init();
+Index: imap/global.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/global.h,v
+retrieving revision 1.3
+diff -u -u -r1.3 global.h
+--- imap/global.h	15 Dec 2003 20:00:40 -0000	1.3
++++ imap/global.h	6 Jan 2004 21:52:32 -0000
+@@ -144,6 +144,7 @@
+ /* Misc globals */
+ extern int config_implicitrights;
+ extern struct cyrusdb_backend *config_mboxlist_db;
++extern struct cyrusdb_backend *config_quota_db;
+ extern struct cyrusdb_backend *config_subscription_db;
+ extern struct cyrusdb_backend *config_annotation_db;
+ extern struct cyrusdb_backend *config_seenstate_db;
+Index: imap/imapd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/imapd.c,v
+retrieving revision 1.449
+diff -u -u -r1.449 imapd.c
+--- imap/imapd.c	29 Dec 2003 17:07:59 -0000	1.449
++++ imap/imapd.c	6 Jan 2004 21:52:32 -0000
+@@ -84,6 +84,7 @@
+ #include "mbdump.h"
+ #include "mkgmtime.h"
+ #include "mupdate-client.h"
++#include "quota.h"
+ #include "telemetry.h"
+ #include "tls.h"
+ #include "user.h"
+@@ -443,6 +444,10 @@
+     mboxlist_open(NULL);
+     mailbox_initialize();
+ 
++    /* open the quota db, we'll need it for real work */
++    quotadb_init(0);
++    quotadb_open(NULL);
++
+     /* setup for sending IMAP IDLE notifications */
+     idle_enabled();
+ 
+@@ -620,6 +625,9 @@
+     mboxlist_close();
+     mboxlist_done();
+ 
++    quotadb_close();
++    quotadb_done();
++
+     annotatemore_close();
+     annotatemore_done();
+ 
+@@ -2303,7 +2311,7 @@
+     }
+ 
+     if (!r) {
+-	r = append_commit(&mailbox, &uidvalidity, &firstuid, &num);
++	r = append_commit(&mailbox, size, &uidvalidity, &firstuid, &num);
+     } else {
+ 	append_abort(&mailbox);
+     }
+@@ -2407,8 +2415,8 @@
+ 
+     if (imapd_mailbox->myrights & ACL_DELETE) {
+ 	/* Warn if mailbox is close to or over quota */
+-	mailbox_read_quota(&imapd_mailbox->quota);
+-	if (imapd_mailbox->quota.limit > 0) {
++	r = quota_read(&imapd_mailbox->quota, NULL, 0);
++	if (!r && imapd_mailbox->quota.limit > 0) {
+  	    /* Warn if the following possibilities occur:
+  	     * - quotawarnkb not set + quotawarn hit
+ 	     * - quotawarnkb set larger than mailbox + quotawarn hit
+@@ -4394,22 +4402,13 @@
+     char buf[MAX_MAILBOX_PATH+1];
+     char mailboxname[MAX_MAILBOX_NAME+1];
+ 
+-    quota.fd = -1;
+-
+     if (!imapd_userisadmin) r = IMAP_PERMISSION_DENIED;
+     else {
+ 	r = (*imapd_namespace.mboxname_tointernal)(&imapd_namespace, name,
+ 						   imapd_userid, mailboxname);
+ 	if (!r) {
+ 	    quota.root = mailboxname;
+-	    mailbox_hash_quota(buf, sizeof(buf), quota.root);
+-	    quota.fd = open(buf, O_RDWR, 0);
+-	    if (quota.fd == -1) {
+-		r = IMAP_QUOTAROOT_NONEXISTENT;
+-	    }
+-	    else {
+-		r = mailbox_read_quota(&quota);
+-	    }
++	    r = quota_read(&quota, NULL, 0);
+ 	}
+     }
+     
+@@ -4424,10 +4423,6 @@
+ 	prot_printf(imapd_out, ")\r\n");
+     }
+ 
+-    if (quota.fd != -1) {
+-	close(quota.fd);
+-    }
+-
+     if (r) {
+ 	prot_printf(imapd_out, "%s NO %s\r\n", tag, error_message(r));
+ 	return;
+@@ -4480,7 +4475,7 @@
+ 						   imapd_userid, mailboxname);
+ 	    prot_printf(imapd_out, " ");
+ 	    printastring(mailboxname);
+-	    r = mailbox_read_quota(&mailbox.quota);
++	    r = quota_read(&mailbox.quota, NULL, 0);
+ 	    if (!r) {
+ 		prot_printf(imapd_out, "\r\n* QUOTA ");
+ 		printastring(mailboxname);
+@@ -6428,27 +6423,22 @@
+ 	    char buf[MAX_MAILBOX_PATH+1];
+ 	    struct quota quota;
+ 	    
+-	    quota.fd = -1;
+ 	    quota.root = mailboxname;
+-	    mailbox_hash_quota(buf,sizeof(buf),quota.root);
+-	    quota.fd = open(buf, O_RDWR, 0);
+-	    if(quota.fd != -1) {	    
+-		r = mailbox_read_quota(&quota);
+-		close(quota.fd);
++	    r = quota_read(&quota, NULL, 0);
+ 	    
+-		if(!r) {
+-		    /* note use of + to force the setting of a nonexistant
+-		     * quotaroot */
+-		    prot_printf(be->out, "Q01 SETQUOTA {%d+}\r\n" \
+-				         "+%s (STORAGE %d)\r\n",
+-				strlen(name)+1, name, quota.limit);
+-		    r = getresult(be->in, "Q01");
+-		    if(r) syslog(LOG_ERR,
+-				 "Could not move mailbox: %s, " \
+-				 "failed setting initial quota root\r\n",
+-				 mailboxname);
+-		}
++	    if(!r) {
++		/* note use of + to force the setting of a nonexistant
++		 * quotaroot */
++		prot_printf(be->out, "Q01 SETQUOTA {%d+}\r\n" \
++			    "+%s (STORAGE %d)\r\n",
++			    strlen(name)+1, name, quota.limit);
++		r = getresult(be->in, "Q01");
++		if(r) syslog(LOG_ERR,
++			     "Could not move mailbox: %s, " \
++			     "failed setting initial quota root\r\n",
++			     mailboxname);
+ 	    }
++	    else if (r == IMAP_QUOTAROOT_NONEXISTENT) r = 0;
+ 	}
+ 
+ 
+Index: imap/index.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/index.c,v
+retrieving revision 1.201
+diff -u -u -r1.201 index.c
+--- imap/index.c	22 Oct 2003 20:05:12 -0000	1.201
++++ imap/index.c	6 Jan 2004 21:52:32 -0000
+@@ -1177,7 +1177,8 @@
+ 
+     r = append_copy(mailbox, &append_mailbox, copyargs.nummsg,
+ 		    copyargs.copymsg);
+-    if (!r) append_commit(&append_mailbox, &uidvalidity, &startuid, &num);
++    if (!r) append_commit(&append_mailbox, totalsize,
++			  &uidvalidity, &startuid, &num);
+     if (!r) {
+ 	copyuid_size = 1024;
+ 	copyuid = xmalloc(copyuid_size);
+Index: imap/ipurge.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/ipurge.c,v
+retrieving revision 1.21
+diff -u -u -r1.21 ipurge.c
+--- imap/ipurge.c	20 Nov 2003 18:47:46 -0000	1.21
++++ imap/ipurge.c	6 Jan 2004 21:52:32 -0000
+@@ -180,6 +180,10 @@
+   mboxlist_init(0);
+   mboxlist_open(NULL);
+ 
++  /* open the quota db, we'll need it for expunge */
++  quotadb_init(0);
++  quotadb_open(NULL);
++
+   if (optind == argc) { /* do the whole partition */
+     strcpy(buf, "*");
+     (*purge_namespace.mboxlist_findall)(&purge_namespace, buf, 1, 0, 0,
+@@ -195,6 +199,9 @@
+ 					  purge_me, NULL);
+     }
+   }
++  quotadb_close();
++  quotadb_done();
++
+   mboxlist_close();
+   mboxlist_done();
+ 
+Index: imap/lmtpd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/lmtpd.c,v
+retrieving revision 1.125
+diff -u -u -r1.125 lmtpd.c
+--- imap/lmtpd.c	16 Dec 2003 20:36:55 -0000	1.125
++++ imap/lmtpd.c	6 Jan 2004 21:52:33 -0000
+@@ -230,6 +230,10 @@
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+ 
++    /* so we can do quota operations */
++    quotadb_init(0);
++    quotadb_open(NULL);
++
+     /* setup for sending IMAP IDLE notifications */
+     idle_enabled();
+ 
+@@ -1076,7 +1080,7 @@
+ 	    r = append_fromstream(&as, msg, size, now, 
+ 				  (const char **) flag, nflags);
+ 	}
+-	if (!r) append_commit(&as, NULL, &uid, NULL);
++	if (!r) append_commit(&as, quotaoverride ? -1 : 0, NULL, &uid, NULL);
+ 	else append_abort(&as);
+     }
+ 
+@@ -1275,6 +1279,9 @@
+ 
+     mboxlist_close();
+     mboxlist_done();
++
++    quotadb_close();
++    quotadb_done();
+ #ifdef HAVE_SSL
+     tls_shutdown_serverengine();
+ #endif
+Index: imap/mailbox.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.c,v
+retrieving revision 1.150
+diff -u -u -r1.150 mailbox.c
+--- imap/mailbox.c	4 Nov 2003 21:43:22 -0000	1.150
++++ imap/mailbox.c	6 Jan 2004 21:52:33 -0000
+@@ -52,14 +52,6 @@
+ #include <string.h>
+ #include <errno.h>
+ #include <syslog.h>
+-#include <sys/types.h>
+-#include <fcntl.h>
+-#include <netinet/in.h>
+-#include <sys/un.h>
+-#include <sys/socket.h>
+-#include <sys/types.h>
+-#include <sys/stat.h>
+-#include <ctype.h>
+ #include <com_err.h>
+ 
+ #ifdef HAVE_DIRENT_H
+@@ -416,7 +408,6 @@
+     int r;
+ 
+     zeromailbox(*mailbox);
+-    mailbox->quota.fd = -1;
+ 
+     strlcpy(fnamebuf, path, sizeof(fnamebuf));
+     strlcat(fnamebuf, FNAME_HEADER, sizeof(fnamebuf));
+@@ -585,10 +576,6 @@
+ 	map_free(&mailbox->cache_base, &mailbox->cache_len);
+     }
+ 
+-    if (mailbox->quota.fd != -1) {
+-	close(mailbox->quota.fd);
+-    }
+-	
+     free(mailbox->name);
+     free(mailbox->path);
+     free(mailbox->acl);
+@@ -600,7 +587,6 @@
+     }
+ 
+     zeromailbox(*mailbox);
+-    mailbox->quota.fd = -1;
+ }
+ 
+ /*
+@@ -633,15 +619,6 @@
+ 	tab = eol;
+     }
+     if (mailbox->quota.root) {
+-	/* check if this is the same as what's there */
+-	if (strlen(mailbox->quota.root) != (size_t)(tab-p) ||
+-	    strncmp(mailbox->quota.root, p, tab-p) != 0) {
+-	    assert(mailbox->quota.lock_count == 0);
+-	    if (mailbox->quota.fd != -1) {
+-		close(mailbox->quota.fd);
+-	    }
+-	    mailbox->quota.fd = -1;
+-	}
+ 	free(mailbox->quota.root);
+     }
+     if (p < tab) {
+@@ -926,57 +903,6 @@
+ }
+ 
+ /*
+- * Open and read the quota file 'quota'
+- */
+-int
+-mailbox_read_quota(quota)
+-struct quota *quota;
+-{
+-    const char *p, *eol;
+-    char buf[MAX_MAILBOX_PATH+1];
+-    const char *quota_base = 0;
+-    unsigned long quota_len = 0;
+-
+-
+-    if (!quota->root) {
+-	quota->used = 0;
+-	quota->limit = -1;
+-	return 0;
+-    }
+-
+-    if (quota->fd == -1) {
+-	mailbox_hash_quota(buf, sizeof(buf), quota->root);
+-	quota->fd = open(buf, O_RDWR, 0);
+-	if (quota->fd == -1) {
+-	    syslog(LOG_ERR, "IOERROR: opening quota file %s: %m", buf);
+-	    return IMAP_IOERROR;
+-	}
+-    }
+-    
+-    map_refresh(quota->fd, 1, &quota_base, &quota_len,
+-		MAP_UNKNOWN_LEN, buf, 0);
+-
+-    p = quota_base;
+-    eol = memchr(p, '\n', quota_len - (p - quota_base));
+-    if (!eol) {
+-	map_free(&quota_base, &quota_len);
+-	return IMAP_MAILBOX_BADFORMAT;
+-    }
+-    quota->used = atol(p);
+-
+-    p = eol + 1;
+-    eol = memchr(p, '\n', quota_len - (p - quota_base));
+-    if (!eol) {
+-	map_free(&quota_base, &quota_len);
+-	return IMAP_MAILBOX_BADFORMAT;
+-    }
+-    quota->limit = atoi(p);
+-
+-    map_free(&quota_base, &quota_len);
+-    return 0;
+-}
+-
+-/*
+  * Lock the header for 'mailbox'.  Reread header if necessary.
+  */
+ int
+@@ -991,7 +917,6 @@
+     if (mailbox->header_lock_count++) return 0;
+ 
+     assert(mailbox->index_lock_count == 0);
+-    assert(mailbox->quota.lock_count == 0);
+     assert(mailbox->seen_lock_count == 0);
+ 
+     strlcpy(fnamebuf, mailbox->path, sizeof(fnamebuf));
+@@ -1034,7 +959,6 @@
+ 
+     if (mailbox->index_lock_count++) return 0;
+ 
+-    assert(mailbox->quota.lock_count == 0);
+     assert(mailbox->seen_lock_count == 0);
+ 
+     strlcpy(fnamebuf, mailbox->path, sizeof(fnamebuf));
+@@ -1107,50 +1031,6 @@
+ }
+ 
+ /*
+- * Lock the quota file 'quota'.  Reread quota file if necessary.
+- */
+-int
+-mailbox_lock_quota(quota)
+-struct quota *quota;
+-{
+-    char quota_path[MAX_MAILBOX_PATH+1];
+-    struct stat sbuf;
+-    const char *lockfailaction;
+-    int r;
+-
+-    /* assert(mailbox->header_lock_count != 0); */
+-
+-    if (quota->lock_count++) return 0;
+-
+-    /* assert(mailbox->seen_lock_count == 0); */
+-
+-    if (!quota->root) {
+-	quota->used = 0;
+-	quota->limit = -1;
+-	return 0;
+-    }
+-    mailbox_hash_quota(quota_path, sizeof(quota_path), quota->root);
+-    if (quota->fd == -1) {
+-	quota->fd = open(quota_path, O_RDWR, 0);
+-	if (quota->fd == -1) {
+-	    syslog(LOG_ERR, "IOERROR: opening quota file %s: %m",
+-		   quota_path);
+-	    return IMAP_IOERROR;
+-	}
+-    }
+-
+-    r = lock_reopen(quota->fd, quota_path, &sbuf, &lockfailaction);
+-    if (r == -1) {
+-	quota->lock_count--;
+-	syslog(LOG_ERR, "IOERROR: %s quota %s: %m", lockfailaction,
+-	       quota->root);
+-	return IMAP_IOERROR;
+-    }
+-
+-    return mailbox_read_quota(quota);
+-}
+-
+-/*
+  * Release lock on the header for 'mailbox'
+  */
+ void mailbox_unlock_header(struct mailbox *mailbox)
+@@ -1197,22 +1077,6 @@
+ }
+ 
+ /*
+- * Release lock on the quota file 'quota'
+- */
+-void
+-mailbox_unlock_quota(quota)
+-struct quota *quota;
+-{
+-    assert(quota->lock_count != 0);
+-
+-    if (--quota->lock_count == 0 && quota->root) {
+-	if (lock_unlock(quota->fd))
+-	    syslog(LOG_ERR, "IOERROR: unlocking quota for %s: %m", 
+-		quota->root);
+-    }
+-}
+-
+-/*
+  * Write the header file for 'mailbox'
+  */
+ int mailbox_write_header(struct mailbox *mailbox)
+@@ -1453,102 +1317,6 @@
+ }
+ 
+ /*
+- * Write out the quota 'quota'
+- */
+-int mailbox_write_quota(struct quota *quota)
+-{
+-    int r;
+-    int len;
+-    char buf[1024];
+-    char quota_path[MAX_MAILBOX_PATH+1];
+-    char new_quota_path[MAX_MAILBOX_PATH+1];
+-    int newfd;
+-
+-    assert(quota->lock_count != 0);
+-
+-    if (!quota->root) return 0;
+-
+-    mailbox_hash_quota(quota_path, sizeof(quota_path), quota->root);
+-
+-    strlcpy(new_quota_path, quota_path, sizeof(new_quota_path));
+-    strlcat(new_quota_path, ".NEW", sizeof(new_quota_path));
+-
+-    newfd = open(new_quota_path, O_CREAT | O_TRUNC | O_RDWR, 0666);
+-    if (newfd == -1 && errno == ENOENT) {
+-	if (cyrus_mkdir(new_quota_path, 0755) == -1) return IMAP_IOERROR;
+-
+-	newfd = open(new_quota_path, O_CREAT | O_TRUNC | O_RDWR, 0666);
+-    }
+-    if (newfd == -1) {
+-	syslog(LOG_ERR, "IOERROR: creating quota file %s: %m", new_quota_path);
+-	return IMAP_IOERROR;
+-    }
+-
+-    r = lock_blocking(newfd);
+-    if (r) {
+-	syslog(LOG_ERR, "IOERROR: locking quota file %s: %m",
+-	       new_quota_path);
+-	close(newfd);
+-	return IMAP_IOERROR;
+-    }
+-
+-    len = snprintf(buf, sizeof(buf) - 1,
+-		   "%lu\n%d\n", quota->used, quota->limit);
+-    r = write(newfd, buf, len);
+-    
+-    if (r == -1 || fsync(newfd)) {
+-	syslog(LOG_ERR, "IOERROR: writing quota file %s: %m",
+-	       new_quota_path);
+-	close(newfd);
+-	return IMAP_IOERROR;
+-    }
+-
+-    if (rename(new_quota_path, quota_path)) {
+-	syslog(LOG_ERR, "IOERROR: renaming quota file %s: %m",
+-	       quota_path);
+-	close(newfd);
+-	return IMAP_IOERROR;
+-    }
+-
+-    if (quota->fd != -1) {
+-	close(quota->fd);
+-	quota->fd = -1;
+-    }
+-
+-    quota->fd = newfd;
+-
+-    return 0;
+-}
+-
+-/*
+- * Remove the quota root 'quota'
+- */
+-int
+-mailbox_delete_quota(quota)
+-struct quota *quota;
+-{
+-    char quota_path[MAX_MAILBOX_PATH+1];
+-
+-    assert(quota->lock_count != 0);
+-
+-    if (!quota->root) return 0;
+-
+-    mailbox_hash_quota(quota_path, sizeof(quota_path), quota->root);
+-
+-    unlink(quota_path);
+-
+-    if (quota->fd != -1) {
+-	close(quota->fd);
+-	quota->fd = -1;
+-    }
+-
+-    free(quota->root);
+-    quota->root = 0;
+-
+-    return 0;
+-}
+-
+-/*
+  * Lock the index file for 'mailbox'.
+  * DON'T Reread index file header if necessary.
+  */
+@@ -1560,7 +1328,6 @@
+ 
+     if (mailbox->index_lock_count++) return 0;
+ 
+-    assert(mailbox->quota.lock_count == 0);
+     assert(mailbox->seen_lock_count == 0);
+ 
+     strlcpy(fnamebuf, mailbox->path, sizeof(fnamebuf));
+@@ -1850,6 +1617,7 @@
+     unsigned msgno;
+     struct stat sbuf;
+     char *fnametail;
++    struct txn *tid = NULL;
+ 
+     /* Offset into the new cache file for use when updating the index record */
+     size_t new_cache_total_size = sizeof(bit32);
+@@ -2079,21 +1847,23 @@
+     }
+ 
+     /* Record quota release */
+-    r = mailbox_lock_quota(&mailbox->quota);
+-    if (r) goto fail;
+-    if (mailbox->quota.used >= quotadeleted) {
+-	mailbox->quota.used -= quotadeleted;
+-    }
+-    else {
+-	mailbox->quota.used = 0;
+-    }
+-    r = mailbox_write_quota(&mailbox->quota);
+-    if (r) {
+-	syslog(LOG_ERR,
+-	       "LOSTQUOTA: unable to record free of %u bytes in quota %s",
+-	       quotadeleted, mailbox->quota.root);
++    r = quota_read(&mailbox->quota, &tid, 1);
++    if (!r) {
++	if (mailbox->quota.used >= quotadeleted) {
++	    mailbox->quota.used -= quotadeleted;
++	}
++	else {
++	    mailbox->quota.used = 0;
++	}
++	r = quota_write(&mailbox->quota, &tid);
++	if (!r) quota_commit(&tid);
++	else {
++	    syslog(LOG_ERR,
++		   "LOSTQUOTA: unable to record free of %u bytes in quota %s",
++		   quotadeleted, mailbox->quota.root);
++	}
+     }
+-    mailbox_unlock_quota(&mailbox->quota);
++    else if (r != IMAP_QUOTAROOT_NONEXISTENT) goto fail;
+ 
+     strlcpy(fnamebuf, mailbox->path, sizeof(fnamebuf));
+ 
+@@ -2168,40 +1938,6 @@
+     return IMAP_IOERROR;
+ }
+ 
+-/* find the mailbox 'name' 's quotaroot, and return it in 'start'.
+-   'start' must be at least MAX_MAILBOX_PATH. 
+-
+-   returns true if a quotaroot is found, 0 otherwise. 
+-*/
+-int mailbox_findquota(char *ret, size_t retlen, const char *name)
+-{
+-    char quota_path[MAX_MAILBOX_PATH+1];
+-    char *tail, *p, *mbox;
+-    struct stat sbuf;
+-
+-    strlcpy(ret, name, retlen);
+-
+-    /* find the start of the unqualified mailbox name */
+-    mbox = (config_virtdomains && (p = strchr(ret, '!'))) ? p+1 : ret;
+-    tail = mbox + strlen(mbox);
+-
+-    mailbox_hash_quota(quota_path, sizeof(quota_path), ret);
+-    while (stat(quota_path, &sbuf) == -1) {
+-	tail = strrchr(mbox, '.');
+-	if (!tail) break;
+-	*tail = '\0';
+-	mailbox_hash_quota(quota_path, sizeof(quota_path), ret);
+-    }
+-    if (tail) return 1;
+-    if (mbox == ret) return 0;
+-
+-    /* check for a domain quota */
+-    *mbox = '\0';
+-    mailbox_hash_quota(quota_path, sizeof(quota_path), ret);
+-    return (stat(quota_path, &sbuf) != -1);
+-}
+-
+-
+ int mailbox_create(const char *name,
+ 		   char *path,
+ 		   const char *acl,
+@@ -2232,9 +1968,8 @@
+     }
+ 
+     zeromailbox(mailbox);
+-    mailbox.quota.fd = -1;
+ 
+-    hasquota = mailbox_findquota(quota_root, sizeof(quota_root), name);
++    hasquota = quota_findroot(quota_root, sizeof(quota_root), name);
+ 
+     /* Set up buffer */
+     strlcpy(fnamebuf, path, sizeof(fnamebuf));
+@@ -2370,16 +2105,19 @@
+     struct dirent *f;
+     char buf[MAX_MAILBOX_PATH+1];
+     char *tail;
++    struct txn *tid = NULL;
+     
+     /* Ensure that we are locked */
+     if(!mailbox->header_lock_count) return IMAP_INTERNAL;
+ 
+-    rquota = mailbox_lock_quota(&mailbox->quota);
++    rquota = quota_read(&mailbox->quota, &tid, 1);
+ 
+     seen_delete_mailbox(mailbox);
+ 
+     if (delete_quota_root && !rquota) {
+-	mailbox_delete_quota(&mailbox->quota);
++	quota_delete(&mailbox->quota, &tid);
++	free(mailbox->quota.root);
++	mailbox->quota.root = NULL;
+     } else if (!rquota) {
+ 	/* Free any quota being used by this mailbox */
+ 	if (mailbox->quota.used >= mailbox->quota_mailbox_used) {
+@@ -2388,13 +2126,14 @@
+ 	else {
+ 	    mailbox->quota.used = 0;
+ 	}
+-	r = mailbox_write_quota(&mailbox->quota);
++	r = quota_write(&mailbox->quota, &tid);
+ 	if (r) {
+ 	    syslog(LOG_ERR,
+ 		   "LOSTQUOTA: unable to record free of %lu bytes in quota %s",
+ 		   mailbox->quota_mailbox_used, mailbox->quota.root);
+ 	}
+-	mailbox_unlock_quota(&mailbox->quota);
++	else
++	    quota_commit(&tid);
+     }
+ 
+     /* remove all files in directory */
+@@ -2469,6 +2208,7 @@
+     char oldfname[MAX_MAILBOX_PATH+1], newfname[MAX_MAILBOX_PATH+1];
+     size_t oldfname_len, newfname_len, fn_len;
+     char *oldfnametail, *newfnametail;
++    struct txn *tid = NULL;
+ 
+     assert(oldmailbox->header_lock_count > 0
+ 	   && oldmailbox->index_lock_count > 0);
+@@ -2502,7 +2242,7 @@
+ 
+     /* Check quota if necessary */
+     if (newmailbox->quota.root) {
+-	r = mailbox_lock_quota(&(newmailbox->quota));
++	r = quota_read(&(newmailbox->quota), &tid, 1);
+ 	if (!oldmailbox->quota.root ||
+ 	    strcmp(oldmailbox->quota.root, newmailbox->quota.root) != 0) {
+ 	    if (!r && newmailbox->quota.limit >= 0 &&
+@@ -2511,7 +2251,7 @@
+ 		r = IMAP_QUOTA_EXCEEDED;
+ 	    }
+ 	}
+-	if (r) {
++	if (r && r != IMAP_QUOTAROOT_NONEXISTENT) {
+ 	    mailbox_close(newmailbox);
+ 	    return r;
+ 	}
+@@ -2603,8 +2343,8 @@
+     /* Record new quota usage */
+     if (!r && newmailbox->quota.root) {
+ 	newmailbox->quota.used += oldmailbox->quota_mailbox_used;
+-	r = mailbox_write_quota(&(newmailbox->quota));
+-	mailbox_unlock_quota(&(newmailbox->quota));
++	r = quota_write(&(newmailbox->quota), &tid);
++	if (!r) quota_commit(&tid);
+     }
+     if (r) {
+ 	/* failure and back out */
+@@ -2658,6 +2398,7 @@
+     char oldfname[MAX_MAILBOX_PATH+1], newfname[MAX_MAILBOX_PATH+1];
+     size_t oldfname_len, newfname_len, fn_len;
+     char *oldfnametail, *newfnametail;
++    struct txn *tid = NULL;
+ 
+     /* Open old mailbox and lock */
+     mailbox_open_header_path(oldname, oldpath, oldacl, 0, &oldmailbox, 0);
+@@ -2715,7 +2456,7 @@
+ 
+     /* Check quota if necessary */
+     if (newmailbox.quota.root) {
+-	r = mailbox_lock_quota(&newmailbox.quota);
++	r = quota_read(&newmailbox.quota, &tid, 1);
+ 	if (!oldmailbox.quota.root ||
+ 	    strcmp(oldmailbox.quota.root, newmailbox.quota.root) != 0) {
+ 	    if (!r && newmailbox.quota.limit >= 0 &&
+@@ -2724,7 +2465,7 @@
+ 		r = IMAP_QUOTA_EXCEEDED;
+ 	    }
+ 	}
+-	if (r) {
++	if (r && r != IMAP_QUOTAROOT_NONEXISTENT) {
+ 	    mailbox_close(&newmailbox);
+ 	    mailbox_close(&oldmailbox);
+ 	    return r;
+@@ -2857,18 +2598,20 @@
+     /* Record new quota usage */
+     if (!r && newmailbox.quota.root) {
+ 	newmailbox.quota.used += oldmailbox.quota_mailbox_used;
+-	r = mailbox_write_quota(&newmailbox.quota);
+-	mailbox_unlock_quota(&newmailbox.quota);
++	r = quota_write(&newmailbox.quota, &tid);
++	if (!r) quota_commit(&tid);
++	tid = NULL;
+     }
+     if (r) goto fail;
+ 
+     if (r && newmailbox.quota.root) {
+-	r2 = mailbox_lock_quota(&newmailbox.quota);
++	r2 = quota_read(&newmailbox.quota, &tid, 1);
+ 	newmailbox.quota.used += newmailbox.quota_mailbox_used;
+ 	if (!r2) {
+-	    r2 = mailbox_write_quota(&newmailbox.quota);
+-	    mailbox_unlock_quota(&newmailbox.quota);
++	    r2 = quota_write(&newmailbox.quota, &tid);
++	    if (!r2) quota_commit(&tid);
+ 	}
++	else if (r2 == IMAP_QUOTAROOT_NONEXISTENT) r2 = 0;
+ 	if (r2) {
+ 	    syslog(LOG_ERR,
+ 	      "LOSTQUOTA: unable to record use of %lu bytes in quota %s",
+@@ -3003,52 +2746,5 @@
+     /* change all '.'s to '/' */
+     for (p = buf; *p; p++) {
+ 	if (*p == '.') *p = '/';
+-    }
+-}
+-
+-/* simple hash so it's easy to find these things in the filesystem;
+-   our human time is worth more than efficiency */
+-void mailbox_hash_quota(char *buf, size_t size, const char *qr) {
+-    const char *idx;
+-    char c, *p;
+-    unsigned len;
+-
+-    if ((len = snprintf(buf, size, "%s", config_dir)) >= size) {
+-        fatal("insufficient buffer size in mailbox_hash_quota", EC_TEMPFAIL);
+-    }
+-    buf += len;
+-    size -= len;
+-
+-    if (config_virtdomains && (p = strchr(qr, '!'))) {
+-	*p = '\0';  /* split domain!qr */
+-	c = (char) dir_hash_c(qr);
+-	if ((len = snprintf(buf, size, "%s%c/%s", FNAME_DOMAINDIR, c, qr)) >= size) {
+-	    fatal("insufficient buffer size in mailbox_hash_quota", EC_TEMPFAIL);
+-	}
+-	*p++ = '!';  /* reassemble domain!qr */
+-	qr = p;
+-	buf += len;
+-	size -= len;
+-
+-	if (!*qr) {
+-	    /* quota for entire domain */
+-	    if (snprintf(buf, size, "%sroot", FNAME_QUOTADIR) >= size) {
+-		fatal("insufficient buffer size in mailbox_hash_quota",
+-		      EC_TEMPFAIL);
+-	    }
+-	    return;
+-	}
+-    }
+-
+-    idx = strchr(qr, '.'); /* skip past user. */
+-    if (idx == NULL) {
+-	idx = qr;
+-    } else {
+-	idx++;
+-    }
+-    c = (char) dir_hash_c(idx);
+-
+-    if (snprintf(buf, size, "%s%c/%s", FNAME_QUOTADIR, c, qr) >= size) {
+-	fatal("insufficient buffer size in mailbox_hash_quota", EC_TEMPFAIL);
+     }
+ }
+Index: imap/mailbox.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mailbox.h,v
+retrieving revision 1.78
+diff -u -u -r1.78 mailbox.h
+--- imap/mailbox.h	27 Oct 2003 21:53:51 -0000	1.78
++++ imap/mailbox.h	6 Jan 2004 21:52:33 -0000
+@@ -47,6 +47,7 @@
+ #include <limits.h>
+ 
+ #include "auth.h"
++#include "quota.h"
+ 
+ #define BIT32_MAX 4294967295U
+ 
+@@ -79,23 +80,9 @@
+ #define FNAME_INDEX "/cyrus.index"
+ #define FNAME_CACHE "/cyrus.cache"
+ #define FNAME_SQUAT_INDEX "/cyrus.squat"
+-#define FNAME_QUOTADIR "/quota/"
+ 
+ #define MAILBOX_FNAME_LEN 256
+ 
+-#define QUOTA_UNITS (1024)
+-
+-struct quota {
+-    int fd;
+-
+-    int lock_count;
+-    char *root;
+-
+-    /* Information in quota file */
+-    unsigned long used;
+-    int limit;			/* in QUOTA_UNITS */
+-};
+-
+ struct mailbox {
+     int header_fd;
+     int index_fd;
+@@ -286,17 +273,13 @@
+ extern int mailbox_read_index_record(struct mailbox *mailbox,
+ 				     unsigned msgno,
+ 				     struct index_record *record);
+-extern int mailbox_read_quota(struct quota *quota);
+-extern void mailbox_hash_quota(char *buf, size_t size, const char *qr);
+ extern int mailbox_lock_header(struct mailbox *mailbox);
+ extern int mailbox_lock_index(struct mailbox *mailbox);
+ extern int mailbox_lock_pop(struct mailbox *mailbox);
+-extern int mailbox_lock_quota(struct quota *quota);
+ 
+ extern void mailbox_unlock_header(struct mailbox *mailbox);
+ extern void mailbox_unlock_index(struct mailbox *mailbox);
+ extern void mailbox_unlock_pop(struct mailbox *mailbox);
+-extern void mailbox_unlock_quota(struct quota *quota);
+ 
+ extern int mailbox_write_header(struct mailbox *mailbox);
+ extern int mailbox_write_index_header(struct mailbox *mailbox);
+@@ -307,9 +290,6 @@
+ extern int mailbox_append_index(struct mailbox *mailbox,
+ 				struct index_record *record,
+ 				unsigned start, unsigned num, int sync);
+-extern int mailbox_write_quota(struct quota *quota);
+-
+-extern int mailbox_delete_quota(struct quota *quota);
+ 
+ extern int mailbox_expunge(struct mailbox *mailbox,
+ 			   int iscurrentdir,
+@@ -317,7 +297,6 @@
+ 			   void *deciderock);
+ extern int mailbox_expungenews(struct mailbox *mailbox);
+ 
+-extern int mailbox_findquota(char *ret, size_t retlen, const char *name);
+ extern void mailbox_make_uniqueid(char *name, unsigned long uidvalidity,
+ 				  char *uniqueid, size_t outlen);
+ 
+Index: imap/mbdump.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mbdump.c,v
+retrieving revision 1.27
+diff -u -u -r1.27 mbdump.c
+--- imap/mbdump.c	24 Oct 2003 17:31:49 -0000	1.27
++++ imap/mbdump.c	6 Jan 2004 21:52:33 -0000
+@@ -71,6 +71,7 @@
+ #include "mbdump.h"
+ #include "mboxlist.h"
+ #include "prot.h"
++#include "quota.h"
+ #include "seen.h"
+ #include "xmalloc.h"
+ #include "util.h"
+@@ -216,21 +217,11 @@
+     /* The first member is either a number (if it is a quota root), or NIL
+      * (if it isn't) */
+     {
+-	char buf[MAX_MAILBOX_PATH+1];
+ 	struct quota quota;
+ 
+-	quota.fd = -1;
+ 	quota.root = (char *)mbname; /* xxx */
+-	mailbox_hash_quota(buf,sizeof(buf),quota.root);
+-	quota.fd = open(buf, O_RDWR, 0);
+-	if(quota.fd == -1) {
+-	    prot_printf(pout, "NIL ");
+-	    goto dump_files;
+-	}
+-
+-	r = mailbox_read_quota(&quota);
+-	close(quota.fd);
+ 
++	r = quota_read(&quota, NULL, 0);
+ 	if(r) {
+ 	    prot_printf(pout, "NIL ");
+ 	    goto dump_files; 
+@@ -792,17 +783,17 @@
+     if(!r && quotaused) {
+ 	struct quota quota;
+ 	char quota_root[MAX_MAILBOX_PATH+1];
++	struct txn *tid = NULL;
+ 	
+-	if(mailbox_findquota(quota_root, sizeof(quota_root), mbname)) {
++	if (quota_findroot(quota_root, sizeof(quota_root), mbname)) {
+ 	    /* update the quota file */
+ 	    memset(&quota, 0, sizeof(quota));
+ 	    quota.root = quota_root;
+-	    quota.fd = -1;
+-	    r = mailbox_lock_quota(&quota);
++	    r = quota_read(&quota, &tid, 1);
+ 	    if(!r) {
+ 		quota.used += quotaused;
+-		r = mailbox_write_quota(&quota);
+-		close(quota.fd);
++		r = quota_write(&quota, &tid);
++		if (!r) quota_commit(&tid);
+ 	    } else {
+ 		syslog(LOG_ERR, "could not lock quota file for %s (%s)",
+ 		       quota_root, error_message(r));
+Index: imap/mboxlist.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/mboxlist.c,v
+retrieving revision 1.227
+diff -u -u -r1.227 mboxlist.c
+--- imap/mboxlist.c	15 Dec 2003 20:00:40 -0000	1.227
++++ imap/mboxlist.c	6 Jan 2004 21:52:33 -0000
+@@ -80,6 +80,7 @@
+ #include "mupdate-client.h"
+ 
+ #include "mboxlist.h"
++#include "quota.h"
+ 
+ #define DB config_mboxlist_db
+ #define SUBDB config_subscription_db
+@@ -98,6 +99,11 @@
+ static int mboxlist_changequota(const char *name, int matchlen, int maycreate,
+ 				void *rock);
+ 
++struct change_rock {
++    struct quota *quota;
++    struct txn **tid;
++};
++
+ #define FNAME_SUBSSUFFIX ".sub"
+ 
+ /*
+@@ -2249,6 +2255,8 @@
+     struct quota quota;
+     int have_mailbox = 1;
+     int r, t;
++    struct txn *tid = NULL;
++    struct change_rock crock;
+ 
+     if (!root[0] || root[0] == '.' || strchr(root, '/')
+ 	|| strchr(root, '*') || strchr(root, '%') || strchr(root, '?')) {
+@@ -2258,21 +2266,21 @@
+     memset(&quota, 0, sizeof(struct quota));
+ 
+     quota.root = (char *) root;
+-    mailbox_hash_quota(quota_path, sizeof(quota_path), root);
++    r = quota_read(&quota, &tid, 1);
+ 
+-    if ((quota.fd = open(quota_path, O_RDWR, 0)) != -1) {
+-	/* Just lock and change it */
+-	r = mailbox_lock_quota(&quota);
++    if (!r) {
++	/* Just change it */
+ 
+ 	quota.limit = newquota;
+ 
+-	if (!r) r = mailbox_write_quota(&quota);
+-	if (quota.fd != -1) {
+-	    close(quota.fd);
+-	}
++	r = quota_write(&quota, &tid);
++	if (!r) quota_commit(&tid);
++
+ 	return r;
+     }
+ 
++    if (r != IMAP_QUOTAROOT_NONEXISTENT) return r;
++
+     /*
+      * Have to create a new quota root
+      */
+@@ -2304,25 +2312,21 @@
+     }
+ 
+     /* perhaps create .NEW, lock, check if it got recreated, move in place */
+-    quota.lock_count = 1;
+     quota.used = 0;
+     quota.limit = newquota;
+-    r = mailbox_write_quota(&quota);
+-
+-    if (r) {
+-	return r;
+-    }
++    r = quota_write(&quota, &tid);
++    if (r) return r;
+ 
++    crock.quota = &quota;
++    crock.tid = &tid;
+     /* top level mailbox */
+     if(have_mailbox)
+-	mboxlist_changequota(quota.root, 0, 0, &quota);
++	mboxlist_changequota(quota.root, 0, 0, &crock);
+     /* submailboxes - we're using internal names here */
+-    mboxlist_findall(NULL, pattern, 1, 0, 0, mboxlist_changequota, &quota);
++    mboxlist_findall(NULL, pattern, 1, 0, 0, mboxlist_changequota, &crock);
+     
+-    r = mailbox_write_quota(&quota);
+-    if (quota.fd != -1) {
+-	close(quota.fd);
+-    }
++    r = quota_write(&quota, &tid);
++    if (!r) quota_commit(&tid);
+ 
+     return r;
+ }
+@@ -2332,9 +2336,8 @@
+  */
+ int mboxlist_unsetquota(const char *root)
+ {
+-    char quota_path[MAX_MAILBOX_PATH+1];
+     char pattern[MAX_MAILBOX_PATH+1];
+-    int fd;
++    struct quota quota;
+     int r=0;
+ 
+     if (!root[0] || root[0] == '.' || strchr(root, '/')
+@@ -2342,14 +2345,13 @@
+ 	return IMAP_MAILBOX_BADNAME;
+     }
+     
+-    mailbox_hash_quota(quota_path, sizeof(quota_path), root);
+-
+-    if ((fd = open(quota_path, O_RDWR, 0)) == -1) {
++    quota.root = (char *) root;
++    r = quota_read(&quota, NULL, 0);
++    if (r == IMAP_QUOTAROOT_NONEXISTENT) {
+ 	/* already unset */
+ 	return 0;
+     }
+-    
+-    close(fd);
++    else if (r) return r;
+ 
+     /*
+      * Have to remove it from all affected mailboxes
+@@ -2367,10 +2369,7 @@
+     /* submailboxes - we're using internal names here */
+     mboxlist_findall(NULL, pattern, 1, 0, 0, mboxlist_rmquota, (void *)root);
+ 
+-    if(unlink(quota_path) == -1) {
+-	syslog(LOG_ERR, "could not unlink %s (%m)", quota_path);
+-	r = IMAP_SYS_ERROR;
+-    }
++    r = quota_delete(&quota, NULL);
+ 
+     return r;
+ }
+@@ -2462,7 +2461,9 @@
+ {
+     int r;
+     struct mailbox mailbox;
+-    struct quota *mboxlist_newquota = (struct quota *) rock;
++    struct change_rock *crock = (struct change_rock *) rock;
++    struct quota *mboxlist_newquota = crock->quota;
++    struct txn **tid = crock->tid;
+ 
+     assert(rock != NULL);
+ 
+@@ -2485,7 +2486,7 @@
+ 	    return 0;
+ 	}
+ 
+-	r = mailbox_lock_quota(&mailbox.quota);
++	r = quota_read(&mailbox.quota, tid, 1);
+ 	if (r) goto error;
+ 	if (mailbox.quota.used >= mailbox.quota_mailbox_used) {
+ 	    mailbox.quota.used -= mailbox.quota_mailbox_used;
+@@ -2493,13 +2494,12 @@
+ 	else {
+ 	    mailbox.quota.used = 0;
+ 	}
+-	r = mailbox_write_quota(&mailbox.quota);
++	r = quota_write(&mailbox.quota, tid);
+ 	if (r) {
+ 	    syslog(LOG_ERR,
+ 		   "LOSTQUOTA: unable to record free of %lu bytes in quota %s",
+ 		   mailbox.quota_mailbox_used, mailbox.quota.root);
+ 	}
+-	mailbox_unlock_quota(&mailbox.quota);
+ 	free(mailbox.quota.root);
+     }
+ 
+Index: imap/nntpd.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/nntpd.c,v
+retrieving revision 1.9
+diff -u -u -r1.9 nntpd.c
+--- imap/nntpd.c	5 Jan 2004 19:56:37 -0000	1.9
++++ imap/nntpd.c	6 Jan 2004 21:52:34 -0000
+@@ -574,6 +574,10 @@
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+ 
++    /* open the quota db, we'll need it for expunge */
++    quotadb_init(0);
++    quotadb_open(NULL);
++
+     while ((opt = getopt(argc, argv, "srf")) != EOF) {
+ 	switch(opt) {
+ 	case 's': /* nntps (do starttls right away) */
+@@ -758,6 +762,9 @@
+     mboxlist_close();
+     mboxlist_done();
+ 
++    quotadb_close();
++    quotadb_done();
++
+     annotatemore_close();
+     annotatemore_done();
+ 
+@@ -3109,12 +3116,13 @@
+ 		else
+ 		    r = append_fromstream(&as, msg->data, msg->size, now,
+ 					  (const char **) NULL, 0);
+-		if (!r) append_commit(&as, NULL, &uid, NULL);
++		if (!r) append_commit(&as, 0, NULL, &uid, NULL);
+ 		else append_abort(&as);
+ 	    }
+ 
+ 	    if (!r && msg->id)
+-		duplicate_mark(msg->id, strlen(msg->id), rcpt, strlen(rcpt), now, uid);
++		duplicate_mark(msg->id, strlen(msg->id), rcpt, strlen(rcpt),
++			       now, uid);
+ 
+ 	    if (r) return r;
+ 
+Index: imap/pop3d.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/pop3d.c,v
+retrieving revision 1.147
+diff -u -u -r1.147 pop3d.c
+--- imap/pop3d.c	24 Oct 2003 18:24:07 -0000	1.147
++++ imap/pop3d.c	6 Jan 2004 21:52:34 -0000
+@@ -294,6 +294,10 @@
+     mboxlist_init(0);
+     mboxlist_open(NULL);
+ 
++    /* open the quota db, we'll need it for expunge */
++    quotadb_init(0);
++    quotadb_open(NULL);
++
+     /* setup for sending IMAP IDLE notifications */
+     idle_enabled();
+ 
+@@ -458,6 +462,9 @@
+ 
+     mboxlist_close();
+     mboxlist_done();
++
++    quotadb_close();
++    quotadb_done();
+ 
+     if (popd_in) {
+ 	prot_NONBLOCK(popd_in);
+Index: imap/quota.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/quota.c,v
+retrieving revision 1.48
+diff -u -u -r1.48 quota.c
+--- imap/quota.c	22 Oct 2003 18:50:08 -0000	1.48
++++ imap/quota.c	6 Jan 2004 21:52:34 -0000
+@@ -77,6 +77,7 @@
+ #endif
+ 
+ #include "assert.h"
++#include "cyrusdb.h"
+ #include "global.h"
+ #include "exitcodes.h"
+ #include "imap_err.h"
+@@ -84,6 +85,7 @@
+ #include "xmalloc.h"
+ #include "mboxlist.h"
+ #include "mboxname.h"
++#include "quota.h"
+ #include "convert_code.h"
+ #include "util.h"
+ 
+@@ -103,11 +105,16 @@
+ int fixquota_mailbox(char *name,
+ 		     int matchlen,
+ 		     int maycreate,
+-		     void* rock);
++		     void *rock);
+ int fixquota(char *domain, int ispartial);
+ int fixquota_fixroot(struct mailbox *mailbox,
+ 		     char *root);
+-int fixquota_finish(int thisquota);
++int fixquota_finish(int thisquota, struct txn **tid);
++
++struct fix_rock {
++    char *domain;
++    struct txn **tid;
++};
+ 
+ struct quotaentry {
+     struct quota quota;
+@@ -118,7 +125,6 @@
+ 
+ #define QUOTAGROW 300
+ 
+-struct quotaentry zeroquotaentry;
+ struct quotaentry *quota;
+ int quota_num = 0, quota_alloc = 0;
+ 
+@@ -162,7 +168,10 @@
+ 	fatal(error_message(r), EC_CONFIG);
+     }
+ 
+-    r = buildquotalist(domain, argv+optind, argc-optind);
++    quotadb_init(0);
++    quotadb_open(NULL);
++
++    if (!r) r = buildquotalist(domain, argv+optind, argc-optind);
+ 
+     if (!r && fflag) {
+ 	mboxlist_init(0);
+@@ -170,6 +179,9 @@
+ 	mboxlist_done();
+     }
+ 
++    quotadb_close();
++    quotadb_done();
++
+     if (!r) reportquota();
+ 
+     if (r) {
+@@ -188,51 +200,59 @@
+     exit(EC_USAGE);
+ }    
+ 
+-/*
+- * Comparison function for sorting quota roots
+- */
+-int compare_quota(const void *a, const void *b)
++struct find_rock {
++    char **roots;
++    int nroots;
++};
++
++static int find_p(void *rockp,
++		  const char *key, int keylen,
++		  const char *data, int datalen)
+ {
+-    return strcmp(((struct quotaentry *)a)->quota.root,
+-		      ((struct quotaentry *)b)->quota.root);
++    struct find_rock *frock = (struct find_rock *) rockp;
++    int i;
++
++    /* If restricting our list, see if this quota root matches */
++    if (frock->nroots) {
++	for (i = 0; i < frock->nroots; i++) {
++	    if ((!strncmp(key, frock->roots[i], keylen) &&
++		 keylen == strlen(frock->roots[i])) ||
++		(!strncmp(key, frock->roots[i], strlen(frock->roots[i])) &&
++		 key[strlen(frock->roots[i])] == '.')) break;
++	}
++	if (i == frock->nroots) return 0;
++    }
++
++    return 1;
+ }
+ 
+ /*
+  * Add a quota root to the list in 'quota'
+  */
+-void addquotaroot(char *domain, char *qr)
++static int find_cb(void *rockp,
++		   const char *key, int keylen,
++		   const char *data, int datalen)
+ {
+     int r;
++    unsigned long used;
++    int limit;
++    char *p;
++
++    if (!data) return 0;
+ 
+     if (quota_num == quota_alloc) {
+ 	quota_alloc += QUOTAGROW;
+ 	quota = (struct quotaentry *)
+ 	  xrealloc((char *)quota, quota_alloc * sizeof(struct quotaentry));
+     }
+-    quota[quota_num] = zeroquotaentry;
+-    quota[quota_num].quota.fd = -1;
+-    if (domain) {
+-  	quota[quota_num].quota.root =
+-	  xmalloc(strlen(qr) + strlen(domain) + 2);
+-	sprintf(quota[quota_num].quota.root, "%s!%s",
+-		domain, qr);
+-    }
+-    else
+-  	quota[quota_num].quota.root = xstrdup(qr);
+-  
+-    r = mailbox_read_quota(&quota[quota_num].quota);
+-    if (quota[quota_num].quota.fd != -1) {
+-  	close(quota[quota_num].quota.fd);
+-	quota[quota_num].quota.fd = -1;
+-    }
+-    if (r) {
+-  	com_err(qr, r,
+-		(r == EC_IOERR) ? error_message(errno) : NULL);
+-	quota[quota_num].quota.used = 0;
+-	quota[quota_num].quota.limit = -1;
+-    }
++    memset(&quota[quota_num], 0, sizeof(struct quotaentry));
++    quota[quota_num].quota.root = xstrndup(key, keylen);
++    sscanf(data, "%lu %d",
++	   &quota[quota_num].quota.used, &quota[quota_num].quota.limit);
+   
+     quota_num++;
++
++    return 0;
+ }
+ 
+ /*
+@@ -240,11 +260,9 @@
+  */
+ int buildquotalist(char *domain, char **roots, int nroots)
+ {
+-    char quota_path[MAX_MAILBOX_PATH+1];
+     int i;
+-    DIR *dirp;
+-    DIR *topp;
+-    struct dirent *dirent;
++    char buf[MAX_MAILBOX_NAME+1];
++    struct find_rock frock = { roots, nroots };
+ 
+     /* Translate separator in mailboxnames.
+      *
+@@ -257,60 +275,13 @@
+ 	mboxname_hiersep_tointernal(&quota_namespace, roots[i], 0);
+     }
+ 
++    buf[0] = '\0';
+     if (domain) {
+-	snprintf(quota_path, sizeof(quota_path),
+-		 "%s%s%c/%s%s", config_dir, FNAME_DOMAINDIR,
+-		 dir_hash_c(domain), domain, FNAME_QUOTADIR);
+-    } else {
+-	snprintf(quota_path, sizeof(quota_path),
+-		 "%s%s", config_dir, FNAME_QUOTADIR);
+-    }
+-    if (chdir(quota_path)) {
+-	/* No quota directory in this domain */
+- 	return 0;
+-    }
+-    
+-    topp = opendir(".");
+-    if (!topp) {
+-	return IMAP_IOERROR;
+-    }
+-    while ((dirent = readdir(topp))!=NULL) {
+-	if (dirent->d_name[0] == '.') continue;
+-
+-	if (domain && !strcmp(dirent->d_name, "root")) {
+-	    /* Quota for entire domain */
+-	    addquotaroot(domain, "");
+-	    continue;
+-	}
+-	
+-	dirp = opendir(dirent->d_name);
+-	if (!dirp) continue;
+-
+-	while ((dirent = readdir(dirp))!=NULL) {
+-	    if (dirent->d_name[0] == '.') continue;
+-
+-	    /* If restricting our list, see if this quota file matches */
+-	    if (nroots) {
+-		for (i = 0; i < nroots; i++) {
+-		    if (!strcmp(dirent->d_name, roots[i]) ||
+-			(!strncmp(dirent->d_name, roots[i], strlen(roots[i])) &&
+-			 dirent->d_name[strlen(roots[i])] == '.')) break;
++	snprintf(buf, sizeof(buf), "%s!", domain);
+ 		}
+-		if (i == nroots) continue;
+-	    }
+ 	    
+-	    /* Ignore .NEW files */
+-	    i = strlen(dirent->d_name);
+-	    if (i > 4 && !strcmp(dirent->d_name+i-4, ".NEW")) continue;
+-	    
+-	    addquotaroot(domain, dirent->d_name);
+-	}
+-	
+-	/* close this subdirectory */
+-	closedir(dirp);
+-    }
+-    closedir(topp);
+-    qsort((char *)quota, quota_num, sizeof(*quota), compare_quota);
++    config_quota_db->foreach(qdb, buf, strlen(buf),
++			     &find_p, &find_cb, &frock, NULL);
+ 
+     return 0;
+ }
+@@ -326,7 +297,9 @@
+     int r;
+     struct mailbox mailbox;
+     int i, len, thisquota, thisquotalen;
+-    char *p, *domain = (char *) rock;
++    struct fix_rock *frock = (struct fix_rock *) rock;
++    char *p, *domain = frock->domain;
++    struct txn **tid = frock->tid;
+ 
+     /* make sure the domains match */
+     if ((p = strchr(name, '!')) != NULL) {
+@@ -340,7 +313,7 @@
+     while (firstquota < quota_num &&
+ 	   strncmp(name, quota[firstquota].quota.root,
+ 		       strlen(quota[firstquota].quota.root)) > 0) {
+-	r = fixquota_finish(firstquota++);
++	r = fixquota_finish(firstquota++, tid);
+ 	if (r) return r;
+     }
+ 
+@@ -386,14 +359,6 @@
+ 	}
+     }
+     
+-    if (quota[thisquota].quota.fd == -1) {
+-	r = mailbox_lock_quota(&quota[thisquota].quota);
+-	if (r) {
+-	    mailbox_close(&mailbox);
+-	    return r;
+-	}
+-    }
+-
+     r = mailbox_open_index(&mailbox);
+     if (r) {
+ 	mailbox_close(&mailbox);
+@@ -411,22 +376,6 @@
+ {
+     int i, r;
+ 
+-    /*
+-     * Locking order is to lock header before quota.  We therefore
+-     * unlock all the quota roots we have locked in order to avoid a
+-     * deadlock.  As releasing these locks can cause the quota use
+-     * recalculation to screw up, we set the global variable 'redofix'
+-     * to cause the quota use recalculation to be redone.
+-     *
+-     * We could optimize this by trying to get a nonblocking lock on
+-     * the header and unlocking all the quota roots only when that fails.
+-     */
+-    for (i = firstquota; i < quota_num; i++) {
+-	if (quota[i].quota.fd != -1) {
+-	    close(quota[i].quota.fd);
+-	    quota[i].quota.fd = -1;
+-	}
+-    }
+     redofix = 1;
+ 
+     r = mailbox_lock_header(mailbox);
+@@ -452,43 +401,29 @@
+ /*
+  * Finish fixing up a quota root
+  */
+-int fixquota_finish(int thisquota)
++int fixquota_finish(int thisquota, struct txn **tid)
+ {
+     int r;
+ 
+     if (!quota[thisquota].refcount) {
+ 	if (!quota[thisquota].deleted++) {
+-	    char buf[MAX_MAILBOX_PATH+1];
+-	    
+ 	    printf("%s: removed\n", quota[thisquota].quota.root);
+-	    mailbox_hash_quota(buf, sizeof(buf), quota[thisquota].quota.root);
+-
+-	    unlink(buf);
++	    r = quota_delete(&quota[thisquota].quota, tid);
++	    if (r) return r;
++	    free(quota[thisquota].quota.root);
++	    quota[thisquota].quota.root = NULL;
+ 	}
+ 	return 0;
+     }
+ 
+-    if (quota[thisquota].quota.fd == -1) {
+-	r = mailbox_lock_quota(&quota[thisquota].quota);
+-	if (r) {
+-	    if (quota[thisquota].quota.fd != -1) {
+-		close(quota[thisquota].quota.fd);
+-		quota[thisquota].quota.fd = -1;
+-	    }
+-	    return r;
+-	}
+-    }
+-    
+     if (quota[thisquota].quota.used != quota[thisquota].newused) {
+ 	printf("%s: usage was %lu, now %lu\n", quota[thisquota].quota.root,
+ 	       quota[thisquota].quota.used, quota[thisquota].newused);
+ 	quota[thisquota].quota.used = quota[thisquota].newused;
+-	r = mailbox_write_quota(&quota[thisquota].quota);
++	r = quota_write(&quota[thisquota].quota, tid);
+ 	if (r) return r;
+     }
+ 
+-    close(quota[thisquota].quota.fd);
+-    quota[thisquota].quota.fd = -1;
+     return 0;
+ }
+ 
+@@ -500,6 +435,8 @@
+ {
+     int r = 0;
+     static char pattern[2] = "*";
++    struct fix_rock frock;
++    struct txn *tid = NULL;
+ 
+     /*
+      * Lock mailbox list to prevent mailbox creation/deletion
+@@ -507,6 +444,9 @@
+      */
+     mboxlist_open(NULL);
+ 
++    frock.domain = domain;
++    frock.tid = &tid;
++
+     redofix = 1;
+     while (redofix) {
+ 	redofix = 0;
+@@ -514,20 +454,22 @@
+ 	partial = ispartial;
+ 
+ 	r = (*quota_namespace.mboxlist_findall)(&quota_namespace, pattern, 1,
+-						0, 0, fixquota_mailbox, domain);
++						0, 0, fixquota_mailbox, &frock);
+ 	if (r) {
+ 	    mboxlist_close();
+ 	    return r;
+ 	}
+ 
+ 	while (firstquota < quota_num) {
+-	    r = fixquota_finish(firstquota++);
++	    r = fixquota_finish(firstquota++, &tid);
+ 	    if (r) {
+ 		mboxlist_close();
+ 		return r;
+ 	    }
+ 	}
+     }
++
++    if (!r) quota_commit(&tid);
+     
+     mboxlist_close();
+     return 0;
+Index: imap/quota.h
+===================================================================
+RCS file: imap/quota.h
+diff -N imap/quota.h
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ imap/quota.h	6 Jan 2004 21:52:34 -0000
+@@ -0,0 +1,86 @@
++/* quota.h -- Quota format definitions
++ *
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ * $Id$
++ */
++
++#ifndef INCLUDED_QUOTA_H
++#define INCLUDED_QUOTA_H
++
++#include "cyrusdb.h"
++
++#define FNAME_QUOTADB "/quotas.db"
++
++#define QUOTA_UNITS (1024)
++
++extern struct db *qdb;
++
++struct quota {
++    char *root;
++
++    /* Information in quota entry */
++    unsigned long used;
++    int limit;			/* in QUOTA_UNITS */
++};
++
++extern int quota_read(struct quota *quota, struct txn **tid, int wrlock);
++
++extern void quota_commit(struct txn **tid);
++
++extern int quota_write(struct quota *quota, struct txn **tid);
++
++extern int quota_delete(struct quota *quota, struct txn **tid);
++
++extern int quota_findroot(char *ret, size_t retlen, const char *name);
++
++/* open the quotas db */
++void quotadb_open(char *name);
++
++/* close the database */
++void quotadb_close(void);
++
++/* initialize database structures */
++#define QUOTADB_SYNC 0x02
++void quotadb_init(int flags);
++
++/* done with database stuff */
++void quotadb_done(void);
++
++#endif /* INCLUDED_QUOTA_H */
+Index: imap/quota_db.c
+===================================================================
+RCS file: imap/quota_db.c
+diff -N imap/quota_db.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ imap/quota_db.c	6 Jan 2004 21:52:34 -0000
+@@ -0,0 +1,280 @@
++/* quota_db.c -- quota manipulation routines
++ * 
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ *
++ * $Id$
++ *
++ */
++
++#include <config.h>
++
++#ifdef HAVE_UNISTD_H
++#include <unistd.h>
++#endif
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <syslog.h>
++#include <com_err.h>
++
++#include "assert.h"
++#include "cyrusdb.h"
++#include "exitcodes.h"
++#include "global.h"
++#include "imap_err.h"
++#include "mailbox.h"
++#include "quota.h"
++#include "util.h"
++#include "xmalloc.h"
++
++#define QDB config_quota_db
++
++struct db *qdb;
++
++static int quota_dbopen = 0;
++
++/*
++ * Read the quota entry 'quota'
++ */
++int quota_read(struct quota *quota, struct txn **tid, int wrlock)
++{
++    int r;
++    int qrlen;
++    const char *data;
++    int datalen;
++
++    if (!quota->root || !(qrlen = strlen(quota->root)))
++	return IMAP_QUOTAROOT_NONEXISTENT;
++
++    if (wrlock)
++	r = QDB->fetchlock(qdb, quota->root, qrlen, &data, &datalen, tid);
++    else
++	r = QDB->fetch(qdb, quota->root, qrlen, &data, &datalen, tid);
++
++    switch (r) {
++    case CYRUSDB_OK:
++	sscanf(data, "%lu %d", &quota->used, &quota->limit);
++	break;
++
++    case CYRUSDB_AGAIN:
++	return IMAP_AGAIN;
++	break;
++
++    case CYRUSDB_NOTFOUND:
++	return IMAP_QUOTAROOT_NONEXISTENT;
++	break;
++
++    default:
++	syslog(LOG_ERR, "DBERROR: error fetching %s: %s",
++	       quota->root, cyrusdb_strerror(r));
++	return IMAP_IOERROR;
++	break;
++    }
++
++    return 0;
++}
++
++/*
++ * Commit the outstanding quota transaction
++ */
++void quota_commit(struct txn **tid)
++{
++    if (tid && *tid) {
++	if (QDB->commit(qdb, *tid)) {
++	    syslog(LOG_ERR, "IOERROR: committing quota: %m");
++	}
++	*tid = NULL;
++    }
++}
++
++/*
++ * Abort the outstanding quota transaction
++ */
++void quota_abort(struct txn **tid)
++{
++    if (tid && *tid) {
++	if (QDB->abort(qdb, *tid)) {
++	    syslog(LOG_ERR, "IOERROR: aborting quota: %m");
++	}
++	*tid = NULL;
++    }
++}
++
++/*
++ * Write out the quota entry 'quota'
++ */
++int quota_write(struct quota *quota, struct txn **tid)
++{
++    int r;
++    int qrlen, len;
++    char buf[1024];
++
++    if (!quota->root) return 0;
++
++    qrlen = strlen(quota->root);
++    if (!qrlen) return IMAP_QUOTAROOT_NONEXISTENT;
++
++    len = snprintf(buf, sizeof(buf) - 1,
++		   "%lu %d", quota->used, quota->limit);
++    r = QDB->store(qdb, quota->root, qrlen, buf, len, tid);
++    
++    switch (r) {
++    case CYRUSDB_OK:
++	break;
++
++    case CYRUSDB_AGAIN:
++	return IMAP_AGAIN;
++	break;
++
++    default:
++	syslog(LOG_ERR, "DBERROR: error storing %s: %s",
++	       quota->root, cyrusdb_strerror(r));
++	return IMAP_IOERROR;
++	break;
++    }
++
++    return 0;
++}
++
++/*
++ * Remove the quota root 'quota'
++ */
++int quota_delete(struct quota *quota, struct txn **tid)
++{
++    int qrlen, r;
++
++    if (!quota->root) return 0;
++
++    qrlen = strlen(quota->root);
++    if (!qrlen) return IMAP_QUOTAROOT_NONEXISTENT;
++
++    r = QDB->delete(qdb, quota->root, qrlen, tid, 0);
++
++    return r;
++}
++
++/*
++ * Find the mailbox 'name' 's quotaroot, and return it in 'ret'.
++ * 'ret' must be at least MAX_MAILBOX_PATH. 
++ *
++ * returns true if a quotaroot is found, 0 otherwise. 
++*/
++int quota_findroot(char *ret, size_t retlen, const char *name)
++{
++    char *tail, *p, *mbox;
++
++    strlcpy(ret, name, retlen);
++
++    /* find the start of the unqualified mailbox name */
++    mbox = (config_virtdomains && (p = strchr(ret, '!'))) ? p+1 : ret;
++    tail = mbox + strlen(mbox);
++
++    while (QDB->fetch(qdb, ret, strlen(ret), NULL, NULL, NULL)) {
++	tail = strrchr(mbox, '.');
++	if (!tail) break;
++	*tail = '\0';
++    }
++    if (tail) return 1;
++    if (mbox == ret) return 0;
++
++    /* check for a domain quota */
++    *mbox = '\0';
++    return (QDB->fetch(qdb, ret, strlen(ret), NULL, NULL, NULL) == 0);
++}
++
++
++/* must be called after cyrus_init */
++void quotadb_init(int myflags)
++{
++    int r;
++
++    if (myflags & QUOTADB_SYNC) {
++	r = QDB->sync();
++    }
++}
++
++void quotadb_open(char *fname)
++{
++    int ret;
++    char *tofree = NULL;
++
++    /* create db file name */
++    if (!fname) {
++	size_t fname_len = strlen(config_dir)+strlen(FNAME_QUOTADB)+1;
++	
++	fname = xmalloc(fname_len);
++	tofree = fname;
++
++	strlcpy(fname, config_dir, fname_len);
++	strlcat(fname, FNAME_QUOTADB, fname_len);
++    }
++
++    ret = QDB->open(fname, CYRUSDB_CREATE, &qdb);
++    if (ret != 0) {
++	syslog(LOG_ERR, "DBERROR: opening %s: %s", fname,
++	       cyrusdb_strerror(ret));
++	    /* Exiting TEMPFAIL because Sendmail thinks this
++	       EC_OSFILE == permanent failure. */
++	fatal("can't read quotas file", EC_TEMPFAIL);
++    }
++
++    if (tofree) free(tofree);
++
++    quota_dbopen = 1;
++}
++
++void quotadb_close(void)
++{
++    int r;
++
++    if (quota_dbopen) {
++	r = QDB->close(qdb);
++	if (r) {
++	    syslog(LOG_ERR, "DBERROR: error closing quotas: %s",
++		   cyrusdb_strerror(r));
++	}
++	quota_dbopen = 0;
++    }
++}
++
++void quotadb_done(void)
++{
++    /* DB->done() handled by cyrus_done() */
++}
+Index: imap/reconstruct.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/reconstruct.c,v
+retrieving revision 1.81
+diff -u -u -r1.81 reconstruct.c
+--- imap/reconstruct.c	22 Oct 2003 18:50:08 -0000	1.81
++++ imap/reconstruct.c	6 Jan 2004 21:52:34 -0000
+@@ -89,6 +89,7 @@
+ #include "global.h"
+ #include "mboxname.h"
+ #include "mboxlist.h"
++#include "quota.h"
+ #include "seen.h"
+ #include "retry.h"
+ #include "convert_code.h"
+@@ -448,7 +449,7 @@
+     }
+ 
+     /* Fix quota root */
+-    hasquota = mailbox_findquota(quota_root, sizeof(quota_root), mailbox.name);
++    hasquota = quota_findroot(quota_root, sizeof(quota_root), mailbox.name);
+     if (mailbox.quota.root) free(mailbox.quota.root);
+     if (hasquota) {
+ 	mailbox.quota.root = xstrdup(quota_root);
+Index: imap/user.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/user.c,v
+retrieving revision 1.17
+diff -u -u -r1.17 user.c
+--- imap/user.c	22 Oct 2003 18:50:09 -0000	1.17
++++ imap/user.c	6 Jan 2004 21:52:34 -0000
+@@ -79,6 +79,7 @@
+ #include "mailbox.h"
+ #include "util.h"
+ #include "seen.h"
++#include "quota.h"
+ 
+ #if 0
+ static int user_deleteacl(char *name, int matchlen, int maycreate, void* rock)
+@@ -392,29 +393,50 @@
+ {
+     int r = 0;
+     struct quota quota;
+-    char buf[MAX_MAILBOX_PATH+1];
+ 
+     quota.root = oldname;
+-    quota.fd = -1;
+ 
+-    mailbox_hash_quota(buf, sizeof(buf), quota.root);
+-    quota.fd = open(buf, O_RDWR, 0);
+-    if (quota.fd > 0) {
+-	r = mailbox_read_quota(&quota);
+-	if (!r) mboxlist_setquota(newname, quota.limit, 0);
+-    }
++    r = quota_read(&quota, NULL, 0);
++    if (!r) mboxlist_setquota(newname, quota.limit, 0);
++
++    return r;
++}
++
++struct find_rock {
++    char *inboxname;
++    struct txn **tid;
++};
++
++static int find_p(void *rockp,
++		  const char *key, int keylen,
++		  const char *data, int datalen)
++{
++    char *inboxname = ((struct find_rock *) rockp)->inboxname;
+ 
++    return (!strncmp(key, inboxname, strlen(inboxname)) &&
++	    (keylen == strlen(inboxname) || key[strlen(inboxname)] == '.'));
++}
++
++static int find_cb(void *rockp,
++		  const char *key, int keylen,
++		  const char *data, int datalen)
++{
++    struct quota quota_root;
++    struct txn **tid = ((struct find_rock *) rockp)->tid;
++    int r;
++
++    quota_root.root = (char *) xstrndup(key, keylen);
++    r = quota_delete(&quota_root, tid);
++    free(quota_root.root); 
+     return r;
+ }
+ 
+ int user_deletequotaroots(const char *user)
+ {
+     struct namespace namespace;
+-    char inboxname[1024];
++    char buf[MAX_MAILBOX_NAME+1], *inboxname = buf;
++    struct txn *tid = NULL;
+     int r;
+-    char dir[MAX_MAILBOX_NAME+1], *fname, qpath[MAX_MAILBOX_NAME];
+-    DIR *dirp;
+-    struct dirent *f;
+ 
+     /* set namespace */
+     r = mboxname_init_namespace(&namespace, 0);
+@@ -422,30 +444,15 @@
+     /* get user's toplevel quotaroot (INBOX) */
+     if (!r)
+ 	r = (*namespace.mboxname_tointernal)(&namespace, "INBOX",
+-					     user, inboxname);
++						 user, inboxname);
+ 
+     if (!r) {
+-	/* get path to toplevel quotaroot */
+-	mailbox_hash_quota(dir, sizeof(dir), inboxname);
+-
+-	/* split directory and filename */
+-	fname = strrchr(dir, '/');
+-	*fname++ = '\0';
+-
+-	dirp = opendir(dir);
+-	if (dirp) {
+-	    while ((f = readdir(dirp)) != NULL) {
+-		if (!strncmp(f->d_name, fname, strlen(fname)) &&
+-		    (f->d_name[strlen(fname)] == '\0'||
+-		     f->d_name[strlen(fname)] == '.')) {
+-
+-		    snprintf(qpath, sizeof(qpath), "%s/%s", dir, f->d_name);
+-		    unlink(qpath);
+-		}
+-	    }
+-	    closedir(dirp);
+-	}
++	struct find_rock frock = { inboxname, &tid };
++	r = config_quota_db->foreach(qdb, inboxname, strlen(inboxname),
++				     &find_p, &find_cb, &frock, &tid);
+     }
++
++    if (!r) quota_commit(&tid);
+ 
+     return r;
+ }
+Index: lib/cyrusdb.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb.c,v
+retrieving revision 1.8
+diff -u -u -r1.8 cyrusdb.c
+--- lib/cyrusdb.c	3 Jan 2004 20:12:33 -0000	1.8
++++ lib/cyrusdb.c	6 Jan 2004 21:52:34 -0000
+@@ -68,6 +68,7 @@
+ #endif
+     &cyrusdb_flat,
+     &cyrusdb_skiplist,
++    &cyrusdb_quotalegacy,
+     NULL };
+ 
+ void cyrusdb_init() 
+Index: lib/cyrusdb.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/cyrusdb.h,v
+retrieving revision 1.27
+diff -u -u -r1.27 cyrusdb.h
+--- lib/cyrusdb.h	15 Dec 2003 22:42:38 -0000	1.27
++++ lib/cyrusdb.h	6 Jan 2004 21:52:34 -0000
+@@ -185,6 +185,7 @@
+ extern struct cyrusdb_backend cyrusdb_berkeley_nosync;
+ extern struct cyrusdb_backend cyrusdb_flat;
+ extern struct cyrusdb_backend cyrusdb_skiplist;
++extern struct cyrusdb_backend cyrusdb_quotalegacy;
+ 
+ extern int cyrusdb_copyfile(const char *srcname, const char *dstname);
+ 
+Index: lib/cyrusdb_quotalegacy.c
+===================================================================
+RCS file: lib/cyrusdb_quotalegacy.c
+diff -N lib/cyrusdb_quotalegacy.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ lib/cyrusdb_quotalegacy.c	6 Jan 2004 21:52:34 -0000
+@@ -0,0 +1,753 @@
++/*  cyrusdb_quotalegacy: cyrusdb backend for accessing legacy quota files
++ *
++ * Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer. 
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * 3. The name "Carnegie Mellon University" must not be used to
++ *    endorse or promote products derived from this software without
++ *    prior written permission. For permission or any other legal
++ *    details, please contact  
++ *      Office of Technology Transfer
++ *      Carnegie Mellon University
++ *      5000 Forbes Avenue
++ *      Pittsburgh, PA  15213-3890
++ *      (412) 268-4387, fax: (412) 268-7395
++ *      tech-transfer@andrew.cmu.edu
++ *
++ * 4. Redistributions of any form whatsoever must retain the following
++ *    acknowledgment:
++ *    "This product includes software developed by Computing Services
++ *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
++ *
++ * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
++ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
++ * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++ * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++/* $Id$ */
++
++#include <config.h>
++
++#ifdef HAVE_UNISTD_H
++#include <unistd.h>
++#endif
++#include <stdio.h>
++#include <stdlib.h>
++#include <syslog.h>
++#include <string.h>
++#include <errno.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <sys/uio.h>
++#include <fcntl.h>
++#include "/usr/include/glob.h"
++
++#include "assert.h"
++#include "cyrusdb.h"
++#include "exitcodes.h"
++#include "hash.h"
++#include "map.h"
++#include "libcyr_cfg.h"
++#include "lock.h"
++#include "retry.h"
++#include "util.h"
++#include "xmalloc.h"
++
++#define FNAME_QUOTADIR "/quota/"
++#define MAX_QUOTA_PATH 4096
++
++/* we have the file locked iff we have an outstanding transaction */
++
++struct db {
++    char *path;
++
++    char *data;  /* allocated buffer for fetched data */
++
++    hash_table table;  /* transaction (hash table of sub-transactions) */
++};
++
++struct subtxn {
++    int fd;
++
++    char *fnamenew;
++    int fdnew;
++
++    int delete;
++};
++
++/* simple hash so it's easy to find these things in the filesystem;
++   our human time is worth more than efficiency */
++static void hash_quota(char *buf, size_t size, const char *qr, char *path)
++{
++    int config_virtdomains = libcyrus_config_getswitch(CYRUSOPT_VIRTDOMAINS);
++    const char *idx;
++    char c, *p;
++    unsigned len;
++
++    if ((len = snprintf(buf, size, "%s", path)) >= size) {
++        fatal("insufficient buffer size in hash_quota", EC_TEMPFAIL);
++    }
++    buf += len;
++    size -= len;
++
++    if (config_virtdomains && (p = strchr(qr, '!'))) {
++	*p = '\0';  /* split domain!qr */
++	c = (char) dir_hash_c(qr);
++	if ((len = snprintf(buf, size, "%s%c/%s",
++			    FNAME_DOMAINDIR, c, qr)) >= size) {
++	    fatal("insufficient buffer size in hash_quota", EC_TEMPFAIL);
++	}
++	*p++ = '!';  /* reassemble domain!qr */
++	qr = p;
++	buf += len;
++	size -= len;
++
++	if (!*qr) {
++	    /* quota for entire domain */
++	    if (snprintf(buf, size, "%sroot", FNAME_QUOTADIR) >= size) {
++		fatal("insufficient buffer size in hash_quota",
++		      EC_TEMPFAIL);
++	    }
++	    return;
++	}
++    }
++
++    idx = strchr(qr, '.'); /* skip past user. */
++    if (idx == NULL) {
++	idx = qr;
++    } else {
++	idx++;
++    }
++    c = (char) dir_hash_c(idx);
++
++    if (snprintf(buf, size, "%s%c/%s", FNAME_QUOTADIR, c, qr) >= size) {
++	fatal("insufficient buffer size in hash_quota", EC_TEMPFAIL);
++    }
++}
++
++/* other routines call this one when they fail */
++static int abort_subtxn(char *fname, struct subtxn *tid)
++{
++    int r = CYRUSDB_OK;
++
++    assert(fname && tid);
++
++    /* cleanup done while lock is held */
++    if (tid->fnamenew) {
++	unlink(tid->fnamenew);
++	free(tid->fnamenew);
++    }
++
++    if (tid->fdnew != -1) {
++	r = close(tid->fdnew);
++    }
++
++    if (tid->fd != -1) {
++	/* release lock */
++	r = lock_unlock(tid->fd);
++	if (r == -1) {
++	    syslog(LOG_ERR, "IOERROR: unlocking %s: %m", fname);
++	    r = CYRUSDB_IOERROR;
++	}
++
++	/* close */
++	r = close(tid->fd);
++	if (r == -1) {
++	    syslog(LOG_ERR, "IOERROR: closing %s: %m", fname);
++	    r = CYRUSDB_IOERROR;
++	}
++    }
++
++    free(tid);
++
++    return r;
++}
++
++static int commit_subtxn(char *fname, struct subtxn *tid)
++{
++    int writefd;
++    int r = 0;
++    struct stat sbuf;
++
++    assert(fname && tid);
++
++    if ((writefd = tid->fdnew) != -1) {
++	/* we wrote something */
++
++	if (fsync(writefd) ||
++	    fstat(writefd, &sbuf) == -1 ||
++	    rename(tid->fnamenew, fname) == -1 ||
++	    lock_unlock(writefd) == -1) {
++	    syslog(LOG_ERR, "IOERROR: writing %s: %m", tid->fnamenew);
++	    r = CYRUSDB_IOERROR;
++	}
++	close(writefd);
++	free(tid->fnamenew);
++    } else if (tid->delete) {
++	/* delete file */
++	r = unlink(fname);
++	if (r == -1) {
++	    syslog(LOG_ERR, "IOERROR: unlinking %s: %m", fname);
++	    r = CYRUSDB_IOERROR;
++	}
++    } else {
++	/* read-only txn */
++    }
++
++    /* release lock */
++    if (tid->fd != -1) {
++	r = lock_unlock(tid->fd);
++	if (r == -1) {
++	    syslog(LOG_ERR, "IOERROR: unlocking %s: %m", fname);
++	    r = CYRUSDB_IOERROR;
++	}
++
++	r = close(tid->fd);
++	if (r == -1) {
++	    syslog(LOG_ERR, "IOERROR: closing %s: %m", fname);
++	    r = CYRUSDB_IOERROR;
++	}
++    }
++
++    free(tid);
++
++    return r;
++}
++
++static void free_db(struct db *db)
++{
++    if (db) {
++	if (db->path) free(db->path);
++	if (db->data) free(db->data);
++	free_hash_table(&db->table, NULL);
++	free(db);
++    }
++}
++
++static struct subtxn *new_subtxn(const char *fname, int fd)
++{
++    struct subtxn *ret = (struct subtxn *) xmalloc(sizeof(struct subtxn));
++
++    ret->fd = fd;
++    ret->fnamenew = NULL;
++    ret->fdnew = -1;
++    ret->delete = 0;
++    return ret;
++}
++
++static int init(const char *dbdir __attribute__((unused)),
++		int myflags __attribute__((unused)))
++{
++    return 0;
++}
++
++static int done(void)
++{
++    return 0;
++}
++
++static int mysync(void)
++{
++    return 0;
++}
++
++static int myarchive(const char **fnames, const char *dirname)
++{
++    return 0;
++}
++
++static int myopen(const char *fname, int flags, struct db **ret)
++{
++    struct db *db = (struct db *) xzmalloc(sizeof(struct db));
++    struct stat sbuf;
++    char *p;
++    int r;
++
++    assert(fname && ret);
++
++    db->path = xstrdup(fname);
++    construct_hash_table(&db->table, 32, 0);
++
++    /* strip any filename from the path */
++    if (p = strrchr(db->path, '/')) *p = '\0';
++
++    r = stat(db->path, &sbuf);
++    if (r == -1 && errno == ENOENT && (flags & CYRUSDB_CREATE)) {
++	if (cyrus_mkdir(fname, 0755) != -1) {
++	    r = stat(db->path, &sbuf);
++	}
++    }
++
++    if (r == -1) {
++	int level = (flags & CYRUSDB_CREATE) ? LOG_ERR : LOG_DEBUG;
++	syslog(level, "IOERROR: stating %s: %m", db->path);
++	free_db(db);
++	return CYRUSDB_IOERROR;
++    }
++
++    *ret = db;
++    return 0;
++}
++
++static int myclose(struct db *db)
++{
++    assert(db);
++
++    free_db(db);
++
++    return 0;
++}
++
++static int myfetch(struct db *db, char *quota_path,
++		   const char **data, int *datalen,
++		   struct txn **tid)
++{
++    struct subtxn *mytid = NULL;
++    int quota_fd;
++    const char *quota_base = 0;
++    unsigned long quota_len = 0;
++
++    assert(db);
++
++    if (data) *data = NULL;
++    if (datalen) *datalen = 0;
++
++    if (!data) {
++	/* just check if the key exists */
++	struct stat sbuf;
++
++	if (stat(quota_path, &sbuf) == -1)
++	    return CYRUSDB_NOTFOUND;
++
++	return 0;
++    }
++
++    if (tid) {
++	if (!*tid)
++	    *tid = (struct txn *) &db->table;
++	else
++	    mytid = (struct subtxn *) hash_lookup(quota_path, &db->table);
++    }
++
++    /* open and lock file, if needed */
++    if (!mytid) {
++	quota_fd = open(quota_path, O_RDWR, 0);
++	if (quota_fd == -1) {
++	    if (errno == ENOENT) {
++		/* key doesn't exist */
++		return CYRUSDB_NOTFOUND;
++	    }
++
++	    syslog(LOG_ERR, "IOERROR: opening quota file %s: %m", quota_path);
++	    return CYRUSDB_IOERROR;
++	}
++
++	if (tid) {
++	    int r;
++	    struct stat sbuf;
++	    const char *lockfailaction;
++
++	    r = lock_reopen(quota_fd, quota_path, &sbuf, &lockfailaction);
++	    if (r == -1) {
++		syslog(LOG_ERR, "IOERROR: %s quota %s: %m", lockfailaction,
++		       quota_path);
++		return CYRUSDB_IOERROR;
++	    }
++
++	    mytid = new_subtxn(quota_path, quota_fd);
++	    hash_insert(quota_path, mytid, &db->table);
++	}
++    }
++    else
++	quota_fd = mytid->fd;
++
++    map_refresh(quota_fd, 1, &quota_base, &quota_len,
++		MAP_UNKNOWN_LEN, quota_path, 0);
++
++    if (quota_len) {
++	char *p, *eol;
++
++	db->data = xrealloc(db->data, quota_len);
++	memcpy(db->data, quota_base, quota_len);
++
++	p = db->data;
++	eol = memchr(p, '\n', quota_len - (p - db->data));
++	if (!eol) {
++	    map_free(&quota_base, &quota_len);
++	    return CYRUSDB_IOERROR;
++	}
++	/* convert the separating \n to SP */
++	*eol = ' ';
++
++	p = eol + 1;
++	eol = memchr(p, '\n', quota_len - (p - db->data));
++	if (!eol) {
++	    map_free(&quota_base, &quota_len);
++	    return CYRUSDB_IOERROR;
++	}
++	/* convert the terminating \n to \0 */
++	*eol = '\0';
++
++	*data = db->data;
++	*datalen = strlen(db->data);
++    }
++
++    map_free(&quota_base, &quota_len);
++    if (!tid) close(quota_fd);
++
++    return 0;
++}
++
++static int fetch(struct db *db, 
++		 const char *key, int keylen,
++		 const char **data, int *datalen,
++		 struct txn **tid)
++{
++    char quota_path[MAX_QUOTA_PATH+1], *tmpkey = NULL;
++
++    /* if we need to truncate the key, do so */
++    if (key[keylen] != '\0') {
++	tmpkey = xmalloc(keylen + 1);
++	memcpy(tmpkey, key, keylen);
++	tmpkey[keylen] = '\0';
++	key = tmpkey;
++    }
++
++    hash_quota(quota_path, sizeof(quota_path), key, db->path);
++    if (tmpkey) free(tmpkey);
++
++    return myfetch(db, quota_path, data, datalen, tid);
++}
++
++static int foreach(struct db *db,
++		   char *prefix, int prefixlen,
++		   foreach_p *goodp,
++		   foreach_cb *cb, void *rock, 
++		   struct txn **tid)
++{
++    int r = CYRUSDB_OK;
++    int config_virtdomains = libcyrus_config_getswitch(CYRUSOPT_VIRTDOMAINS);
++    char quota_path[MAX_QUOTA_PATH+1];
++    glob_t globbuf;
++    int i;
++    char *tmpprefix = NULL, *p = NULL;
++
++    /* if we need to truncate the prefix, do so */
++    if (prefix[prefixlen] != '\0') {
++	tmpprefix = xmalloc(prefixlen + 1);
++	memcpy(tmpprefix, prefix, prefixlen);
++	tmpprefix[prefixlen] = '\0';
++	prefix = tmpprefix;
++    }
++
++    hash_quota(quota_path, sizeof(quota_path), prefix, db->path);
++    if (config_virtdomains && (p = strchr(prefix, '!')))
++	prefix = p + 1;
++
++    /* strip off the qr specific path and replace with pattern */
++    sprintf(strstr(quota_path, FNAME_QUOTADIR) + strlen(FNAME_QUOTADIR),
++	    "*/%s*", prefix);
++
++    /* search for the quotaroots */
++    glob(quota_path, 0, NULL, &globbuf);
++
++    if (config_virtdomains) {
++	if (!prefixlen) {
++	    /* search for all virtdomain quotaroots */
++	    snprintf(quota_path, sizeof(quota_path), "%s%s*/*%s*/*",
++		     db->path, FNAME_DOMAINDIR, FNAME_QUOTADIR);
++	    glob(quota_path, GLOB_APPEND, NULL, &globbuf);
++
++	    /* search for all domain quotas */
++	    snprintf(quota_path, sizeof(quota_path), "%s%s*/*%sroot",
++		     db->path, FNAME_DOMAINDIR, FNAME_QUOTADIR);
++	    glob(quota_path, GLOB_APPEND, NULL, &globbuf);
++	}
++	else if (!strlen(prefix)) {
++	    /* search for the domain quotas */
++	    strcpy(strstr(quota_path, FNAME_QUOTADIR) + strlen(FNAME_QUOTADIR),
++		   "root");
++	    glob(quota_path, GLOB_APPEND, NULL, &globbuf);
++	}
++    }
++    if (tmpprefix) free(tmpprefix);
++
++    if (tid && !*tid) *tid = (struct txn *) &db->table;
++
++    for (i = 0; i < globbuf.gl_pathc; i++) {
++	const char *data;
++	char *qr, *key;
++	size_t keylen, datalen;
++
++	r = myfetch(db, globbuf.gl_pathv[i], &data, &datalen, tid);
++	if (r) break;
++
++	qr = strrchr(globbuf.gl_pathv[i], '/') + 1;
++	if (p = strstr(globbuf.gl_pathv[i], FNAME_DOMAINDIR)) {
++	    /* use the quota_path as a buffer to construct virtdomain qr */
++	    p += strlen(FNAME_DOMAINDIR) + 2; /* +2 for hashdir */
++	    sprintf(quota_path, "%.*s!%s", strcspn(p, "/"), p,
++		    strcmp(qr, "root") ? qr : "");
++	    key = quota_path;
++	}
++	else
++	    key = qr;
++
++	keylen = strlen(key);
++
++	if (goodp(rock, key, keylen, data, datalen)) {
++	    /* make callback */
++	    r = cb(rock, key, keylen, data, datalen);
++	    if (r) break;
++	}
++    }
++
++    globfree(&globbuf);
++
++    return r;
++}
++
++static int mystore(struct db *db, 
++		   const char *key, int keylen,
++		   const char *data, int datalen,
++		   struct txn **tid, int overwrite)
++{
++    char quota_path[MAX_QUOTA_PATH+1], *tmpkey = NULL;
++    struct subtxn *mytid = NULL;
++    int r = 0;
++
++    /* if we need to truncate the key, do so */
++    if (key[keylen] != '\0') {
++	tmpkey = xmalloc(keylen + 1);
++	memcpy(tmpkey, key, keylen);
++	tmpkey[keylen] = '\0';
++	key = tmpkey;
++    }
++
++    hash_quota(quota_path, sizeof(quota_path), key, db->path);
++    if (tmpkey) free(tmpkey);
++
++    if (tid) {
++	if (!*tid)
++	    *tid = (struct txn *) &db->table;
++	else
++	    mytid = (struct subtxn *) hash_lookup(quota_path, &db->table);
++    }
++
++    /* open and lock file, if needed */
++    if (!mytid) {
++	int fd;
++	struct stat sbuf;
++	const char *lockfailaction;
++
++	fd = open(quota_path, O_RDWR, 0644);
++	if (fd == -1 && errno == ENOENT && data) {
++	    if (cyrus_mkdir(quota_path, 0755) != -1) {
++		fd = open(quota_path, O_RDWR | O_CREAT, 0644);
++	    }
++	}
++	if (fd == -1 && (errno != ENOENT || data)) {
++	    syslog(LOG_ERR, "IOERROR: opening quota file %s: %m", quota_path);
++	    return CYRUSDB_IOERROR;
++	}
++
++	if (fd != -1) {
++	    r = lock_reopen(fd, quota_path, &sbuf, &lockfailaction);
++	    if (r == -1) {
++		syslog(LOG_ERR, "IOERROR: %s quota %s: %m", lockfailaction,
++		       quota_path);
++		return CYRUSDB_IOERROR;
++	    }
++	}
++
++	mytid = new_subtxn(quota_path, fd);
++
++	if (tid)
++	    hash_insert(quota_path, mytid, &db->table);
++    }
++
++    if (!data) {
++	mytid->delete = 1;
++    }
++    else {
++	char new_quota_path[MAX_QUOTA_PATH+1], *buf, *p;
++	int newfd = -1, r1;;
++
++	if (mytid->fd != -1 && !overwrite) {
++	    if (tid)
++		abort_txn(db, *tid);
++	    else
++		abort_subtxn(quota_path, mytid);
++	    return CYRUSDB_EXISTS;
++	}
++
++	strlcpy(new_quota_path, quota_path, sizeof(new_quota_path));
++	strlcat(new_quota_path, ".NEW", sizeof(new_quota_path));
++
++	unlink(new_quota_path);
++	newfd = open(new_quota_path, O_CREAT | O_TRUNC | O_RDWR, 0666);
++	if (newfd == -1 && errno == ENOENT) {
++	    if (cyrus_mkdir(new_quota_path, 0755) != -1)
++		newfd = open(new_quota_path, O_CREAT | O_TRUNC | O_RDWR, 0666);
++	}
++	if (newfd == -1) {
++	    syslog(LOG_ERR, "IOERROR: creating quota file %s: %m",
++		   new_quota_path);
++	    if (tid)
++		abort_txn(db, *tid);
++	    else
++		abort_subtxn(quota_path, mytid);
++	    return CYRUSDB_IOERROR;
++	}
++
++	mytid->fdnew = newfd;
++	r = lock_blocking(newfd);
++	if (r) {
++	    syslog(LOG_ERR, "IOERROR: locking quota file %s: %m",
++		   new_quota_path);
++	    if (tid)
++		abort_txn(db, *tid);
++	    else
++		abort_subtxn(quota_path, mytid);
++	    return CYRUSDB_IOERROR;
++	}
++
++	buf = xmalloc(datalen+1);
++	memcpy(buf, data, datalen);
++	/* convert separating SP to \n */
++	p = memchr(buf, ' ', datalen);
++	*p = '\n';
++	/* add a terminating \n */
++	buf[datalen] = '\n';
++
++	r1 = write(newfd, buf, datalen+1);
++	free(buf);
++
++	if (r1 == -1) {
++	    syslog(LOG_ERR, "IOERROR: writing quota file %s: %m",
++		   new_quota_path);
++	    if (tid)
++		abort_txn(db, *tid);
++	    else
++		abort_subtxn(quota_path, mytid);
++	    return CYRUSDB_IOERROR;
++	}
++
++	if (!mytid->fnamenew)
++	    mytid->fnamenew = xstrdup(new_quota_path);
++    }
++
++    if (!tid) {
++	/* commit immediately */
++	r = commit_subtxn(quota_path, mytid);
++    }
++
++    return r;
++}
++
++static int create(struct db *db, 
++		  const char *key, int keylen,
++		  const char *data, int datalen,
++		  struct txn **tid)
++{
++    return mystore(db, key, keylen, data, datalen, tid, 0);
++}
++
++static int store(struct db *db, 
++		 const char *key, int keylen,
++		 const char *data, int datalen,
++		 struct txn **tid)
++{
++    return mystore(db, key, keylen, data, datalen, tid, 1);
++}
++
++static int delete(struct db *db, 
++		  const char *key, int keylen,
++		  struct txn **mytid, int force __attribute__((unused)))
++{
++    return mystore(db, key, keylen, NULL, 0, mytid, 1);
++}
++
++struct txn_rock {
++    hash_table *table;
++    int (*func)(char *, struct subtxn *);
++    int ret;
++};
++
++static void enum_func(char *fname, void *data, void *rock)
++{
++    struct txn_rock *trock = (struct txn_rock *) rock;
++    int r;
++
++    r = trock->func(fname, (struct subtxn *) data);
++    hash_del(fname, trock->table);
++
++    if (r && !trock->ret) trock->ret = r;
++}
++
++int commit_txn(struct db *db, struct txn *tid)
++{
++    struct txn_rock trock;
++
++    trock.table = (hash_table *) tid;
++    trock.func = commit_subtxn;
++    trock.ret = 0;
++
++    hash_enumerate((hash_table *) tid, enum_func, &trock);
++
++    return trock.ret;
++}
++
++int abort_txn(struct db *db, struct txn *tid)
++{
++    struct txn_rock trock;
++
++    trock.table = (hash_table *) tid;
++    trock.func = abort_subtxn;
++    trock.ret = 0;
++
++    hash_enumerate((hash_table *) tid, enum_func, &trock);
++
++    return trock.ret;
++}
++
++struct cyrusdb_backend cyrusdb_quotalegacy = 
++{
++    "quotalegacy",			/* name */
++
++    &init,
++    &done,
++    &mysync,
++    &myarchive,
++
++    &myopen,
++    &myclose,
++
++    &fetch,
++    &fetch,
++    &foreach,
++    &create,
++    &store,
++    &delete,
++
++    &commit_txn,
++    &abort_txn,
++
++    NULL,
++    NULL
++};
+Index: lib/imapoptions
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/imapoptions,v
+retrieving revision 1.11
+diff -u -u -r1.11 imapoptions
+--- lib/imapoptions	5 Jan 2004 19:56:38 -0000	1.11
++++ lib/imapoptions	6 Jan 2004 21:52:35 -0000
+@@ -482,6 +482,9 @@
+    force the '/' in Kerberos 5 principals to be canonicalized to a '.'
+    (to make PTS lookups easier) */
+ 
++{ "quota_db", "quotalegacy", STRINGLIST("flat", "berkeley", "skiplist", "quotalegacy")}
++/* The cyrusdb backend to use for quotas. */
++
+ { "quotawarn", 90, INT }
+ /* The percent of quota utilization over which the server generates
+    warnings. */
+Index: lib/libcyr_cfg.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/libcyr_cfg.c,v
+retrieving revision 1.3
+diff -u -u -r1.3 libcyr_cfg.c
+--- lib/libcyr_cfg.c	15 Dec 2003 22:42:38 -0000	1.3
++++ lib/libcyr_cfg.c	6 Jan 2004 21:52:35 -0000
+@@ -91,6 +91,10 @@
+       (union cyrus_config_value)((const char *)"berkeley"),
+       CYRUS_OPT_STRING },
+ 
++    { CYRUSOPT_VIRTDOMAINS,
++      (union cyrus_config_value)((int)0),
++      CYRUS_OPT_SWITCH },
++
+     { CYRUSOPT_LAST, { NULL }, CYRUS_OPT_NOTOPT }
+ };
+ 
+Index: lib/libcyr_cfg.h
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/libcyr_cfg.h,v
+retrieving revision 1.3
+diff -u -u -r1.3 libcyr_cfg.h
+--- lib/libcyr_cfg.h	15 Dec 2003 22:42:38 -0000	1.3
++++ lib/libcyr_cfg.h	6 Jan 2004 21:52:35 -0000
+@@ -87,6 +87,8 @@
+     CYRUSOPT_FULLDIRHASH,
+     /* Database for use by AUTH_PTS */
+     CYRUSOPT_PTSCACHE_DB,
++    /* Virtual Domains (OFF) */
++    CYRUSOPT_VIRTDOMAINS,
+ 
+     CYRUSOPT_LAST
+     

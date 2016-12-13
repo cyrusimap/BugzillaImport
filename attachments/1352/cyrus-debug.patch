@@ -1,0 +1,292 @@
+ imap/imapd.c            |    5 ++++-
+ imap/tls.c              |    8 ++++++--
+ imtest/imtest.c         |    6 +++++-
+ lib/prot.c              |   14 ++++++++++----
+ lib/prot.h              |    2 ++
+ man/imapd.8             |    6 ++++++
+ man/imtest.1            |    5 +++++
+ man/lmtpd.8             |    6 ++++++
+ master/service-thread.c |   10 ++++++++--
+ master/service.c        |   10 ++++++++--
+ 10 files changed, 60 insertions(+), 12 deletions(-)
+
+diff --git a/imap/imapd.c b/imap/imapd.c
+index d48666e..09edd6a 100644
+--- a/imap/imapd.c
++++ b/imap/imapd.c
+@@ -798,7 +798,7 @@ int service_init(int argc, char **argv, char **envp)
+     snmp_connect(); /* ignore return code */
+     snmp_set_str(SERVER_NAME_VERSION,cyrus_version());
+ 
+-    while ((opt = getopt(argc, argv, "sp:N")) != EOF) {
++    while ((opt = getopt(argc, argv, "sp:NY")) != EOF) {
+ 	switch (opt) {
+ 	case 's': /* imaps (do starttls right away) */
+ 	    imaps = 1;
+@@ -815,6 +815,9 @@ int service_init(int argc, char **argv, char **envp)
+ 		   * you know what you're doing! */
+ 	    nosaslpasswdcheck = 1;
+ 	    break;
++	case 'Y':
++	    debug_proto = 1;
++	    break;
+ 	default:
+ 	    break;
+ 	}
+diff --git a/imap/tls.c b/imap/tls.c
+index e76d994..4507350 100644
+--- a/imap/tls.c
++++ b/imap/tls.c
+@@ -877,7 +877,9 @@ int tls_start_servertls(int readfd, int writefd, int timeout,
+ 
+ 	sts = SSL_accept(tls_conn);
+ 	if (sts > 0) {
+-	    syslog(LOG_DEBUG, "SSL_accept() succeeded -> done");
++	    if (debug_proto) {
++		syslog(LOG_DEBUG, "SSL_accept() succeeded -> done");
++	    }
+ 	    break;
+ 	}
+ 
+@@ -886,7 +888,9 @@ int tls_start_servertls(int readfd, int writefd, int timeout,
+ 	switch (err) {
+ 	case SSL_ERROR_WANT_READ:
+ 	case SSL_ERROR_WANT_WRITE:
+-	    syslog(LOG_DEBUG, "SSL_accept() incomplete -> wait");
++	    if (debug_proto) {
++		syslog(LOG_DEBUG, "SSL_accept() incomplete -> wait");
++	    }
+ 	    continue;
+ 	case SSL_ERROR_SYSCALL:
+ 	    if (sts == 0) {
+diff --git a/imtest/imtest.c b/imtest/imtest.c
+index c365ea0..a553437 100644
+--- a/imtest/imtest.c
++++ b/imtest/imtest.c
+@@ -2372,7 +2372,7 @@ int main(int argc, char **argv)
+     prog = strrchr(argv[0], '/') ? strrchr(argv[0], '/')+1 : argv[0];
+ 
+     /* look at all the extra args */
+-    while ((c = getopt(argc, argv, "P:qscizvk:l:p:u:a:m:f:r:t:n:I:x:X:w:o:?h")) != EOF)
++    while ((c = getopt(argc, argv, "P:qscizvk:l:p:u:a:m:f:r:t:n:I:x:X:w:o:?hY")) != EOF)
+ 	switch (c) {
+ 	case 'P':
+ 	    prot = optarg;
+@@ -2482,6 +2482,10 @@ int main(int argc, char **argv)
+ 	    hash_insert(optarg, xstrdup(val), &confighash);
+ 	    break;
+ 
++	case 'Y':
++	    debug_proto = 1;
++	    break;
++
+ 	case 'h':
+ 	case '?':
+ 	default:
+diff --git a/lib/prot.c b/lib/prot.c
+index 5f649ea..bae247a 100644
+--- a/lib/prot.c
++++ b/lib/prot.c
+@@ -74,6 +74,8 @@
+ #include "util.h"
+ #include "xmalloc.h"
+ 
++int debug_proto = 0;
++
+ /* Transparant protgroup structure */
+ struct protgroup
+ {
+@@ -327,8 +329,10 @@ int prot_setcompress(struct protstream *s)
+      */
+     s->zbuf_size = s->maxplain + 6;
+     s->zbuf = (unsigned char *) xmalloc(sizeof(unsigned char) * s->zbuf_size);
+-    syslog(LOG_DEBUG, "created %scompress buffer of %u bytes",
+-	   s->write ? "" : "de", s->zbuf_size);
++    if (debug_proto) {
++	syslog(LOG_DEBUG, "created %scompress buffer of %u bytes",
++		s->write ? "" : "de", s->zbuf_size);
++    }
+     s->zstrm = zstrm;
+ 
+     return 0;
+@@ -797,8 +801,10 @@ static int prot_flush_encode(struct protstream *s,
+ 	do {
+ 	    /* should never be needed, but it's better to always check! */
+ 	    if (!s->zstrm->avail_out) {
+-		syslog(LOG_DEBUG, "growing compress buffer from %u to %u bytes",
+-		       s->zbuf_size, s->zbuf_size + PROT_BUFSIZE);
++		    if (debug_proto) {
++			syslog(LOG_DEBUG, "growing compress buffer from %u to %u bytes",
++			       s->zbuf_size, s->zbuf_size + PROT_BUFSIZE);
++		    }
+ 
+ 		s->zbuf = (unsigned char *)
+ 		    xrealloc(s->zbuf, s->zbuf_size + PROT_BUFSIZE);
+diff --git a/lib/prot.h b/lib/prot.h
+index 077a97a..e33377a 100644
+--- a/lib/prot.h
++++ b/lib/prot.h
+@@ -67,6 +67,8 @@
+ 
+ #define PROT_NO_FD -1
+ 
++extern int debug_proto;
++
+ struct protstream;
+ struct prot_waitevent;
+ 
+diff --git a/man/imapd.8 b/man/imapd.8
+index 0ec9c25..41b47fc 100644
+--- a/man/imapd.8
++++ b/man/imapd.8
+@@ -71,6 +71,9 @@ imapd \- IMAP server process
+ .B \-p
+ .I ssf
+ ]
++[
++.B \-Y
++]
+ .SH DESCRIPTION
+ .I Imapd
+ is an IMAP4rev1 server.
+@@ -150,6 +153,9 @@ Tell
+ that an external layer exists.  An SSF (security strength factor) of 1
+ means an integrity protection layer exists.  Any higher SSF implies
+ some form of privacy protection.
++.TP
++.BI \-Y
++Enable protocol-level debugging.
+ .SH FILES
+ .TP
+ .B /etc/imapd.conf
+diff --git a/man/imtest.1 b/man/imtest.1
+index 5323186..17152ac 100644
+--- a/man/imtest.1
++++ b/man/imtest.1
+@@ -106,6 +106,8 @@ imtest \- interactive IMAP test program
+ [
+ .B \-v
+ ]
++.B \-Y
++]
+ [
+ .B \-I
+ .I file
+@@ -217,6 +219,9 @@ Verbose. Print out more information than usual.
+ .TP
+ .B -z
+ Timing test.
++.TP
++.B -Y
++Enable protocol-level debugging.
+ .SH SEE ALSO
+ .PP
+ \fBimapd(8)\fR
+diff --git a/man/lmtpd.8 b/man/lmtpd.8
+index d4308df..81cc038 100644
+--- a/man/lmtpd.8
++++ b/man/lmtpd.8
+@@ -60,6 +60,9 @@ lmtpd \- LMTP server process
+ [
+ .B \-D
+ ]
++[
++.B \-Y
++]
+ .br
+       [
+ .B \-a
+@@ -93,6 +96,9 @@ timeout.  The default is 60.
+ .BI \-D
+ Run external debugger specified in debug_command.
+ .TP
++.BI \-Y
++Enable protocol-level debugging.
++.TP
+ .BI \-a
+ Preauthorize connections initiated on an internet socket, instead of
+ requiring LMTP AUTH.  This should only be used for connections coming
+diff --git a/master/service-thread.c b/master/service-thread.c
+index 66fa8e3..76db8cd 100644
+--- a/master/service-thread.c
++++ b/master/service-thread.c
+@@ -71,6 +71,7 @@
+ #include "libconfig.h"
+ #include "xmalloc.h"
+ #include "signals.h"
++#include "prot.h"
+ 
+ extern int optind;
+ extern char *optarg;
+@@ -168,7 +169,7 @@ int main(int argc, char **argv, char **envp)
+ 
+     newargv[newargc++] = argv[0];
+ 
+-    while ((opt = getopt(argc, argv, "C:D")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:DY")) != EOF) {
+ 	switch (opt) {
+ 	case 'C': /* alt config file */
+ 	    alt_config = optarg;
+@@ -176,6 +177,9 @@ int main(int argc, char **argv, char **envp)
+ 	case 'D':
+ 	    call_debugger = 1;
+ 	    break;
++	case 'Y':
++	     debug_proto = 1;
++	     break;
+ 	default:
+ 	    if (!((newargc+1) % ARGV_GROW)) { /* time to alloc more */
+ 		newargv = (char **) xrealloc(newargv, (newargc + ARGV_GROW) * 
+@@ -301,7 +305,9 @@ int main(int argc, char **argv, char **envp)
+ 	    continue;
+ 	}
+ 	
+-	syslog(LOG_DEBUG, "accepted connection");
++	if (debug_proto) {
++	    syslog(LOG_DEBUG, "accepted connection");
++	}
+ 
+ 	use_count++;
+ 	notify_master(STATUS_FD, MASTER_SERVICE_CONNECTION_MULTI);
+diff --git a/master/service.c b/master/service.c
+index a0bb932..8d14cbb 100644
+--- a/master/service.c
++++ b/master/service.c
+@@ -75,6 +75,7 @@
+ #include "xstrlcpy.h"
+ #include "xstrlcat.h"
+ #include "signals.h"
++#include "prot.h"
+ 
+ extern int optind, opterr;
+ extern char *optarg;
+@@ -269,7 +270,7 @@ int main(int argc, char **argv, char **envp)
+ 
+     newargv[newargc++] = argv[0];
+ 
+-    while ((opt = getopt(argc, argv, "C:U:T:D")) != EOF) {
++    while ((opt = getopt(argc, argv, "C:U:T:DY")) != EOF) {
+ 	if (argv[optind-1][0] == '-' && strlen(argv[optind-1]) > 2) {
+ 	    /* we have merged options */
+ 	    syslog(LOG_ERR,
+@@ -292,6 +293,9 @@ int main(int argc, char **argv, char **envp)
+ 	case 'D':
+ 	    call_debugger = 1;
+ 	    break;
++	case 'Y':
++	    debug_proto = 1;
++	    break;
+ 	default:
+ 	    if (!((newargc+1) % ARGV_GROW)) { /* time to alloc more */
+ 		newargv = (char **) xrealloc(newargv, (newargc + ARGV_GROW) * 
+@@ -556,7 +560,9 @@ int main(int argc, char **argv, char **envp)
+ 	}
+ 
+ 	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+-	syslog(LOG_DEBUG, "accepted connection");
++	if (debug_proto) {
++	    syslog(LOG_DEBUG, "accepted connection");
++	}
+ 
+ 	if (fd != 0 && dup2(fd, 0) < 0) {
+ 	    syslog(LOG_ERR, "can't duplicate accepted socket: %m");

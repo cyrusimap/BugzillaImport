@@ -1,0 +1,293 @@
+--- cyrus-imapd-2.4.12.orig/lib/Makefile.in	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/lib/Makefile.in	2011-10-07 14:57:06.430670042 +0000
+@@ -142,15 +131,11 @@
+ imapopts.h: imapopts.c
+ 
+ chartable.c: mkchartable.pl charset/*.t charset/unifix.txt charset/UnicodeData.txt
+-	@echo "### Building chartables..."
+-	rm -f chartable.c
+ 	perl ./mkchartable.pl \
+ 	 -m $(srcdir)/charset/unifix.txt \
+ 	 -m $(srcdir)/charset/UnicodeData.txt \
+-	 $(srcdir)/charset/*.t \
+-	 > chartable.c \
+-	 || (rm -f chartable.c && exit 1)
+-	@echo "### Done building chartables."
++	 -o $@ \
++	 $(srcdir)/charset/*.t
+ 
+ clean:
+ 	rm -f *.o *.a chartable.c Makefile.bak makedepend.log \
+diff -ru cyrus-imapd-2.4.12.orig/lib/mkchartable.pl cyrus-imapd-2.4.12/lib/mkchartable.pl
+--- cyrus-imapd-2.4.12.orig/lib/mkchartable.pl	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/lib/mkchartable.pl	2011-10-07 14:55:53.045669999 +0000
+@@ -50,11 +50,33 @@
+ use Getopt::Long;
+ 
+ my @maps;
++my $verbose = 2;
++my $output;
+ my %codemap;
+-GetOptions( 'map|m=s' => \@maps );
++my $perl = "";
+ 
+-printheader(\@maps, \@ARGV);
++GetOptions( 'map|m=s'     => \@maps,      #strings
++            'output|o=s'  => \$output,    #string
++            'perl|p=s'    => \$perl,      #string
++            'verbose|V=i' => \$verbose ); # numberic, V=0 means less output
++
++if ($verbose == 0) {
++    print "  GEN    $output\n";
++} elsif ($verbose == 1) {
++    if ($perl eq "") {
++	print "perl $0";
++    } else {
++	print "$perl $0";
++    }
++    foreach(@ARGV){
++	print " $_";
++    }
++    print "\n";
++}
+ 
++print_verbose ("### Building chartables...\n");
++open (OUTPUT, ">$output");
++printheader(\@maps, \@ARGV);
+ # first we parse the chartable unicode mappings and the fixes
+ # file to build the unicode to search canonical form tables.
+ foreach my $map (@maps) {
+@@ -72,17 +94,24 @@
+ # mentioned in the lookup table to be specified,
+ # or this sucker aintn't gunna compile.
+ foreach my $opt (@ARGV) {
+-    warn "mkchartable: mapping $opt...\n";
++    print_verbose ("mkchartable: mapping $opt...\n");
+     my $table = readcharfile($opt);
+     printtable($table, $opt);
+ }
+ 
+ printlookup();
+-
++close (OUTPUT);
++print_verbose ("### Done building chartables.\n");
+ exit 0;
+ 
++sub print_verbose {
++    my ($text) = @_;
++    if ($verbose != 0) {
++	print $text;
++    }
++}
+ sub usage {
+-    warn "usage: mkchartable -m mapfile charsetfile...\n";
++    print "usage: mkchartable -m mapfile -o outputfile (-V verbosity) charsetfile...\n";
+     exit(1);
+ }
+ 
+@@ -136,7 +165,7 @@
+     
+     # Keep scanning the table until no changes are made
+     while ($didchange) {
+-	warn "mkchartable: expanding unicode mappings...\n";
++	print_verbose ("mkchartable: expanding unicode mappings...\n");
+ 
+ 	$didchange = 0;
+ 
+@@ -166,9 +195,9 @@
+ 	}
+     };
+ 
+-    warn "mkchartable: building expansion table...\n";
++    print_verbose ("mkchartable: building expansion table...\n");
+ 
+-    print <<EOF;
++    print OUTPUT <<EOF;
+ /* Table of translations */
+ const int chartables_translation_multichar[] = {
+   0, /* the index of 0 is reserved to mean "no translation" */
+@@ -183,9 +212,9 @@
+ 	    $maxlen = @$chars if $maxlen < @$chars;
+ 
+ 	    # add to the translation table
+-	    print "  ";
+-	    print join(", ", (map { sprintf("0x%04x", $_) } @$chars));
+-	    printf ", 0, /* Translation for %04x (offset %d) */\n", $code, $offset;
++	    print OUTPUT "  ";
++	    print OUTPUT join(", ", (map { sprintf("0x%04x", $_) } @$chars));
++	    printf OUTPUT ", 0, /* Translation for %04x (offset %d) */\n", $code, $offset;
+ 
+ 	    # update tracking
+ 	    $codemap->{$code}{trans} = $offset;
+@@ -193,7 +222,7 @@
+ 	}
+     }
+ 
+-    print <<EOF;
++    print OUTPUT <<EOF;
+ };
+ 
+ EOF
+@@ -204,7 +233,7 @@
+ sub printmap {
+     my ($codemap) = @_;
+ 
+-    warn "mkchartable: building translation table...\n";
++    print_verbose("mkchartable: building translation table...\n");
+ 
+     # record which blocks we need mappings for
+     my @needblock;
+@@ -212,7 +241,7 @@
+ 	$needblock[($code >> 16) & 0xff][($code >> 8) & 0xff] = 1;
+     }
+ 
+-    print << "EOF";
++    print OUTPUT << "EOF";
+ /* The next two tables are used for doing translations from
+  * 24-bit unicode values to canonical form.  First look up the
+  * code >> 16 (highest order block) in the block16 table to
+@@ -234,14 +263,14 @@
+     my $n16 = 0;
+     foreach my $block16 (0..255) {
+ 	if ($needblock[$block16]) {
+-	    printf(" %3d,", $n16++);
++	    printf OUTPUT (" %3d,", $n16++);
+ 	} else {
+-	    printf(" 255,");
++	    printf OUTPUT " 255,";
+ 	}
+- 	print "\n" if ($block16 % 8 == 7);
++ 	print OUTPUT "\n" if ($block16 % 8 == 7);
+     }
+ 
+-    print <<EOF;
++    print OUTPUT <<EOF;
+ };
+ 
+ const unsigned char chartables_translation_block8[$n16][256] = {
+@@ -250,19 +279,19 @@
+     foreach my $block16 (0..255) {
+ 	my $need8 = $needblock[$block16];
+ 	next unless $need8;
+-	print " { /* translation for 16 bit offset $block16 */\n ";
++	print OUTPUT " { /* translation for 16 bit offset $block16 */\n ";
+ 	foreach my $block8 (0..255) {
+ 	    if ($need8->[$block8]) {
+-		printf(" %3d,", $n8++);
++		printf OUTPUT (" %3d,", $n8++);
+ 	    } else {
+-		printf(" 255,");
++		printf OUTPUT " 255,";
+ 	    }
+- 	    print "\n " if ($block8 % 8 == 7);
++ 	    print OUTPUT "\n " if ($block8 % 8 == 7);
+ 	}
+-	print "},\n";
++	print OUTPUT "},\n";
+     }
+ 
+-    print <<EOF;
++    print OUTPUT <<EOF;
+ };
+ 
+ /* NOTE: Unlike other charset translation tables, the
+@@ -279,24 +308,24 @@
+ 	next unless $need8;
+ 	foreach my $block8 (0..255) {
+ 	    next unless $need8->[$block8];
+-    	    print " { /* Mapping for unicode chars in block $block16 $block8 */\n ";
++    	    print OUTPUT " { /* Mapping for unicode chars in block $block16 $block8 */\n ";
+ 	    foreach my $i (0..255) {
+ 		my $codepoint = ($block16 << 16) + ($block8 << 8) + $i;
+ 		if (not $codemap->{$codepoint}) {
+-		    printf " 0x%04x,", $codepoint;
++		    printf OUTPUT " 0x%04x,", $codepoint;
+ 		}
+ 		elsif ($codemap->{$codepoint}{trans}) {
+-		    printf " - %4d,", $codemap->{$codepoint}{trans};
++		    printf OUTPUT " - %4d,", $codemap->{$codepoint}{trans};
+ 		}
+ 		else {
+-		    printf " 0x%04x,", $codemap->{$codepoint}{chars}[0];
++		    printf OUTPUT " 0x%04x,", $codemap->{$codepoint}{chars}[0];
+ 		}
+- 		print "\n " if ($i % 8 == 7);
++ 		print OUTPUT "\n " if ($i % 8 == 7);
+ 	    }
+-	    print "},\n";
++	    print OUTPUT "},\n";
+     	}
+     }
+-    printf("};\n\n");
++    printf OUTPUT "};\n\n";
+ }
+ 
+ # read a charset table, building intermediate state tables
+@@ -425,46 +454,46 @@
+     $name =~ s{\..*}{}; # after a dot
+     $name =~ s{-}{_}g; # underscores
+ 
+-    print "const struct charmap chartables_$name\[$num][256] = {\n";
++    print OUTPUT "const struct charmap chartables_$name\[$num][256] = {\n";
+ 
+     foreach my $table (@$tables) {
+ 	my $chars = $table->{chars};
+-	print " {";
++	print OUTPUT " {";
+ 	if ($table->{name}) {
+-	    print " /* $table->{name} */";
++	    print OUTPUT " /* $table->{name} */";
+ 	}
+-	print "\n";
++	print OUTPUT "\n";
+ 	foreach my $i (0..255) {
+ 	    my $char = $chars->[$i];
+ 	    if ($char) {
+-		print "   { $char->[0], $char->[1] }, /* $char->[2] */\n";
++		print OUTPUT "   { $char->[0], $char->[1] }, /* $char->[2] */\n";
+ 	    }
+ 	    else {
+-		print "   { 0xfffd, 0 }, /* no such character */\n";
++		print OUTPUT "   { 0xfffd, 0 }, /* no such character */\n";
+ 	    }
+ 	}
+-	print " },\n";
++	print OUTPUT " },\n";
+     }
+-    print "};\n\n";
++    print OUTPUT "};\n\n";
+ }
+ 
+ # print the header of the chartable.c file
+ sub printheader {
+     my ($maps, $charsets) = @_;
+ 
+-    print <<EOF;
++    print OUTPUT <<EOF;
+ /* This file is generated by mkchartable.pl with the following arguments
+  *
+ EOF
+     foreach my $map (@$maps) {
+ 	my $sha1 = getsha1($map);
+-	print " * map:     $sha1 $map\n";
++	print OUTPUT " * map:     $sha1 $map\n";
+     }
+     foreach my $charset (@$charsets) {
+ 	my $sha1 = getsha1($charset);
+-	print " * charset: $sha1 $charset\n";
++	print OUTPUT " * charset: $sha1 $charset\n";
+     }
+-    print <<EOF;
++    print OUTPUT <<EOF;
+  */
+ 
+ #include "chartable.h"
+@@ -475,7 +504,7 @@
+ # print the lookup table for charactersets at the end
+ # of the chartable.c file.
+ sub printlookup {
+-    print <<EOF;
++    print OUTPUT <<EOF;
+ 
+ /*
+  * Mapping of character sets to tables

@@ -1,0 +1,77 @@
+--- service.c._orig	Sun Feb 17 19:33:42 2002
++++ service.c	Wed Feb 20 01:08:54 2002
+@@ -164,6 +164,8 @@
+     struct request_info request;
+     int opt;
+     char *alt_config = NULL;
++    int soctype;
++    int typelen = sizeof(soctype);
+ 
+     /* accept locking */
+     int lockfd;
+@@ -269,6 +271,14 @@
+ 		}
+ 	    }
+ 
++	    /* XXX What about UDP? */
++	    if (getsockopt(LISTEN_FD, SOL_SOCKET, SO_TYPE,
++			   (char *) &soctype, &typelen) < 0) {
++		syslog(LOG_ERR, "getsockopt: SOL_SOCKET: failed to get type: %m");
++		notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++		service_abort(EX_OSERR);
++	    }
++	    if (soctype == SOCK_STREAM) {
+ 	    fd = accept(LISTEN_FD, NULL, NULL);
+ 	    if (fd < 0) {
+ 		switch (errno) {
+@@ -292,7 +302,22 @@
+ 		    service_abort(EX_OSERR);
+ 		}
+ 	    }
++	    } else {
++		struct sockaddr_un from;
++		socklen_t fromlen;
++		char ch;
++		int r;
+ 
++		fromlen = sizeof(from);
++		r = recvfrom(LISTEN_FD, (void *) &ch, 1, MSG_PEEK,
++			     (struct sockaddr *) &from, &fromlen);
++		if (r == -1) {
++		    syslog(LOG_ERR, "recvfrom failed: %m");
++		    notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
++		    service_abort(EX_OSERR);
++		}
++		fd = LISTEN_FD;
++	    }
+ 	}
+ 
+ 	/* unlock */
+@@ -309,6 +334,8 @@
+ 	    }
+ 	}
+ 
++	/* XXX What about UDP? */
++	if (soctype == SOCK_STREAM) {
+ 	libwrap_init(&request, service);
+ 
+ 	if (!libwrap_ask(&request, fd)) {
+@@ -316,6 +343,7 @@
+ 	    close(fd);
+ 	    continue;
+ 	}
++	}
+ 	
+ 	notify_master(STATUS_FD, MASTER_SERVICE_UNAVAILABLE);
+ 	syslog(LOG_DEBUG, "accepted connection");
+@@ -333,7 +361,10 @@
+ 	    service_abort(EX_OSERR);
+ 	}
+ 
++	/* XXX What about UDP? */
++	if (soctype == SOCK_STREAM) {
+ 	if (fd > 2) close(fd);
++	}
+ 	
+ 	notify_master(STATUS_FD, MASTER_SERVICE_CONNECTION);
+ 	use_count++;

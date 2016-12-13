@@ -1,0 +1,33 @@
+diff -ur cyrus-sasl-2.1.13/lib/windlopen.c cyrus-sasl-2.1.13-fix/lib/windlopen.c
+--- cyrus-sasl-2.1.13/lib/windlopen.c	Thu Feb 13 18:55:55 2003
++++ cyrus-sasl-2.1.13-fix/lib/windlopen.c	Fri Jun 27 16:43:37 2003
+@@ -243,6 +243,7 @@
+ 	    void *library;
+ 	    char *c;
+ 	    char plugname[PATH_MAX];
++	    int entries;
+ 
+ 	    length = strlen(finddata.name);
+ 	    if (length < 5) { /* At least <Ch>.dll */
+@@ -276,12 +277,19 @@
+ 	    if (result != SASL_OK) {
+ 		continue;
+ 	    }
+-
++	    entries = 0;
+ 	    for (cur_ep = entrypoints; cur_ep->entryname; cur_ep++) {
+-		    _sasl_plugin_load(plugname, library, cur_ep->entryname,
++		    result = _sasl_plugin_load(plugname, library, cur_ep->entryname,
+ 				      cur_ep->add_plugin);
++		    if (result == SASL_OK) {
++			++entries;
++		    }
+ 		/* If this fails, it's not the end of the world */
+ 	    }
++	    if (entries == 0) {
++		FreeLibrary(library);	/* well, at least we should release the unused library! */
++	    }
++
+ 	} while (_findnext (fhandle, &finddata) == 0);
+ 	
+ 	_findclose (fhandle);

@@ -1,0 +1,122 @@
+--- fud.c._orig	Sat Feb 16 15:34:45 2002
++++ fud.c	Wed Feb 20 09:18:33 2002
+@@ -80,12 +80,13 @@
+ 
+ extern int errno;
+ extern int optind;
+-extern char *optarg;
+ 
+ /* current namespace */
+ static struct namespace fud_namespace;
+ 
+ /* forward decls */
++extern void setproctitle_init(int argc, char **argv, char **envp);
++
+ int handle_request(const char *who, const char *name, 
+ 		   struct sockaddr_in sfrom);
+ 
+@@ -110,8 +111,6 @@
+         char    *q;
+         int     off;
+ 
+-	openlog("fud", LOG_PID, LOG_LOCAL6);
+-
+         while(1) {
+             /* For safety */
+             memset(username,'\0',MAXLOGNAME);	
+@@ -150,30 +149,28 @@
+     exit(code);
+ }
+ 
+-
+-int main(int argc, char **argv)
++/*
++ * run once when process is forked;
++ * MUST NOT exit directly; must return with non-zero error code
++ */
++int service_init(int argc, char **argv, char **envp)
+ {
+-    int r;
+     int opt;
+-    char *alt_config = NULL;
+    
+-    r = 0; /* to shut up lint/gcc */
++    config_changeident("fud");
+ 
+-    if(geteuid() == 0)
+-        fatal("must run as the Cyrus user", EC_USAGE);
++    if (geteuid() == 0) fatal("must run as the Cyrus user", EC_USAGE);
++    setproctitle_init(argc, argv, envp);
+ 
+     while ((opt = getopt(argc, argv, "C:")) != EOF) {
+ 	switch (opt) {
+-	case 'C': /* alt config file */
+-	    alt_config = optarg;
++	case 'C': /* alt config file - handled by service::main() */
+ 	    break;
+ 	default:
+ 	    break;
+ 	}
+     }
+ 
+-    config_init(alt_config, "fud");
+-
+     signals_set_shutdown(&shut_down);
+     signals_add_handlers();
+ 
+@@ -181,15 +178,29 @@
+     mboxlist_open(NULL);
+     mailbox_initialize();
+ 
++    return 0;
++}
++
++void service_abort(int error)
++{
++    shut_down(error);
++}
++
++int service_main(int argc, char **argv, char **envp)
++{
++    int r; 
++     
++    r = 0; /* to shut up lint/gcc */ 
++
+     /* Set namespace */
+     if ((r = mboxname_init_namespace(&fud_namespace, 1)) != 0) {
+ 	syslog(LOG_ERR, error_message(r));
+ 	fatal(error_message(r), EC_CONFIG);
+     }
+ 
+-    begin_handling();
++    r = begin_handling();
+ 
+-    shut_down(0);
++    shut_down(r);
+ }
+ 
+ static void cyrus_timeout(int signo)
+@@ -287,8 +298,6 @@
+ 	return r;
+     }
+ 
+-    syslog(LOG_ERR, "foo");
+-
+     if(mbflag & MBTYPE_REMOTE) {
+ 	char *p = NULL;
+ 
+@@ -391,6 +400,13 @@
+ 
+ void fatal(const char* s, int code)
+ {
+-    fprintf(stderr, "fud: %s\n", s);
++    static int recurse_code = 0;
++
++    if (recurse_code) {
++        /* We were called recursively. Just give up */
+     exit(code);
++    }
++    recurse_code = code;
++
++    shut_down(code);
+ }

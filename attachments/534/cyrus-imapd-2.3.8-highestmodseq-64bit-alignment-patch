@@ -1,0 +1,226 @@
+*** imap/mailbox.h.orig	Thu Nov 30 17:11:19 2006
+--- imap/mailbox.h	Fri Mar 30 14:29:58 2007
+***************
+*** 324,329 ****
+--- 324,338 ----
+  extern int mailbox_open_index(struct mailbox *mailbox);
+  extern void mailbox_close(struct mailbox *mailbox);
+  
++ #ifdef HAVE_LONG_LONG_INT
++ typedef enum {
++     CPY_NTOH = (1<<0),
++     CPY_HTON = (1<<1)
++ } cpy_direction_t;
++ 
++ extern void cpy_bit64(bit64 *target, bit64 *source, cpy_direction_t dir);
++ #endif
++ 
+  extern int mailbox_read_header(struct mailbox *mailbox);
+  extern int mailbox_read_header_acl(struct mailbox *mailbox);
+  extern int mailbox_read_acl(struct mailbox *mailbox, 
+*** imap/mailbox.c.orig	Mon Feb  5 18:41:47 2007
+--- imap/mailbox.c	Fri Mar 30 18:27:46 2007
+***************
+*** 863,869 ****
+--- 863,899 ----
+      return 0;
+  }
+  
++ #ifdef HAVE_LONG_LONG_INT
+  /*
++  * A helper function for coping with 64 bit alignment issues with highestmodseq
++  * in the mailbox struct.
++  */
++ void cpy_bit64(bit64 *target, bit64 *source, cpy_direction_t direction)
++ {
++     bit64 *tmp;
++     char *s, *t;
++     int n;
++ 
++     /* get some working space */
++     tmp = (bit64 *)xmalloc(sizeof(bit64));
++ 
++     for (n=0, s=(char *)source, t=(char *)tmp; n < sizeof(bit64); n++) {
++ 	*(t++) = *(s++);
++     }
++     if (direction == CPY_NTOH) {
++ 	*tmp = ntohll(*tmp);
++     } else {
++ 	*tmp = htonll(*tmp);
++     }
++     for (n=0, s=(char *)tmp, t=(char *)target; n < sizeof(bit64); n++) {
++ 	*(t++) = *(s++);
++     }
++ 
++     free(tmp);
++ }
++ #endif
++ 
++ /*
+   * Read the header of the index file for mailbox
+   */
+  int mailbox_read_index_header(struct mailbox *mailbox)
+***************
+*** 944,951 ****
+      mailbox->leaked_cache_records =
+  	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_LEAKED_CACHE)));
+  #ifdef HAVE_LONG_LONG_INT
+!     mailbox->highestmodseq =
+! 	ntohll(*((bit64 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ_64)));
+  #else
+      mailbox->highestmodseq =
+  	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ)));
+--- 974,982 ----
+      mailbox->leaked_cache_records =
+  	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_LEAKED_CACHE)));
+  #ifdef HAVE_LONG_LONG_INT
+!     cpy_bit64(&mailbox->highestmodseq,
+! 	      (bit64 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ_64),
+! 	      CPY_NTOH);
+  #else
+      mailbox->highestmodseq =
+  	ntohl(*((bit32 *)(mailbox->index_base+OFFSET_HIGHESTMODSEQ)));
+***************
+*** 1318,1324 ****
+      *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) =
+  	htonl(mailbox->leaked_cache_records);
+  #ifdef HAVE_LONG_LONG_INT
+!     *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(mailbox->highestmodseq);
+  #else
+      /* zero the unused 32bits */
+      *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+--- 1349,1357 ----
+      *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) =
+  	htonl(mailbox->leaked_cache_records);
+  #ifdef HAVE_LONG_LONG_INT
+!     cpy_bit64((bit64 *)buf+OFFSET_HIGHESTMODSEQ_64, 
+! 	      &mailbox->highestmodseq,
+! 	      CPY_HTON);
+  #else
+      /* zero the unused 32bits */
+      *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+***************
+*** 1547,1553 ****
+  
+      if (ntohl(*((bit32 *)(buf+OFFSET_MINOR_VERSION))) < 8) {
+  #ifdef HAVE_LONG_LONG_INT
+! 	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(1);
+  #else
+  	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+  	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(1);
+--- 1580,1588 ----
+  
+      if (ntohl(*((bit32 *)(buf+OFFSET_MINOR_VERSION))) < 8) {
+  #ifdef HAVE_LONG_LONG_INT
+! 	bit64 tmp = (bit64)1;
+! 
+! 	cpy_bit64((bit64 *)buf+OFFSET_HIGHESTMODSEQ_64, &tmp, CPY_HTON);
+  #else
+  	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+  	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ)) = htonl(1);
+***************
+*** 1592,1600 ****
+  	*((bit32 *)(buf+OFFSET_MAILBOX_OPTIONS)) = htonl(options);
+      }
+  #if 0
+!     if (oldstart_offset < OFFSET_HIGHESTMODSEQ-quota_offset+sizeof(bit32) ||
+! 	!ntohll(*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)))) {
+! 	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(1);
+      }
+  #endif
+      *((bit32 *)(buf+OFFSET_SPARE0)) = htonl(0); /* RESERVED */
+--- 1627,1641 ----
+  	*((bit32 *)(buf+OFFSET_MAILBOX_OPTIONS)) = htonl(options);
+      }
+  #if 0
+!     {
+! 	bit64 tmp;
+! 
+! 	cpy_bit64(&tmp, (bit64 *)buf+OFFSET_HIGHESTMODSEQ_64, CPY_NTOH);
+! 	if (oldstart_offset < OFFSET_HIGHESTMODSEQ-quota_offset+sizeof(bit32) ||
+! 		!tmp) {
+! 	    tmp = (bit64)1;
+! 	    cpy_bit64((bit64 *)buf+OFFSET_HIGHESTMODSEQ_64, &tmp, CPY_HTON);
+! 	}
+      }
+  #endif
+      *((bit32 *)(buf+OFFSET_SPARE0)) = htonl(0); /* RESERVED */
+*** imap/reconstruct.c.orig	Mon Feb  5 18:41:48 2007
+--- imap/reconstruct.c	Fri Mar 30 14:47:11 2007
+***************
+*** 1073,1079 ****
+      *((bit32 *)(buf+OFFSET_MAILBOX_OPTIONS)) = htonl(mailbox.options);
+      *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) = htonl(0);
+  #ifdef HAVE_LONG_LONG_INT
+!     *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(mailbox.highestmodseq);
+  #else
+      /* zero the unused 32bits */
+      *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+--- 1073,1081 ----
+      *((bit32 *)(buf+OFFSET_MAILBOX_OPTIONS)) = htonl(mailbox.options);
+      *((bit32 *)(buf+OFFSET_LEAKED_CACHE)) = htonl(0);
+  #ifdef HAVE_LONG_LONG_INT
+!     cpy_bit64((bit64 *)buf+OFFSET_HIGHESTMODSEQ_64,
+! 	      &mailbox.highestmodseq,
+! 	      CPY_HTON);
+  #else
+      /* zero the unused 32bits */
+      *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+*** imap/sync_commit.c.orig	Thu Nov 30 17:11:20 2006
+--- imap/sync_commit.c	Fri Mar 30 14:46:15 2007
+***************
+*** 311,319 ****
+  
+      /* Fix up highest modseq */
+  #ifdef HAVE_LONG_LONG_INT
+!     if (highestmodseq > *((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64))) {
+! 	*((bit64 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
+      }
+  #else
+      if (highestmodseq > *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ))) {
+  	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+--- 311,326 ----
+  
+      /* Fix up highest modseq */
+  #ifdef HAVE_LONG_LONG_INT
+! {
+!     bit64 tmp;
+! 
+!     cpy_bit64(&tmp, (bit64 *)buf+OFFSET_HIGHESTMODSEQ_64, CPY_NTOH);
+!     if (highestmodseq > tmp) {
+! 	cpy_bit64((bit64 *)buf+OFFSET_HIGHESTMODSEQ_64,
+! 		  &highestmodseq,
+! 		  CPY_HTON);
+      }
++ }
+  #else
+      if (highestmodseq > *((bit32 *)(buf+OFFSET_HIGHESTMODSEQ))) {
+  	*((bit32 *)(buf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+***************
+*** 616,624 ****
+  	
+      /* Fix up highest modseq */
+  #ifdef HAVE_LONG_LONG_INT
+!     if (highestmodseq > ntohll(*((bit64 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)))) {
+! 	*((bit64 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)) = htonll(highestmodseq);
+      }
+  #else
+      if (highestmodseq > ntohl(*((bit32 *)(hbuf+OFFSET_HIGHESTMODSEQ)))) {
+  	*((bit32 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);
+--- 623,638 ----
+  	
+      /* Fix up highest modseq */
+  #ifdef HAVE_LONG_LONG_INT
+! {
+!     bit64 tmp;
+! 
+!     cpy_bit64(&tmp, (bit64 *)hbuf+OFFSET_HIGHESTMODSEQ_64, CPY_NTOH);
+!     if (highestmodseq > tmp) {
+! 	cpy_bit64((bit64 *)hbuf+OFFSET_HIGHESTMODSEQ_64,
+! 		  &highestmodseq,
+! 		  CPY_HTON);
+      }
++ }
+  #else
+      if (highestmodseq > ntohl(*((bit32 *)(hbuf+OFFSET_HIGHESTMODSEQ)))) {
+  	*((bit32 *)(hbuf+OFFSET_HIGHESTMODSEQ_64)) = htonl(0);

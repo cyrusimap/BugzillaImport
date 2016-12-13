@@ -1,0 +1,231 @@
+diff -ruw cyrus-sasl-2.1.22/plugins/gssapi.c cyrus-sasl-2.1.22-mods/plugins/gssapi.c
+--- cyrus-sasl-2.1.22/plugins/gssapi.c	2004-07-21 07:39:06.000000000 -0700
++++ cyrus-sasl-2.1.22-mods/plugins/gssapi.c	2006-01-12 13:37:09.000000000 -0800
+@@ -193,6 +193,8 @@
+     size_t len, curlen = 0;
+     const char prefix[] = "GSSAPI Error: ";
+     
++    if(!utils) return;
++    
+     len = sizeof(prefix);
+     ret = _plug_buf_alloc(utils, &out, &curlen, 256);
+     if(ret != SASL_OK) return SASL_OK;
+@@ -934,15 +936,29 @@
+ 	    text->requiressf = params->props.min_ssf - params->external_ssf;
+ 	}
+ 	
++	maj_stat = gss_wrap_size_limit( &min_stat,
++					    text->gss_ctx,
++					    1,
++					    GSS_C_QOP_DEFAULT,
++					    (OM_uint32) params->props.maxbufsize,
++					    &max_input);
++	if (GSS_ERROR(maj_stat)) {
++	    sasl_gss_seterror(text->utils, maj_stat, min_stat);
++	    sasl_gss_free_context_contents(text);
++	    if (output_token->value)
++			gss_release_buffer(&min_stat, output_token);
++	    return SASL_FAIL;
++	}
++	
+ 	/* build up our security properties token */
+-        if (params->props.maxbufsize > 0xFFFFFF) {
++	if (max_input > 0xFFFFFF) {
+             /* make sure maxbufsize isn't too large */
+             /* maxbufsize = 0xFFFFFF */
+             sasldata[1] = sasldata[2] = sasldata[3] = 0xFF;
+         } else {
+-            sasldata[1] = (params->props.maxbufsize >> 16) & 0xFF;
+-            sasldata[2] = (params->props.maxbufsize >> 8) & 0xFF;
+-            sasldata[3] = (params->props.maxbufsize >> 0) & 0xFF;
++		sasldata[1] = (max_input >> 16) & 0xFF;
++		sasldata[2] = (max_input >> 8) & 0xFF;
++		sasldata[3] = (max_input >> 0) & 0xFF;
+         }
+ 	sasldata[0] = 0;
+ 	if(text->requiressf != 0 && !params->props.maxbufsize) {
+@@ -1150,9 +1166,7 @@
+ 	text->state = SASL_GSSAPI_STATE_AUTHENTICATED;
+ 	
+ 	/* used by layers */
+-	_plug_decode_init(&text->decode_context, text->utils,
+-			  (params->props.maxbufsize > 0xFFFFFF) ? 0xFFFFFF :
+-			  params->props.maxbufsize);
++	_plug_decode_init(&text->decode_context, text->utils, oparams->maxoutbuf);
+ 	
+ 	oparams->doneflag = 1;
+ 	
+@@ -1631,6 +1645,9 @@
+ 		oparams->maxoutbuf = max_input;
+ 	    }
+ 	}
++	else {
++		max_input = oparams->maxoutbuf;
++	}
+ 	
+ 	GSS_LOCK_MUTEX(params->utils);
+ 	gss_release_buffer(&min_stat, output_token);
+@@ -1657,19 +1674,16 @@
+ 	    memcpy((char *)input_token->value+4,oparams->user,alen);
+ 
+ 	/* build up our security properties token */
+-        if (params->props.maxbufsize > 0xFFFFFF) {
++	if (max_input > 0xFFFFFF) {
+             /* make sure maxbufsize isn't too large */
+             /* maxbufsize = 0xFFFFFF */
+             ((unsigned char *)input_token->value)[1] = 0xFF;
+             ((unsigned char *)input_token->value)[2] = 0xFF;
+             ((unsigned char *)input_token->value)[3] = 0xFF;
+         } else {
+-            ((unsigned char *)input_token->value)[1] = 
+-                (params->props.maxbufsize >> 16) & 0xFF;
+-            ((unsigned char *)input_token->value)[2] = 
+-                (params->props.maxbufsize >> 8) & 0xFF;
+-            ((unsigned char *)input_token->value)[3] = 
+-                (params->props.maxbufsize >> 0) & 0xFF;
++		((unsigned char *)input_token->value)[1] = (max_input >> 16) & 0xFF;
++		((unsigned char *)input_token->value)[2] = (max_input >> 8) & 0xFF;
++		((unsigned char *)input_token->value)[3] = (max_input >> 0) & 0xFF;
+         }
+ 	((unsigned char *)input_token->value)[0] = mychoice;
+ 	
+@@ -1724,9 +1738,7 @@
+ 	oparams->doneflag = 1;
+ 	
+ 	/* used by layers */
+-	_plug_decode_init(&text->decode_context, text->utils,
+-			  (params->props.maxbufsize > 0xFFFFFF) ? 0xFFFFFF :
+-			  params->props.maxbufsize);
++	_plug_decode_init(&text->decode_context, text->utils, MAXBUFF_HIWATER);
+ 	
+ 	return SASL_OK;
+     }
+@@ -1740,7 +1752,7 @@
+     return SASL_FAIL; /* should never get here */
+ }
+ 
+-static const long gssapi_required_prompts[] = {
++static const unsigned long gssapi_required_prompts[] = {
+     SASL_CB_LIST_END
+ };  
+ 
+diff -ruw cyrus-sasl-2.1.22/plugins/plugin_common.c cyrus-sasl-2.1.22-mods/plugins/plugin_common.c
+--- cyrus-sasl-2.1.22/plugins/plugin_common.c	2004-06-23 11:43:37.000000000 -0700
++++ cyrus-sasl-2.1.22-mods/plugins/plugin_common.c	2006-01-12 13:33:22.000000000 -0800
+@@ -290,7 +290,7 @@
+ {
+     if(!utils || !secret || !(*secret)) return;
+ 
+-    utils->erasebuffer((*secret)->data, (*secret)->len);
++    utils->erasebuffer((char *)(*secret)->data, (*secret)->len);
+     utils->free(*secret);
+     *secret = NULL;
+ }
+@@ -612,7 +612,9 @@
+ 
+     text->utils = utils;
+     text->needsize = 4;
+-    text->in_maxbuf = in_maxbuf;
++	
++	/* start with a 16K cap */
++    text->in_maxbuf = (in_maxbuf < MAXBUFF_LOWATER) ? in_maxbuf : MAXBUFF_LOWATER;
+ }
+ 
+ /*
+@@ -634,11 +636,11 @@
+     char *tmp;
+     unsigned tmplen;
+     int ret;
+-    
+-    *outputlen = 0;
++	char *newbuffer = NULL;
+ 
+     while (inputlen) { /* more input */
+ 	if (text->needsize) { /* need to get the rest of the 4-byte size */
++		*outputlen = 0;
+ 
+ 	    /* copy as many bytes (up to 4) as we have into size buffer */
+ 	    tocopy = (inputlen > text->needsize) ? text->needsize : inputlen;
+@@ -652,14 +654,39 @@
+ 		memcpy(&(text->size), text->sizebuf, 4);
+ 		text->size = ntohl(text->size);
+ 	
+-		if (!text->size) /* should never happen */
++		if (!text->size) { /* should never happen */
++			text->utils->log(NULL, SASL_LOG_ERR, "text->size = 0");
+ 		    return SASL_FAIL;
++	    }
+ 	    
+-		if (text->size > text->in_maxbuf) {
++		if (text->size > text->in_maxbuf)
++		{
++			/* don't print this one in production code */
++		    /*
+ 		    text->utils->log(NULL, SASL_LOG_ERR, 
+-				     "encoded packet size too big (%d > %d)",
++				     "large encoded packet, expanding buffer 1 (%d > %d)",
+ 				     text->size, text->in_maxbuf);
+-		    return SASL_FAIL;
++			*/
++			text->in_maxbuf = text->size + MAXBUFF_HEADROOM;
++			newbuffer = text->utils->malloc(text->in_maxbuf);
++			if (newbuffer == NULL) return SASL_NOMEM;
++			if (text->buffer != NULL) {
++				memcpy(newbuffer, text->buffer, text->cursize);
++				text->utils->free(text->buffer);
++			}
++			text->buffer = newbuffer;
++		}
++		else if (text->in_maxbuf > MAXBUFF_HIWATER && text->size < MAXBUFF_HIWATER)
++		{
++			/* reduce back to 64K to avoid memory pressure */			
++			text->in_maxbuf = MAXBUFF_HIWATER;
++			newbuffer = text->utils->malloc(text->in_maxbuf);
++			if (newbuffer == NULL) return SASL_NOMEM;
++			if (text->buffer != NULL) {
++				memcpy(newbuffer, text->buffer, text->cursize);
++				text->utils->free(text->buffer);
++			}
++			text->buffer = newbuffer;
+ 		}
+ 	    
+ 		if (!text->buffer)
+@@ -674,6 +701,23 @@
+ 	    }
+ 	}
+ 
++	/* need to check every time */
++	if (text->size > text->in_maxbuf) {
++		/* this one is unusual, want the logging */
++		text->utils->log(NULL, SASL_LOG_ERR, 
++				 "large encoded packet, expanding buffer 2 (%d > %d)",
++				 text->size, text->in_maxbuf);
++		
++		text->in_maxbuf = text->size + MAXBUFF_HEADROOM;
++		newbuffer = text->utils->malloc(text->in_maxbuf);
++		if (newbuffer == NULL) return SASL_NOMEM;
++		if (text->buffer != NULL) {
++			memcpy(newbuffer, text->buffer, text->cursize);
++			text->utils->free(text->buffer);
++		}
++		text->buffer = newbuffer;
++	}
++	
+ 	diff = text->size - text->cursize; /* bytes needed for full packet */
+ 
+ 	if (inputlen < diff) {	/* not a complete packet, need more input */
+diff -ruw cyrus-sasl-2.1.22/plugins/plugin_common.h cyrus-sasl-2.1.22-mods/plugins/plugin_common.h
+--- cyrus-sasl-2.1.22/plugins/plugin_common.h	2004-06-23 11:43:37.000000000 -0700
++++ cyrus-sasl-2.1.22-mods/plugins/plugin_common.h	2006-01-12 13:33:35.000000000 -0800
+@@ -63,6 +63,11 @@
+ #include <saslutil.h>
+ #include <saslplug.h>
+ 
++/* setpoints for maxbuff */
++#define MAXBUFF_LOWATER		(0x4000)
++#define MAXBUFF_HIWATER		(0x10000)
++#define MAXBUFF_HEADROOM	(0x400)
++
+ #ifdef WIN32
+ #define PLUG_API __declspec(dllexport)
+ #else

@@ -1,0 +1,70 @@
+From 0bbab462fb99cb0b2535500f204579feb50e00a2 Mon Sep 17 00:00:00 2001
+From: Brian Awood <bawood@umich.edu>
+Date: Mon, 9 Nov 2009 16:53:44 -0500
+Subject: [PATCH] Limit the multipart mime boundaries that are parsed
+
+Occasionaly, although rarely, a message (usually a bounce
+in a loop) will come along and cause lmtpd to overflow the
+stack and crash.  Since several functions in message.c
+are recursive, this patch prevents recursing past the
+limit.  It sets a default of 1000, which will be more
+than enough for any legitimate mail, in reality 100 or
+less should be plenty.
+---
+ imap/message.c  |    9 ++++++++-
+ lib/imapoptions |    5 +++++
+ 2 files changed, 13 insertions(+), 1 deletions(-)
+
+diff --git a/imap/message.c b/imap/message.c
+index 374df56..a86d128 100644
+--- a/imap/message.c
++++ b/imap/message.c
+@@ -1704,6 +1704,7 @@ struct boundary *boundaries;
+     struct param *boundary;
+     char *defaultContentType = DEFAULT_CONTENT_TYPE;
+     int i, depth;
++    int limit = config_getint(IMAPOPT_BOUNDARY_LIMIT);
+ 
+     memset(&preamble, 0, sizeof(struct body));
+     memset(&epilogue, 0, sizeof(struct body));
+@@ -1738,7 +1739,8 @@ struct boundary *boundaries;
+     message_parse_content(msg, format, &preamble, boundaries);
+ 
+     /* Parse the component body-parts */
+-    while (boundaries->count == depth) {
++    while (boundaries->count == depth &&
++	    (limit == 0 ? 1 : boundaries->count < limit)) {
+ 	body->subpart = (struct body *)xrealloc((char *)body->subpart,
+ 				 (body->numparts+1)*sizeof(struct body));
+ 	message_parse_body(msg, format, &body->subpart[body->numparts++],
+@@ -1799,6 +1801,11 @@ struct boundary *boundaries;
+      */
+     body->boundary_size += epilogue.boundary_size;
+     body->boundary_lines += epilogue.boundary_lines;
++
++    /* check if we've hit a limit and flag it */
++    if (limit && depth == limit) {
++	syslog(LOG_ERR, "ERROR: mime boundary limit %i exceeded, not parsing anymore", limit);
++    }
+ }
+ 
+ /*
+diff --git a/lib/imapoptions b/lib/imapoptions
+index 046b0e6..5d93831 100644
+--- a/lib/imapoptions
++++ b/lib/imapoptions
+@@ -232,6 +232,11 @@ Blank lines and lines beginning with ``#'' are ignored.
+ /* Maximum number of transactions to be supported in the berkeley
+    environment. */
+ 
++{ "boundary_limit", 1000, INT }
++/* message_parse_body is called recursively for embedded multi-part
++   mime messages.  Messages with a large number of embedded mime
++   boundaries can end up causing stack overflows. */
++
+ { "client_timeout", 10, INT }
+ /* Number of seconds to wait before returning a timeout failure when
+    performing a client connection (e.g., in a murder environment) */
+-- 
+1.7.1
+

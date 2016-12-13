@@ -1,0 +1,35 @@
+--- mboxlist.c.orig	2006-03-14 06:10:50.000000000 -0700
++++ mboxlist.c	2006-03-29 12:52:42.670490880 -0700
+@@ -394,7 +394,9 @@
+     r = mboxlist_mylookup(name, &mbtype, NULL, NULL, NULL, &acl, tid, RMW);
+     switch (r) {
+     case 0:
+-	if(mbtype & MBTYPE_RESERVE)
++        if (localonly && (mbtype & MBTYPE_REMOTE))
++            break;
++	else if(mbtype & MBTYPE_RESERVE)
+ 	    r = IMAP_MAILBOX_RESERVED;
+ 	else
+ 	    r = IMAP_MAILBOX_EXISTS;
+@@ -605,6 +607,13 @@
+     switch (r) {
+     case 0:
+ 	break;
++    case IMAP_MAILBOX_EXISTS:
++        /* allow localcreate to go through if we're creating the mailbox 
++           locally and it currently exists on a remote server
++           to facilitate mailbox moves */
++        if (!localonly)
++            goto done;
++	break;
+     case IMAP_AGAIN:
+ 	goto retry;
+     default:
+@@ -617,6 +626,7 @@
+ 	goto done;
+     }
+ 
++    /* 2. verify ACL's to best of ability (CRASH: abort) */
+     /* 3a. Reserve mailbox in local database */
+     mboxent = mboxlist_makeentry(mbtype | MBTYPE_RESERVE,
+ 				 newpartition, acl);

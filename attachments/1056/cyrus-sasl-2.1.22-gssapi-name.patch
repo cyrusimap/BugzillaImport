@@ -1,0 +1,117 @@
+Add a "gssapi_service_name" option which can override the service name passed
+to GSSAPI.  If not set, the typical value (application-provided service name +
+server FQDN) is used.  If set to the special value "ANY", then no name is
+passed to the GSSAPI library, which should cause the library to use any name,
+which it can answer to, which is provided to it by the client.  If any other
+value is set, that value is passed to the GSSAPI library unmodified.
+
+diff -ur cyrus-sasl-2.1.22/plugins/gssapi.c cyrus-sasl-2.1.22/plugins/gssapi.c
+--- cyrus-sasl-2.1.22/plugins/gssapi.c	2009-01-26 14:46:43.000000000 -0500
++++ cyrus-sasl-2.1.22/plugins/gssapi.c	2009-01-26 14:39:28.000000000 -0500
+@@ -88,6 +88,7 @@
+ static const char plugin_id[] = "$Id: gssapi.c,v 1.92 2004/07/21 14:39:06 rjs3 Exp $";
+ 
+ static const char * GSSAPI_BLANK_STRING = "";
++#define GSSAPI_ANY_STRING "ANY"
+ 
+ #ifndef HAVE_GSS_C_NT_HOSTBASED_SERVICE
+ extern gss_OID gss_nt_service_name;
+@@ -643,8 +644,9 @@
+     gss_buffer_desc real_input_token, real_output_token;
+     OM_uint32 maj_stat = 0, min_stat = 0;
+     OM_uint32 max_input;
+-    gss_buffer_desc name_token;
+-    int ret, out_flags = 0 ;
++    gss_buffer_desc name_token, *name_token_p;
++    char *name = NULL;
++    int ret, len = 0, out_flags = 0 ;
+     
+     input_token = &real_input_token;
+     output_token = &real_output_token;
+@@ -663,6 +665,16 @@
+ 
+     case SASL_GSSAPI_STATE_AUTHNEG:
+ 	if (text->server_name == GSS_C_NO_NAME) { /* only once */
++	    ret = text->utils->getopt(text->utils->getopt_context,
++				      "GSSAPI", "gssapi_service_name",
++				      &name, &len);
++	    if ((ret != SASL_OK) || (len == 0)) {
++		name = NULL;
++	    }
++
++	    if (name == NULL) {
++		/* construct the name from the service name and the server FQDN */
++
+ 	    name_token.length = strlen(params->service) + 1 + strlen(params->serverFQDN);
+ 	    name_token.value = (char *)params->utils->malloc((name_token.length + 1) * sizeof(char));
+ 	    if (name_token.value == NULL) {
+@@ -671,16 +683,36 @@
+ 		return SASL_NOMEM;
+ 	    }
+ 	    sprintf(name_token.value,"%s@%s", params->service, params->serverFQDN);
++
++		name_token_p = &name_token;
++	    } else {
++		if (strcasecmp(name, GSSAPI_ANY_STRING) != 0) {
++		    /* use the configured name */
++		    name_token.length = strlen(name);
++		    name_token.value = (char *)params->utils->malloc(name_token.length + 1);
++		    if (name_token.value == NULL) {
++			sasl_gss_free_context_contents(text);
++			return SASL_NOMEM;
++		    }
++		    strcpy(name_token.value, name);
++		    name_token_p = &name_token;
++		} else {
++		    /* accept authentication to any name for which we can */
++		    name_token_p = GSS_C_NO_NAME;
++		}
++	    }
+ 	    
++	    if (name_token_p != GSS_C_NO_NAME) {
+ 	    GSS_LOCK_MUTEX(params->utils);
+ 	    maj_stat = gss_import_name (&min_stat,
+-					&name_token,
++					name_token_p,
+ 					GSS_C_NT_HOSTBASED_SERVICE,
+ 					&text->server_name);
+ 	    GSS_UNLOCK_MUTEX(params->utils);
+ 	    
+ 	    params->utils->free(name_token.value);
+ 	    name_token.value = NULL;
++	    }
+ 	    
+ 	    if (GSS_ERROR(maj_stat)) {
+ 		sasl_gss_seterror(text->utils, maj_stat, min_stat);
+@@ -695,6 +727,9 @@
+ 		text->server_creds = GSS_C_NO_CREDENTIAL;
+ 	    }
+ 	    
++	    if (name_token_p == GSS_C_NO_NAME) {
++		text->server_creds = GSS_C_NO_CREDENTIAL;
++	    } else {
+ 	    GSS_LOCK_MUTEX(params->utils);
+ 	    maj_stat = gss_acquire_cred(&min_stat, 
+ 					text->server_name,
+@@ -705,6 +740,7 @@
+ 					NULL, 
+ 					NULL);
+ 	    GSS_UNLOCK_MUTEX(params->utils);
++	    }
+ 	    
+ 	    if (GSS_ERROR(maj_stat)) {
+ 		sasl_gss_seterror(text->utils, maj_stat, min_stat);
+diff -ur cyrus-sasl-2.1.22/doc/options.html cyrus-sasl-2.1.22/doc/options.html
+--- cyrus-sasl-2.1.22/doc/options.html	2009-01-26 16:15:28.000000000 -0500
++++ cyrus-sasl-2.1.22/doc/options.html	2009-01-26 16:18:37.000000000 -0500
+@@ -41,6 +41,10 @@
+ <TD>Name of canon_user plugin to use</TD><TD>INTERNAL</TD>
+ </TR>
+ <TR>
++<TD>gssapi_service_name</TD><TD>GSSAPI</TD> <TD>Service name used by
++the GSSAPI mechanism, or "ANY" to accept any value supplied by the client</TD><TD>service name + server FQDN (application and system dependant)</TD>
++</TR>
++<TR>
+ <TD>keytab</TD><TD>GSSAPI</TD> <TD>Location of keytab
+ file</TD><TD><tt>/etc/krb5.keytab</tt> (system dependant)</TD>
+ </TR>

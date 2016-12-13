@@ -1,0 +1,54 @@
+From 2e3dde010d9d0712ae4d1b67f86c5b6ca328c9a0 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=D8yvind=20Kolbu?= <oyvind.kolbu@usit.uio.no>
+Date: Fri, 8 Apr 2011 12:28:01 +0200
+Subject: [PATCH 18/18] Support tlscache_db_path in tls_prune.
+
+---
+ imap/tls.c |   17 ++++++++++++-----
+ 1 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/imap/tls.c b/imap/tls.c
+index 852029d..e6338a6 100644
+--- a/imap/tls.c
++++ b/imap/tls.c
+@@ -1116,18 +1116,23 @@ static int prune_cb(void *rock, const char *id, int idlen,
+ /* must be called after cyrus_init */
+ int tls_prune_sessions(void)
+ {
+-    char dbdir[1024];
++    const char *fname = NULL;
++    char *tofree = NULL;
+     int ret;
+     struct prunerock prock;
+ 
++    fname = config_getstring(IMAPOPT_TLSCACHE_DB_PATH);
++
+    /* create the name of the db file */
+-    strlcpy(dbdir, config_dir, sizeof(dbdir));
+-    strlcat(dbdir, FNAME_TLSSESSIONS, sizeof(dbdir));
++    if (!fname) {
++	tofree = strconcat(config_dir, FNAME_TLSSESSIONS, (char *)NULL);
++	fname = tofree;
++    }
+ 
+-    ret = (DB->open)(dbdir, 0, &sessdb);
++    ret = (DB->open)(fname, 0, &sessdb);
+     if (ret != CYRUSDB_OK) {
+ 	syslog(LOG_ERR, "DBERROR: opening %s: %s",
+-	       dbdir, cyrusdb_strerror(ret));
++	       fname, cyrusdb_strerror(ret));
+ 	return 1;
+     }
+     else {
+@@ -1143,6 +1148,8 @@ int tls_prune_sessions(void)
+ 	       prock.deletions, prock.count);
+     }
+ 
++    free(tofree);
++
+     return 0;
+ }
+ 
+-- 
+1.7.1
+

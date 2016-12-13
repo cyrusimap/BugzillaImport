@@ -1,0 +1,299 @@
+diff -ru cyrus-imapd-2.4.12.orig/configure.in cyrus-imapd-2.4.12/configure.in
+--- cyrus-imapd-2.4.12.orig/configure.in	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/configure.in	2011-10-05 16:48:51.086182706 +0000
+@@ -46,15 +46,17 @@
+ dnl
+ 
+ 
+-AC_INIT(imap/imapd.c)
+-AC_PREREQ([2.54])
++AC_INIT([cyrus-imap], [2.4.12], [http://bugzilla.cyrusimap.org/index.cgi],, [http://www.cyrusimap.org/])
++AC_CONFIG_SRCDIR([imap/imapd.c])
++AC_PREREQ([2.68])
+ AC_CONFIG_HEADER(config.h)
+ AC_CANONICAL_SYSTEM
+-
++AC_DEFINE_UNQUOTED([_CYRUS_VERSION], ["v$PACKAGE_VERSION"], [Exposes the version of cyrus-imap to config.h(.in)])
+ dnl Useful hook for distributions
+ AC_ARG_WITH(extraident,[  --with-extraident=STRING   use STRING as extra version information],
+ 	[AC_DEFINE_UNQUOTED(EXTRA_IDENT,"$withval", [Extra version information for imap/version.h])])
+ 
++AC_CONFIG_LIBOBJ_DIR([lib])
+ AC_CHECK_PROG(MAKEDEPEND,makedepend,makedepend,[`cd ${srcdir};pwd`/tools/not-mkdep])
+ if test "$MAKEDEPEND" != "makedepend"; then
+         AC_MSG_WARN([Makedepend is not installed on this system.  You should compile and install the version from the makedepend subdirectory.])
+@@ -63,11 +65,11 @@
+ AC_ARG_WITH(login,,AC_ERROR([--with-login is no longer supported.
+ Configure SASL appropriately instead.]))
+ 
+-AC_ARG_WITH(cyrus-prefix,[  --with-cyrus-prefix=DIR    use DIR as cyrus server install directory],
+-	cyrus_prefix="$withval",cyrus_prefix="/usr/cyrus")
++AC_ARG_WITH(cyrus-prefix,[  --with-cyrus-prefix=DIR    use DIR as cyrus server install directory [[PREFIX/cyrus]]],
++	cyrus_prefix="$withval",cyrus_prefix="$prefix/cyrus")
+ AC_SUBST(cyrus_prefix)
+ AC_DEFINE_UNQUOTED(CYRUS_PATH,"$cyrus_prefix",[Where will we be installed?])
+-AC_ARG_WITH(service-path,[  --with-service-path=DIR    use DIR as service install directory],
++AC_ARG_WITH(service-path,[  --with-service-path=DIR    use DIR as service install directory [[PREFIX/cyrus/bin]]],
+ 	service_path="$withval",service_path="$cyrus_prefix/bin")
+ AC_SUBST(service_path)
+ AC_DEFINE_UNQUOTED(SERVICE_PATH,"$service_path",[Directory to use for service binaries])
+@@ -382,7 +384,7 @@
+ 
+ testpcre="yes"
+ AC_ARG_ENABLE(pcre,
+-		[  --disable-pcre      disable PCRE library],
++		[  --disable-pcre          disable PCRE library],
+ 	if test "$enableval" = no; then
+ 		testpcre="no"
+ 	fi)
+@@ -654,7 +656,7 @@
+ AC_ARG_WITH(afs-incdir,[  --with-afs-incdir=PATH  use AFS headers from PATH [[/usr/include]]],
+             afs_incdir="${withval}", afs_incdir="/usr/include")
+ 
+-AC_ARG_WITH(ldap, [  --with-ldap=DIR         use LDAP (in DIR) (experimental) [/usr/local] ],
++AC_ARG_WITH(ldap, [  --with-ldap=DIR         use LDAP (in DIR) (experimental) [[/usr/local]] ],
+ 	    with_ldap="${withval}", with_ldap="no")
+   
+ dnl select mode of afspts
+@@ -932,7 +934,7 @@
+ dnl
+ dnl Test for Zephyr
+ dnl
+-AC_ARG_WITH(zephyr,[  --with-zephyr[=PATH]    enable Zephyr notification (installed on PATH)],
++AC_ARG_WITH(zephyr,[  --with-zephyr[=PATH]      enable Zephyr notification (installed on PATH)],
+ 	with_zephyr="${withval}")
+ if test -z "$with_zephyr"; then
+      if test -f /usr/local/lib/libzephyr.a; then
+@@ -963,7 +965,7 @@
+ dnl
+ dnl Set pidfile location
+ dnl
+-AC_ARG_WITH(pidfile,[  --with-pidfile[=PATH]   pidfile in PATH (/var/run/cyrus-master.pid)],
++AC_ARG_WITH(pidfile,[  --with-pidfile[=PATH]     pidfile in PATH [[/var/run/cyrus-master.pid]]],
+ 	[MASTERPIDFILE="$withval"],
+ 	[MASTERPIDFILE="/var/run/cyrus-master.pid"])
+ MASTERPIDFILE="\"$MASTERPIDFILE\""
+@@ -1233,11 +1235,9 @@
+   esac
+ done
+ 
+-IMAP_COM_ERR_LIBS="${COM_ERR_LIBS}"
+ IMAP_LIBS="${LIB_SASL} ${LIBS} ${SQL_LIBS}"
+ 
+ AC_SUBST(LIB_RT)
+-AC_SUBST(IMAP_COM_ERR_LIBS)
+ AC_SUBST(IMAP_LIBS)
+ 
+ dnl AC_OUTPUT_COMMANDS([
+@@ -1465,4 +1465,5 @@
+ ])
+ 
+ dnl make sure that Makefile is the last thing output
+-AC_OUTPUT(man/Makefile master/Makefile lib/Makefile imap/Makefile imtest/Makefile netnews/Makefile perl/Makefile $EXTRA_OUTPUT Makefile)
++AC_CONFIG_FILES([man/Makefile master/Makefile lib/Makefile imap/Makefile imtest/Makefile netnews/Makefile perl/Makefile $EXTRA_OUTPUT Makefile])
++AC_OUTPUT
+diff -ru cyrus-imapd-2.4.12.orig/contrib/drac_auth.patch cyrus-imapd-2.4.12/contrib/drac_auth.patch
+--- cyrus-imapd-2.4.12.orig/contrib/drac_auth.patch	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/contrib/drac_auth.patch	2011-10-05 16:42:40.356182586 +0000
+@@ -94,10 +94,10 @@
+ +++ b/imap/Makefile.in
+ @@ -66,6 +66,7 @@ SIEVE_OBJS = @SIEVE_OBJS@
+  SIEVE_LIBS = @SIEVE_LIBS@
+- IMAP_COM_ERR_LIBS = @IMAP_COM_ERR_LIBS@
++ COM_ERR_LIBS = @COM_ERR_LIBS@
+  LIB_WRAP = @LIB_WRAP@
+ +DRAC_LIBS = @DRACLIBS@
+- LIBS = $(IMAP_LIBS) $(IMAP_COM_ERR_LIBS)
++ LIBS = $(IMAP_LIBS) $(COM_ERR_LIBS)
+  DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+  
+ @@ -203,17 +204,17 @@ lmtpd.pure: lmtpd.o proxy.o $(LMTPOBJS) $(SIEVE_OBJS) \
+diff -ru cyrus-imapd-2.4.12.orig/imap/Makefile.in cyrus-imapd-2.4.12/imap/Makefile.in
+--- cyrus-imapd-2.4.12.orig/imap/Makefile.in	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/imap/Makefile.in	2011-10-05 17:09:16.957183350 +0000
+@@ -63,9 +63,9 @@
+ IMAP_LIBS = @IMAP_LIBS@ @LIB_RT@
+ SIEVE_OBJS = @SIEVE_OBJS@
+ SIEVE_LIBS = @SIEVE_LIBS@
+-IMAP_COM_ERR_LIBS = @IMAP_COM_ERR_LIBS@
++COM_ERR_LIBS = @COM_ERR_LIBS@
+ LIB_WRAP = @LIB_WRAP@
+-LIBS = $(IMAP_LIBS) $(IMAP_COM_ERR_LIBS)
++LIBS = $(IMAP_LIBS) $(COM_ERR_LIBS)
+ DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+ 
+ CFLAGS = @CFLAGS@
+@@ -152,7 +152,7 @@
+ 
+ ### Built Source Files
+ 
+-version.o: ../xversion.h
++version.o: ../xversion.h ../config.h
+ 
+ pushstats.c: pushstats.snmp $(srcdir)/../snmp/snmpgen
+ 	$(srcdir)/../snmp/snmpgen $(srcdir)/pushstats.snmp
+diff -ru cyrus-imapd-2.4.12.orig/Makefile.in cyrus-imapd-2.4.12/Makefile.in
+--- cyrus-imapd-2.4.12.orig/Makefile.in	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/Makefile.in	2011-10-05 17:07:50.280183003 +0000
+@@ -63,9 +63,9 @@
+ LEX = @LEX@
+ COMPILE_ET = @COMPILE_ET@
+ 
+-PACKAGE = cyrus-imapd
+-VERSION = 2.4.12
+-GIT_VERSION = $(VERSION).git$(shell date +'%Y%m%d%H%M')
++PACKAGE_NAME = @PACKAGE_NAME@
++PACKAGE_VERSION = @PACKAGE_VERSION@
++GIT_VERSION = $(PACKAGE_VERSION).git$(shell date +'%Y%m%d%H%M')
+ 
+ all:: xversion
+ 	@for d in  $(SUBDIRS); \
+@@ -77,15 +77,14 @@
+ snapshot::
+ 	@echo "creating snapshot $(GIT_VERSION)"
+ 	@if [ \! -d snapshot ]; then mkdir snapshot ; fi
+-	@git archive --format=tar --prefix=$(PACKAGE)-$(GIT_VERSION)/ HEAD | tar -C snapshot/ -x -f -
+-	@echo "/* $(PACKAGE) $(GIT_VERSION) */" > snapshot/$(PACKAGE)-$(GIT_VERSION)/xversion.h
+-	@echo "#define _CYRUS_VERSION \"git$(VERSION)+`git log --pretty=oneline $(PACKAGE)-$(VERSION)..HEAD | wc -l`\"" >> snapshot/$(PACKAGE)-$(GIT_VERSION)/xversion.h
+-	@echo "#define CYRUS_GITVERSION \"`git log --abbrev=8 --pretty="%h %ci" -1 | cut -c 1-18`\"" >> snapshot/$(PACKAGE)-$(GIT_VERSION)/xversion.h
+-	@touch snapshot/$(PACKAGE)-$(GIT_VERSION)/xversion
+-	@cd snapshot/$(PACKAGE)-$(GIT_VERSION) ; sh SMakefile
++	@git archive --format=tar --prefix=$(PACKAGE_NAME)-$(GIT_VERSION)/ HEAD | tar -C snapshot/ -x -f -
++	@echo "/* $(PACKAGE_NAME) $(GIT_VERSION) */" > snapshot/$(PACKAGE_NAME)-$(GIT_VERSION)/xversion.h
++	@echo "#define CYRUS_GITVERSION \"`git log --abbrev=8 --pretty="%h %ci" -1 | cut -c 1-18`\"" >> snapshot/$(PACKAGE_NAME)-$(GIT_VERSION)/xversion.h
++	@touch snapshot/$(PACKAGE_NAME)-$(GIT_VERSION)/xversion
++	@cd snapshot/$(PACKAGE_NAME)-$(GIT_VERSION) ; sh SMakefile
+ 	@for d in $(SUBDIRS) $(DISTSUBDIRS); \
+ 	do \
+-	(cd snapshot/$(PACKAGE)-$(GIT_VERSION)/$$d; \
++	(cd snapshot/$(PACKAGE_NAME)-$(GIT_VERSION)/$$d; \
+ 	if [ -f Makefile.dist ]; then \
+ 	echo "### Making" snapshot "in" `pwd`; \
+ 	$(MAKE) $(MFLAGS) YACC='$(YACC)' LEX='$(LEX)' \
+@@ -93,15 +92,15 @@
+ 	fi) || exit 1; \
+ 	done
+ 	@echo "creating tarfile"
+-	tar -C snapshot -c -f - $(PACKAGE)-$(GIT_VERSION) | gzip -9 > $(PACKAGE)-$(GIT_VERSION).tar.gz
++	tar -C snapshot -c -f - $(PACKAGE_NAME)-$(GIT_VERSION) | gzip -9 > $(PACKAGE_NAME)-$(GIT_VERSION).tar.gz
+ 	@rm -rf snapshot
+ 
+ dist:: distgit
+ 	@echo "creating configure"
+-	@cd dist/cyrus-imapd-$(VERSION) ; sh SMakefile
++	@cd dist/cyrus-imapd-$(PACKAGE_VERSION) ; sh SMakefile
+ 	@for d in $(SUBDIRS) $(DISTSUBDIRS); \
+ 	do \
+-	(cd dist/cyrus-imapd-$(VERSION)/$$d; \
++	(cd dist/cyrus-imapd-$(PACKAGE_VERSION)/$$d; \
+ 	if [ -f Makefile.dist ]; then \
+ 	echo "### Making" dist "in" `pwd`; \
+ 	$(MAKE) $(MFLAGS) YACC='$(YACC)' LEX='$(LEX)' \
+@@ -109,24 +108,22 @@
+ 	fi) || exit 1; \
+ 	done
+ 	@echo "creating tarfile"
+-	@cd dist ; tar cf - cyrus-imapd-$(VERSION) | \
+-	gzip -9 > ../cyrus-imapd-$(VERSION).tar.gz
++	@cd dist ; tar cf - cyrus-imapd-$(PACKAGE_VERSION) | \
++	gzip -9 > ../cyrus-imapd-$(PACKAGE_VERSION).tar.gz
+ 	rm -f distgit
+ 	rm -rf dist
+ 
+ distgit:
+ 	if [ \! -d dist ]; then mkdir dist ; fi
+-	@echo "checking out the distribution from tag $(PACKAGE)-$(VERSION)"
+-	git archive --format=tar --prefix=$(PACKAGE)-$(VERSION)/ $(PACKAGE)-$(VERSION) | tar -C dist -x -f -
+-	echo "/* Release $(PACKAGE)-$(VERSION) */" > dist/$(PACKAGE)-$(VERSION)/xversion.h
+-	echo "#define _CYRUS_VERSION \"v$(VERSION)\"" >> dist/$(PACKAGE)-$(VERSION)/xversion.h
+-	echo "#define CYRUS_GITVERSION \"`git log --abbrev=8 --pretty=\"%h %ci\" -1 | cut -d\" \" -f1,2`\"" >> dist/$(PACKAGE)-$(VERSION)/xversion.h
+-	touch dist/$(PACKAGE)-$(VERSION)/xversion
++	@echo "checking out the distribution from tag $(PACKAGE_NAME)-$(PACKAGE_VERSION)"
++	git archive --format=tar --prefix=$(PACKAGE_NAME)-$(PACKAGE_VERSION)/ $(PACKAGE_NAME)-$(PACKAGE_VERSION) | tar -C dist -x -f -
++	echo "/* Release $(PACKAGE_NAME)-$(PACKAGE_VERSION) */" > dist/$(PACKAGE_NAME)-$(PACKAGE_VERSION)/xversion.h
++	echo "#define CYRUS_GITVERSION \"`git log --abbrev=8 --pretty=\"%h %ci\" -1 | cut -d\" \" -f1,2`\"" >> dist/$(PACKAGE_NAME)-$(PACKAGE_VERSION)/xversion.h
++	touch dist/$(PACKAGE_NAME)-$(PACKAGE_VERSION)/xversion
+ 	touch distgit
+ 
+ xversion xversion.h:
+ 	@echo "/* Development version */" > xversion.h.tmp
+-	@echo "#define _CYRUS_VERSION \"git$(VERSION)+`git log --pretty=oneline $(PACKAGE)-$(VERSION)..HEAD | wc -l`\"" >> xversion.h.tmp
+ 	@echo "#define CYRUS_GITVERSION \"`git log --abbrev=8 --pretty=\"%h %ci\" -1 | cut -d\" \" -f1,2`\"" >> xversion.h.tmp
+ 	@cmp -s xversion.h.tmp xversion.h || mv xversion.h.tmp xversion.h
+ 	@rm -f xversion.h.tmp
+diff -ru cyrus-imapd-2.4.12.orig/master/cyrusMasterMIB.c cyrus-imapd-2.4.12/master/cyrusMasterMIB.c
+--- cyrus-imapd-2.4.12.orig/master/cyrusMasterMIB.c	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/master/cyrusMasterMIB.c	2011-10-05 17:11:47.564183436 +0000
+@@ -1,3 +1,4 @@
++/* This should always be included first before anything else */
+ #include <config.h>
+ 
+ #if defined(HAVE_UCDSNMP) || defined(HAVE_NETSNMP)
+@@ -5,9 +6,6 @@
+ /* This file was generated by mib2c and is intended for use as a mib module
+    for the ucd-snmp snmpd agent. */
+ 
+-/* This should always be included first before anything else */
+-#include <config.h>
+-
+ #include "xmalloc.h"
+ #include "xstrlcpy.h"
+ #include "xstrlcat.h"
+diff -ru cyrus-imapd-2.4.12.orig/master/masterconf.c cyrus-imapd-2.4.12/master/masterconf.c
+--- cyrus-imapd-2.4.12.orig/master/masterconf.c	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/master/masterconf.c	2011-10-05 17:18:13.330183264 +0000
+@@ -54,7 +54,8 @@
+ #include <sys/stat.h>
+ #include <sysexits.h>
+ 
+-#include "libconfig.c"
++#include "lib/util.h"
++#include "lib/libconfig.h"
+ 
+ #if HAVE_UNISTD_H
+ # include <unistd.h>
+diff -ru cyrus-imapd-2.4.12.orig/notifyd/Makefile.in cyrus-imapd-2.4.12/notifyd/Makefile.in
+--- cyrus-imapd-2.4.12.orig/notifyd/Makefile.in	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/notifyd/Makefile.in	2011-10-05 16:44:10.462182266 +0000
+@@ -71,9 +71,9 @@
+ SERVICE=../master/service.o
+ 
+ IMAP_LIBS = @IMAP_LIBS@ @LIB_RT@
+-IMAP_COM_ERR_LIBS = @IMAP_COM_ERR_LIBS@
++COM_ERR_LIBS = @COM_ERR_LIBS@
+ LIB_WRAP = @LIB_WRAP@
+-LIBS = @ZEPHYR_LIBS@ @LIBS@ $(IMAP_COM_ERR_LIBS)
++LIBS = @ZEPHYR_LIBS@ @LIBS@ $(COM_ERR_LIBS)
+ DEPLIBS=../imap/mutex_fake.o ../imap/libimap.a ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+ 
+ PURIFY=/usr/local/bin/purify
+diff -ru cyrus-imapd-2.4.12.orig/sieve/Makefile.in cyrus-imapd-2.4.12/sieve/Makefile.in
+--- cyrus-imapd-2.4.12.orig/sieve/Makefile.in	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/sieve/Makefile.in	2011-10-05 16:45:05.373182654 +0000
+@@ -66,9 +66,9 @@
+ MAKEDEPEND = @MAKEDEPEND@
+ 
+ IMAP_LIBS = @IMAP_LIBS@
+-IMAP_COM_ERR_LIBS = @IMAP_COM_ERR_LIBS@
++COM_ERR_LIBS = @COM_ERR_LIBS@
+ IMAP_LIBS = @IMAP_LIBS@ @LIB_RT@
+-LIBS = libsieve.a $(IMAP_LIBS) $(IMAP_COM_ERR_LIBS)
++LIBS = libsieve.a $(IMAP_LIBS) $(COM_ERR_LIBS)
+ DEPLIBS=../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+ 
+ BUILT_SOURCES = addr.c addr.h addr-lex.c \
+diff -ru cyrus-imapd-2.4.12.orig/timsieved/Makefile.in cyrus-imapd-2.4.12/timsieved/Makefile.in
+--- cyrus-imapd-2.4.12.orig/timsieved/Makefile.in	2011-10-04 19:53:03.000000000 +0000
++++ cyrus-imapd-2.4.12/timsieved/Makefile.in	2011-10-05 16:45:31.629182585 +0000
+@@ -71,9 +71,9 @@
+ SERVICE=../master/service.o
+ 
+ IMAP_LIBS = @IMAP_LIBS@ @LIB_RT@
+-IMAP_COM_ERR_LIBS = @IMAP_COM_ERR_LIBS@
++COM_ERR_LIBS = @COM_ERR_LIBS@
+ LIB_WRAP = @LIB_WRAP@
+-LIBS = $(IMAP_COM_ERR_LIBS)
++LIBS = $(COM_ERR_LIBS)
+ DEPLIBS=../sieve/libsieve.a ../imap/mutex_fake.o ../imap/libimap.a ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+ 
+ PURIFY=/usr/local/bin/purify

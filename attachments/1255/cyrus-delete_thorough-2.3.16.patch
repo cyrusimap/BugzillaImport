@@ -1,0 +1,153 @@
+diff -r -u cyrus-imapd-2.3.16.orig/imap/mailbox.c cyrus-imapd-2.3.16/imap/mailbox.c
+--- cyrus-imapd-2.3.16.orig/imap/mailbox.c	2009-12-15 04:29:33.000000000 +0100
++++ cyrus-imapd-2.3.16/imap/mailbox.c	2010-01-22 11:21:07.000000000 +0100
+@@ -2835,13 +2835,52 @@
+     }
+ }
+ 
++struct chkrock
++{
++    char mailboxpath[MAX_MAILBOX_PATH+1];
++    char mailboxmpath[MAX_MAILBOX_PATH+1];
++    int pathchildren;
++    int mpathchildren;
++};
++
+ /* Callback for use by cmd_delete */
+-static int chkchildren(char *name __attribute__((unused)),
++static int chkchildren(char *name,
+ 		       int matchlen __attribute__((unused)),
+ 		       int maycreate __attribute__((unused)),
+-		       void *rock __attribute__((unused)))
++		       void *rockp)
+ {
+-    return CYRUSDB_DONE;
++    struct chkrock* rock = (struct chkrock*)rockp;
++    int pathlen;
++    int mpathlen;
++    char *path;
++    char *mpath;
++    int r;
++    int hasmpath = (rock->mailboxmpath[0] == 0 ? 0 : 1);
++
++    r = mboxlist_detail(name, NULL, &path, &mpath, NULL, NULL, NULL);
++    if (r) {
++        return r;
++    }
++
++    pathlen = strlen(rock->mailboxpath);
++    mpathlen = strlen(rock->mailboxmpath);
++    if (!rock->pathchildren && !strncasecmp(rock->mailboxpath, path, pathlen)
++        && (path[pathlen] == '/'))
++    {
++        rock->pathchildren = 1;
++    }
++    if (hasmpath && !rock->mpathchildren && mpath && !strncasecmp(rock->mailboxmpath, mpath, mpathlen)
++        && (mpath[mpathlen] == '/'))
++    {
++        rock->mpathchildren = 1;
++    }
++
++    if (rock->pathchildren && (!hasmpath || rock->mpathchildren)) {
++        /* Actual path children found */
++        return CYRUSDB_DONE;
++    }
++
++    return CYRUSDB_OK;
+ }
+ 
+ /*
+@@ -2855,6 +2894,11 @@
+     char pbuf[MAX_MAILBOX_PATH+1], mbuf[MAX_MAILBOX_PATH+1];
+     char *ntail, *ptail, *mtail = NULL;
+     struct txn *tid = NULL;
++    struct chkrock rock;
++    char *parentpath;
++    char *parentmpath;
++    int pathlen;
++    int mpathlen;
+     
+     /* Ensure that we are locked */
+     if(!mailbox->header_lock_count) return IMAP_INTERNAL;
+@@ -2905,26 +2949,35 @@
+     mailbox_close(mailbox);
+ 
+ 
++    bzero(&rock, sizeof(rock));
+     do {
+ 	/* Check if the mailbox has children */
+ 	strcpy(ntail, ".*");
+-	r = mboxlist_findall(NULL, nbuf, 1, NULL, NULL, chkchildren, NULL);
++	strlcpy(rock.mailboxpath, pbuf, sizeof(rock.mailboxpath));
++	if (mtail) {
++	    strlcpy(rock.mailboxmpath, mbuf, sizeof(rock.mailboxmpath));
++	}
++	r = mboxlist_findall(NULL, nbuf, 1, NULL, NULL, chkchildren, &rock);
+ 	if (r != 0) break; /* We short-circuit with CYRUSDB_DONE */
+ 
+-	/* No children, remove mailbox spool dir(s) */
+-	if (rmdir(pbuf)) {
+-	    syslog(LOG_NOTICE,
+-		   "Remove of supposedly empty directory %s failed: %m",
+-		   pbuf);
++	if (!rock.pathchildren) {
++	    /* No children, remove mailbox spool dir(s) */
++	    if (rmdir(pbuf)) {
++		syslog(LOG_NOTICE,
++		       "Remove of supposedly empty directory %s failed: %m",
++		       pbuf);
++	    }
+ 	}
+ 	ptail = strrchr(pbuf, '/');
+ 	*ptail ='\0';
+ 
+ 	if (mtail) {
+-	    if (rmdir(mbuf)) {
+-		syslog(LOG_NOTICE,
+-		       "Remove of supposedly empty directory %s failed: %m",
+-		       mbuf);
++	    if (!rock.mpathchildren) {
++		if (rmdir(mbuf)) {
++		    syslog(LOG_NOTICE,
++		           "Remove of supposedly empty directory %s failed: %m",
++		           mbuf);
++		}
+ 	    }
+ 	    mtail = strrchr(mbuf, '/');
+ 	    *mtail ='\0';
+@@ -2943,8 +2996,33 @@
+ 	    /* Hit top of 'user' hierarchy */
+ 	    break;
+ 	}
+-	r = mboxlist_lookup(nbuf, NULL, NULL);
+-    } while(r == IMAP_MAILBOX_NONEXISTENT);
++	r = mboxlist_detail(nbuf, NULL, &parentpath, &parentmpath, NULL, NULL, NULL);
++	if (r == IMAP_MAILBOX_NONEXISTENT) {
++	    /* Parent does not exist, go on */
++	    continue;
++	}
++	else if (r != 0) {
++	    break;
++	}
++
++	pathlen = strlen(parentpath);
++	if (parentmpath) {
++	    mpathlen = strlen(parentmpath);
++	}
++	if (strncasecmp(parentpath, rock.mailboxpath, pathlen) || (rock.mailboxpath[pathlen] != '/')) {
++	    /* We may be able to delete parent path */
++	    continue;
++	}
++	if (mtail && (!parentmpath || (parentmpath
++	    && (strncasecmp(parentmpath, rock.mailboxmpath, mpathlen) || (rock.mailboxmpath[mpathlen] != '/')))))
++	{
++	    /* We may be able to delete parent metadata path */
++	    continue;
++	}
++
++	/* Parent mailbox is also parent path, stop here */
++	break;
++    } while(1);
+ 
+     return 0;
+ }

@@ -1,0 +1,134 @@
+Index: cmulocal/cyrus.m4
+===================================================================
+RCS file: /cvs/src/cmulocal/cyrus.m4,v
+retrieving revision 1.4
+diff -u -r1.4 cyrus.m4
+--- cmulocal/cyrus.m4	8 Oct 2003 20:35:24 -0000	1.4
++++ cmulocal/cyrus.m4	7 May 2008 11:24:19 -0000
+@@ -11,10 +11,10 @@
+ dnl (so the runpath for shared libraries is set).
+ AC_DEFUN([CMU_ADD_LIBPATH], [
+   # this is CMU ADD LIBPATH
+-  if test "$andrew_runpath_switch" = "none" ; then
++  if test "$andrew_cv_runpath_switch" = "none" ; then
+ 	LDFLAGS="-L$1 ${LDFLAGS}"
+   else
+-	LDFLAGS="-L$1 $andrew_runpath_switch$1 ${LDFLAGS}"
++	LDFLAGS="-L$1 $andrew_cv_runpath_switch$1 ${LDFLAGS}"
+   fi
+ ])
+ 
+@@ -22,24 +22,24 @@
+ dnl (so the runpath for shared libraries is set).
+ AC_DEFUN([CMU_ADD_LIBPATH_TO], [
+   # this is CMU ADD LIBPATH TO
+-  if test "$andrew_runpath_switch" = "none" ; then
++  if test "$andrew_cv_runpath_switch" = "none" ; then
+ 	$2="-L$1 ${$2}"
+   else
+-	$2="-L$1 ${$2} $andrew_runpath_switch$1"
++	$2="-L$1 ${$2} $andrew_cv_runpath_switch$1"
+   fi
+ ])
+ 
+ dnl runpath initialization
+ AC_DEFUN([CMU_GUESS_RUNPATH_SWITCH], [
+    # CMU GUESS RUNPATH SWITCH
+-  AC_CACHE_CHECK(for runpath switch, andrew_runpath_switch, [
++  AC_CACHE_CHECK(for runpath switch, andrew_cv_runpath_switch, [
+     # first, try -R
+     SAVE_LDFLAGS="${LDFLAGS}"
+     LDFLAGS="-R /usr/lib"
+-    AC_TRY_LINK([],[],[andrew_runpath_switch="-R"], [
++    AC_TRY_LINK([],[],[andrew_cv_runpath_switch="-R"], [
+   	LDFLAGS="-Wl,-rpath,/usr/lib"
+-    AC_TRY_LINK([],[],[andrew_runpath_switch="-Wl,-rpath,"],
+-    [andrew_runpath_switch="none"])
++    AC_TRY_LINK([],[],[andrew_cv_runpath_switch="-Wl,-rpath,"],
++    [andrew_cv_runpath_switch="none"])
+     ])
+   LDFLAGS="${SAVE_LDFLAGS}"
+   ])])
+Index: config/kerberos_v4.m4
+===================================================================
+RCS file: /cvs/src/sasl/config/kerberos_v4.m4,v
+retrieving revision 1.18
+diff -u -r1.18 kerberos_v4.m4
+--- config/kerberos_v4.m4	7 May 2005 04:14:55 -0000	1.18
++++ config/kerberos_v4.m4	7 May 2008 11:24:19 -0000
+@@ -89,18 +89,18 @@
+     dnl if we were ambitious, we would look more aggressively for the
+     dnl krb4 install
+     if test -d ${krb4}; then
+-       AC_CACHE_CHECK(for Kerberos includes, cyrus_krbinclude, [
++       AC_CACHE_CHECK(for Kerberos includes, cyrus_cv_krbinclude, [
+          for krbhloc in include/kerberosIV include/kerberos include
+          do
+            if test -f ${krb4}/${krbhloc}/krb.h ; then
+-             cyrus_krbinclude=${krb4}/${krbhloc}
++             cyrus_cv_krbinclude=${krb4}/${krbhloc}
+              break
+            fi
+          done
+          ])
+ 
+-       if test -n "${cyrus_krbinclude}"; then
+-         CPPFLAGS="$CPPFLAGS -I${cyrus_krbinclude}"
++       if test -n "${cyrus_cv_krbinclude}"; then
++         CPPFLAGS="$CPPFLAGS -I${cyrus_cv_krbinclude}"
+        fi
+        LDFLAGS="$LDFLAGS -L$krb4/lib"
+     fi
+Index: saslauthd/configure.in
+===================================================================
+RCS file: /cvs/src/sasl/saslauthd/configure.in,v
+retrieving revision 1.62
+diff -u -r1.62 configure.in
+--- saslauthd/configure.in	19 Apr 2006 20:24:22 -0000	1.62
++++ saslauthd/configure.in	7 May 2008 11:24:19 -0000
+@@ -163,30 +163,30 @@
+ 
+ dnl Checks for which function macros exist
+ AC_MSG_CHECKING(whether $CC implements __func__)
+-AC_CACHE_VAL(have_func,
++AC_CACHE_VAL(sasl_cv_have_func,
+ [AC_TRY_LINK([#include <stdio.h>],[printf("%s", __func__);],
+-have_func=yes,
+-have_func=no)])
+-AC_MSG_RESULT($have_func)
+-if test "$have_func" = yes; then
++sasl_cv_have_func=yes,
++sasl_cv_have_func=no)])
++AC_MSG_RESULT($sasl_cv_have_func)
++if test "$sasl_cv_have_func" = yes; then
+        AC_DEFINE(HAVE_FUNC,[],[Does the compiler understand __func__])
+ else
+        AC_MSG_CHECKING(whether $CC implements __PRETTY_FUNCTION__)
+-       AC_CACHE_VAL(have_pretty_function,
++       AC_CACHE_VAL(sasl_cv_have_pretty_function,
+        [AC_TRY_LINK([#include <stdio.h>],[printf("%s", __PRETTY_FUNCTION__);],
+-       have_pretty_function=yes,
+-       have_pretty_function=no)])
+-       AC_MSG_RESULT($have_pretty_function)
+-       if test "$have_pretty_function" = yes; then
++       sasl_cv_have_pretty_function=yes,
++       sasl_cv_have_pretty_function=no)])
++       AC_MSG_RESULT($sasl_cv_have_pretty_function)
++       if test "$sasl_cv_have_pretty_function" = yes; then
+                AC_DEFINE(HAVE_PRETTY_FUNCTION,[],[Does compiler understand __PRETTY_FUNCTION__])
+        else
+                AC_MSG_CHECKING(whether $CC implements __FUNCTION__)
+-               AC_CACHE_VAL(have_function,
++               AC_CACHE_VAL(sasl_cv_have_function,
+                [AC_TRY_LINK([#include <stdio.h>],[printf("%s", __FUNCTION__);],
+-               have_function=yes,
+-               have_function=no)])
+-               AC_MSG_RESULT($have_function)
+-               if test "$have_function" = yes; then
++               sasl_cv_have_function=yes,
++               sasl_cv_have_function=no)])
++               AC_MSG_RESULT($sasl_cv_have_function)
++               if test "$sasl_cv_have_function" = yes; then
+                        AC_DEFINE(HAVE_FUNCTION,[],[Does compiler understand __FUNCTION__])
+                fi
+        fi

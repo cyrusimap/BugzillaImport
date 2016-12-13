@@ -1,0 +1,168 @@
+diff -u -r cyrus-imapd-2.3.12p2/master/master.c cyrus-imapd.patched/master/master.c
+--- cyrus-imapd-2.3.12p2/master/master.c	Tue Apr 15 20:11:52 2008
++++ cyrus-imapd.patched/master/master.c	Thu Aug 21 16:07:00 2008
+@@ -71,6 +71,8 @@
+ #include <sysexits.h>
+ #include <errno.h>
+ #include <limits.h>
++#include <pwd.h>
++#include <grp.h>
+ 
+ #ifndef INADDR_NONE
+ #define INADDR_NONE 0xffffffff
+@@ -302,6 +304,42 @@
+     return statbuf.st_mode & S_IXUSR;
+ }
+ 
++static int change_socket_ownership(const char *path, const char *owner, const char *group)
++{
++    /* -1 is don't change */
++    uid_t socket_uid = -1;
++    gid_t socket_gid = -1;
++    int rtn = 0;
++
++    if (owner && strlen(owner) > 0) {
++        struct passwd *pw_user = getpwnam(owner);
++        if (pw_user) {
++            socket_uid = pw_user->pw_uid;
++            socket_gid = pw_user->pw_gid;
++        } else {
++            syslog(LOG_ERR, "user %s not found", owner);
++            rtn = -1;
++        }
++    }
++
++    if (group && strlen(group) > 0) {
++        struct group *pw_group = getgrnam (group);
++        if (pw_group) {
++            socket_gid = pw_group->gr_gid;
++        } else {
++            syslog(LOG_ERR, "group %s not found", group);
++            rtn = -2;
++        }
++    }
++
++    if (chown(path, socket_uid, socket_gid) != 0) {
++        syslog(LOG_ERR, "can't change ownership of file %s to uid %u/gid %u", path, socket_uid, socket_gid);
++        rtn = -3;
++    }
++
++    return rtn;
++}
++
+ void service_create(struct service *s)
+ {
+     struct service service0, service;
+@@ -437,7 +475,9 @@
+ 	}
+ #endif
+ 
+-	oldumask = umask((mode_t) 0); /* for linux */
++    /* this will set permissions of newly created UNIX sockets to s->socket_mode */
++	oldumask = umask((mode_t) 0777 ^ s->socket_mode);
++
+ 	r = bind(s->socket, res->ai_addr, res->ai_addrlen);
+ 	umask(oldumask);
+ 	if (r < 0) {
+@@ -447,13 +487,11 @@
+ 		syslog(LOG_ERR, "unable to bind to %s socket: %m", s->name);
+ 	    continue;
+ 	}
+-	
+-	if (s->listen[0] == '/') { /* unix socket */
+-	    /* for DUX, where this isn't the default.
+-	       (harmlessly fails on some systems) */
+-	    chmod(s->listen, (mode_t) 0777);
+-	}
+-	
++
++    /* Change owner and group of unix socket */
++    if(s->listen[0] == '/')
++        change_socket_ownership(s->listen, s->socket_owner, s->socket_group);
++
+ 	if ((!strcmp(s->proto, "tcp") || !strcmp(s->proto, "tcp4")
+ 	     || !strcmp(s->proto, "tcp6"))
+ 	    && listen(s->socket, listen_queue_backlog) < 0) {
+@@ -1294,6 +1332,9 @@
+     int babysit = masterconf_getswitch(e, "babysit", 0);
+     int maxforkrate = masterconf_getint(e, "maxforkrate", 0);
+     char *listen = xstrdup(masterconf_getstring(e, "listen", ""));
++    char *socket_owner = xstrdup(masterconf_getstring(e, "socket_owner", CYRUS_USER));
++    char *socket_group = xstrdup(masterconf_getstring(e, "socket_group", ""));
++    mode_t socket_mode = (mode_t) masterconf_getoctal(e, "socket_mode", 0660);
+     char *proto = xstrdup(masterconf_getstring(e, "proto", "tcp"));
+     char *max = xstrdup(masterconf_getstring(e, "maxchild", "-1"));
+     rlim_t maxfds = (rlim_t) masterconf_getint(e, "maxfds", 256);
+@@ -1362,6 +1403,12 @@
+     Services[i].listen = listen;
+     if (Services[i].proto) free(Services[i].proto);
+     Services[i].proto = proto;
++
++    if (Services[i].socket_owner) free(Services[i].socket_owner);
++    Services[i].socket_owner = socket_owner;
++    if (Services[i].socket_group) free(Services[i].socket_group);
++    Services[i].socket_group = socket_group;
++    Services[i].socket_mode = socket_mode;
+ 
+     Services[i].exec = tokenize(cmd);
+     if (!Services[i].exec) fatal("out of memory", EX_UNAVAILABLE);
+diff -u -r cyrus-imapd-2.3.12p2/master/master.h cyrus-imapd.patched/master/master.h
+--- cyrus-imapd-2.3.12p2/master/master.h	Mon Sep 24 14:48:32 2007
++++ cyrus-imapd.patched/master/master.h	Thu Aug 21 15:28:07 2008
+@@ -5,6 +5,7 @@
+ 
+ #include <config.h>
+ #include <sys/resource.h> /* for rlim_t */
++#include <sys/types.h> /* for mode_t */
+ 
+ #include "libconfig.h" /* for config_dir and IMAPOPT_SYNC_MACHINEID */
+ 
+@@ -12,10 +13,13 @@
+ struct service {
+     char *name;			/* name of service */
+     char *listen;		/* port/socket to listen to */
++    char *socket_owner; /* Owner of the socket if "listen" is a UNIX socket */
++    char *socket_group; /* Group of the socket if "listen" is a UNIX socket */
++    mode_t socket_mode; /* File mode of the socket if "listen" is a UNIX socket */
+     char *proto;		/* protocol to accept */
+     char *const *exec;		/* command (with args) to execute */
+     int babysit;		/* babysit this service? */
+-    
++
+     /* multiple address family support */
+     int associate;		/* are we primary or additional instance? */
+     int family;			/* address family */
+diff -u -r cyrus-imapd-2.3.12p2/master/masterconf.c cyrus-imapd.patched/master/masterconf.c
+--- cyrus-imapd-2.3.12p2/master/masterconf.c	Mon Mar 24 18:47:41 2008
++++ cyrus-imapd.patched/master/masterconf.c	Thu Aug 21 15:21:31 2008
+@@ -157,6 +157,18 @@
+     return atoi(val);
+ }
+ 
++unsigned int masterconf_getoctal(struct entry *e, 
++              const char *key, unsigned int def)
++{
++    const char *val = masterconf_getstring(e, key, NULL);
++    unsigned int conv;
++
++    if (!val) return def;
++    if (!isdigit((int) *val)) return def;
++    if (sscanf(val, "%o", &conv) != 1) return def;
++    return conv;
++}
++
+ int masterconf_getswitch(struct entry *e, const char *key, int def)
+ {
+     const char *val = masterconf_getstring(e, key, NULL);
+diff -u -r cyrus-imapd-2.3.12p2/master/masterconf.h cyrus-imapd.patched/master/masterconf.h
+--- cyrus-imapd-2.3.12p2/master/masterconf.h	Mon Mar 24 18:47:41 2008
++++ cyrus-imapd.patched/master/masterconf.h	Thu Aug 21 15:20:08 2008
+@@ -53,6 +53,8 @@
+ 					const char *key, const char *def);
+ extern int masterconf_getint(struct entry *e,
+ 			     const char *key, int def);
++extern unsigned int masterconf_getoctal(struct entry *e,
++                 const char *key, unsigned int def);
+ extern int masterconf_getswitch(struct entry *e,
+ 				const char *key, int def);
+ 

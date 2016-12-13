@@ -1,0 +1,66 @@
+--- imap/imapd.c.bak	2010-01-18 01:23:58.000000000 +0000
++++ imap/imapd.c	2010-01-18 02:14:54.000000000 +0000
+@@ -2372,8 +2372,10 @@
+  *
+  * the command has been parsed up to the parameter list.
+  *
+- * we only allow one ID in non-authenticated state from a given client.
+- * we only allow MAXIDFAILED consecutive failed IDs from a given client.
++ * we only log one consecutive ID submission in non-authenticated state per
++ * process.
++ * we only log at most MAXIDFAILED failed ID submissions from a
++ * given client. 
+  * we only record MAXIDLOG ID responses from a given client.
+  */
+ void cmd_id(char *tag)
+@@ -2386,23 +2388,6 @@
+     static struct buf arg, field;
+     struct attvaluelist *params = 0;
+ 
+-    /* check if we've already had an ID in non-authenticated state */
+-    if (!imapd_userid && did_id) {
+-	prot_printf(imapd_out,
+-		    "%s NO Only one Id allowed in non-authenticated state\r\n",
+-		    tag);
+-	eatline(imapd_in, c);
+-	return;
+-    }
+-
+-    /* check if we've had too many failed IDs in a row */
+-    if (failed_id >= MAXIDFAILED) {
+-	prot_printf(imapd_out, "%s NO Too many (%u) invalid Id commands\r\n",
+-		    tag, failed_id);
+-	eatline(imapd_in, c);
+-	return;
+-    }
+-
+     /* ok, accept parameter list */
+     c = getword(imapd_in, &arg);
+     /* check for "NIL" or start of parameter list */
+@@ -2489,6 +2474,18 @@
+ 	return;
+     }
+ 
++    /* check if we've already had an ID in non-authenticated state */
++    if (!imapd_userid && did_id) {
++	syslog(LOG_NOTICE, "Client Id not logged. Only one Id allowed in non-authenticated state");
++	goto done;
++    }
++
++    /* check if we've had too many failed IDs in a row */
++    if (failed_id >= MAXIDFAILED) {
++	syslog(LOG_NOTICE, "Client Id not logged. Too many (%u) invalid Id command", failed_id);
++	goto done;
++    }
++
+     /* log the client's ID string.
+        eventually this should be a callback or something. */
+     if (npair && logged_id < MAXIDLOG) {
+@@ -2514,6 +2511,7 @@
+ 
+     freeattvalues(params);
+ 
++  done:
+     /* spit out our ID string.
+        eventually this might be configurable. */
+     if (config_getswitch(IMAPOPT_IMAPIDRESPONSE) &&

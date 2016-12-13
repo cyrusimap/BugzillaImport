@@ -1,0 +1,70 @@
+diff -ru cyrus-imapd-2.4.10/timsieved/actions.c cyrus-imapd-2.4.10-response-codes/timsieved/actions.c
+--- cyrus-imapd-2.4.10/timsieved/actions.c	2011-07-04 15:05:01.000000000 +0000
++++ cyrus-imapd-2.4.10-response-codes/timsieved/actions.c	2011-07-18 10:23:43.175061070 +0000
+@@ -233,7 +233,7 @@
+ 
+   result = stat(path, &filestats);
+   if (result != 0) {
+-    prot_printf(conn,"NO \"Script doesn't exist\"\r\n");
++    prot_printf(conn,"NO (NONEXISTENT) \"Script doesn't exist\"\r\n");
+     return TIMSIEVE_NOEXIST;
+   }
+   size = filestats.st_size;
+@@ -341,7 +341,7 @@
+       if (countscripts(string_DATAPTR(name))+1 > maxscripts)
+       {
+ 	  prot_printf(conn,
+-		      "NO (\"QUOTA\") \"You are only allowed %d scripts on this server\"\r\n",
++		      "NO (QUOTA/MAXSCRIPTS) \"You are only allowed %d scripts on this server\"\r\n",
+ 		      maxscripts);
+ 	  return TIMSIEVE_FAIL;
+       }
+@@ -504,14 +504,18 @@
+ 
+   snprintf(path, 1023, "%s.script", string_DATAPTR(name));
+ 
+-  if (isactive(string_DATAPTR(name)) && (deleteactive(conn)!=TIMSIEVE_OK)) {
+-      return TIMSIEVE_FAIL;
++  if (isactive(string_DATAPTR(name))) {
++    prot_printf(conn, "NO (ACTIVE) \"Active script cannot be deleted\"\r\n");
++    return TIMSIEVE_FAIL;
+   }
+ 
+   result = unlink(path);
+ 
+   if (result != 0) {
+-      prot_printf(conn,"NO \"Error deleting script\"\r\n");
++      if (result == ENOENT)
++          prot_printf(conn, "NO (NONEXISTENT) \"Script %s does not exist.\"\r\n", string_DATAPTR(name));
++      else
++          prot_printf(conn,"NO \"Error deleting script\"\r\n");
+       return TIMSIEVE_FAIL;
+   }
+ 
+@@ -618,7 +622,7 @@
+ 
+     if (exists(string_DATAPTR(name))==FALSE)
+     {
+-	prot_printf(conn,"NO \"Script does not exist\"\r\n");
++	prot_printf(conn,"NO (NONEXISTENT) \"Script does not exist\"\r\n");
+ 	return TIMSIEVE_NOEXIST;
+     }
+ 
+@@ -675,7 +679,7 @@
+     if (num > maxscriptsize)
+     {
+ 	prot_printf(conn,
+-		    "NO (\"QUOTA\") \"Script size is too large. "
++		    "NO (QUOTA/MAXSIZE) \"Script size is too large. "
+ 		    "Max script size is %ld bytes\"\r\n",
+ 		    maxscriptsize);
+ 	return TIMSIEVE_FAIL;
+@@ -687,7 +691,7 @@
+     if (countscripts(string_DATAPTR(sieve_name))+1 > maxscripts)
+     {
+ 	prot_printf(conn,
+-		    "NO (\"QUOTA\") \"You are only allowed %d scripts on this server\"\r\n",
++		    "NO (QUOTA/MAXSCRIPTS) \"You are only allowed %d scripts on this server\"\r\n",
+ 		    maxscripts);
+ 	return TIMSIEVE_FAIL;
+     }

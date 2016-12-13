@@ -1,0 +1,88 @@
+Index: cyrus-imapd-2.3.13/imap/index.c
+===================================================================
+--- cyrus-imapd-2.3.13.orig/imap/index.c	2008-12-07 23:51:36.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/index.c	2008-12-08 01:51:28.000000000 +0000
+@@ -3574,13 +3574,9 @@ void *rock;
+ 	/* Force copy and re-parse of message */
+ 	copyargs->copymsg[copyargs->nummsg].cache_len = 0;
+     }
+-    else if (msgno < (unsigned) imapd_exists) {
+-	copyargs->copymsg[copyargs->nummsg].cache_len =
+-	  CACHE_OFFSET(msgno+1) - CACHE_OFFSET(msgno);
+-    }
+     else {
+ 	copyargs->copymsg[copyargs->nummsg].cache_len =
+-	  cache_end - CACHE_OFFSET(msgno);
++	  mailbox_cache_size_detail(copyargs->copymsg[copyargs->nummsg].cache_begin, cache_base, cache_end);
+     }
+     copyargs->copymsg[copyargs->nummsg].seen = seenflag[msgno];
+     copyargs->copymsg[copyargs->nummsg].system_flags = SYSTEM_FLAGS(msgno);
+Index: cyrus-imapd-2.3.13/imap/mailbox.c
+===================================================================
+--- cyrus-imapd-2.3.13.orig/imap/mailbox.c	2008-12-08 01:46:02.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/mailbox.c	2008-12-08 02:04:34.000000000 +0000
+@@ -301,8 +301,6 @@ unsigned long mailbox_cache_size(struct 
+ {
+     const char *p;
+     unsigned long cache_offset;
+-    unsigned int cache_ent;
+-    const char *cacheitem, *cacheitembegin;
+ 
+     assert((msgno > 0) && (msgno <= mailbox->exists));
+ 
+@@ -310,22 +308,33 @@ unsigned long mailbox_cache_size(struct 
+          ((msgno-1) * mailbox->record_size));
+     
+     cache_offset = ntohl(*((bit32 *)(p+OFFSET_CACHE_OFFSET)));
+-    if (cache_offset > mailbox->cache_size) {
++
++    return mailbox_cache_size_detail(mailbox->cache_base + cache_offset,
++				     mailbox->cache_base,
++				     mailbox->cache_size);
++}
++
++unsigned long mailbox_cache_size_detail(const char *cache_item,
++                                        const char *cache_base,
++					unsigned long cache_size)
++{
++    unsigned int cache_ent;
++    const char *begin = cache_item;
++
++    if (begin < cache_base || begin >= cache_base + cache_size) {
++	/* already not in the area */
+ 	return 0;
+     }
+ 
+     /* Compute size of this record */
+-    cacheitembegin = cacheitem = mailbox->cache_base + cache_offset;
+-    if (cache_offset >= mailbox->cache_size)
+-	return 0;
+     for (cache_ent = 0; cache_ent < NUM_CACHE_FIELDS; cache_ent++) {
+-	cacheitem = CACHE_ITEM_NEXT(cacheitem);
+-	if (cacheitem < cacheitembegin ||
+-	    cacheitem > cacheitembegin + mailbox->cache_size) {
++	cache_item = CACHE_ITEM_NEXT(cache_item);
++	if (cache_item < begin ||
++	    cache_item > cache_base + cache_size) {
+ 	    return 0; /* clearly bogus */
+ 	}
+     }
+-    return (cacheitem - cacheitembegin);
++    return (cache_item - begin);
+ }
+ 
+ /* function to be used for notification of mailbox changes/updates */
+Index: cyrus-imapd-2.3.13/imap/mailbox.h
+===================================================================
+--- cyrus-imapd-2.3.13.orig/imap/mailbox.h	2008-12-08 01:51:37.000000000 +0000
++++ cyrus-imapd-2.3.13/imap/mailbox.h	2008-12-08 02:03:23.000000000 +0000
+@@ -292,6 +292,9 @@ unsigned mailbox_cached_header(const cha
+ unsigned mailbox_cached_header_inline(const char *text);
+ 
+ unsigned long mailbox_cache_size(struct mailbox *mailbox, unsigned msgno);
++unsigned long mailbox_cache_size_detail(const char *cache_item, 
++					const char *cache_base, 
++					unsigned long cache_size);
+ 
+ typedef unsigned mailbox_decideproc_t(struct mailbox *mailbox, void *rock,
+ 				      unsigned char *indexbuf,

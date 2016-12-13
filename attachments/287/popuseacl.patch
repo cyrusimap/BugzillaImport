@@ -1,0 +1,175 @@
+Index: imap/pop3d.c
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/imap/pop3d.c,v
+retrieving revision 1.144.2.24
+diff -u -r1.144.2.24 pop3d.c
+--- imap/pop3d.c	31 May 2004 18:22:55 -0000	1.144.2.24
++++ imap/pop3d.c	28 Jun 2004 13:51:45 -0000
+@@ -109,6 +109,7 @@
+ 
+ char *popd_userid = 0, *popd_subfolder = 0;
+ struct mailbox *popd_mailbox = 0;
++struct auth_state *popd_authstate = 0;
+ struct sockaddr_storage popd_localaddr, popd_remoteaddr;
+ int popd_haveaddr = 0;
+ char popd_clienthost[NI_MAXHOST*2+1] = "[local]";
+@@ -132,7 +133,7 @@
+ 
+ /* the sasl proxy policy context */
+ static struct proxy_context popd_proxyctx = {
+-    0, 1, NULL, NULL, NULL
++    0, 1, &popd_authstate, NULL, NULL
+ };
+ 
+ /* signal to config.c */
+@@ -336,6 +337,10 @@
+ 	free(popd_subfolder);
+ 	popd_subfolder = NULL;
+     }
++    if (popd_authstate) {
++	auth_freestate(popd_authstate);
++	popd_authstate = NULL;
++    }
+     if (popd_saslconn) {
+ 	sasl_dispose(&popd_saslconn);
+ 	popd_saslconn = NULL;
+@@ -892,6 +897,11 @@
+ 	}
+ 	else if (!strcmp(inputbuf, "dele")) {
+ 	    if (!arg) prot_printf(popd_out, "-ERR Missing argument\r\n");
++	    else if (config_getswitch(IMAPOPT_POPUSEACL) &&
++		     !(mboxstruct.myrights & ACL_DELETE)) {
++		prot_printf(popd_out, "-ERR [SYS/PERM] %s\r\n",
++			    error_message(IMAP_PERMISSION_DENIED));
++	    }
+ 	    else {
+ 		msg = parsenum(&arg);
+ 		if (arg) {
+@@ -1144,6 +1154,8 @@
+ 	   popd_userid, popd_subfolder ? popd_subfolder : "",
+ 	   popd_starttls_done ? "+TLS" : "", "User logged in");
+ 
++    popd_authstate = auth_newstate(popd_userid);
++
+     openinbox();
+ }
+ 
+@@ -1256,6 +1268,8 @@
+ 	}
+     }
+ 
++    popd_authstate = auth_newstate(popd_userid);
++
+     openinbox();
+ }
+ 
+@@ -1457,8 +1471,8 @@
+ {
+     char userid[MAX_MAILBOX_NAME+1], inboxname[MAX_MAILBOX_PATH+1];
+     char extname[MAX_MAILBOX_NAME+1] = "INBOX";
+-    int type;
+-    char *server = NULL;
++    int type, myrights;
++    char *server = NULL, *acl;
+     int r;
+     const char *statusline = NULL;
+ 
+@@ -1478,11 +1492,20 @@
+ 					      userid, inboxname);
+ 
+     if (!r) r = mboxlist_detail(inboxname, &type, NULL, NULL,
+-				&server, NULL, NULL);
++				&server, &acl, NULL);
++    if (!r && config_getswitch(IMAPOPT_POPUSEACL) &&
++	(!acl ||
++	 !((myrights = cyrus_acl_myrights(popd_authstate, acl)) & ACL_READ))) {
++	r = (myrights & ACL_LOOKUP) ?
++	    IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
++    }
+     if (r) {
+ 	sleep(3);
+-	syslog(LOG_ERR, "Unable to locate maildrop %s", inboxname);
+-	prot_printf(popd_out, "-ERR [SYS/PERM] Unable to locate maildrop\r\n");
++	syslog(LOG_ERR, "Unable to locate maildrop %s: %s",
++	       inboxname, error_message(r));
++	prot_printf(popd_out,
++		    "-ERR [SYS/PERM] Unable to locate maildrop: %s\r\n",
++		    error_message(r));
+ 	goto fail;
+     }
+ 
+@@ -1526,14 +1549,27 @@
+ 	int msg;
+ 	struct index_record record;
+ 	int minpoll;
++	int doclose = 0;
+ 
+ 	popd_login_time = time(0);
+ 
+-	r = mailbox_open_header(inboxname, 0, &mboxstruct);
++	r = mailbox_open_header(inboxname, popd_authstate, &mboxstruct);
++	if (!r) {
++	    doclose = 1;
++	    if (config_getswitch(IMAPOPT_POPUSEACL) &&
++		!(mboxstruct.myrights & ACL_READ)) {
++		r = (mboxstruct.myrights & ACL_LOOKUP) ?
++		    IMAP_PERMISSION_DENIED : IMAP_MAILBOX_NONEXISTENT;
++	    }
++	}
+ 	if (r) {
+ 	    sleep(3);
+-	    syslog(LOG_ERR, "Unable to open maildrop %s", inboxname);
+-	    prot_printf(popd_out, "-ERR [SYS/PERM] Unable to open maildrop\r\n");
++	    syslog(LOG_ERR, "Unable to open maildrop %s: %s",
++		   inboxname, error_message(r));
++	    prot_printf(popd_out,
++			"-ERR [SYS/PERM] Unable to open maildrop: %s\r\n",
++			error_message(r));
++	    if (doclose) mailbox_close(&mboxstruct);
+ 	    goto fail;
+ 	}
+ 
+@@ -1541,8 +1577,11 @@
+ 	if (!r) r = mailbox_lock_pop(&mboxstruct);
+ 	if (r) {
+ 	    mailbox_close(&mboxstruct);
+-	    syslog(LOG_ERR, "Unable to lock maildrop %s", inboxname);
+-	    prot_printf(popd_out, "-ERR [IN-USE] Unable to lock maildrop\r\n");
++	    syslog(LOG_ERR, "Unable to lock maildrop %s: %s",
++		   inboxname, error_message(r));
++	    prot_printf(popd_out,
++			"-ERR [IN-USE] Unable to lock maildrop: %s\r\n",
++			error_message(r));
+ 	    goto fail;
+ 	}
+ 
+@@ -1599,6 +1638,8 @@
+ 	free(popd_subfolder);
+ 	popd_subfolder = 0;
+     }
++    auth_freestate(popd_authstate);
++    popd_authstate = NULL;
+     return 1;
+ }
+ 
+Index: lib/imapoptions
+===================================================================
+RCS file: /afs/andrew/system/cvs/src/cyrus/lib/imapoptions,v
+retrieving revision 1.2.2.21
+diff -u -r1.2.2.21 imapoptions
+--- lib/imapoptions	23 Jun 2004 20:15:16 -0000	1.2.2.21
++++ lib/imapoptions	28 Jun 2004 13:51:45 -0000
+@@ -634,6 +634,13 @@
+ /* Set the length of the POP server's inactivity autologout timer,    
+    in minutes.  The minimum value is 10, the default. */
+ 
++{ "popuseacl", 0, SWITCH }
++/* Enforce IMAP ACLs in the pop server.  Due to the nature of the POP3
++   protocol, the only rights which are used by the pop server are 'r'
++   and 'd' for the owner of the mailbox.  The 'r' right allows the
++   user to open, list and retrieve messages.  The 'd' right allows the
++   user to delete messages. */
++
+ { "postmaster", "postmaster", STRING }
+ /* Username that is used as the 'From' address in rejection MDNs produced
+    by sieve. */

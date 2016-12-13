@@ -1,0 +1,2140 @@
+diff --recursive -u original/dlcompat-20010505/dlopen.c Windows/dlcompat-20010505/dlopen.c
+--- original/dlcompat-20010505/dlopen.c	Mon Jun 10 01:53:02 2002
++++ Windows/dlcompat-20010505/dlopen.c	Sat Jul 20 10:34:52 2002
+@@ -135,7 +135,7 @@
+ 	            /* extract path list element */
+ 		    p = element;
+ 		    q = pathbuf;
+-		    while(*p && *p != ':' && q < pathbuf_end) *q++ = *p++;
++		    while(*p && *p != PATHS_DELIMITER && q < pathbuf_end) *q++ = *p++;
+ 		    if(q == pathbuf){  /* empty element */
+ 		        if(*p){
+ 		            element = p+1;
+diff --recursive -u original/include/md5.h Windows/include/md5.h
+--- original/include/md5.h	Mon Dec  3 11:05:20 2001
++++ Windows/include/md5.h	Sat Jul 20 10:52:16 2002
+@@ -33,5 +33,3 @@
+ void _sasl_MD5Update PROTO_LIST
+   ((MD5_CTX *, unsigned char *, unsigned int));
+ void _sasl_MD5Final PROTO_LIST ((unsigned char [16], MD5_CTX *));
+-
+-void _sasl_hmac_md5 PROTO_LIST ((unsigned char *, int, unsigned char *, int, caddr_t));
+diff --recursive -u original/include/sasl.h Windows/include/sasl.h
+--- original/include/sasl.h	Tue Jul 16 07:04:28 2002
++++ Windows/include/sasl.h	Sat Jul 20 08:51:54 2002
+@@ -124,7 +124,38 @@
+ #define SASL_VERSION_STEP 6
+ 
+ #include "prop.h"
+-#define LIBSASL_API
++
++/* The following ifdef block is the standard way of creating macros
++ * which make exporting from a DLL simpler. All files within this DLL
++ * are compiled with the LIBSASL_EXPORTS symbol defined on the command
++ * line. this symbol should not be defined on any project that uses
++ * this DLL. This way any other project whose source files include
++ * this file see LIBSASL_API functions as being imported from a DLL,
++ * wheras this DLL sees symbols defined with this macro as being
++ * exported.  */
++/* Under Unix, life is simpler: we just need to mark library functions
++ * as extern.  (Technically, we don't even have to do that.) */
++#ifdef WIN32
++# ifdef LIBSASL_EXPORTS
++#  define LIBSASL_API  __declspec(dllexport)
++# else /* LIBSASL_EXPORTS */
++#  define LIBSASL_API  __declspec(dllimport)
++# endif /* LIBSASL_EXPORTS */
++#else /* WIN32 */
++# define LIBSASL_API extern
++#endif /* WIN32 */
++
++/* Same as above, but used during a variable declaration. Only Unix definition
++ * is different, as we can't assign an initial value to an extern variable */ 
++#ifdef WIN32
++# ifdef LIBSASL_EXPORTS
++#  define LIBSASL_VAR  __declspec(dllexport)
++# else /* LIBSASL_EXPORTS */
++#  define LIBSASL_VAR  __declspec(dllimport)
++# endif /* LIBSASL_EXPORTS */
++#else /* WIN32 */
++# define LIBSASL_VAR
++#endif /* WIN32 */
+ 
+ /*************
+  * Basic API *
+diff --recursive -u original/include/saslutil.h Windows/include/saslutil.h
+--- original/include/saslutil.h	Mon Dec  3 11:05:20 2001
++++ Windows/include/saslutil.h	Tue Jul 23 16:12:40 2002
+@@ -73,4 +73,11 @@
+  */
+ LIBSASL_API void sasl_erasebuffer(char *pass, unsigned len);
+ 
++#ifdef WIN32
++LIBSASL_API char * sasl_getplugindir(void);
++
++LIBSASL_API int getopt(int argc, char **argv, char *optstring);
++LIBSASL_API char * getpass(const char *prompt);
++#endif /* WIN32 */
++
+ #endif /* SASLUTIL_H */
+diff --recursive -u original/lib/common.c Windows/lib/common.c
+--- original/lib/common.c	Wed Jun 19 05:07:24 2002
++++ Windows/lib/common.c	Tue Jul 23 16:06:42 2002
+@@ -72,6 +72,9 @@
+ 
+ static const char build_ident[] = "$Build: libsasl " PACKAGE "-" VERSION " $";
+ 
++/* It turns out to be conveinent to have a shared sasl_utils_t */
++LIBSASL_VAR const sasl_utils_t *sasl_global_utils = NULL;
++
+ /* Should be a null-terminated array that lists the available mechanisms */
+ static const char **global_mech_list = NULL;
+ 
+@@ -404,9 +407,6 @@
+   RETURN(conn, SASL_OK);
+ }
+ 
+-/* It turns out to be conveinent to have a shared sasl_utils_t */
+-const sasl_utils_t *sasl_global_utils = NULL;
+-
+ int _sasl_common_init(void)
+ {
+     int result;
+@@ -1720,3 +1720,170 @@
+     
+     PARAMERROR(conn);
+ }
++
++/* : The following function doesn't have to be Windows specific.
++   : But its implementation is */
++#ifdef WIN32
++
++/* Return NULL on failure */
++char * sasl_getplugindir(void)
++{
++  /* Open registry entry, and find all registered SASL libraries.
++   *
++   * Registry location:
++   *
++   *     SOFTWARE\\Carnegie Mellon\\Project Cyrus\\SASL Library
++   *
++   * Key - value:
++   *
++   *     "SearchPath" - value: PATH like (';' delimited) list
++   *                    of directories where to search for plugins
++   *                    The list may contain references to environment
++   *                    variables (e.g. %PATH%).
++   *
++   */
++    HKEY  hKey;
++    DWORD ret;
++    DWORD ValueType;		    /* value type */
++    DWORD cbData;		    /* value size */
++    BYTE * ValueData;		    /* value */
++    DWORD cbExpandedData;	    /* "expanded" value size */
++    BYTE * ExpandedValueData;	    /* "expanded" value */
++    char * return_value;	    /* function return value */
++    char * tmp;
++
++/* Initialization */
++    ExpandedValueData = NULL;
++    ValueData = NULL;
++    return_value = NULL;
++
++/* Open the registry */
++    ret = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
++		       SASL_ROOT_KEY,
++		       0,
++		       KEY_READ,
++		       &hKey);
++
++    if (ret != ERROR_SUCCESS) { return NULL; }
++
++/* figure out value type and required buffer size */
++/* the size will include space for terminating NUL if required */
++    RegQueryValueEx (hKey,
++		     SASL_PATH_SUBKEY,
++		     NULL,	    /* reserved */
++		     &ValueType,
++		     NULL,
++		     &cbData);
++ 
++/* Only accept string related types */
++    if (ValueType != REG_EXPAND_SZ &&
++	ValueType != REG_MULTI_SZ &&
++	ValueType != REG_SZ) {
++	return_value = NULL;
++	goto CLEANUP;
++    }
++
++/* Any high water mark? */
++    ValueData = sasl_ALLOC(cbData);
++    if (ValueData == NULL) {
++	return_value = NULL;
++	goto CLEANUP;
++    };
++
++    RegQueryValueEx (hKey,
++		     SASL_PATH_SUBKEY,
++		     NULL,	    /* reserved */
++		     &ValueType,
++		     ValueData,
++		     &cbData);
++
++    switch (ValueType) {
++	case REG_EXPAND_SZ:
++/* : A random starting guess */
++	    cbExpandedData = cbData + 1024;
++	    ExpandedValueData = sasl_ALLOC(cbExpandedData);
++	    if (ExpandedValueData == NULL) {
++		return_value = NULL;
++		goto CLEANUP;
++	    };
++
++	    cbExpandedData = ExpandEnvironmentStrings(
++				ValueData,
++				ExpandedValueData,
++				cbExpandedData);
++
++	    if (cbExpandedData == 0) {
++/* : GetLastError() contains the reason for failure */
++		return_value = NULL;
++		goto CLEANUP;
++	    }
++
++/* : Must retry expansion with the bigger buffer */
++	    if (cbExpandedData > cbData + 1024) {
++/* : Memory leak here if can't realloc */
++		ExpandedValueData = sasl_REALLOC(ExpandedValueData, cbExpandedData);
++		if (ExpandedValueData == NULL) {
++		    return_value = NULL;
++		    goto CLEANUP;
++		};
++
++		cbExpandedData = ExpandEnvironmentStrings(
++				    ValueData,
++				    ExpandedValueData,
++				    cbExpandedData);
++
++/* : This should not happen */
++		if (cbExpandedData == 0) {
++/* : GetLastError() contains the reason for failure */
++		    return_value = NULL;
++		    goto CLEANUP;
++		}
++	    }
++
++	    sasl_FREE(ValueData);
++	    ValueData = ExpandedValueData;
++/* : This is to prevent automatical freeing of this block on cleanup */
++	    ExpandedValueData = NULL;
++
++	    break;
++
++	case REG_MULTI_SZ:
++	    tmp = ValueData;
++
++/* : We shouldn't overflow here, as the buffer is guarantied
++   : to contain at least two consequent NULs */
++	    while (1) {
++		if (tmp[0] == '\0') {
++/* : Stop the process if we found the end of the string (two consequent NULs) */
++		    if (tmp[1] == '\0') {
++			break;
++		    }
++
++/* : Replace delimiting NUL with our delimiter characted */
++		    tmp[0] = PATHS_DELIMITER;
++		}
++		tmp += strlen(tmp);
++	    }
++	    break;
++
++	case REG_SZ:
++	    /* Do nothing, it is good as is */
++	    break;
++
++	default:
++	    return_value = NULL;
++	    goto CLEANUP;
++    }
++
++    return_value = ValueData;
++
++CLEANUP:
++    RegCloseKey(hKey);
++    if (ExpandedValueData != NULL) sasl_FREE(ExpandedValueData);
++    if (return_value == NULL) {
++	if (ValueData != NULL) sasl_FREE(ValueData);
++    }
++    return (return_value);
++}
++
++#endif
+diff --recursive -u original/lib/dlopen.c Windows/lib/dlopen.c
+--- original/lib/dlopen.c	Thu Apr 18 03:58:42 2002
++++ Windows/lib/dlopen.c	Mon Jul 22 17:14:06 2002
+@@ -398,7 +398,7 @@
+ 	    position++;
+ 	    str[pos]=c;
+ 	    pos++;
+-	} while ((c!=':') && (c!='=') && (c!=0));
++	} while ((c!=PATHS_DELIMITER) && (c!=0));
+ 	str[pos-1]='\0';
+ 
+ 	strcpy(prefix,str);
+diff --recursive -u original/lib/getaddrinfo.c Windows/lib/getaddrinfo.c
+--- original/lib/getaddrinfo.c	Thu Jun 13 04:00:48 2002
++++ Windows/lib/getaddrinfo.c	Sat Jul 20 08:04:26 2002
+@@ -60,10 +60,34 @@
+ 
+ #include "config.h"
+ #ifndef macintosh
++#ifndef WIN32
+ #include <sys/param.h>
+ #include <arpa/inet.h>
+ #endif
++#endif
+ #include <ctype.h>
++
++#ifdef WIN32
++/* : Windows socket library is missing inet_aton, emulate it with
++   : inet_addr. inet_aton return 0 if the address is uncorrect, a non zero
++   : value otherwise */
++int
++inet_aton (const char *cp, struct in_addr *inp)
++{
++    if (cp == NULL || inp == NULL) {
++	return (0);
++    }
++
++/* : handle special case */
++    if (strcmp (cp, "255.255.255.255") == 0) {
++	inp->s_addr = (unsigned int) 0xFFFFFFFF;
++	return (1);
++    }
++
++    inp->s_addr = inet_addr (cp);
++    return (1);
++}
++#endif /* WIN32 */
+ 
+ static struct addrinfo *
+ malloc_ai(int port, u_long addr, int socktype, int proto)
+diff --recursive -u original/lib/saslint.h Windows/lib/saslint.h
+--- original/lib/saslint.h	Fri Jun 14 01:36:14 2002
++++ Windows/lib/saslint.h	Sat Jul 20 10:34:28 2002
+@@ -83,13 +83,25 @@
+     RETURN(conn, (val)) }
+ 
+ #ifndef PATH_MAX
+-# ifdef _POSIX_PATH_MAX
+-#  define PATH_MAX _POSIX_PATH_MAX
++
++# ifdef WIN32
++#  define PATH_MAX MAX_PATH
+ # else
+-#  define PATH_MAX 1024         /* arbitrary; probably big enough will
++#  ifdef _POSIX_PATH_MAX
++#   define PATH_MAX _POSIX_PATH_MAX
++#  else
++#   define PATH_MAX 1024         /* arbitrary; probably big enough will
+                                  * probably only be 256+64 on
+                                  * pre-posix machines */
+-# endif
++#  endif /* _POSIX_PATH_MAX */
++# endif /* WIN32 */
++#endif
++
++/* : Define directory delimiter in SASL_PATH variable */
++#ifdef WIN32
++#define PATHS_DELIMITER	';'
++#else
++#define PATHS_DELIMITER	':'
+ #endif
+ 
+ /* Datatype Definitions */
+@@ -277,7 +289,8 @@
+ /*
+  * common.c
+  */
+-extern const sasl_utils_t *sasl_global_utils;
++/* It turns out to be convinient to have a shared sasl_utils_t */
++LIBSASL_API const sasl_utils_t *sasl_global_utils;
+ 
+ extern void (*_sasl_client_cleanup_hook)(void);
+ extern void (*_sasl_server_cleanup_hook)(void);
+diff --recursive -u original/lib/server.c Windows/lib/server.c
+--- original/lib/server.c	Wed Jun 19 05:07:24 2002
++++ Windows/lib/server.c	Sun Jul 28 13:42:12 2002
+@@ -70,14 +70,6 @@
+ 
+ #define DEFAULT_CHECKPASS_MECH "auxprop"
+ 
+-#ifndef PATH_MAX
+-# ifdef _POSIX_PATH_MAX
+-#  define PATH_MAX _POSIX_PATH_MAX
+-# else
+-#  define PATH_MAX 1024		/* arbitrary; probably big enough */
+-# endif
+-#endif
+-
+ /* Contains functions:
+  * 
+  * sasl_server_init
+@@ -400,7 +392,7 @@
+   if (result!=SASL_OK) goto done;
+   if (path_to_config == NULL) path_to_config = "";
+ 
+-  if ((c = strchr(path_to_config, ':'))) {
++  if ((c = strchr(path_to_config, PATHS_DELIMITER))) {
+       *c = '\0';
+   }
+ 
+@@ -420,7 +412,7 @@
+       goto done;
+   }
+ 
+-  snprintf(config_filename, len, "%s/%s.conf", path_to_config, 
++  snprintf(config_filename, len, "%s%c%s.conf", path_to_config, PATHS_DELIMITER, 
+ 	   global_callbacks.appname);
+ 
+   /* Ask the application if it's safe to use this file */
+diff --recursive -u original/lib/staticopen.c Windows/lib/staticopen.c
+--- original/lib/staticopen.c	Tue Jun 25 05:45:58 2002
++++ Windows/lib/staticopen.c	Fri Jul 19 18:16:40 2002
+@@ -46,7 +46,9 @@
+ #include <config.h>
+ #include <stdlib.h>
+ #include <limits.h>
++#ifndef WIN32
+ #include <sys/param.h>
++#endif /* WIN32 */
+ #include <sasl.h>
+ #include "saslint.h"
+ #include "staticopen.h"
+diff --recursive -u original/lib/staticopen.h Windows/lib/staticopen.h
+--- original/lib/staticopen.h	Tue Jun 25 04:07:08 2002
++++ Windows/lib/staticopen.h	Fri Jul 19 18:17:00 2002
+@@ -44,11 +44,15 @@
+ 
+ #include <config.h>
+ #ifndef __hpux
++#ifndef WIN32
+ #include <dlfcn.h>
++#endif /* WIN32 */
+ #endif /* !__hpux */
+ #include <stdlib.h>
+ #include <limits.h>
++#ifndef WIN32
+ #include <sys/param.h>
++#endif /* WIN32 */
+ #include <sasl.h>
+ #include "saslint.h"
+ 
+diff --recursive -u original/lib/windlopen.c Windows/lib/windlopen.c
+--- original/lib/windlopen.c	Mon Dec  3 11:05:28 2001
++++ Windows/lib/windlopen.c	Sun Jul 28 14:19:58 2002
+@@ -3,7 +3,7 @@
+  * $Id: windlopen.c,v 1.11 2001/12/04 02:05:27 rjs3 Exp $
+  */
+ /* 
+- * Copyright (c) 2001 Carnegie Mellon University.  All rights reserved.
++ * Copyright (c) 2001-2002 Carnegie Mellon University.  All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+@@ -42,128 +42,268 @@
+  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ #include <stdio.h>
++#include <io.h>
++#include <sys/stat.h>
+ 
+ #include <config.h>
+ #include <sasl.h>
++#include "saslint.h"
+ 
+-int _sasl_get_plugin(const char *file,
+-		     const char *entryname,
+-		     const sasl_callback_t *getpath_callback,
+-		     const sasl_callback_t *verifyfile_callback,
+-		     void **entrypoint,
+-		     void **library)
++#define DLL_SUFFIX	".dll"
++#define DLL_MASK	"*" DLL_SUFFIX
++#define DLL_MASK_LEN	5
++
++const int _is_sasl_server_static = 0;
++
++/* : Uneffective representation, but works */
++typedef struct lib_list 
++{
++    struct lib_list *next;
++    HMODULE library;
++} lib_list_t;
++
++static lib_list_t *lib_list_head = NULL;
++
++int _sasl_locate_entry(void *library,
++		       const char *entryname,
++		       void **entry_point) 
+ {
+-    /* not supported */
+-    return SASL_FAIL;
++    if(entryname == NULL) {
++	_sasl_log(NULL, SASL_LOG_ERR,
++		  "no entryname in _sasl_locate_entry");
++	return SASL_BADPARAM;
++    }
++
++    if(library == NULL) {
++	_sasl_log(NULL, SASL_LOG_ERR,
++		  "no library in _sasl_locate_entry");
++	return SASL_BADPARAM;
++    }
++
++    if(entry_point == NULL) {
++	_sasl_log(NULL, SASL_LOG_ERR,
++		  "no entrypoint output pointer in _sasl_locate_entry");
++	return SASL_BADPARAM;
++    }
++
++    *entry_point = GetProcAddress(library, entryname);
++
++    if (*entry_point == NULL) {
++#if 0 /* This message appears to confuse people */
++	_sasl_log(NULL, SASL_LOG_DEBUG,
++		  "unable to get entry point %s: %s", entryname,
++		  GetLastError());
++#endif
++	return SASL_FAIL;
++    }
++
++    return SASL_OK;
+ }
+ 
+-/* gets the list of mechanisms */
+-int _sasl_get_mech_list(const char *entryname,
+-			const sasl_callback_t *getpath_cb,
+-			const sasl_callback_t *verifyfile_cb,
+-			int (*add_plugin)(void *,void *))
+-{
+-
+-  /* Open registry entry, and find all registered SASL libraries.
+-   *
+-   * Registry location:
+-   *
+-   *     SOFTWARE\\Carnegie Mellon\\Project Cyrus\\SASL Library\\Available Plugins
+-   *
+-   * Key - value:
+-   *
+-   *     "Cool Name" - "c:\sasl\plugins\coolname.dll"
+-   */
+-
+-#define MAX_VALUE_NAME              128
+-
+-  HKEY  hKey;
+-  int   Index;
+-  CHAR  ValueName[MAX_VALUE_NAME];
+-  DWORD dwcValueName = MAX_VALUE_NAME;
+-  CHAR  Location[MAX_PATH];
+-  DWORD dwcLocation = MAX_PATH;
+-  DWORD ret;
+-
+-  /* Open the registry 
+-   */
+-  ret = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+-    SASL_KEY,
+-    0,
+-    KEY_READ,
+-    &hKey);
+-
+-  if (ret != ERROR_SUCCESS) { return SASL_FAIL; }
+-
+-  // Now enumerate across all registry keys.
+-
+-  for (Index = 0; ret == ERROR_SUCCESS; Index++) {
+-
+-      dwcLocation = MAX_PATH;
+-      dwcValueName = MAX_VALUE_NAME;
+-    ret= RegEnumValue (hKey, Index, ValueName, &dwcValueName,
+-      NULL, // Reserved,
+-      NULL, // Type,
+-      Location, &dwcLocation);
+-
+-    if (ret == ERROR_SUCCESS) {
+-
+-      /*
+-       * ValueName: "Really Cool Plugin"
+-       * Location: "c:\sasl\plugins\cool.dll"
+-       */
+-      HINSTANCE library    = NULL;
+-      FARPROC entry_point = NULL;
+-
+-      /* Found a library.  Now open it.
+-       */
+-      library = LoadLibrary(Location);
+-      if (library == NULL) {
+-        DWORD foo = GetLastError();
+-	_sasl_log(NULL, SASL_LOG_ERR, "Unable to dlopen %s: %d",
+-		  Location, foo);
+-        continue;
+-      }
+-
+-      /* Opened the library.  Find the entrypoint
+-       */
+-      entry_point = GetProcAddress(library, entryname);
+-        
+-      if (entry_point == NULL) {
+-        _sasl_log(NULL, SASL_LOG_ERR,
+-		  "can't get entry point %s: %d", entryname, GetLastError());
+-        FreeLibrary(library);
+-        continue;
+-      }
+-
+-      /* Opened the library, found the entrypoint.  Now add it.
+-       */
+-      if ((*add_plugin)(entry_point, (void *)library) != SASL_OK) {
+-        _sasl_log(NULL, SASL_LOG_ERR,
+-		  "add_plugin to list failed");
+-        FreeLibrary(library);
+-        continue;
+-      }
++static int _sasl_plugin_load(char *plugin, void *library,
++			     const char *entryname,
++			     int (*add_plugin)(const char *, void *)) 
++{
++    void *entry_point;
++    int result;
++    
++    result = _sasl_locate_entry(library, entryname, &entry_point);
++    if(result == SASL_OK) {
++	result = add_plugin(plugin, entry_point);
++	if(result != SASL_OK)
++	    _sasl_log(NULL, SASL_LOG_DEBUG,
++		      "_sasl_plugin_load failed on %s for plugin: %s\n",
++		      entryname, plugin);
++    }
++
++    return result;
++}
++
++/* loads a plugin library */
++int _sasl_get_plugin(const char *file,
++		     const sasl_callback_t *verifyfile_cb,
++		     void **libraryptr)
++{
++    int r = 0;
++    HINSTANCE library;
++    lib_list_t *newhead;
++    
++    r = ((sasl_verifyfile_t *)(verifyfile_cb->proc))
++		    (verifyfile_cb->context, file, SASL_VRFY_PLUGIN);
++    if (r != SASL_OK) return r;
++
++    newhead = sasl_ALLOC(sizeof(lib_list_t));
++    if(!newhead) return SASL_NOMEM;
++
++    if (!(library = LoadLibrary (file))) {
++	_sasl_log(NULL, SASL_LOG_ERR,
++		  "unable to LoadLibrary %s: %s", file, GetLastError());
++	sasl_FREE(newhead);
++	return SASL_FAIL;
+     }
+-  } /* End of registry value loop */
+ 
+-  RegCloseKey(hKey);
++    newhead->library = library;
++    newhead->next = lib_list_head;
++    lib_list_head = newhead;
+ 
+-  return SASL_OK;
++    *libraryptr = library;
++    return SASL_OK;
+ }
+ 
+ 
+ 
++/* gets the list of mechanisms */
++int _sasl_load_plugins(const add_plugin_list_t *entrypoints,
++		       const sasl_callback_t *getpath_cb,
++		       const sasl_callback_t *verifyfile_cb)
++{
++    int result;
++    char cur_dir[PATH_MAX], full_name[PATH_MAX+2], prefix[PATH_MAX+2];
++				/* 1 for '\\' 1 for trailing '\0' */
++    char * pattern;
++    char c;
++    int pos;
++    const char *path=NULL;
++    int position;
++    const add_plugin_list_t *cur_ep;
++    struct stat statbuf;		/* filesystem entry information */
++    long fhandle;			/* file handle for _findnext function */
++    struct _finddata_t finddata;	/* data returned by _findnext() */
++    size_t prefix_len;
++
++    if (! entrypoints
++	|| ! getpath_cb
++	|| getpath_cb->id != SASL_CB_GETPATH
++	|| ! getpath_cb->proc
++	|| ! verifyfile_cb
++	|| verifyfile_cb->id != SASL_CB_VERIFYFILE
++	|| ! verifyfile_cb->proc)
++	return SASL_BADPARAM;
++
++    /* get the path to the plugins */
++    result = ((sasl_getpath_t *)(getpath_cb->proc))(getpath_cb->context,
++						    &path);
++    if (result != SASL_OK) return result;
++    if (! path) return SASL_FAIL;
++
++    if (strlen(path) >= PATH_MAX) { /* no you can't buffer overrun */
++	return SASL_FAIL;
++    }
+ 
++    position=0;
++    do {
++	pos=0;
++	do {
++	    c=path[position];
++	    position++;
++	    cur_dir[pos]=c;
++	    pos++;
++	} while ((c!=PATHS_DELIMITER) && (c!=0));
++	cur_dir[pos-1]='\0';
++
++
++/* : check to make sure that a valid directory name was passed in */
++	if (stat (cur_dir, &statbuf) < 0) {
++	    continue;
++	}
++	if ((statbuf.st_mode & S_IFDIR) == 0) {
++	    continue;
++	}
++
++	strcpy (prefix, cur_dir);
++	prefix_len = strlen (prefix);
++
++/* : Don't append trailing \ unless required */
++	if (prefix[prefix_len-1] != '\\') {
++	    strcat (prefix,"\\");
++	    prefix_len++;
++	}
++
++	pattern = prefix;
++
++/* : Check that we have enough space for "*.dll" */
++	if ((prefix_len + DLL_MASK_LEN) > (sizeof(prefix) - 1)) {
++	    _sasl_log(NULL, SASL_LOG_WARN, "plugin search mask is too big");
++            continue;
++	}
++
++	strcat (prefix + prefix_len, "*" DLL_SUFFIX);
++
++        fhandle = _findfirst (pattern, &finddata);
++        if (fhandle == -1) {	/* no matching files */
++            continue;
++        }
++
++/* : Truncate "*.dll" */
++	prefix[prefix_len] = '\0';
++
++	do {
++	    size_t length;
++	    void *library;
++	    char *c;
++	    char plugname[PATH_MAX];
++
++	    length = strlen(finddata.name);
++	    if (length < 5) { /* At least <Ch>.dll */
++		continue; /* can not possibly be what we're looking for */
++	    }
++
++/* : Check for overflow */
++	    if (length + prefix_len >= PATH_MAX) continue; /* too big */
++
++	    if (stricmp(finddata.name + (length - strlen(DLL_SUFFIX)), DLL_SUFFIX) != 0) {
++		continue;
++	    }
++
++/* : Check that it is not a directory */
++	    if ((finddata.attrib & _A_SUBDIR) == _A_SUBDIR) {
++		continue;
++	    }
++
++/* : Construct full name from prefix and name */
++
++	    strcpy (full_name, prefix);
++	    strcat (full_name, finddata.name);
++		
++/* cut off .dll suffix -- this only need be approximate */
++	    strcpy (plugname, finddata.name);
++	    c = strrchr(plugname, '.');
++	    if (c != NULL) *c = '\0';
++
++	    result = _sasl_get_plugin (full_name, verifyfile_cb, &library);
++
++	    if (result != SASL_OK) {
++		continue;
++	    }
++
++	    for (cur_ep = entrypoints; cur_ep->entryname; cur_ep++) {
++		    _sasl_plugin_load(plugname, library, cur_ep->entryname,
++				      cur_ep->add_plugin);
++		/* If this fails, it's not the end of the world */
++	    }
++	} while (_findnext (fhandle, &finddata) == 0);
++	
++	_findclose (fhandle);
+ 
++    } while ((c!='=') && (c!=0));
++
++    return SASL_OK;
++}
+ 
+ int
+-_sasl_done_with_plugin(void *plugin)
++_sasl_done_with_plugins(void)
+ {
+-  if (! plugin)
+-    return SASL_BADPARAM;
++    lib_list_t *libptr, *libptr_next;
++    
++    for(libptr = lib_list_head; libptr; libptr = libptr_next) {
++	libptr_next = libptr->next;
++	if (libptr->library != NULL) {
++	    FreeLibrary(libptr->library);
++	}
++	sasl_FREE(libptr);
++    }
+ 
+-  FreeLibrary((HMODULE)plugin);
++    lib_list_head = NULL;
+ 
+-  return SASL_OK;
++    return SASL_OK;
+ }
+diff --recursive -u original/plugins/anonymous.c Windows/plugins/anonymous.c
+--- original/plugins/anonymous.c	Tue Apr 30 05:11:38 2002
++++ Windows/plugins/anonymous.c	Thu Jul 25 05:04:28 2002
+@@ -58,11 +58,6 @@
+ #include <sasl_anonymous_plugin_decl.h> 
+ #endif 
+ 
+-#ifdef WIN32
+-/* This must be after sasl.h, saslutil.h */
+-# include "saslANONYMOUS.h"
+-#endif
+-
+ /*****************************  Common Section  *****************************/
+ 
+ static const char plugin_id[] = "$Id: anonymous.c,v 1.46 2002/04/30 17:45:32 ken3 Exp $";
+diff --recursive -u original/plugins/anonymous_init.c Windows/plugins/anonymous_init.c
+--- original/plugins/anonymous_init.c	Tue Jul  2 10:08:40 2002
++++ Windows/plugins/anonymous_init.c	Thu Jul 25 05:04:32 2002
+@@ -20,6 +20,11 @@
+ #include <sasl_anonymous_plugin_decl.h>
+ #endif
+ 
++#ifdef WIN32
++/* This must be after sasl.h, saslutil.h */
++# include "saslANONYMOUS.h"
++#endif
++
+ SASL_CLIENT_PLUG_INIT( anonymous )
+ SASL_SERVER_PLUG_INIT( anonymous )
+ 
+diff --recursive -u original/plugins/cram.c Windows/plugins/cram.c
+--- original/plugins/cram.c	Tue Jul 16 05:58:14 2002
++++ Windows/plugins/cram.c	Thu Jul 25 05:00:44 2002
+@@ -63,11 +63,6 @@
+ #include <sasl_cram_plugin_decl.h>
+ #endif
+ 
+-#ifdef WIN32
+-/* This must be after sasl.h, saslutil.h */
+-# include "saslCRAM.h"
+-#endif /* WIN32 */
+-
+ /*****************************  Common Section  *****************************/
+ 
+ static const char plugin_id[] = "$Id: cram.c,v 1.74 2002/07/16 18:58:13 rjs3 Exp $";
+diff --recursive -u original/plugins/crammd5_init.c Windows/plugins/crammd5_init.c
+--- original/plugins/crammd5_init.c	Tue Jul  2 10:08:40 2002
++++ Windows/plugins/crammd5_init.c	Thu Jul 25 05:00:58 2002
+@@ -20,6 +20,11 @@
+ #include <sasl_crammd5_plugin_decl.h>
+ #endif
+ 
++#ifdef WIN32
++/* This must be after sasl.h, saslutil.h */
++# include "saslCRAM.h"
++#endif /* WIN32 */
++
+ SASL_CLIENT_PLUG_INIT( crammd5 )
+ SASL_SERVER_PLUG_INIT( crammd5 )
+ 
+diff --recursive -u original/plugins/digestmd5.c Windows/plugins/digestmd5.c
+--- original/plugins/digestmd5.c	Wed Jun 19 03:25:00 2002
++++ Windows/plugins/digestmd5.c	Thu Jul 25 05:07:12 2002
+@@ -76,10 +76,7 @@
+ 
+ #include "plugin_common.h"
+ 
+-#ifdef WIN32
+-/* This must be after sasl.h, saslutil.h */
+-#include "saslDIGESTMD5.h"
+-#else /* Unix */
++#ifndef WIN32
+ extern int      strcasecmp(const char *s1, const char *s2);
+ #endif /* end WIN32 */
+ 
+diff --recursive -u original/plugins/digestmd5_init.c Windows/plugins/digestmd5_init.c
+--- original/plugins/digestmd5_init.c	Tue Jul  2 10:08:40 2002
++++ Windows/plugins/digestmd5_init.c	Thu Jul 25 05:07:20 2002
+@@ -20,6 +20,11 @@
+ #include <sasl_digestmd5_plugin_decl.h>
+ #endif
+ 
++#ifdef WIN32
++/* This must be after sasl.h, saslutil.h */
++#include "saslDIGESTMD5.h"
++#endif /* end WIN32 */
++
+ SASL_CLIENT_PLUG_INIT( digestmd5 )
+ SASL_SERVER_PLUG_INIT( digestmd5 )
+ 
+diff --recursive -u original/plugins/gssapi.c Windows/plugins/gssapi.c
+--- original/plugins/gssapi.c	Fri May  3 02:10:54 2002
++++ Windows/plugins/gssapi.c	Thu Jul 25 05:28:26 2002
+@@ -80,11 +80,6 @@
+ 
+ #include <errno.h>
+ 
+-#ifdef WIN32
+-/* This must be after sasl.h */
+-# include "saslgssapi.h"
+-#endif /* WIN32 */
+-
+ /*****************************  Common Section  *****************************/
+ 
+ static const char plugin_id[] = "$Id: gssapi.c,v 1.66 2002/05/02 22:05:41 ken3 Exp $";
+diff --recursive -u original/plugins/gssapiv2_init.c Windows/plugins/gssapiv2_init.c
+--- original/plugins/gssapiv2_init.c	Tue Jul  2 10:08:40 2002
++++ Windows/plugins/gssapiv2_init.c	Thu Jul 25 05:28:36 2002
+@@ -20,6 +20,11 @@
+ #include <sasl_gssapiv2_plugin_decl.h>
+ #endif
+ 
++#ifdef WIN32
++/* This must be after sasl.h */
++# include "saslgssapi.h"
++#endif /* WIN32 */
++
+ SASL_CLIENT_PLUG_INIT( gssapiv2 )
+ SASL_SERVER_PLUG_INIT( gssapiv2 )
+ 
+diff --recursive -u original/plugins/kerberos4.c Windows/plugins/kerberos4.c
+--- original/plugins/kerberos4.c	Mon Jun 10 02:52:18 2002
++++ Windows/plugins/kerberos4.c	Thu Jul 25 05:11:08 2002
+@@ -82,9 +82,6 @@
+ #endif
+ 
+ #ifdef WIN32
+-/* This must be after sasl.h, saslutil.h */
+-# include "saslKERBEROSV4.h"
+-
+ /* KClient doesn't define this */
+ typedef struct krb_principal {
+     char name[ANAME_SZ];
+diff --recursive -u original/plugins/kerberos4_init.c Windows/plugins/kerberos4_init.c
+--- original/plugins/kerberos4_init.c	Tue Jul  2 10:08:40 2002
++++ Windows/plugins/kerberos4_init.c	Thu Jul 25 05:11:20 2002
+@@ -20,6 +20,11 @@
+ #include <sasl_kerberos4_plugin_decl.h>
+ #endif
+ 
++#ifdef WIN32
++/* This must be after sasl.h, saslutil.h */
++# include "saslKERBEROSV4.h"
++#endif /* WIN32 */
++
+ SASL_CLIENT_PLUG_INIT( kerberos4 )
+ SASL_SERVER_PLUG_INIT( kerberos4 )
+ 
+diff --recursive -u original/plugins/login.c Windows/plugins/login.c
+--- original/plugins/login.c	Mon Jun 17 03:24:36 2002
++++ Windows/plugins/login.c	Thu Jul 25 05:11:46 2002
+@@ -52,11 +52,6 @@
+ 
+ #include "plugin_common.h"
+ 
+-#ifdef WIN32
+-/* This must be after sasl.h */
+-# include "saslLOGIN.h"
+-#endif /* WIN32 */
+-
+ /*****************************  Common Section  *****************************/
+ 
+ static const char plugin_id[] = "$Id: login.c,v 1.22 2002/06/17 16:24:35 rjs3 Exp $";
+diff --recursive -u original/plugins/login_init.c Windows/plugins/login_init.c
+--- original/plugins/login_init.c	Tue Jul  2 10:08:40 2002
++++ Windows/plugins/login_init.c	Thu Jul 25 05:11:52 2002
+@@ -20,6 +20,11 @@
+ #include <sasl_login_plugin_decl.h>
+ #endif
+ 
++#ifdef WIN32
++/* This must be after sasl.h */
++# include "saslLOGIN.h"
++#endif /* WIN32 */
++
+ SASL_CLIENT_PLUG_INIT( login )
+ SASL_SERVER_PLUG_INIT( login )
+ 
+diff --recursive -u original/plugins/plain.c Windows/plugins/plain.c
+--- original/plugins/plain.c	Mon Jun 17 03:24:36 2002
++++ Windows/plugins/plain.c	Thu Jul 25 05:13:48 2002
+@@ -51,11 +51,6 @@
+ 
+ #include "plugin_common.h"
+ 
+-#ifdef WIN32
+-/* This must be after sasl.h */
+-# include "saslPLAIN.h"
+-#endif /* WIN32 */
+-
+ #ifdef macintosh 
+ #include <sasl_plain_plugin_decl.h> 
+ #endif 
+diff --recursive -u original/plugins/plain_init.c Windows/plugins/plain_init.c
+--- original/plugins/plain_init.c	Tue Jul  2 10:08:40 2002
++++ Windows/plugins/plain_init.c	Thu Jul 25 05:13:54 2002
+@@ -20,6 +20,11 @@
+ #include <sasl_plain_plugin_decl.h>
+ #endif
+ 
++#ifdef WIN32
++/* This must be after sasl.h */
++# include "saslPLAIN.h"
++#endif /* WIN32 */
++
+ SASL_CLIENT_PLUG_INIT( plain )
+ SASL_SERVER_PLUG_INIT( plain )
+ 
+diff --recursive -u original/sample/sample-client.c Windows/sample/sample-client.c
+--- original/sample/sample-client.c	Mon Dec  3 11:06:52 2001
++++ Windows/sample/sample-client.c	Sat Jul 20 08:40:36 2002
+@@ -48,9 +48,6 @@
+ #include <stdlib.h>
+ #ifdef WIN32
+ # include <winsock.h>
+-__declspec(dllimport) char *optarg;
+-__declspec(dllimport) int optind;
+-__declspec(dllimport) int getsubopt(char **optionp, const char * const *tokens, char **valuep);
+ #else  /* WIN32 */
+ # include <netinet/in.h>
+ #endif /* WIN32 */
+@@ -83,7 +80,13 @@
+ #endif
+ 
+ #ifndef HAVE_GETSUBOPT
++#ifdef WIN32
++__declspec(dllimport) char *optarg;
++__declspec(dllimport) int optind;
++__declspec(dllimport) int getsubopt(char **optionp, const char * const *tokens, char **valuep);
++#else  /* WIN32 */
+ int getsubopt(char **optionp, const char * const *tokens, char **valuep);
++#endif /* WIN32 */
+ #endif
+ 
+ static const char
+diff --recursive -u original/sample/sample-server.c Windows/sample/sample-server.c
+--- original/sample/sample-server.c	Mon Dec  3 11:06:52 2001
++++ Windows/sample/sample-server.c	Sun Jul 28 13:38:08 2002
+@@ -47,9 +47,6 @@
+ #include <stdio.h>
+ #ifdef WIN32
+ # include <winsock.h>
+-__declspec(dllimport) char *optarg;
+-__declspec(dllimport) int optind;
+-__declspec(dllimport) int getsubopt(char **optionp, const char * const *tokens, char **valuep);
+ #else /* WIN32 */
+ # include <netinet/in.h>
+ #endif /* WIN32 */
+@@ -64,7 +61,19 @@
+ #endif
+ 
+ #ifndef HAVE_GETSUBOPT
++#ifdef WIN32
++__declspec(dllimport) char *optarg;
++__declspec(dllimport) int optind;
++__declspec(dllimport) int getsubopt(char **optionp, const char * const *tokens, char **valuep);
++#else  /* WIN32 */
+ int getsubopt(char **optionp, const char * const *tokens, char **valuep);
++#endif /* WIN32 */
++#endif
++
++#ifdef WIN32
++#define HIER_DELIMITER	'\\'
++#else
++#define HIER_DELIMITER	'/'
+ #endif
+ 
+ static const char
+@@ -283,7 +292,7 @@
+   int serverlast = 0;
+   sasl_ssf_t *ssf;
+ 
+-  progname = strrchr(argv[0], '/');
++  progname = strrchr(argv[0], HIER_DELIMITER);
+   if (progname)
+     progname++;
+   else
+diff --recursive -u original/sasldb/db_berkeley.c Windows/sasldb/db_berkeley.c
+--- original/sasldb/db_berkeley.c	Fri Jul  5 02:45:14 2002
++++ Windows/sasldb/db_berkeley.c	Fri Jul 19 17:21:52 2002
+@@ -350,18 +350,19 @@
+     }
+ }
+ 
++/* : handle_t conflicts with one of the Windows types, use something else */
+ typedef struct berkeleydb_handle 
+ {
+     DB *mbdb;
+     DBC *cursor;
+-} handle_t;
++} brkdb_handle_t;
+ 
+ sasldb_handle _sasldb_getkeyhandle(const sasl_utils_t *utils,
+ 				   sasl_conn_t *conn) 
+ {
+     int ret;
+     DB *mbdb;
+-    handle_t *handle;
++    brkdb_handle_t *handle;
+     
+     if(!utils || !conn) return NULL;
+ 
+@@ -376,7 +377,7 @@
+ 	return NULL;
+     }
+ 
+-    handle = utils->malloc(sizeof(handle_t));
++    handle = utils->malloc(sizeof(brkdb_handle_t));
+     if(!handle) {
+ 	(void)mbdb->close(mbdb, 0);
+ 	utils->seterror(conn, 0, "Memory error in _sasldb_gethandle");
+@@ -395,7 +396,7 @@
+ {
+     DB *mbdb;
+     int result;
+-    handle_t *dbh = (handle_t *)handle;
++    brkdb_handle_t *dbh = (brkdb_handle_t *)handle;
+     DBT key, data;
+ 
+     if(!utils || !handle || !out || !max_out)
+@@ -447,7 +448,7 @@
+ int _sasldb_releasekeyhandle(const sasl_utils_t *utils,
+ 			     sasldb_handle handle) 
+ {
+-    handle_t *dbh = (handle_t *)handle;
++    brkdb_handle_t *dbh = (brkdb_handle_t *)handle;
+     int ret = 0;
+     
+     if(!utils || !dbh) return SASL_BADPARAM;
+diff --recursive -u original/utils/sasldblistusers.c Windows/utils/sasldblistusers.c
+--- original/utils/sasldblistusers.c	Mon Dec  3 11:07:02 2001
++++ Windows/utils/sasldblistusers.c	Mon Jul 29 15:12:04 2002
+@@ -52,7 +52,7 @@
+ #include "../sasldb/sasldb.h"
+ 
+ /* Cheating to make the utils work out right */
+-extern const sasl_utils_t *sasl_global_utils;
++LIBSASL_API const sasl_utils_t *sasl_global_utils;
+ 
+ /*
+  * List all users in database
+diff --recursive -u original/utils/saslpasswd.c Windows/utils/saslpasswd.c
+--- original/utils/saslpasswd.c	Mon Feb  4 09:55:42 2002
++++ Windows/utils/saslpasswd.c	Sat Jul 20 08:58:18 2002
+@@ -63,7 +63,7 @@
+ #include "../sasldb/sasldb.h"
+ 
+ /* Cheating to make the utils work out right */
+-extern const sasl_utils_t *sasl_global_utils;
++LIBSASL_API const sasl_utils_t *sasl_global_utils;
+ 
+ char myhostname[1025];
+ 
+diff --recursive -u original/win32/cmu-sasl.reg Windows/win32/cmu-sasl.reg
+--- original/win32/cmu-sasl.reg	Mon Nov 23 01:17:32 1998
++++ Windows/win32/cmu-sasl.reg	Tue Jul 23 17:20:58 2002
+@@ -5,5 +5,5 @@
+ "Kerberos Plugin"="c:\\sasl-plugins\\saslKERBEROSV4.dll"
+ "PLAIN Plugin"="c:\\sasl-plugins\\saslPLAIN.dll"
+ "CRAM Plugin"="c:\\sasl-plugins\\saslCRAM.dll"
+-"SCRAM Plugin"="c:\\sasl-plugins\\saslSCRAM.dll"
++"LOGIN Plugin"="c:\\sasl-plugins\\sasLOGIN.dll"
+ 
+diff --recursive -u original/win32/include/config.h Windows/win32/include/config.h
+--- original/win32/include/config.h	Tue Jul 16 07:04:36 2002
++++ Windows/win32/include/config.h	Tue Jul 23 16:48:18 2002
+@@ -46,14 +46,23 @@
+ 
+ #include <windows.h>
+ 
++#define PROTOTYPES 1
++
++typedef char   *caddr_t;
++
+ /* Our package */
+ #define PACKAGE "cyrus-sasl"
+ 
+ /* Our version */
+ #define VERSION "2.1.6"
+ 
++/* Registry key that contains all SASL related configuration */
++#define SASL_ROOT_KEY "SOFTWARE\\Carnegie Mellon\\Project Cyrus\\SASL Library"
++
+ /* Registry key that contains the locations of the plugins */
+-#define SASL_KEY "SOFTWARE\\Carnegie Mellon\\Project Cyrus\\SASL Library\\Available Plugins"
++#define SASL_KEY_V1 SASL_ROOT_KEY "\\Available Plugins"
++
++#define SASL_PATH_SUBKEY "SearchPath"
+ 
+ /* We only want minimal server functionality.  Cripple the server functionality when necessary to get
+  * things to compile.
+@@ -69,10 +78,36 @@
+ 
+ /* Things that are fetched via autoconf under Unix
+  */
++
+ #define HAVE_MEMCPY 1
+ 
++/* Set to the database name you want SASL to use for
++ * username->secret lookups */
++
++/* : This should probably be replaced with a call to a function
++   : that gets the proper value from Registry */
++#define SASL_DB_PATH "c:\\CMU\\sasldb2"
++
++/* what db package are we using? */
++/* #undef SASL_GDBM */
++/* #undef SASL_NDBM */
++#define SASL_BERKELEYDB 1
++
++/* which mechs can we link staticly? */
++#define STATIC_ANONYMOUS 1
++#define STATIC_CRAMMD5 1
++#define STATIC_DIGESTMD5 1
++#define STATIC_GSSAPIV2 1
++/* #undef STATIC_KERBEROS4 */
++/* #undef STATIC_LOGIN */
++/* #undef STATIC_MYSQL */
++/* #undef STATIC_OTP */
++#define STATIC_PLAIN 1
++#define STATIC_SASLDB 1
++/* #undef STATIC_SRP */
++
+ #define SASL_PATH_ENV_VAR "SASL_PATH"
+-#define PLUGINDIR "\\sasl-plugins"
++#define PLUGINDIR sasl_getplugindir()
+ 
+ /* Windows calls these functions something else
+  */
+@@ -93,5 +128,38 @@
+ #define VLP(foo,bar)
+ 
+ #define __attribute__(foo)
++
++/* : Same as in tpipv6.h */
++#ifndef HAVE_SOCKLEN_T
++typedef int socklen_t;
++#endif /* HAVE_SOCKLEN_T */
++
++#ifndef HAVE_STRUCT_SOCKADDR_STORAGE
++#define	_SS_MAXSIZE	128	/* Implementation specific max size */
++#define	_SS_PADSIZE	(_SS_MAXSIZE - sizeof (struct sockaddr))
++
++struct sockaddr_storage {
++	struct	sockaddr ss_sa;
++	char		__ss_pad2[_SS_PADSIZE];
++};
++# define ss_family ss_sa.sa_family
++#endif /* !HAVE_STRUCT_SOCKADDR_STORAGE */
++
++#ifndef AF_INET6
++/* Define it to something that should never appear */
++#define	AF_INET6	AF_MAX
++#endif
++
++#ifndef HAVE_GETADDRINFO
++#define	getaddrinfo	sasl_getaddrinfo
++#define	freeaddrinfo	sasl_freeaddrinfo
++#define	getnameinfo	sasl_getnameinfo
++#define	gai_strerror	sasl_gai_strerror
++#include "gai.h"
++#endif
++
++#ifndef	NI_WITHSCOPEID
++#define	NI_WITHSCOPEID	0
++#endif
+ 
+ #endif /* CONFIG_H */
+diff --recursive -u original/win32/libsasl/libsasl.cpp Windows/win32/libsasl/libsasl.cpp
+--- original/win32/libsasl/libsasl.cpp	Sun Feb  7 10:20:56 1999
++++ Windows/win32/libsasl/libsasl.cpp	Tue Jul 23 16:21:26 2002
+@@ -1,20 +1,33 @@
+ // libsasl.cpp : Defines the entry point for the DLL application.
+ //
+ 
++#include <winsock.h>
++
+ #include "stdafx.h"
+ 
+ BOOL APIENTRY DllMain( HANDLE hModule, 
+                        DWORD  ul_reason_for_call, 
+-                       LPVOID lpReserved
+-					 )
++                       LPVOID lpReserved)
+ {
+-    switch (ul_reason_for_call)
+-	{
+-		case DLL_PROCESS_ATTACH:
+-		case DLL_THREAD_ATTACH:
+-		case DLL_THREAD_DETACH:
+-		case DLL_PROCESS_DETACH:
+-			break;
++    WSADATA wsaData;
++    int wsa_err;
++
++    switch (ul_reason_for_call) {
++	case DLL_PROCESS_ATTACH:
++/* : We Must initialize WinSocket library, otherwise all call to it will fail! */
++	    wsa_err = WSAStartup(MAKEWORD(2, 2 ), &wsaData );
++	    if (wsa_err != 0 ) {
++		return (FALSE);
++	    }
++	    break;
++
++	case DLL_THREAD_ATTACH:
++	case DLL_THREAD_DETACH:
++	    break;
++
++	case DLL_PROCESS_DETACH:
++	    WSACleanup();
++	    break;
+     }
+     return TRUE;
+ }
+diff --recursive -u original/win32/libsasl/libsasl.dsp Windows/win32/libsasl/libsasl.dsp
+--- original/win32/libsasl/libsasl.dsp	Thu Aug 19 07:07:42 1999
++++ Windows/win32/libsasl/libsasl.dsp	Mon Jul 29 16:06:14 2002
+@@ -43,7 +43,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "LIBSASL_EXPORTS" /Yu"stdafx.h" /FD /c
+-# ADD CPP /nologo /MT /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /I "..\..\lib" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "LIBSASL_EXPORTS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /I "..\..\lib" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "LIBSASL_EXPORTS" /FD /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+@@ -70,8 +70,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "LIBSASL_EXPORTS" /Yu"stdafx.h" /FD /GZ /c
+-# ADD CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /I "..\..\lib" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "LIBSASL_EXPORTS" /FR /FD /GZ /c
+-# SUBTRACT CPP /YX /Yc /Yu
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /I "..\..\lib" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "LIBSASL_EXPORTS" /FR /Fd"Debug/libsasl.pdb" /FD /GZ /c
+ # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD BASE RSC /l 0x409 /d "_DEBUG"
+@@ -94,6 +93,14 @@
+ # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
+ # Begin Source File
+ 
++SOURCE=..\..\lib\auxprop.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\lib\canonusr.c
++# End Source File
++# Begin Source File
++
+ SOURCE=..\..\lib\checkpw.c
+ # End Source File
+ # Begin Source File
+@@ -110,7 +117,11 @@
+ # End Source File
+ # Begin Source File
+ 
+-SOURCE=..\..\lib\db_testw32.c
++SOURCE=..\..\lib\external.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\lib\getaddrinfo.c
+ # End Source File
+ # Begin Source File
+ 
+@@ -126,6 +137,10 @@
+ # End Source File
+ # Begin Source File
+ 
++SOURCE=..\..\lib\plugin_common.c
++# End Source File
++# Begin Source File
++
+ SOURCE=..\..\lib\saslutil.c
+ # End Source File
+ # Begin Source File
+@@ -134,6 +149,10 @@
+ # End Source File
+ # Begin Source File
+ 
++SOURCE=..\..\lib\seterror.c
++# End Source File
++# Begin Source File
++
+ SOURCE=.\StdAfx.cpp
+ # ADD CPP /Yc"stdafx.h"
+ # End Source File
+@@ -164,6 +183,10 @@
+ # Begin Source File
+ 
+ SOURCE=..\..\include\md5global.h
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\lib\plugin_common.h
+ # End Source File
+ # Begin Source File
+ 
+diff --recursive -u original/win32/libsasl/libsasl.dsw Windows/win32/libsasl/libsasl.dsw
+--- original/win32/libsasl/libsasl.dsw	Mon Dec  3 11:07:06 2001
++++ Windows/win32/libsasl/libsasl.dsw	Mon Jul 29 16:06:14 2002
+@@ -3,7 +3,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "libsasl"=.\libsasl.dsp - Package Owner=<4>
++Project: "libsasl"=".\libsasl.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -15,7 +15,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "makemd5"=..\makemd5\makemd5.dsp - Package Owner=<4>
++Project: "sample_client"="..\sample_client\sample_client.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -27,7 +27,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "sample_client"=..\sample_client\sample_client.dsp - Package Owner=<4>
++Project: "sample_server"="..\sample_server\sample_server.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -39,7 +39,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "sample_server"=..\sample_server\sample_server.dsp - Package Owner=<4>
++Project: "saslANONYMOUS"="..\saslANONYMOUS\saslANONYMOUS.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -51,7 +51,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslANONYMOUS"=..\saslANONYMOUS\saslANONYMOUS.dsp - Package Owner=<4>
++Project: "saslCRAM"="..\saslCRAM\saslCRAM.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -63,7 +63,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslCRAM"=..\saslCRAM\saslCRAM.dsp - Package Owner=<4>
++Project: "saslDIGESTMD5"="..\saslDIGESTMD5\saslDIGESTMD5.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -75,7 +75,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslDIGESTMD5"=..\saslDIGESTMD5\saslDIGESTMD5.dsp - Package Owner=<4>
++Project: "saslGSSAPI"="..\saslGSSAPI\saslGSSAPI.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -87,7 +87,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslGSSAPI"=..\saslGSSAPI\saslGSSAPI.dsp - Package Owner=<4>
++Project: "saslKERBEROSV4"="..\saslKERBEROSV4\saslKERBEROSV4.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -99,7 +99,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslKERBEROSV4"=..\saslKERBEROSV4\saslKERBEROSV4.dsp - Package Owner=<4>
++Project: "saslLOGIN"="..\saslLOGIN\saslLOGIN.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -111,7 +111,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslLOGIN"=..\saslLOGIN\saslLOGIN.dsp - Package Owner=<4>
++Project: "saslPLAIN"="..\saslPLAIN\saslPLAIN.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -123,7 +123,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslPLAIN"=..\saslPLAIN\saslPLAIN.dsp - Package Owner=<4>
++Project: "sasldb"="..\sasldb\sasldb.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -135,7 +135,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslSCRAM"=..\saslSCRAM\saslSCRAM.dsp - Package Owner=<4>
++Project: "sasldblistusers"="..\utils\sasldblistusers\sasldblistusers.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+@@ -147,7 +147,7 @@
+ 
+ ###############################################################################
+ 
+-Project: "saslpwd"=..\utils\saslpwd\saslpwd.dsp - Package Owner=<4>
++Project: "saslpwd"="..\utils\saslpwd\saslpwd.dsp" - Package Owner=<4>
+ 
+ Package=<5>
+ {{{
+diff --recursive -u original/win32/sample_client/sample_client.dsp Windows/win32/sample_client/sample_client.dsp
+--- original/win32/sample_client/sample_client.dsp	Thu Aug 19 07:07:42 1999
++++ Windows/win32/sample_client/sample_client.dsp	Tue Jul 23 18:04:22 2002
+@@ -42,7 +42,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /c
+-# ADD CPP /nologo /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /I "..\libsasl" /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /I "..\libsasl" /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /c
+ # ADD BASE RSC /l 0x409 /d "NDEBUG"
+ # ADD RSC /l 0x409 /d "NDEBUG"
+ BSC32=bscmake.exe
+@@ -66,7 +66,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /GZ /c
+-# ADD CPP /nologo /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /FD /GZ /c
+ # SUBTRACT CPP /YX
+ # ADD BASE RSC /l 0x409 /d "_DEBUG"
+ # ADD RSC /l 0x409 /d "_DEBUG"
+diff --recursive -u original/win32/sample_server/sample_server.dsp Windows/win32/sample_server/sample_server.dsp
+--- original/win32/sample_server/sample_server.dsp	Fri Jul 23 00:58:32 1999
++++ Windows/win32/sample_server/sample_server.dsp	Tue Jul 23 18:04:22 2002
+@@ -42,7 +42,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /c
+-# ADD CPP /nologo /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /FD /c
+ # SUBTRACT CPP /YX
+ # ADD BASE RSC /l 0x409 /d "NDEBUG"
+ # ADD RSC /l 0x409 /d "NDEBUG"
+@@ -67,7 +67,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /GZ /c
+-# ADD CPP /nologo /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /FD /GZ /c
+ # SUBTRACT CPP /YX
+ # ADD BASE RSC /l 0x409 /d "_DEBUG"
+ # ADD RSC /l 0x409 /d "_DEBUG"
+diff --recursive -u original/win32/saslANONYMOUS/saslANONYMOUS.dsp Windows/win32/saslANONYMOUS/saslANONYMOUS.dsp
+--- original/win32/saslANONYMOUS/saslANONYMOUS.dsp	Fri Mar 26 05:41:08 1999
++++ Windows/win32/saslANONYMOUS/saslANONYMOUS.dsp	Thu Jul 25 05:30:32 2002
+@@ -43,7 +43,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLANONYMOUS_EXPORTS" /Yu"stdafx.h" /FD /c
+-# ADD CPP /nologo /MT /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLANONYMOUS_EXPORTS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLANONYMOUS_EXPORTS" /FD /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+@@ -70,7 +70,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLANONYMOUS_EXPORTS" /Yu"stdafx.h" /FD /GZ /c
+-# ADD CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLANONYMOUS_EXPORTS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLANONYMOUS_EXPORTS" /FD /GZ /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+@@ -95,6 +95,18 @@
+ # Begin Source File
+ 
+ SOURCE=..\..\plugins\anonymous.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\anonymous_init.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\lib\getaddrinfo.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\plugin_common.c
+ # End Source File
+ # Begin Source File
+ 
+diff --recursive -u original/win32/saslANONYMOUS/saslANONYMOUS.h Windows/win32/saslANONYMOUS/saslANONYMOUS.h
+--- original/win32/saslANONYMOUS/saslANONYMOUS.h	Fri Nov 20 01:22:06 1998
++++ Windows/win32/saslANONYMOUS/saslANONYMOUS.h	Thu Jul 25 05:05:12 2002
+@@ -13,13 +13,16 @@
+ #define SASLANONYMOUS_API __declspec(dllimport)
+ #endif
+ 
+-SASLANONYMOUS_API int sasl_server_plug_init(sasl_utils_t *utils, int maxversion,
++SASLANONYMOUS_API int sasl_server_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_server_plug_t **pluglist,
++			  sasl_server_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+-SASLANONYMOUS_API int sasl_client_plug_init(sasl_utils_t *utils, int maxversion,
+-			  int *out_version, const sasl_client_plug_t **pluglist,
++SASLANONYMOUS_API int sasl_client_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
++			  int *out_version,
++			  sasl_client_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+ #endif /* _SASLANONYMOUS_H_ */
+diff --recursive -u original/win32/saslCRAM/saslCRAM.cpp Windows/win32/saslCRAM/saslCRAM.cpp
+--- original/win32/saslCRAM/saslCRAM.cpp	Fri Nov 20 01:22:06 1998
++++ Windows/win32/saslCRAM/saslCRAM.cpp	Sun Jul 28 14:42:22 2002
+@@ -18,5 +18,3 @@
+     }
+     return TRUE;
+ }
+-
+-
+diff --recursive -u original/win32/saslCRAM/saslCRAM.dsp Windows/win32/saslCRAM/saslCRAM.dsp
+--- original/win32/saslCRAM/saslCRAM.dsp	Fri Jul 23 00:58:32 1999
++++ Windows/win32/saslCRAM/saslCRAM.dsp	Thu Jul 25 05:30:32 2002
+@@ -43,7 +43,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLCRAM_EXPORTS" /Yu"stdafx.h" /FD /c
+-# ADD CPP /nologo /MT /W3 /GX /O2 /I "." /I "..\..\include" /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLCRAM_EXPORTS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "." /I "..\..\include" /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLCRAM_EXPORTS" /FD /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+@@ -70,7 +70,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLCRAM_EXPORTS" /Yu"stdafx.h" /FD /GZ /c
+-# ADD CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLCRAM_EXPORTS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLCRAM_EXPORTS" /FD /GZ /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+@@ -95,6 +95,18 @@
+ # Begin Source File
+ 
+ SOURCE=..\..\plugins\cram.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\crammd5_init.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\lib\getaddrinfo.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\plugin_common.c
+ # End Source File
+ # Begin Source File
+ 
+diff --recursive -u original/win32/saslCRAM/saslCRAM.h Windows/win32/saslCRAM/saslCRAM.h
+--- original/win32/saslCRAM/saslCRAM.h	Fri Nov 20 01:22:06 1998
++++ Windows/win32/saslCRAM/saslCRAM.h	Thu Jul 25 05:03:22 2002
+@@ -13,16 +13,16 @@
+ #define SASLCRAM_API __declspec(dllimport)
+ #endif
+ 
+-SASLCRAM_API int sasl_server_plug_init(sasl_utils_t *utils __attribute__((unused)),
++SASLCRAM_API int sasl_server_plug_init(const sasl_utils_t *utils __attribute__((unused)),
+ 			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_server_plug_t **pluglist,
++			  sasl_server_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+-SASLCRAM_API int sasl_client_plug_init(sasl_utils_t *utils __attribute__((unused)),
++SASLCRAM_API int sasl_client_plug_init(const sasl_utils_t *utils __attribute__((unused)),
+ 			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_client_plug_t **pluglist,
++			  sasl_client_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+ #endif /* _SASLCRAM_H_ */
+diff --recursive -u original/win32/saslDIGESTMD5/ReadMe.txt Windows/win32/saslDIGESTMD5/ReadMe.txt
+--- original/win32/saslDIGESTMD5/ReadMe.txt	Sun Feb  7 10:20:58 1999
++++ Windows/win32/saslDIGESTMD5/ReadMe.txt	Thu Jul 25 05:27:08 2002
+@@ -15,6 +15,9 @@
+ 
+ * Libraries for linking
+ - Added winsock2 (ws2_32.lib)
+-- Added libsasl (libsasl.lib)
+ 
+ * Defined "STDC_HEADERS" to fix index() bug
++
++
++*** WARNING:  If you are using confidentiality protection, you must define
++DESLIB environment variable that points to your DES library to link in.
+diff --recursive -u original/win32/saslDIGESTMD5/saslDIGESTMD5.dsp Windows/win32/saslDIGESTMD5/saslDIGESTMD5.dsp
+--- original/win32/saslDIGESTMD5/saslDIGESTMD5.dsp	Fri Jul 23 00:58:34 1999
++++ Windows/win32/saslDIGESTMD5/saslDIGESTMD5.dsp	Thu Jul 25 05:30:32 2002
+@@ -40,9 +40,10 @@
+ # PROP Use_Debug_Libraries 0
+ # PROP Output_Dir "Release"
+ # PROP Intermediate_Dir "Release"
++# PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLDIGESTMD5_EXPORTS" /Yu"stdafx.h" /FD /c
+-# ADD CPP /nologo /MT /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "NDEBUG" /D "STDC_HEADERS" /D "WIN32" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLDIGESTMD5_EXPORTS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "NDEBUG" /D "STDC_HEADERS" /D "WIN32" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLDIGESTMD5_EXPORTS" /FD /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+@@ -53,7 +54,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
+-# ADD LINK32 krbv4w32.lib libsasl.lib ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386 /libpath:"..\libsasl\Release"
++# ADD LINK32 $(DESLIB) ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386 /libpath:"..\libsasl\Release"
+ 
+ !ELSEIF  "$(CFG)" == "saslDIGESTMD5 - Win32 Debug"
+ 
+@@ -69,7 +70,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLDIGESTMD5_EXPORTS" /Yu"stdafx.h" /FD /GZ /c
+-# ADD CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "_DEBUG" /D "STDC_HEADERS" /D "WIN32" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLDIGESTMD5_EXPORTS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "_DEBUG" /D "STDC_HEADERS" /D "WIN32" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLDIGESTMD5_EXPORTS" /FD /GZ /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+@@ -80,7 +81,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
+-# ADD LINK32 krbv4w32.lib libsasl.lib ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept /libpath:"..\libsasl\Debug"
++# ADD LINK32 $(DESLIB) ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept /libpath:"..\libsasl\Debug"
+ 
+ !ENDIF 
+ 
+@@ -94,6 +95,18 @@
+ # Begin Source File
+ 
+ SOURCE=..\..\plugins\digestmd5.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\digestmd5_init.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\lib\getaddrinfo.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\plugin_common.c
+ # End Source File
+ # Begin Source File
+ 
+diff --recursive -u original/win32/saslDIGESTMD5/saslDIGESTMD5.h Windows/win32/saslDIGESTMD5/saslDIGESTMD5.h
+--- original/win32/saslDIGESTMD5/saslDIGESTMD5.h	Thu Aug 19 07:07:42 1999
++++ Windows/win32/saslDIGESTMD5/saslDIGESTMD5.h	Thu Jul 25 05:07:50 2002
+@@ -13,13 +13,16 @@
+ #define SASLDIGESTMD5_API __declspec(dllimport)
+ #endif
+ 
+-SASLDIGESTMD5_API int sasl_server_plug_init(sasl_utils_t *utils, int maxversion,
++SASLDIGESTMD5_API int sasl_server_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_server_plug_t **pluglist,
++			  sasl_server_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+-SASLDIGESTMD5_API int sasl_client_plug_init(sasl_utils_t *utils, int maxversion,
+-			  int *out_version, const sasl_client_plug_t **pluglist,
++SASLDIGESTMD5_API int sasl_client_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
++			  int *out_version,
++			  sasl_client_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+ #endif /* _SASLDIGESTMD5_H_ */
+diff --recursive -u original/win32/saslGSSAPI/saslgssapi.cpp Windows/win32/saslGSSAPI/saslgssapi.cpp
+--- original/win32/saslGSSAPI/saslgssapi.cpp	Mon Sep 20 06:49:00 1999
++++ Windows/win32/saslGSSAPI/saslgssapi.cpp	Sun Jul 28 14:42:58 2002
+@@ -8,6 +8,14 @@
+                        LPVOID lpReserved
+ 					 )
+ {
++    switch (ul_reason_for_call)
++	{
++		case DLL_PROCESS_ATTACH:
++		case DLL_THREAD_ATTACH:
++		case DLL_THREAD_DETACH:
++		case DLL_PROCESS_DETACH:
++			break;
++    }
+     return TRUE;
+ }
+ 
+diff --recursive -u original/win32/saslGSSAPI/saslgssapi.h Windows/win32/saslGSSAPI/saslgssapi.h
+--- original/win32/saslGSSAPI/saslgssapi.h	Mon Sep 20 06:49:00 1999
++++ Windows/win32/saslGSSAPI/saslgssapi.h	Thu Jul 25 05:29:06 2002
+@@ -13,13 +13,16 @@
+ #define SASLGSSAPI_API __declspec(dllimport)
+ #endif
+ 
+-SASLGSSAPI_API int sasl_server_plug_init(sasl_utils_t *utils, int maxversion,
++SASLGSSAPI_API int sasl_server_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_server_plug_t **pluglist,
++			  sasl_server_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+-SASLGSSAPI_API int sasl_client_plug_init(sasl_utils_t *utils, int maxversion,
+-			  int *out_version, const sasl_client_plug_t **pluglist,
++SASLGSSAPI_API int sasl_client_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
++			  int *out_version,
++			  sasl_client_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+ #endif /* _SASLGSSAPI_H_ */
+diff --recursive -u original/win32/saslKERBEROSV4/saslKERBEROSV4.dsp Windows/win32/saslKERBEROSV4/saslKERBEROSV4.dsp
+--- original/win32/saslKERBEROSV4/saslKERBEROSV4.dsp	Fri Jul 23 00:58:34 1999
++++ Windows/win32/saslKERBEROSV4/saslKERBEROSV4.dsp	Thu Jul 25 05:30:32 2002
+@@ -43,7 +43,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLKERBEROSV4_EXPORTS" /Yu"stdafx.h" /FD /c
+-# ADD CPP /nologo /MT /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /I "c:\local\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLKERBEROSV4_EXPORTS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /I "c:\local\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLKERBEROSV4_EXPORTS" /FD /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+@@ -70,7 +70,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLKERBEROSV4_EXPORTS" /Yu"stdafx.h" /FD /GZ /c
+-# ADD CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /I "c:\local\include" /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLKERBEROSV4_EXPORTS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "c:\local\include" /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLKERBEROSV4_EXPORTS" /FD /GZ /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+@@ -94,7 +94,19 @@
+ # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
+ # Begin Source File
+ 
++SOURCE=..\..\lib\getaddrinfo.c
++# End Source File
++# Begin Source File
++
+ SOURCE=..\..\plugins\kerberos4.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\kerberos4_init.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\plugin_common.c
+ # End Source File
+ # Begin Source File
+ 
+diff --recursive -u original/win32/saslKERBEROSV4/saslKERBEROSV4.h Windows/win32/saslKERBEROSV4/saslKERBEROSV4.h
+--- original/win32/saslKERBEROSV4/saslKERBEROSV4.h	Fri Nov 20 01:22:08 1998
++++ Windows/win32/saslKERBEROSV4/saslKERBEROSV4.h	Thu Jul 25 05:09:56 2002
+@@ -13,13 +13,16 @@
+ #define SASLKERBEROSV4_API __declspec(dllimport)
+ #endif
+ 
+-SASLKERBEROSV4_API int sasl_server_plug_init(sasl_utils_t *utils, int maxversion,
++SASLKERBEROSV4_API int sasl_server_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_server_plug_t **pluglist,
++			  sasl_server_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+-SASLKERBEROSV4_API int sasl_client_plug_init(sasl_utils_t *utils, int maxversion,
+-			  int *out_version, const sasl_client_plug_t **pluglist,
++SASLKERBEROSV4_API int sasl_client_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
++			  int *out_version,
++			  sasl_client_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+ #endif /* _SASLKERBEROSV4_H_ */
+diff --recursive -u original/win32/saslLOGIN/saslLOGIN.dsp Windows/win32/saslLOGIN/saslLOGIN.dsp
+--- original/win32/saslLOGIN/saslLOGIN.dsp	Tue Feb 22 11:55:44 2000
++++ Windows/win32/saslLOGIN/saslLOGIN.dsp	Thu Jul 25 05:30:32 2002
+@@ -40,9 +40,10 @@
+ # PROP Use_Debug_Libraries 0
+ # PROP Output_Dir "Release"
+ # PROP Intermediate_Dir "Release"
++# PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLLOGIN_EXPORTS" /Yu"stdafx.h" /FD /c
+-# ADD CPP /nologo /MT /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLLOGIN_EXPORTS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLLOGIN_EXPORTS" /FD /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+@@ -53,7 +54,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
+-# ADD LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
++# ADD LINK32 ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
+ 
+ !ELSEIF  "$(CFG)" == "saslLOGIN - Win32 Debug"
+ 
+@@ -66,9 +67,10 @@
+ # PROP Use_Debug_Libraries 1
+ # PROP Output_Dir "Debug"
+ # PROP Intermediate_Dir "Debug"
++# PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLLOGIN_EXPORTS" /Yu"stdafx.h" /FD /GZ /c
+-# ADD CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLLOGIN_EXPORTS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLLOGIN_EXPORTS" /FD /GZ /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+@@ -79,7 +81,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
+-# ADD LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
++# ADD LINK32 ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
+ 
+ !ENDIF 
+ 
+@@ -92,7 +94,19 @@
+ # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
+ # Begin Source File
+ 
++SOURCE=..\..\lib\getaddrinfo.c
++# End Source File
++# Begin Source File
++
+ SOURCE=..\..\plugins\login.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\login_init.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\plugin_common.c
+ # End Source File
+ # Begin Source File
+ 
+diff --recursive -u original/win32/saslLOGIN/saslLOGIN.h Windows/win32/saslLOGIN/saslLOGIN.h
+--- original/win32/saslLOGIN/saslLOGIN.h	Tue Feb 22 11:55:44 2000
++++ Windows/win32/saslLOGIN/saslLOGIN.h	Thu Jul 25 05:12:42 2002
+@@ -13,13 +13,16 @@
+ #define SASLLOGIN_API __declspec(dllimport)
+ #endif
+ 
+-SASLLOGIN_API int sasl_server_plug_init(sasl_utils_t *utils, int maxversion,
++SASLLOGIN_API int sasl_server_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_server_plug_t **pluglist,
++			  sasl_server_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+-SASLLOGIN_API int sasl_client_plug_init(sasl_utils_t *utils, int maxversion,
+-			  int *out_version, const sasl_client_plug_t **pluglist,
++SASLLOGIN_API int sasl_client_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
++			  int *out_version,
++			  sasl_client_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+ #endif /* _SASLLOGIN_H_ */
+diff --recursive -u original/win32/saslPLAIN/saslPLAIN.dsp Windows/win32/saslPLAIN/saslPLAIN.dsp
+--- original/win32/saslPLAIN/saslPLAIN.dsp	Fri Mar 26 05:41:10 1999
++++ Windows/win32/saslPLAIN/saslPLAIN.dsp	Thu Jul 25 05:30:34 2002
+@@ -40,9 +40,10 @@
+ # PROP Use_Debug_Libraries 0
+ # PROP Output_Dir "Release"
+ # PROP Intermediate_Dir "Release"
++# PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLPLAIN_EXPORTS" /Yu"stdafx.h" /FD /c
+-# ADD CPP /nologo /MT /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLPLAIN_EXPORTS" /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLPLAIN_EXPORTS" /FD /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
+@@ -53,7 +54,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
+-# ADD LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
++# ADD LINK32 ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
+ 
+ !ELSEIF  "$(CFG)" == "saslPLAIN - Win32 Debug"
+ 
+@@ -66,9 +67,10 @@
+ # PROP Use_Debug_Libraries 1
+ # PROP Output_Dir "Debug"
+ # PROP Intermediate_Dir "Debug"
++# PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLPLAIN_EXPORTS" /Yu"stdafx.h" /FD /GZ /c
+-# ADD CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLPLAIN_EXPORTS" /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\include" /I "." /I "..\include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SASLPLAIN_EXPORTS" /FD /GZ /c
+ # SUBTRACT CPP /YX /Yc /Yu
+ # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+ # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
+@@ -79,7 +81,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
+-# ADD LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
++# ADD LINK32 ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
+ 
+ !ENDIF 
+ 
+@@ -92,7 +94,19 @@
+ # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
+ # Begin Source File
+ 
++SOURCE=..\..\lib\getaddrinfo.c
++# End Source File
++# Begin Source File
++
+ SOURCE=..\..\plugins\plain.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\plain_init.c
++# End Source File
++# Begin Source File
++
++SOURCE=..\..\plugins\plugin_common.c
+ # End Source File
+ # Begin Source File
+ 
+diff --recursive -u original/win32/saslPLAIN/saslPLAIN.h Windows/win32/saslPLAIN/saslPLAIN.h
+--- original/win32/saslPLAIN/saslPLAIN.h	Fri Nov 20 01:22:10 1998
++++ Windows/win32/saslPLAIN/saslPLAIN.h	Thu Jul 25 05:13:22 2002
+@@ -13,13 +13,16 @@
+ #define SASLPLAIN_API __declspec(dllimport)
+ #endif
+ 
+-SASLPLAIN_API int sasl_server_plug_init(sasl_utils_t *utils, int maxversion,
++SASLPLAIN_API int sasl_server_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
+ 			  int *out_version,
+-			  const sasl_server_plug_t **pluglist,
++			  sasl_server_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+-SASLPLAIN_API int sasl_client_plug_init(sasl_utils_t *utils, int maxversion,
+-			  int *out_version, const sasl_client_plug_t **pluglist,
++SASLPLAIN_API int sasl_client_plug_init(const sasl_utils_t *utils,
++			  int maxversion,
++			  int *out_version,
++			  sasl_client_plug_t **pluglist,
+ 			  int *plugcount);
+ 
+ #endif /* _SASLPLAIN_H_ */
+diff --recursive -u original/win32/utils/saslpwd/saslpwd.dsp Windows/win32/utils/saslpwd/saslpwd.dsp
+--- original/win32/utils/saslpwd/saslpwd.dsp	Mon Sep 20 06:55:22 1999
++++ Windows/win32/utils/saslpwd/saslpwd.dsp	Mon Jul 29 16:06:14 2002
+@@ -39,9 +39,10 @@
+ # PROP Use_Debug_Libraries 0
+ # PROP Output_Dir "Release"
+ # PROP Intermediate_Dir "Release"
++# PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /c
+-# ADD CPP /nologo /W3 /GX /O2 /I "..\..\..\include" /I "..\..\include" /D "_CONSOLE" /D "NDEBUG" /D "WIN32" /D "_MBCS" /YX /FD /c
++# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\..\include" /I "..\..\include" /D "_CONSOLE" /D "NDEBUG" /D "WIN32" /D "_MBCS" /YX /FD /c
+ # ADD BASE RSC /l 0x409 /d "NDEBUG"
+ # ADD RSC /l 0x409 /d "NDEBUG"
+ BSC32=bscmake.exe
+@@ -49,7 +50,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386
+-# ADD LINK32 libsasl.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386 /libpath:"..\..\libsasl\release"
++# ADD LINK32 libdb31s.lib sasldb.lib libsasl.lib ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386 /libpath:"..\..\libsasl\Release" /libpath:"..\..\sasldb\Release" /libpath:"$(DBDIR)\lib"
+ 
+ !ELSEIF  "$(CFG)" == "saslpwd - Win32 Debug"
+ 
+@@ -65,7 +66,7 @@
+ # PROP Ignore_Export_Lib 0
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /GZ /c
+-# ADD CPP /nologo /W3 /Gm /GX /ZI /Od /D "_CONSOLE" /D "_DEBUG" /D "WIN32" /D "_MBCS" /YX /FD /GZ /c
++# ADD CPP /nologo /MD /W3 /Gm /GX /ZI /Od /I "..\..\..\include" /I "..\..\include" /D "_CONSOLE" /D "_DEBUG" /D "WIN32" /D "_MBCS" /YX /FD /GZ /c
+ # ADD BASE RSC /l 0x409 /d "_DEBUG"
+ # ADD RSC /l 0x409 /d "_DEBUG"
+ BSC32=bscmake.exe
+@@ -73,7 +74,7 @@
+ # ADD BSC32 /nologo
+ LINK32=link.exe
+ # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /debug /machine:I386 /pdbtype:sept
+-# ADD LINK32 libsasl.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /debug /machine:I386 /pdbtype:sept /libpath:"..\..\libsasl\Debug"
++# ADD LINK32 libdb31sd.lib sasldb.lib libsasl.lib ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /debug /machine:I386 /pdbtype:sept /libpath:"..\..\libsasl\Debug" /libpath:"..\..\sasldb\Debug" /libpath:"$(DBDIR)\lib"
+ 
+ !ENDIF 
+ 

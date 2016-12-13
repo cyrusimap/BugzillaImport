@@ -1,0 +1,201 @@
+#!/usr/bin/perl -w
+#
+# Script for mass compilation of sieve scripts.
+#
+# Copyright (c) 1994-2008 Carnegie Mellon University.  All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in
+#    the documentation and/or other materials provided with the
+#    distribution.
+#
+# 3. The name "Carnegie Mellon University" must not be used to
+#    endorse or promote products derived from this software without
+#    prior written permission. For permission or any legal
+#    details, please contact
+#      Carnegie Mellon University
+#      Center for Technology Transfer and Enterprise Creation
+#      4615 Forbes Avenue
+#      Suite 302
+#      Pittsburgh, PA  15213
+#      (412) 268-7393, fax: (412) 268-7395
+#      innovation@andrew.cmu.edu
+#
+# 4. Redistributions of any form whatsoever must retain the following
+#    acknowledgment:
+#    "This product includes software developed by Computing Services
+#     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
+#
+# CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
+# THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
+# FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+# AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+# OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+#
+# $Id: masssievec,v 1.7 2008/03/24 20:25:22 murch Exp $
+
+require 5;
+
+$| = 1;
+
+die "must not run as root" if ($< == 0);
+
+if(@ARGV < 1) {
+    print "usage: masssievec <path to sievec> [imapd.conf]\n";
+    exit;
+}
+
+$SIEVEC = shift @ARGV;
+$imapdconf = shift @ARGV;
+if(!defined($imapdconf)) {
+    $imapdconf = "/etc/imapd.conf";
+}
+
+$sievedir = "/usr/sieve";
+$hasdomains = 0;
+
+if(! -x $SIEVEC) {
+    print "$SIEVEC is not executable\n";
+    exit;
+}
+
+if($SIEVEC !~ /^\//) {
+    print "$SIEVEC is not an absolute path\n";
+    exit;
+}
+
+sub read_conf {
+    my $file = shift;
+
+    open CONF, $file or die "can't open $file";
+    while (<CONF>) {
+	if (/^#/) { 
+	    next; 
+	}
+	if (/\@include:\s+(.*)$/) {
+	    push @configs, $1;
+	}
+	if (/^sieveusehomedir:\s+(1|t|yes|on)/) {
+	    print "you are storing sieve scripts in user's home directories, this script cannot deal with that\n";
+	    exit;
+	}
+	if (/^sievedir:\s+(.*)$/) {
+	    $sievedir = $1;
+	}
+	if (/^virtdomains:\s+(userid|on)/) {
+	    $hasdomains= 1;
+	}
+    }
+    close CONF;
+}
+
+push @configs, $imapdconf;
+
+while ($conf = shift @configs) {
+    read_conf($conf);
+}
+
+print "you are using $sievedir as your sieve directory.\n";
+if ($hasdomains eq 1)
+{
+	    print "you are using virtual domains\n";
+	    opendir DOMAIN, $sievedir . "/domain";
+	    
+	    while (defined($s = readdir DOMAIN)) {
+		next if ($s eq "." || $s eq "..");
+            chdir $sievedir . "/domain" . "/$s";
+            $letterdir= $sievedir . "/domain" . "/$s";
+            opendir DOMAINLETTERS, ".";
+
+
+	            while(defined($t = readdir DOMAINLETTERS)) {
+    			next if ($t eq "." || $t eq "..");
+			    print "processing domain $t\n";
+			    # print "calling sievec for: " . $letterdir . "/" . $t . "\n";
+			    processUsers($letterdir . "/" . $t);
+		     }
+		    closedir DOMAINLETTERS
+	    }
+            	    
+	    closedir DOMAIN;
+}
+else
+{
+    processUsers($sievedir);
+}
+
+sub processUsers
+{
+	opendir TOP, $_[0];
+	while (defined($s = readdir TOP)) {
+	    next if ($s eq "." || $s eq "..");
+	    chdir $_[0] . "/$s";
+	    opendir THISONE, ".";
+	
+	    while(defined($t = readdir THISONE)) {
+		next if ($t eq "." || $t eq "..");
+		print "processing user $t\n";
+		chdir $t;
+	
+		opendir USER, ".";
+		while(defined($u = readdir USER)) {
+		    next if ($u eq "." || $u eq "..");
+		    if($u eq "default" && -l $u) {
+			# special case
+			$dest = readlink $u;
+			next unless($dest =~ m/\.script$/);
+			$dest =~ s/\.script$//;
+			symlink "$dest.bc", "defaultbc" || warn "can't symlink $dest.bc to defaultbc: $!";
+			unlink ("default");
+		    } elsif ($u eq "default.bc" && -l $u) {
+			# slightly different upgrade foramt
+			$dest = readlink $u;
+			next unless($dest =~ m/\.bc$/ && $dest ne "default.bc");
+			symlink "$dest", "defaultbc" || warn "can't symlink $dest to defaultbc: $!";
+			unlink ("default.bc");
+		    } elsif ($u eq "default" || $u eq "default.bc") {
+			warn "$u is not a symlink";
+		    } else {
+			next unless($u =~ m/\.script$/);
+			$out = $u;
+			$out =~ s/\.script$//;
+	
+		FORK: {
+			if($pid = fork()) {
+			    #parent, do nothing
+			    waitpid $pid, 0;
+			} elsif (defined $pid) {
+			    # child
+			    exec $SIEVEC, $u, "$out.bc";
+			    die "souldn't be here";
+			} elsif ($! =~ /No more process/) {
+			    # EAGAIN
+			    sleep 5; redo FORK;
+			} else {
+			    die "cant fork: $!";
+			}
+		      }
+	
+			$rc = $? & 0xff00;
+			$rc >>= 8;
+			if($rc) {
+			    print "got error compiling $u.\n";
+			}
+		    }
+		}
+		chdir $_[0] . "/$s";
+	    }
+	    closedir THISONE;
+	}
+	closedir TOP
+}
+

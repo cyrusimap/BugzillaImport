@@ -1,0 +1,92 @@
+diff -Naurp cyrus-imapd-2.1.13/perl/imap/Makefile.PL cyrus-perl-path/perl/imap/Makefile.PL
+--- cyrus-imapd-2.1.13/perl/imap/Makefile.PL	Mon Jul 22 11:16:07 2002
++++ cyrus-perl-path/perl/imap/Makefile.PL	Sun Jun 29 13:58:43 2003
+@@ -52,6 +52,14 @@ my $OPENSSL_LIB = $ENV{OPENSSL_LIB};
+ # the contents of the Makefile that is written.
+ $libs = "-lcyrus";
+ 
++sub MY::postamble {
++  '
++cyradm: cyradm.sh
++	@echo Adding correct perl path to $@
++	sed -e "s^__PERL_PATH__^${FULLPERL}^g" < $< > $@
++';
++}
++
+ WriteMakefile( 
+     'NAME'	=> 'Cyrus::IMAP',
+     'ABSTRACT'  => 'Cyrus administrative interface',
+diff -Naurp cyrus-imapd-2.1.13/perl/imap/cyradm.sh cyrus-perl-path/perl/imap/cyradm.sh
+--- cyrus-imapd-2.1.13/perl/imap/cyradm.sh	Thu Sep 12 10:36:21 2002
++++ cyrus-perl-path/perl/imap/cyradm.sh	Sun Jun 29 13:58:09 2003
+@@ -41,8 +41,8 @@
+ #
+ # $Id: cyradm.sh,v 1.11 2002/09/12 15:36:21 rjs3 Exp $
+ case "x$BASH_VERSION" in
+-x) exec perl -MCyrus::IMAP::Shell -e shell -- ${1+"$@"} ;;
+-*) exec perl -MCyrus::IMAP::Shell -e shell -- "$@" ;;
++x) exec __PERL_PATH__ -MCyrus::IMAP::Shell -e shell -- ${1+"$@"} ;;
++*) exec __PERL_PATH__ -MCyrus::IMAP::Shell -e shell -- "$@" ;;
+ esac
+ echo "$0: how did I get here?" >&2
+ exit 1
+diff -Naurp cyrus-imapd-2.1.13/perl/sieve/Makefile.in cyrus-perl-path/perl/sieve/Makefile.in
+--- cyrus-imapd-2.1.13/perl/sieve/Makefile.in	Mon Jul 22 11:16:09 2002
++++ cyrus-perl-path/perl/sieve/Makefile.in	Sun Jun 29 14:12:41 2003
+@@ -71,7 +71,7 @@ OPENSSL_INC=@OPENSSL_INC@
+ CC=@CC@
+ PERL=@PERL@
+ 
+-all::
++all:: perlpath
+ 	@for d in  $(SUBDIRS); \
+ 	do \
+ 		(cd $$d; echo "### Making" all "in" `pwd`;	\
+@@ -83,12 +83,23 @@ all::
+ 			$(MAKE) $(MFLAGS) DESTDIR=$(DESTDIR) all) || exit 1; \
+ 	done
+ 
+-install::
++perlpath::
++	@echo "### Adding" $(PERL) "to" $(SCRIPTS)
++	@echo '1,$$s#__PERL_PATH__#'$(PERL)'#' > perlpath; \
++	 echo 'w' >> perlpath; \
++	 for s in $(SCRIPTS); \
++	 do \
++	   cp scripts/$$s.pl scripts/$$s; \
++	   ed -s scripts/$$s < perlpath; \
++	 done; \
++	rm perlpath
++
++install:: perlpath
++#xxx install scripts/*
+ 	for s in $(SCRIPTS); \
+ 	do \
+-		$(INSTALL) -m 755 scripts/$$s.pl $(DESTDIR)$(exec_prefix)/bin/$$s ; \
+-	done
+-#xxx install scripts/*
++		$(INSTALL) -m 755 scripts/$$s $(DESTDIR)$(exec_prefix)/bin/$$s ; \
++	done; \
+ 	@for d in  $(SUBDIRS); \
+ 	do \
+ 		(cd $$d; echo "### Making" install "in" `pwd`;	\
+diff -Naurp cyrus-imapd-2.1.13/perl/sieve/scripts/installsieve.pl cyrus-perl-path/perl/sieve/scripts/installsieve.pl
+--- cyrus-imapd-2.1.13/perl/sieve/scripts/installsieve.pl	Sat May 25 14:57:52 2002
++++ cyrus-perl-path/perl/sieve/scripts/installsieve.pl	Sun Jun 29 14:12:28 2003
+@@ -1,5 +1,5 @@
+ #! /bin/sh
+-exec perl -x -S $0 ${1+"$@"} # -*-perl-*-
++exec __PERL_PATH__ -x -S $0 ${1+"$@"} # -*-perl-*-
+ #!perl -w
+ # 
+ # Copyright (c) 2000 Carnegie Mellon University.  All rights reserved.
+diff -Naurp cyrus-imapd-2.1.13/perl/sieve/scripts/sieveshell.pl cyrus-perl-path/perl/sieve/scripts/sieveshell.pl
+--- cyrus-imapd-2.1.13/perl/sieve/scripts/sieveshell.pl	Mon Dec  2 13:45:11 2002
++++ cyrus-perl-path/perl/sieve/scripts/sieveshell.pl	Sun Jun 29 14:12:24 2003
+@@ -1,5 +1,5 @@
+ #! /bin/sh
+-exec perl -x -S $0 ${1+"$@"} # -*-perl-*-
++exec __PERL_PATH__ -x -S $0 ${1+"$@"} # -*-perl-*-
+ #!perl -w
+ # 
+ # Copyright (c) 2000 Carnegie Mellon University.  All rights reserved.

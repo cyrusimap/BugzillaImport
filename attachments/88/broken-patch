@@ -1,0 +1,142 @@
+Index: imap/config.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/config.c,v
+retrieving revision 1.55.4.17
+diff -u -r1.55.4.17 config.c
+--- config.c	2002/08/31 02:03:47	1.55.4.17
++++ config.c	2002/10/04 19:53:28
+@@ -164,6 +164,8 @@
+ 			      config_getswitch(IMAPOPT_SKIPLIST_UNSAFE));
+     libcyrus_config_setstring(CYRUSOPT_TEMP_PATH,
+ 			      config_getstring(IMAPOPT_TEMP_PATH));
++    libcyrus_config_setint(CYRUSOPT_PTS_CACHE_TIMEOUT,
++			   config_getint(IMAPOPT_PTSCACHE_TIMEOUT));
+ 
+     return 0;
+ }
+Index: imap/imapoptions
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/imap/Attic/imapoptions,v
+retrieving revision 1.1.4.9
+diff -u -r1.1.4.9 imapoptions
+--- imapoptions	2002/09/26 19:19:16	1.1.4.9
++++ imapoptions	2002/10/04 19:48:49
+@@ -346,6 +346,10 @@
+    users, seperated by spaces.  Any user listed in this will be
+    allowed to login for any other user: use with caution. */ 
+ 
++{ "ptscache_timeout", 10800, INT }
++/* The timeout (in seconds) for the PTS cache database when using the
++   auth_krb_pts authorization method (default: 3 hours). */
++
+ { "quotawarn", 90, INT }
+ /* The percent of quota utilization over which the server generates
+    warnings. */
+Index: lib/auth_krb_pts.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/lib/auth_krb_pts.c,v
+retrieving revision 1.44.4.3
+diff -u -r1.44.4.3 auth_krb_pts.c
+--- auth_krb_pts.c	2002/09/26 18:59:45	1.44.4.3
++++ auth_krb_pts.c	2002/10/04 19:51:45
+@@ -58,10 +58,11 @@
+ 
+ #include "auth_krb_pts.h"
+ #include "auth.h"
++#include "hash.h"
++#include "libcyr_cfg.h"
+ #include "lock.h"
+ #include "retry.h"
+ #include "xmalloc.h"
+-#include "hash.h"
+ 
+ const char *auth_method_desc = "krb_pts";
+ 
+@@ -431,7 +432,8 @@
+     if (!r) {
+ 	fetched = (struct auth_state *) data.data;
+ 
+-	if (fetched->mark > time(0) - EXPIRE_TIME) {
++	if (fetched->mark >
++	    time(0) - libcyrus_config_getint(CYRUSOPT_PTS_CACHE_TIMEOUT)) {
+ 	    /* not expired; let's return it */
+ 	    newstate = (struct auth_state *) xrealloc(newstate, data.size);
+ 	    memcpy(newstate, fetched, data.size);
+Index: lib/auth_krb_pts.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/lib/auth_krb_pts.h,v
+retrieving revision 1.21
+diff -u -r1.21 auth_krb_pts.h
+--- auth_krb_pts.h	2001/01/02 00:01:10	1.21
++++ auth_krb_pts.h	2002/10/04 19:45:50
+@@ -69,7 +69,6 @@
+ 
+ 
+ #define PTCLIENT  "ptloader"
+-#define EXPIRE_TIME (3 * 60 * 60) /* 3 hours */
+ 
+ struct auth_ident {
+     unsigned hash;
+Index: lib/libcyr_cfg.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/lib/Attic/libcyr_cfg.c,v
+retrieving revision 1.1.2.1
+diff -u -r1.1.2.1 libcyr_cfg.c
+--- libcyr_cfg.c	2002/08/02 17:18:23	1.1.2.1
++++ libcyr_cfg.c	2002/10/04 19:46:40
+@@ -67,6 +67,10 @@
+       (union cyrus_config_value)((const char *)"/tmp"),
+       CYRUS_OPT_STRING },
+ 
++    { CYRUSOPT_PTS_CACHE_TIMEOUT,
++      (union cyrus_config_value)((int)(3 * 60 * 60)), /* 3 hours */
++      CYRUS_OPT_INT },
++
+     { CYRUSOPT_LAST, { NULL }, CYRUS_OPT_NOTOPT }
+ };
+ 
+Index: lib/libcyr_cfg.h
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/lib/Attic/libcyr_cfg.h,v
+retrieving revision 1.1.2.1
+diff -u -r1.1.2.1 libcyr_cfg.h
+--- libcyr_cfg.h	2002/08/02 17:18:23	1.1.2.1
++++ libcyr_cfg.h	2002/10/04 19:43:20
+@@ -75,7 +75,9 @@
+     /* Don't fsync() the skiplist backend (OFF) */
+     CYRUSOPT_SKIPLIST_UNSAFE,
+     /* Temporary Storage Directory ("/tmp") */
+-    CYRUSOPT_TEMP_PATH,              
++    CYRUSOPT_TEMP_PATH,
++    /* PTS Cache Timeout */
++    CYRUSOPT_PTS_CACHE_TIMEOUT,
+ 
+     CYRUSOPT_LAST
+     
+Index: ptclient/ptexpire.c
+===================================================================
+RCS file: /afs/andrew.cmu.edu/system/cvs/src/cyrus/ptclient/ptexpire.c,v
+retrieving revision 1.10.16.1
+diff -u -r1.10.16.1 ptexpire.c
+--- ptexpire.c	2002/09/26 19:01:04	1.10.16.1
++++ ptexpire.c	2002/10/04 20:06:01
+@@ -61,9 +61,8 @@
+ #include <sys/stat.h>
+ #include <fcntl.h>
+ 
+-#include "lock.h"
+ #include "auth_krb_pts.h"
+-
++#include "lock.h"
+ 
+ static char rcsid[] = "$Id: ptexpire.c,v 1.10.16.1 2002/09/26 19:01:04 ken3 Exp $";
+ 
+@@ -73,7 +72,7 @@
+     DB *ptdb;
+     DBC *cursor;
+     DBT key, data;
+-    time_t expire_time = EXPIRE_TIME;
++    time_t expire_time = (3*60*60); /* 3 hour default */
+     extern char *optarg;
+     int opt;
+     int fd;

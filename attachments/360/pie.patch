@@ -1,0 +1,169 @@
+diff -urN cyrus-imapd-2.2.12/configure.in cyrus-imapd-2.2.12.pie/configure.in
+--- cyrus-imapd-2.2.12/configure.in	2005-07-06 15:29:26.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/configure.in	2005-07-11 16:08:16.000000000 +0200
+@@ -1057,6 +1057,27 @@
+ AC_SUBST(PERL_DEPSUBDIRS)
+ AC_SUBST(PERL)
+ 
++AC_CACHE_CHECK(for -fpie, libc_cv_fpie, [dnl
++  cat > conftest.c <<EOF
++int foo;
++main () { return 0;}
++EOF
++  if AC_TRY_COMMAND([${CC-cc} $CFLAGS $CPPFLAGS $LDFLAGS -pie -fpie
++                              -o conftest conftest.c 1>&AS_MESSAGE_LOG_FD])
++  then
++    libc_cv_fpie=yes
++    PIE_CFLAGS="-fPIE"
++    PIE_LDFLAGS="-pie"
++  else
++    libc_cv_fpie=no
++    PIE_CFLAGS=""
++    PIE_LDFLAGS=""
++  fi
++  rm -f conftest*])
++AC_SUBST(libc_cv_fpie)
++AC_SUBST(PIE_CFLAGS)
++AC_SUBST(PIE_LDFLAGS)
++
+ AH_TOP([
+ /* $Id: configure.in,v 1.290 2005/01/18 23:46:00 shadow Exp $ */
+ /* 
+diff -urN cyrus-imapd-2.2.12/et/Makefile.in cyrus-imapd-2.2.12.pie/et/Makefile.in
+--- cyrus-imapd-2.2.12/et/Makefile.in	2001-11-27 03:24:56.000000000 +0100
++++ cyrus-imapd-2.2.12.pie/et/Makefile.in	2005-07-11 17:18:06.000000000 +0200
+@@ -55,8 +55,8 @@
+ CPPFLAGS = @CPPFLAGS@
+ LIBS = @LIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ 
+diff -urN cyrus-imapd-2.2.12/imap/Makefile.in cyrus-imapd-2.2.12.pie/imap/Makefile.in
+--- cyrus-imapd-2.2.12/imap/Makefile.in	2005-07-06 15:28:54.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/imap/Makefile.in	2005-07-06 15:31:26.000000000 +0200
+@@ -73,8 +73,8 @@
+ LIBS = $(IMAP_LIBS) $(IMAP_COM_ERR_LIBS)
+ DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@ 
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+diff -urN cyrus-imapd-2.2.12/lib/Makefile.in cyrus-imapd-2.2.12.pie/lib/Makefile.in
+--- cyrus-imapd-2.2.12/lib/Makefile.in	2004-05-28 20:03:04.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/lib/Makefile.in	2005-07-11 17:22:22.000000000 +0200
+@@ -62,8 +62,8 @@
+ LIBS = @LIBS@
+ 
+ MAKEDEPEND_CFLAGS = @CFLAGS@
+-CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@ -fPIC
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+diff -urN cyrus-imapd-2.2.12/master/Makefile.in cyrus-imapd-2.2.12.pie/master/Makefile.in
+--- cyrus-imapd-2.2.12/master/Makefile.in	2005-07-06 15:29:26.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/master/Makefile.in	2005-07-06 15:32:00.000000000 +0200
+@@ -57,8 +57,8 @@
+ CPPFLAGS = -I.. -I$(srcdir)/../lib -I$(srcdir)/../imap @CPPFLAGS@ @COM_ERR_CPPFLAGS@
+ DEPLIBS = @DEPLIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @COM_ERR_LDFLAGS@ @PIE_LDFLAGS@
+ LIBS = ../lib/libcyrus_min.a @LIB_UCDSNMP@ @LIBS@ @COM_ERR_LIBS@ @SLPLIBS@
+ 
+ SHELL = /bin/sh
+diff -urN cyrus-imapd-2.2.12/netnews/Makefile.in cyrus-imapd-2.2.12.pie/netnews/Makefile.in
+--- cyrus-imapd-2.2.12/netnews/Makefile.in	2003-11-12 05:02:08.000000000 +0100
++++ cyrus-imapd-2.2.12.pie/netnews/Makefile.in	2005-07-06 15:31:26.000000000 +0200
+@@ -53,8 +53,8 @@
+ LIBS =  @IMAP_LIBS@ @LIB_RT@
+ DEPLIBS = ../lib/libcyrus.a ../lib/libcyrus_min.a @DEPLIBS@ 
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+diff -urN cyrus-imapd-2.2.12/notifyd/Makefile.in cyrus-imapd-2.2.12.pie/notifyd/Makefile.in
+--- cyrus-imapd-2.2.12/notifyd/Makefile.in	2004-05-28 20:03:06.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/notifyd/Makefile.in	2005-07-06 15:31:26.000000000 +0200
+@@ -54,8 +54,8 @@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+ CPPFLAGS = -I.. -I$(srcdir)/../sieve -I$(srcdir)/../imap -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ prefix = @prefix@
+ exec_prefix = @exec_prefix@
+diff -urN cyrus-imapd-2.2.12/perl/sieve/lib/Makefile.in cyrus-imapd-2.2.12.pie/perl/sieve/lib/Makefile.in
+--- cyrus-imapd-2.2.12/perl/sieve/lib/Makefile.in	2004-05-28 20:03:07.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/perl/sieve/lib/Makefile.in	2005-07-11 17:40:25.000000000 +0200
+@@ -57,7 +57,7 @@
+ DEPLIBS = ../../../lib/libcyrus.a ../../../lib/libcyrus_min.a @DEPLIBS@
+ 
+ MAKEDEPEND_CFLAGS = @CFLAGS@
+-CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@
++CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@ -fPIC
+ LDFLAGS = @LDFLAGS@
+ 
+ SHELL = /bin/sh
+diff -urN cyrus-imapd-2.2.12/sieve/Makefile.in cyrus-imapd-2.2.12.pie/sieve/Makefile.in
+--- cyrus-imapd-2.2.12/sieve/Makefile.in	2004-05-28 20:03:09.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/sieve/Makefile.in	2005-07-06 15:31:26.000000000 +0200
+@@ -40,8 +40,8 @@
+ DEFS = @DEFS@
+ CPPFLAGS = -I.. -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
+ MAKEDEPEND_CFLAGS = @CFLAGS@
+-CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PERL_CCCDLFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ MAKEDEPEND = @MAKEDEPEND@
+ 
+diff -urN cyrus-imapd-2.2.12/syslog/Makefile.in cyrus-imapd-2.2.12.pie/syslog/Makefile.in
+--- cyrus-imapd-2.2.12/syslog/Makefile.in	2000-05-23 22:56:48.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/syslog/Makefile.in	2005-07-06 15:31:26.000000000 +0200
+@@ -54,8 +54,8 @@
+ CPPFLAGS = @CPPFLAGS@
+ LIBS = @LIBS@
+ 
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ SHELL = /bin/sh
+ MAKEDEPEND = @MAKEDEPEND@
+diff -urN cyrus-imapd-2.2.12/timsieved/Makefile.in cyrus-imapd-2.2.12.pie/timsieved/Makefile.in
+--- cyrus-imapd-2.2.12/timsieved/Makefile.in	2004-05-28 20:03:10.000000000 +0200
++++ cyrus-imapd-2.2.12.pie/timsieved/Makefile.in	2005-07-06 15:31:26.000000000 +0200
+@@ -54,8 +54,8 @@
+ 
+ DEFS = @DEFS@ @LOCALDEFS@
+ CPPFLAGS = -I.. -I$(srcdir)/../sieve -I$(srcdir)/../imap -I$(srcdir)/../lib @COM_ERR_CPPFLAGS@ @CPPFLAGS@ @SASLFLAGS@
+-CFLAGS = @CFLAGS@
+-LDFLAGS = @LDFLAGS@
++CFLAGS = @CFLAGS@ @PIE_CFLAGS@
++LDFLAGS = @LDFLAGS@ @PIE_LDFLAGS@
+ 
+ prefix = @prefix@
+ exec_prefix = @exec_prefix@
