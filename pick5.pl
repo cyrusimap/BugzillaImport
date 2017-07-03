@@ -42,14 +42,40 @@ my %labels = map { $_->{name} => $_ } @labels;
 my %have;
 my @issues = $issue->repos_issues({filter => 'all', state => 'open'});
 push @issues, $issue->next_page() while $issue->has_next_page();
-my @list = shuffle @issues;
+my @list = shuffle grep { not has_diceroll($_) } @issues;
 
 my $n = 0;
 
-foreach my $name (sort qw(Ken Partha Nicola ellie Robert Bron)) {
-    print "$name\n";
+my %map = qw(
+    Ken ksmurchison
+    Robert rsto
+    Partha ajaysusarla
+    Bron brong
+    ellie elliefm
+);
+
+delete $map{Bron};
+
+foreach my $name (sort keys %map) {
+    print "$name ($map{$name})\n";
     for (1..5) {
-        print " * $list[$n++]->{html_url}\n";
+        my $item = $list[$n++];
+        my @labels = map { $_->{name} } @{$item->{labels}};
+        push @labels, 'diceroll';
+        print " * $item->{html_url}\n";
+        $issue->update_issue($item->{number}, {
+            assignee => $map{$name},
+            labels => \@labels,
+        });
     }
     print "\n";
+}
+
+sub has_diceroll {
+    my $issue = shift;
+    foreach my $label (@{$issue->{labels}}) {
+        next unless $label->{name} eq 'diceroll';
+        return 1;
+    }
+    return 0;
 }
