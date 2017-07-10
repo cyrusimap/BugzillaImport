@@ -9,6 +9,9 @@ use Encode qw(decode_utf8 encode_utf8);
 use JSON;
 use List::Util qw(shuffle);
 
+my $doit = shift || '';
+
+
 BEGIN {
     Net::GitHub::V3::Issues->__build_methods(
         import_issue => { url => "/repos/%s/%s/import/issues", method => 'POST', args => 1 },
@@ -39,12 +42,9 @@ $issue->ua->default_header('Accept-Encoding' => scalar HTTP::Message::decodable(
 my @labels = $issue->labels();
 my %labels = map { $_->{name} => $_ } @labels;
 
-my %have;
 my @issues = $issue->repos_issues({filter => 'all', state => 'open'});
 push @issues, $issue->next_page() while $issue->has_next_page();
-my @list = shuffle grep { not has_diceroll($_) } @issues;
-
-my $n = 0;
+my @targets;
 
 my %map = qw(
     Ken ksmurchison
@@ -54,28 +54,45 @@ my %map = qw(
     ellie elliefm
 );
 
-delete $map{Bron};
+my %have = map { $_ => {} } values %map;
+
+foreach my $issue (@issues) {
+    my $has_diceroll = 0;
+    foreach my $label (@{$issue->{labels}}) {
+        next unless $label->{name} eq 'diceroll';
+        $has_diceroll = 1;
+        last;
+    }
+
+    if ($has_diceroll) {
+        foreach my $assignee (@{$issue->{assignees}}) {
+            $have{$assignee->{login}}{$issue->{html_url}} = 1;
+        }
+    }
+    else {
+        push @targets, $issue;
+    }
+}
+
+my @list = shuffle @targets;
+
+my $n = 0;
 
 foreach my $name (sort keys %map) {
     print "$name ($map{$name})\n";
-    for (1..5) {
+    my $have = $have{$map{$name}};
+    foreach my $uri (sort keys %$have) {
+        print " = $uri\n";
+    }
+    for (scalar(keys %$have)..4) {
         my $item = $list[$n++];
         my @labels = map { $_->{name} } @{$item->{labels}};
         push @labels, 'diceroll';
-        print " * $item->{html_url}\n";
+        print " + $item->{html_url}\n";
         $issue->update_issue($item->{number}, {
             assignee => $map{$name},
             labels => \@labels,
-        });
+        }) if $doit eq 'doit';
     }
     print "\n";
-}
-
-sub has_diceroll {
-    my $issue = shift;
-    foreach my $label (@{$issue->{labels}}) {
-        next unless $label->{name} eq 'diceroll';
-        return 1;
-    }
-    return 0;
 }
