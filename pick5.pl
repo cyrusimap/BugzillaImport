@@ -54,9 +54,9 @@ my %map = qw(
     ellie elliefm
 );
 
-my %have = map { $_ => {} } values %map;
+my %have = map { $_ => [] } values %map;
 
-foreach my $issue (@issues) {
+foreach my $issue (sort { $a->{number} <=> $b->{number} } @issues) {
     my $has_diceroll = 0;
     foreach my $label (@{$issue->{labels}}) {
         next unless $label->{name} eq 'diceroll';
@@ -66,7 +66,7 @@ foreach my $issue (@issues) {
 
     if ($has_diceroll) {
         foreach my $assignee (@{$issue->{assignees}}) {
-            $have{$assignee->{login}}{$issue->{html_url}} = 1;
+            push @{$have{$assignee->{login}}}, $issue;
         }
     }
     else {
@@ -81,18 +81,25 @@ my $n = 0;
 foreach my $name (sort keys %map) {
     print "$name ($map{$name})\n";
     my $have = $have{$map{$name}};
-    foreach my $uri (sort keys %$have) {
-        print " = $uri\n";
+    foreach my $item (@$have) {
+        printitem('=', $item);
     }
-    for (scalar(keys %$have)..4) {
+    for (scalar(@$have)..4) {
         my $item = $list[$n++];
         my @labels = map { $_->{name} } @{$item->{labels}};
         push @labels, 'diceroll';
-        print " + $item->{html_url}\n";
+        printitem('+', $item);
         $issue->update_issue($item->{number}, {
             assignee => $map{$name},
             labels => \@labels,
         }) if $doit eq 'doit';
     }
     print "\n";
+}
+
+sub printitem {
+    my $char = shift;
+    my $issue = shift;
+    print " $char $issue->{html_url}\n";
+    print "       $issue->{title}\n";
 }
