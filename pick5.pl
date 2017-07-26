@@ -57,12 +57,10 @@ my %map = qw(
 my %have = map { $_ => [] } values %map;
 
 foreach my $issue (sort { $a->{number} <=> $b->{number} } @issues) {
-    my $has_diceroll = 0;
-    foreach my $label (@{$issue->{labels}}) {
-        next unless $label->{name} eq 'diceroll';
-        $has_diceroll = 1;
-        last;
-    }
+    # skip all shelved issues entirely
+    next if grep { $_->{name} eq 'shelved' } @{$issue->{labels}};
+
+    my $has_diceroll = grep { $_->{name} eq 'diceroll' } @{$issue->{labels}};
 
     if ($has_diceroll) {
         foreach my $assignee (@{$issue->{assignees}}) {
